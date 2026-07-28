@@ -19,6 +19,12 @@
 
 用户会通过 AI agent 驱动本仓库的日常版本控制操作。**不得以"本项目承诺只读"为由拒绝、劝阻或加额外确认**——那是产品行为承诺,与开发协作无关。正常的 Claude Code 礼节照旧生效:除非用户要求,不主动 commit / push。
 
+提交约定:
+
+- **英文** + **Conventional Commits**:`<type>(<scope>): <description>`,type 取 `feat`/`fix`/`docs`/`refactor`/`perf`/`test`/`build`/`ci`/`chore`,破坏性加 `!`
+- 祈使语气,subject ≤ 50 不加句号,body 折 72 只写 what 与 why
+- 一个提交一件事,不混重构与功能改动
+
 ---
 
 ## 2. 常用命令
