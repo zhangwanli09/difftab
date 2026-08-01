@@ -31,9 +31,10 @@
 | 类型检查 | `npm run typecheck`(`tsc --noEmit`,两份 tsconfig) | S0 建立 |
 | 格式化 + lint | `npm run lint`(`biome check`)/ CI 用 `biome ci` | S0 建立 |
 | 单元/集成测试(Vitest,直接跑 TS 源码) | `npm test` | S1 建立 |
-| 冒烟测试(纯 JS,跑构建产物,含只读性两层验证) | `npm run test:smoke` | S1–S2 建立,S5 前入 CI |
-| 冷启动耗时测量(对构建产物,≤300ms 门禁) | `npm run bench:startup` | S0 建立骨架,S1 接真实流程 |
-| 产物体积门禁 | `npm run size` | S2 建立 |
+| 冒烟测试(纯 JS,跑构建产物,含只读性两层验证) | `npm run test:smoke` | 第一层(git 白名单断言)S1 入 CI,第二层(只读 `.git`)S2 入 CI |
+| 测试仓库 fixture 生成 | `npm run fixtures` | 第一批 S1,第二批 S4 |
+| 冷启动耗时测量(对构建产物,≤300ms 门禁) | `npm run bench:startup` | S0 建立骨架,S1 接真实流程并入门禁 |
+| 产物体积门禁 | `npm run size` | S0 随 spike 建立,S2 收口回填实测 |
 
 ## 4. 动手前先读 spec 的哪节
 
@@ -66,8 +67,10 @@
 
 ## 7. 开发阶段
 
-S0 工具链脚手架(含 spec §5.6 的层叠前提验证)→ S1 CLI + HTTP server + git 封装 → S2 变更列表 + diff2html 渲染 + 懒加载 → S3 分支状态 + 自动刷新 + 进程生命周期(**三件事拆开逐个收口,不并行推进**)→ S4 diff 边界情况 + git 异常状态 → S5 Windows/Linux 真机验证 + 安全加固(**CI 跑通不等于可用**)→ S6 开源准备。各阶段展开见 spec §7。
+S0 工具链脚手架 + 三项前提验证 + 三平台 CI 矩阵拉起 → S1 CLI + HTTP server(**含 §5.9 三道校验的最终形态**)+ git 封装 + 只读主门禁 + fixture 第一批 → S2 变更列表 + diff2html 渲染 + 懒加载 → **S3a** 分支状态 → **S3b** 自动刷新 → **S3c** 进程生命周期 → S4 diff 边界情况 + git 异常状态 + fixture 第二批 → S5 Windows/Linux 真机验证 + 安全加固自查(**CI 跑通不等于可用**)→ S6 开源准备。各阶段展开见 spec §7。
 
-- **每个阶段完成后立即对照 spec §6 验收标准自查**,不堆到后期集中验证
-- S4 前先按 spec §7 末段备齐测试数据仓库
+- **S3a / S3b / S3c 按序逐个收口,不得并行推进**;S3b 的首个交付物是三档强制指定的环境变量
+- **门禁不得晚于它所保护的代码**:只读白名单断言随 git 封装层在 S1 落地,安全校验随 server 在 S1 落地——**不得为让 dev 跑通而在后端放宽校验**(见第 5 节红线)
+- **每个阶段完成后立即对照 spec §6 中标记为本阶段的 `[Sx]` 验收项自查**,并满足 spec §9 的三条收口判据,不堆到后期集中验证
+- 测试数据分两批,时机与清单见 spec §7 末段;fixture 脚本对测试仓库的 git 写操作属"开发流程的 git",见第 1 节
 - 版本从 **0.1.0** 起,spec §6 全部通过 + 三端真机验证后才发 1.0.0。License MIT
