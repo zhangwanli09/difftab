@@ -50,7 +50,45 @@
 
 **Node.js + TypeScript + Vite / Preact + diff2html**
 
-**分工提醒**:本节 5.1–5.10 描述的是**产品运行时**的约束(用户机器上实际执行的东西);5.11 描述的是**开发期工具链**(只在本仓库和发布流水线里存在,不进用户安装的包)。两者的边界必须清晰——运行时约束不因引入构建链路而放松。
+**分工提醒**:5.0 给出模块划分与边界,是读其余小节的地图;5.1–5.10 描述的是**产品运行时**的约束(用户机器上实际执行的东西);5.11 描述的是**开发期工具链**(只在本仓库和发布流水线里存在,不进用户安装的包);5.12 是前后端之间的接口契约。运行时与工具链的边界必须清晰——运行时约束不因引入构建链路而放松。
+
+### 5.0 架构总览:模块、目录与边界
+
+数据流一句话:**CLI 定位仓库并拉起 HTTP server → 浏览器经 HTTP 拿只读数据、经 SSE 收变更通知 → server 把请求转给 git 封装层与文件监听层**。产品代码内不存在其他方向的调用。
+
+**模块级目录结构**(只定"哪类东西放哪个模块",不定文件切分):
+
+```
+bin/gitglance.js       版本守卫 + 动态 import(5.1),手写 JS,不参与构建
+src/server/
+  cli/                 参数解析、仓库定位与前置检查、拉起浏览器、单实例注册表(5.1 / 5.8)
+  http/                node:http server、路由、5.9 三道校验、dist/web 静态托管
+  git/                 唯一的 git 子进程出口:status / diff / numstat 调用与解析(5.2 / 5.3)
+  watch/               三档监听 + debounce + 轮询兜底(5.7)
+  shared/              前后端共用的协议类型(5.12)
+src/web/
+  components/          变更列表、分支状态、diff 容器(5.4)
+  diff/                diff2html 深导入 + hljs 语言注册(5.5)
+  state/               signals(5.4)
+  styles/              app.css / vscode-theme.css(5.6)
+test/unit/             Vitest,跑 TS 源码
+test/smoke/            纯 JS,跑 dist/ 产物(含只读性两层验证)
+test/fixtures/         测试仓库生成脚本(两批,见第 7 节)
+scripts/               bench:startup、size 门禁
+```
+
+源码目录到构建产物的映射见 5.11 的「产物结构」,此处不复述。
+
+**依赖方向**(单向,可静态断言):`bin → server/cli → server/http → {server/git, server/watch}`。`src/web` 除 `server/shared/` 外**不得 import `src/server` 下任何模块**;`server/git` 与 `server/watch` **不得反向 import `http` / `cli`**。
+
+**边界不变式**——这四条不是风格偏好,每一条都是某道门禁能够成立的前提,违反后**不报错、只是让门禁静默失去覆盖**:
+
+1. **`server/git` 是产品代码中唯一执行 git 子进程的位置**。5.10 主门禁"断言 git 子命令只出现在只读白名单"、以及 5.2 要求的 `-c core.quotePath=false` 统一注入,都依赖这个单点。其他模块即便只调只读命令也算违规——门禁的低成本可断言性正来自"只有一处"
+2. **拉起浏览器是唯一的非 git 子进程调用**,位于 `server/cli`,即 5.1 与 5.10 已写明需要显式开口子的那一处。产品代码中出现第三处子进程调用,须先改本节
+3. **`server/http` 不直接触碰 git 与文件监听**,只调用 `git` / `watch` 模块导出的函数。这保证 5.9 的三道校验位于唯一入口,不会被某条旁路绕开
+4. **前端不内联任何 git 知识**(状态位含义、空树哈希、路径转义规则、重命名判定),一律由 `shared/` 的协议类型承载。否则 5.2 / 5.3 的约束会出现第二份实现,而第二份不受 5.10 门禁覆盖
+
+**本节的修改边界**:只定模块归属与依赖方向,**不定文件切分**——文件级清单会随实施阶段推进立刻过期,而模块边界稳定且正是门禁所依赖的东西。新增或拆分文件不需要改 spec;**改变模块归属、依赖方向,或上述任一不变式,才须先改本节**。
 
 ### 5.1 运行时与后端
 
@@ -279,6 +317,31 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 2. **matrix 作业**(Node **22.0.x** / 24 / 26 × macOS / Windows / Linux):下载 `dist/` artifact,**不安装任何 devDependency**,跑纯 JS 编写的冒烟套件(`node:test`)——CLI 启动、status、diff、5.10 的两层只读验证、冷启动 ≤300ms 测量、版本守卫(在低于下限的 Node 上必须打印友好提示而非 SyntaxError)
 3. 5.10 的 fake git wrapper 靠 PATH 劫持,与代码是否打包无关,归属 matrix 作业
 
+### 5.12 后端接口契约
+
+本节汇总 5.2 / 5.3 / 5.7 的产物在 HTTP 层的形状,是 5.0 边界不变式第 4 条(前端不内联 git 知识)的具体承载。类型定义放 `src/server/shared/`,前后端共享同一份。
+
+**端点清单——全部为 `GET`**。只读工具不需要任何非幂等端点,这条本身就是一道约束:出现 `POST` / `PUT` / `DELETE` 即意味着有人在往 4.1 的承诺外扩功能。
+
+| 端点 | 返回 | 说明 |
+|---|---|---|
+| `GET /` | `dist/web` 静态资源 | 固定文件名不加 hash(见 5.9) |
+| `GET /api/state` | `{ branch: BranchState, files: FileEntry[] }` | 对应 5.2 的**单次** status 调用 |
+| `GET /api/diff?path=&oldPath=` | `DiffPayload` | 按文件懒加载;`oldPath` 仅重命名条目传(5.2 的双路径要求) |
+| `GET /api/events` | SSE | 事件 `change` / `heartbeat`;5.8 的空闲退出以本端点的连接数判定,不另设保活端点 |
+
+**协议类型**:
+
+- `FileEntry { path; oldPath?; kind: 'tracked' | 'untracked'; staged; unstaged; renameScore? }`——`staged` / `unstaged` 承载 `porcelain=v2` 的双状态位,`oldPath` + `renameScore` 来自 5.2 的 `2 ` 记录
+- `BranchState { head; detached: boolean; upstream: null | { ahead; behind }; operation?: 'rebase' | 'merge' | … }`——**`upstream: null` 即"无上游"**。第 6 节要求无 `# branch.ab` 行时展示"无上游"而非 0/0,把它编码进类型而非留作约定,前端就不可能漏掉这条分支
+- `DiffPayload` 为判别联合:`{ kind: 'text', patch }` / `{ kind: 'binary' }` / `{ kind: 'too-large', size }` / `{ kind: 'untracked-text', patch }`
+
+**字段定型时机**:**payload 的字段与判别式在 S1/S2 即定型,即使 `binary` / `too-large` / 重命名标注的填充逻辑要到 S4 才实现**。S4 之前后端可以永远不返回这几个分支,但类型里必须先有。这与第 7 节"第一批 fixture 决定解析器结构"是同一条论证:字段晚定,等于前端在 S2 按 `kind: 'text'` 单一形状写死,S4 再回头改渲染分支。
+
+**错误约定**:`{ error: { code, message } }`,`message` **不含绝对路径**(与 5.9 及 S5 的安全自查一致)。
+
+**明确不做**:协议版本协商。前端随进程自带分发,不存在版本错配的可能,加版本字段只是空转。
+
 ## 6. 验收标准
 
 每条前缀的 `[Sx]` 标记的是**该项第一次可被验证的阶段**(对应第 7 节),不是它最终定稿的阶段;`[Sx/Sy]` 表示前一阶段可验证其可自动化的部分、后一阶段补齐余下部分(通常是真机或跨平台部分)。第 7 节的收口判据要求一个阶段结束时,标记为该阶段的项**全部**打勾。本节不含 `[S6]` 项——S6 的收口清单在第 8 节。
@@ -325,6 +388,7 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 - [ ] `[S1]` 5.10 的**主门禁**(fake git wrapper 劫持并断言 git 子命令只出现在只读白名单)与浏览器拉起的单点断言均通过,并随 git 封装层一同纳入 CI 门禁
 - [ ] `[S2]` 5.10 的**第二层**(`chmod -R a-w .git` 后跑完整流程)通过并纳入 matrix 作业;Windows 上改用只读 ACL 或显式跳过,不得静默通过
 - [ ] `[S1]` **dev 代理未以放宽后端校验实现**:后端代码中不存在任何绕过 Host / Origin / token 校验的环境变量或分支;`vite dev` 下页面功能正常
+- [ ] `[S0/S1]` **5.0 的架构边界可自动断言**:CI 中存在规则或脚本,能在「`src/web` 反向 import `src/server`(`shared/` 除外)」或「`server/git` 之外出现 git 子进程调用」时失败。import 方向部分由 Biome 的 `noRestrictedImports` 承担(S0 建立),子进程单点部分与 5.10 主门禁合并断言(S1 建立)
 
 **性能与资源**
 
@@ -355,8 +419,8 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 
 | 阶段 | 内容 | 注意事项 |
 |---|---|---|
-| **S0** | 工具链脚手架:`package.json`(含 `engines` / `files` / scripts)、Vite + tsdown 配置、两份 tsconfig、Biome、lefthook、冷启动测量脚本;CI 两层作业骨架,且 **matrix 层的三平台 × Node 22/24/26 即刻拉起**(初期跑占位冒烟即可) | 三项前提验证须在本阶段收口,见下方「S0 的三项前提验证」。matrix 提前拉起是为了让 Windows / Linux 回归从第一天起持续存在,而不是堆到 S5 一次性暴露 |
-| **S1** | CLI 脚手架 + HTTP server(**按 5.9 最终形态实现,含三道校验**)+ git shell 封装(status/diff)+ **测试数据第一批** + **5.10 主门禁入 CI** | server 一建立即是最终形态,5.11 的 dev proxy 三道改写同期落地。**先做前端再补校验的顺序,会把"临时加环境变量放宽后端"变成本阶段内的最短路径,而那是第 10 节明令禁止的做法** |
+| **S0** | 工具链脚手架:`package.json`(含 `engines` / `files` / scripts)、Vite + tsdown 配置、两份 tsconfig、Biome、lefthook、冷启动测量脚本;**按 5.0 建立目录骨架与依赖方向断言规则**;CI 两层作业骨架,且 **matrix 层的三平台 × Node 22/24/26 即刻拉起**(初期跑占位冒烟即可) | 三项前提验证须在本阶段收口,见下方「S0 的三项前提验证」。matrix 提前拉起是为了让 Windows / Linux 回归从第一天起持续存在,而不是堆到 S5 一次性暴露 |
+| **S1** | CLI 脚手架 + HTTP server(**按 5.9 最终形态实现,含三道校验**)+ git shell 封装(status/diff)+ **5.12 协议类型随 server 一同定型** + **测试数据第一批** + **5.10 主门禁入 CI** | server 一建立即是最终形态,5.11 的 dev proxy 三道改写同期落地。**先做前端再补校验的顺序,会把"临时加环境变量放宽后端"变成本阶段内的最短路径,而那是第 10 节明令禁止的做法** |
 | **S2** | 前端变更列表 + diff2html 渲染 + 按文件懒加载联动,基础样式(Tailwind `@theme` 承载 VS Code token) | 收口时实测并回填 5.5 的产物体积表;5.10 第二层(只读 `.git` 冒烟)在此建立并入 matrix 作业 |
 | **S3a** | 分支状态展示(只读) | — |
 | **S3b** | 自动刷新:SSE 通道 + `.git` 非递归 watch + A / B 档 `isIgnored` 过滤 + C 档轮询 + 通用轮询兜底(5.7) | **首个交付物是"三档强制指定的内部环境变量"**——没有它,后续所有档位的验收项在单机上都无从自查 |
