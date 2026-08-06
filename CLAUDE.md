@@ -21,20 +21,24 @@
 
 ## 3. 常用命令
 
-仓库尚无 `package.json`(S0 阶段建立)。下表为规划中的命令,**每新增一个 npm script,立即回来补全本节**——过期比缺失更糟。
+包管理器为 **pnpm**,版本由 `package.json` 的 `packageManager` 字段固定;首次 clone 后 `pnpm install --frozen-lockfile`。
+
+仓库尚无 `package.json`(S0 阶段建立)。下表为规划中的命令,**每新增一个 `package.json` script,立即回来补全本节**——过期比缺失更糟。
 
 | 用途 | 命令 | 状态 |
 |---|---|---|
 | 本地启动(构建产物) | `node bin/gitglance.js`(在任意 git 仓库目录下) | S1 建立 |
-| 开发模式(Vite dev server + 后端) | `npm run dev` | S0 建立 |
-| 构建(前端 Vite + 后端 tsdown) | `npm run build` | S0 建立 |
-| 类型检查 | `npm run typecheck`(`tsc --noEmit`,两份 tsconfig) | S0 建立 |
-| 格式化 + lint | `npm run lint`(`biome check`)/ CI 用 `biome ci` | S0 建立 |
-| 单元/集成测试(Vitest,直接跑 TS 源码) | `npm test` | S1 建立 |
-| 冒烟测试(纯 JS,跑构建产物,含只读性两层验证) | `npm run test:smoke` | 第一层(git 白名单断言)S1 入 CI,第二层(只读 `.git`)S2 入 CI |
-| 测试仓库 fixture 生成 | `npm run fixtures` | 第一批 S1,第二批 S4 |
-| 冷启动耗时测量(对构建产物,≤300ms 门禁) | `npm run bench:startup` | S0 建立骨架,S1 接真实流程并入门禁 |
-| 产物体积门禁 | `npm run size` | S0 随 spike 建立,S2 收口回填实测 |
+| 开发模式(Vite dev server + 后端) | `pnpm dev` | S0 建立 |
+| 构建(前端 Vite + 后端 tsdown) | `pnpm build` | S0 建立 |
+| 类型检查 | `pnpm typecheck`(`tsc --noEmit`,两份 tsconfig) | S0 建立 |
+| 格式化 + lint | `pnpm lint`(`biome check`)/ CI 用 `biome ci` | S0 建立 |
+| 单元/集成测试(Vitest,直接跑 TS 源码) | `pnpm test` | S1 建立 |
+| 冒烟测试(纯 JS,跑构建产物,含只读性两层验证) | `pnpm test:smoke`(CI matrix 档不经 script,直接 `node --test`) | 第一层(git 白名单断言)S1 入 CI,第二层(只读 `.git`)S2 入 CI |
+| 测试仓库 fixture 生成 | `pnpm fixtures` | 第一批 S1,第二批 S4 |
+| 冷启动耗时测量(对构建产物,≤300ms 门禁) | `pnpm bench:startup` | S0 建立骨架,S1 接真实流程并入门禁 |
+| 产物体积门禁 | `pnpm size` | S0 随 spike 建立,S2 收口回填实测 |
+
+`fixtures` / `bench:startup` / `size` **只是别名**——脚本本体必须是零依赖纯 JS、可由 `node <路径>` 直接执行,因为它们要在没有 pnpm、没有 `node_modules` 的 CI matrix 机器上跑(见 spec §5.11)。
 
 ## 4. 动手前先读 spec 的哪节
 
@@ -44,6 +48,7 @@
 | HTTP/SSE 接口、前后端协议类型 | spec §5.12 |
 | git 封装层、status/diff 解析、git 异常状态 | spec §5.2、§5.3 |
 | 文件监听、自动刷新、进程生命周期 | spec §5.7、§5.8 |
+| 前端组件、状态管理(signals)、框架选型 | spec §5.4 |
 | diff 渲染、hljs 语言清单、产物体积 | spec §5.5 |
 | 样式、主题与层叠 | spec §5.6 |
 | HTTP server、token、CSP | spec §5.9 |
@@ -56,9 +61,10 @@
 违反后**不报错、只是静默出错**的条目。理由与实测证据见 spec §10「被排除的做法」,架构边界一条见 spec §5.0。
 
 - **架构边界**:git 子进程只能出现在 `server/git`、拉起浏览器只能出现在 `server/cli`——在别处调 git 即使命令只读也不报错,只是让 §5.10 只读门禁的断言点静默失去覆盖;`src/web` 不得 import `src/server`(`shared/` 除外);`server/git` / `server/watch` 不得反向 import `http` / `cli`
-- **git 调用**:基准是 `git diff HEAD` 不是 `git diff`;列表类调用一律 `-z`;所有 diff 在封装层统一注入 `-c core.quotePath=false`(与 `-z` 互补,不可替代);`porcelain=v2 -z` 的重命名记录占**两个** NUL 段、无上游时不输出 `# branch.ab` 行;重命名取 diff 必须传新旧两个路径(`-M -- <新> <旧>`);diff 按文件懒加载,禁止一次性取全仓 diff;空树哈希硬编码(禁 `hash-object /dev/null`、禁 `mktree`),`--show-object-format` 非零退出即按 SHA-1;未跟踪文件手工构造 unified diff,禁 `--no-index`
+- **git 调用**:基准是 `git diff HEAD` 不是 `git diff`;列表类调用一律 `-z`;所有 diff 在封装层统一注入 `-c core.quotePath=false`(与 `-z` 互补,不可替代);`porcelain=v2 -z` 的重命名记录占**两个** NUL 段、无上游时不输出 `# branch.ab` 行;重命名取 diff 必须传新旧两个路径(`-M -- <新> <旧>`);diff 按文件懒加载,禁止一次性取全仓 diff;空树哈希硬编码(禁 `hash-object /dev/null`、禁 `mktree`),`--show-object-format` 非零退出即按 SHA-1;未跟踪文件手工构造 unified diff,禁 `--no-index`;降级轮询必须复用与主查询**逐字相同**的 `git status --porcelain=v2 --branch -uall -z`,禁裁剪参数(漏 `-uall` 会让已存在目录里的新增文件静默不刷新)
 - **文件监听**:档位按 `process.versions.node` 做 semver 比对,禁用特性探测;`ignore` 传逐段匹配函数,禁字符串模式(含斜杠与不含斜杠的都禁);Linux 低版本不建递归 watch;B 档过滤必须在 debounce 之前;绝不对单个文件建 watch
 - **前端与样式**:禁用三个 diff2html 预构建 UI bundle(深导入 `diff2html/lib-esm/ui/js/diff2html-ui-base.js` 是允许且推荐的);禁止自行重写它的高亮切分逻辑;hljs 别名 `jsx`/`tsx`/`toml`/`html` 不是模块、不可单独 import;hljs 主题 CSS 必须排在 `diff2html.min.css` 之前、深色那份必须带 `(prefers-color-scheme: dark)`;两者保持 unlayered、禁入 `@layer`;改 diff2html 配色只能覆写 `--d2h-*`,禁用 Tailwind 工具类去压
+- **包管理器(pnpm 11)**:全部 pnpm 设置只写 `pnpm-workspace.yaml`——**禁写 `package.json` 的 `pnpm` 字段或 `.npmrc`,pnpm 11 静默忽略**(`.npmrc` 只留 registry/auth);禁 `shamefullyHoist` / `nodeLinker: hoisted`,被 import 的包必须由自己声明(diff2html 的 `diff` / `@profoundlogic/hogan` 不得直接引用);依赖的生命周期脚本默认不跑,需要跑的必须显式进 **`allowBuilds`**(已知 `lefthook`,以 `.git/hooks` 下钩子文件实际存在为准);CI matrix 档完全不装依赖、冒烟直接 `node --test`,禁止改成经 `pnpm` script 跑或"装一点点";CI 用 `pnpm/action-setup` 读 `packageManager` 字段,禁 `corepack enable`
 - **运行时与安全**:`dependencies` 保持为空、后端只用标准库;`bin/gitglance.js` 手写、不参与 TS 编译、不作打包入口;禁止依赖 Node 原生 type stripping 直接跑 `.ts` 产品代码;校验 `Host` 头才是 DNS rebinding 的正面防御,禁止只靠 token;后端零 dev 分支(禁为本地开发加放宽 Host / Origin / token 校验的环境变量或分支);单实例注册表写 `os.tmpdir()`(禁写 `.git/` 或工作区)、`0o600` + `O_EXCL` 创建、陈旧实例用 HTTP 探活而非 pid;只读性验证禁用"前后 `git status` 比对"
 
 ## 6. 明确不做
@@ -70,10 +76,10 @@
 
 ## 7. 开发阶段
 
-S0 工具链脚手架 + 三项前提验证 + 三平台 CI 矩阵拉起 → S1 CLI + HTTP server(**含 §5.9 三道校验的最终形态**)+ git 封装 + 只读主门禁 + fixture 第一批 → S2 变更列表 + diff2html 渲染 + 懒加载 → **S3a** 分支状态 → **S3b** 自动刷新 → **S3c** 进程生命周期 → S4 diff 边界情况 + git 异常状态 + fixture 第二批 → S5 Windows/Linux 真机验证 + 安全加固自查(**CI 跑通不等于可用**)→ S6 开源准备。各阶段展开见 spec §7。
+S0 工具链脚手架(含 `pnpm-lock.yaml`、`pnpm-workspace.yaml` 的 `allowBuilds` 白名单、`.gitignore`、**手写定稿的 `bin/gitglance.js`**)+ 三项前提验证(在 pnpm 严格 node_modules 布局下跑)+ 三平台 CI 矩阵拉起 → S1 CLI + HTTP server(**含 §5.9 三道校验的最终形态**)+ **注册表文件写入(port + token)** + git 封装 + 只读主门禁 + fixture 第一批 → S2 变更列表 + diff2html 渲染 + 懒加载 → **S3a** 分支状态 → **S3b** 自动刷新 → **S3c** 进程生命周期(注册表**探活复用** + 空闲退出)→ S4 diff 边界情况 + git 异常状态 + fixture 第二批 → S5 Windows/Linux 真机验证 + 安全加固自查(**CI 跑通不等于可用**)→ S6 开源准备。各阶段展开见 spec §7。
 
 - **S3a / S3b / S3c 按序逐个收口,不得并行推进**;S3b 的首个交付物是三档强制指定的环境变量
-- **门禁不得晚于它所保护的代码**:只读白名单断言随 git 封装层在 S1 落地,安全校验随 server 在 S1 落地——**不得为让 dev 跑通而在后端放宽校验**(见第 5 节红线)
+- **门禁不得晚于它所保护的代码**:只读白名单断言随 git 封装层在 S1 落地,安全校验随 server 在 S1 落地,注册表写入同期落地(dev proxy 靠它拿 token)——**不得为让 dev 跑通而在后端放宽校验**(见第 5 节红线)
 - **每个阶段完成后立即对照 spec §6 中标记为本阶段的 `[Sx]` 验收项自查**,并满足 spec §9 的三条收口判据,不堆到后期集中验证
 - 测试数据分两批,时机与清单见 spec §7 末段;fixture 脚本对测试仓库的 git 写操作属"开发流程的 git",见第 1 节
 - 版本从 **0.1.0** 起,spec §6 全部通过 + 三端真机验证后才发 1.0.0。License MIT

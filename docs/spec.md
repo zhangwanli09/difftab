@@ -15,7 +15,9 @@
 
 核心用户:使用 AI coding agent 后,需要快速查看当前代码变更的开发者,跨平台(macOS / Windows / Linux)使用。
 
-分发方式:npm 包,`npm i -g gitglance` 全局安装(推荐)或 `npx gitglance` 直接试用。目标用户使用 AI coding agent,机器上必然已有 Node 环境,无需额外提供免运行时的分发形态。
+分发方式:npm 包,`npm i -g gitglance` 全局安装(推荐)或 `npx gitglance` 直接试用(pnpm 用户为 `pnpm add -g gitglance` / `pnpm dlx gitglance`)。目标用户使用 AI coding agent,机器上必然已有 Node 环境,无需额外提供免运行时的分发形态。
+
+**本仓库自身用 pnpm 开发(见 5.11),这与用户侧的安装方式无关**——包照常发到 npm registry,且 `dependencies` 为空、零传递依赖(见第 8 节),用户用哪个包管理器安装都一样。
 
 ## 3. 功能范围
 
@@ -114,7 +116,7 @@ scripts/               bench:startup、size 门禁
 
 - **重命名文件的 diff 必须同时传新旧两个路径**。懒加载若按常规只传新路径(`git diff HEAD -- <新路径>`),git 因为只看到一侧、无法配对,会把重命名**退化成一个全新增文件**(已实测,见第 10 节),导致"重命名识别并标注"的需求落空。正确做法是对重命名条目调用 `git diff HEAD -M -- <新路径> <旧路径>`,两个路径都来自上面 `2 ` 记录已经给出的信息,无需额外查询
 - **diff 按文件懒加载**:列表只做上述一次 status 调用,diff 在用户点击某个文件时才用 `git diff HEAD -- <path>` 单独取(重命名条目按上一条传两个路径)。**禁止一次性获取或渲染全仓 diff**——agent 单次改 300+ 文件是常态,整仓 diff 会冻结浏览器主线程数秒到数十秒,同时拖垮冷启动指标
-- **未跟踪文件**不在任何 `git diff` 输出内,需从 `git status` 取列表后单独构造 diff。**明确采用「直接读取文件内容手工构造 unified diff」方案**(输出 `--- /dev/null` / `+++ b/<path>`,全部行标记为新增),**不使用 `git diff --no-index`**——后者依赖 `/dev/null` 作为对比端,在 Windows 上不可移植。手工构造路径需自行做 NUL 字节探测(判定二进制)+ 5MB 体积阈值 + 行数上限
+- **未跟踪文件**不在任何 `git diff` 输出内,需从 `git status` 取列表后单独构造 diff。**明确采用「直接读取文件内容手工构造 unified diff」方案**(输出 `--- /dev/null` / `+++ b/<path>`,全部行标记为新增),**不使用 `git diff --no-index`**——后者依赖 `/dev/null` 作为对比端,在 Windows 上不可移植。手工构造路径需自行做 NUL 字节探测(判定二进制)+ 5MB 体积阈值 + **行数上限 50,000 行**(超出按 `too-large` 处理;体积阈值挡不住"几十 MB 单行"以外的另一头——超长行数的窄文件体积不大,但逐行构造 diff 与前端渲染同样会卡)
 - **二进制与大文件的判定来源**:已跟踪文件一律以 `git diff HEAD --numstat` 的输出为准(二进制文件输出 `-\t-\t<path>`),这是 git 自身含 `.gitattributes` 配置的判定结果,比启发式探测准确;文件体积用 `fs.stat`。只有未跟踪文件才走 NUL 字节探测
 - **仓库定位**:统一用 `git rev-parse --show-toplevel` 定位工作区、`git rev-parse --git-dir` 定位 git 目录。**不得假设 `.git` 是目录**——linked worktree 下 `.git` 是一个文件,submodule 同理;bare 仓库(无工作区)给出明确的拒绝提示而非崩溃
 - **启动前置检查**:`git` 不在 PATH、当前目录不是 git 仓库、git 版本低于 2.11(`--porcelain=v2` 的最低要求),三种情况均给出一句话友好报错,而不是抛 Node 异常栈
@@ -209,7 +211,7 @@ scripts/               bench:startup、size 门禁
 | **B** | Node < 24.14.0,macOS / Windows | `fs.watch(repoRoot, { recursive: true }, cb)` + 回调最前面复用同一个 `isIgnored` 过滤 | 同上 | 无 |
 | **C** | Node < 24.14.0,Linux | **不建递归 watch**,工作区改动走 1.5s 轮询 | 同上 | 标注降级模式 |
 
-- **档位判定用 `process.versions.node` 的 semver 比对**,不得靠特性探测:`fs.watch` 对未知选项是静默忽略,探测必然误判为"可用"(见第 10 节禁止项)
+- **档位判定用 `process.versions.node` 的 semver 比对**,不得靠特性探测:任何探测写法都要依赖 `fs.watch` 对未知选项的处理这一未文档化的内部细节,误判的代价是在 Linux 上静默退化成无 `ignore` 的递归 watch(见第 10 节禁止项)
 - **B 档为什么安全**:macOS / Windows 走原生 FSEvents / `ReadDirectoryChangesW`,单句柄监听整棵树,本就没有配额问题;`ignore` 在这两个平台上本身也只是回调后过滤(已核对源码),我们自己在回调里调同一个匹配函数即可,不是重新实现监听
 - **B 档的过滤必须发生在 debounce 之前**,否则 `node_modules` 的写入噪声照样把 debounce 窗口顶开、触发无谓刷新
 - **C 档不是全盘轮询**:`.git` 侧的目录级非递归 watch 与 Node 版本无关,提交、切分支仍是即时的;只有工作区文件改动退化为 1.5s 轮询
@@ -229,7 +231,8 @@ const isIgnored = (p: string) => p.split(/[\\/]/).some(seg => IGNORE_NAMES.has(c
 - **仍然不得写成 `node_modules/**` 这类含斜杠的字符串模式**:含斜杠会使 `matchBase` 失效,既匹配不到目录自身(白白进去一层),也匹配不到 monorepo 里嵌套的 `packages/*/node_modules`,两头落空。逐段函数两头都覆盖
 - `caseFold` 在 macOS / Windows 上做小写归一(对齐 `ignore` 内部 `nocase: isWindows || isMacOS`),Linux 上原样返回;`.git` 已在集合内,与档位无关
 - **`.git` 内部**:`isIgnored` 已把 `.git` 整个排除(C 档则根本没有递归 watch),因此三档都需对 `HEAD`、`index`、`refs/`、`MERGE_HEAD` / `rebase-*` 所在**目录**单独建**非递归** watch,否则检测不到提交与切分支。**绝不递归 `.git/objects`**
-- **兜底**:任一路径失败(ENOSPC / ENOSYS / 网络盘 NFS·SMB / Docker 卷)自动降级为 **1.5s 轮询 `git status --porcelain=v2 -z`**,并在 UI 上标注降级模式。这条与档位正交:A / B 档失败时同样落到轮询,C 档则是一开始就以它为工作区通路。`ignore` 解决的是配额,救不了这些场景,**兜底不可省略**
+- **兜底**:任一路径失败(ENOSPC / ENOSYS / 网络盘 NFS·SMB / Docker 卷)自动降级为 **1.5s 轮询**,并在 UI 上标注降级模式。这条与档位正交:A / B 档失败时同样落到轮询,C 档则是一开始就以它为工作区通路。`ignore` 解决的是配额,救不了这些场景,**兜底不可省略**
+  - **轮询必须复用 5.2 的同一条命令 `git status --porcelain=v2 --branch -uall -z`,不得为"轮询只要知道变没变"而裁剪参数**。漏掉 `-uall` 的后果是静默的:git 会把未跟踪目录折叠成一行 `dir/`,于是**在一个已存在的未跟踪目录里新增文件根本不改变输出**,轮询判定为"无变化"、页面不刷新,而这正是 agent 边跑边生成文件时最常见的形态。漏掉 `--branch` 则会丢掉提交与切分支的检测(C 档只有 `.git` 侧的非递归 watch 兜着)。两条命令保持逐字一致,也让 5.10 的只读白名单只需覆盖一种调用形态
 
 另有三条 Node 官方文档载明的行为约束,三档均适用:
 
@@ -267,6 +270,7 @@ const isIgnored = (p: string) => p.split(/[\\/]/).some(seg => IGNORE_NAMES.has(c
 4.1 的"零写操作"是产品核心承诺,需要能自动化证伪,而不是靠人工审查代码。**"前后 `git status` 比对无变化"强度不足**——它发现不了写进 `.git/` 但不改变 status 输出的操作(意外触发 gc、写 index、创建对象)。因此采用两层验证,均纳入 CI 门禁:
 
 1. **主门禁**:测试期间用 fake git wrapper 劫持所有 git 调用并记录完整子命令,断言只出现只读白名单(`status` / `diff` / `rev-parse` / `ls-files` / `symbolic-ref` 等)
+   - **Windows 上 shim 的形态需单独落地**:PATH 劫持要求存在一个 Windows 认得的可执行文件(`git.cmd` / `git.exe`),裸的无扩展名脚本不会被找到;且 Node 的 `spawn` 不带 `shell` 时对 `.cmd` 的解析与 POSIX 不同。**S1 建立主门禁时须在 CI 的 Windows 档实测确认劫持真的生效**——只在 macOS 上验过就推广,会让 Windows 档变成"门禁跑了但什么都没劫持到"的假绿,而假绿的只读门禁比没有门禁更糟
 2. **冒烟测试**:`chmod -R a-w .git` 后跑一遍完整流程,任何写尝试都会直接失败暴露
 
 **唯一的非 git 子进程豁免**:5.1 的拉起浏览器(`open` / `cmd /c start ""` / `xdg-open`)。它不经过 git 封装层、fake git wrapper 也劫持不到,因此需在测试里**单独断言**:产品代码中除 git 封装层外只存在这一处 `child_process` 调用,且被调命令来自这三者的固定映射、参数只有 URL 一项。CI 里该调用需可通过环境变量关闭,避免每次跑测试都弹出浏览器。
@@ -277,16 +281,27 @@ const isIgnored = (p: string) => p.split(/[\\/]/).some(seg => IGNORE_NAMES.has(c
 
 | 位置 | 选型 | 版本 | 理由 |
 |---|---|---|---|
-| 构建 | Vite(Rolldown / Oxc) | 8.2.0 | 2026-03 发布,Rolldown 已为默认 bundler |
+| 包管理器 | pnpm | **11.20.0** | 严格 node_modules(不扁平化)+ 内容寻址存储。**版本的唯一事实来源是 `package.json` 的 `packageManager` 字段**,本表只作记录。见下方「包管理器」一段 |
+| 构建 | Vite(Rolldown / Oxc) | 8.2.1 | 2026-03 发布,Rolldown 已为默认 bundler |
 | 语言 | TypeScript(**仅 `--noEmit` 类型检查**) | 7.0.2 | 2026-07-08 稳定的 Go 原生编译器。本项目不需要 declaration emit,正好避开 7.x 尚在完善的部分;转译交给 Vite / tsdown。**二进制名是 `tsc`**——`tsgo` 是预览包 `@typescript/native-preview` 的名字,稳定版并入 `typescript` 主包后已回归 `tsc`(实测 `bin` 字段,见第 10 节) |
-| 前端框架 | Preact + @preact/signals | 10.29.7 / 2.10.1 | 见 5.4 |
+| 前端框架 | Preact + @preact/signals | 10.29.8 / 2.11.0 | 见 5.4 |
 | 样式 | Tailwind v4 + `@tailwindcss/vite` | 4.3.3 | 见 5.6 |
 | 后端打包 | tsdown(Rolldown 系) | 0.22.14 | 与 Vite 8 同引擎,产出单文件 ESM |
-| 格式化 / lint | Biome | 2.5.6 | 一个二进制覆盖 format + lint + import 排序,一份配置 |
+| 格式化 / lint | Biome | 2.5.7 | 一个二进制覆盖 format + lint + import 排序,一份配置 |
 | git hooks | lefthook | 2.1.10 | 单 YAML,不需要额外的 lint-staged |
 | 测试 | Vitest + `node:test` | 4.1.10 | 分层用途见下方 CI 一段 |
 
 **未采用**:React 19(~42 KB gzip,与"最轻"定位相悖)、Svelte 5(Biome 不支持 `.svelte` 模板/样式,需额外挂 Prettier)、Node 原生 type stripping 直接运行 `.ts`(会把运行时下限从 22.0.0 顶到 22.18,且给冷启动加转换开销,见第 10 节禁止项)。
+
+**包管理器**——pnpm 只用于开发期,不改变 2. 的分发口径,也不改变 `dependencies` 为空这一事实。**版本钉 pnpm 11**,本节的配置面按 11 描述(11 相对 10 有三处破坏性变更,均直接打在下列条目上,依据见第 10 节):
+
+- **版本的唯一事实来源是 `package.json` 的 `packageManager: "pnpm@11.20.0"` 字段**,不在别处重复写版本号。CI 用 `pnpm/action-setup` 且**不传 `version`**,让它读该字段;不依赖 Node 是否自带 Corepack——Corepack 已不再随 Node 25+ 发行版分发,而 CI 矩阵含 Node 26,靠它等于把工具链固定寄托在一个正在消失的东西上
+- **`pnpm-workspace.yaml` 是所有 pnpm 设置的唯一位置**,单包仓库同样需要这个文件。pnpm 11 起:**不再读 `package.json` 的 `pnpm` 字段**,`.npmrc` **只保留 registry 与鉴权**,其余设置一律改用 `pnpm-workspace.yaml` 里的 camelCase 键。**写错位置不报错、无 deprecation 警告,只是设置静默不生效**(见第 10 节),因此本节每一条约束的落地都必须连带确认它写在了正确的文件里
+- `pnpm-lock.yaml` 入库,所有非交互安装用 `pnpm install --frozen-lockfile`(CI、以及本地复现问题时)
+- **严格 node_modules 是资产不是障碍**:禁 `shamefullyHoist` / `nodeLinker: hoisted`(pnpm 11 的键名,写在 `pnpm-workspace.yaml`;理由见第 10 节)。任何被 import 的包必须由我们自己声明——5.5 提到的 diff2html 两个传递依赖(`diff`、`@profoundlogic/hogan`)由打包器经 diff2html 自身的依赖树解析,**我们的代码与配置不得直接引用它们**
+- **依赖的生命周期脚本默认不执行**:需要执行的包必须显式列进 **`allowBuilds`** 白名单(pnpm 11 把 `onlyBuiltDependencies` / `neverBuiltDependencies` / `ignoredBuiltDependencies` / `onlyBuiltDependenciesFile` / `ignoreDepScripts` 合并成的这一个 map 设置,形如 `allowBuilds: { lefthook: true }`)。**已知 `lefthook` 需要**——它靠安装后脚本把 git hooks 写进 `.git/hooks`,漏列不报错、安装照常成功,只是 hooks 静默没装、提交前检查全线失效。S0 建立时逐个确认该清单
+- **S0 的三项前提验证一律在 pnpm 的 node_modules 布局下跑**(见第 7 节),尤其第 2 项深导入 `diff2html/lib-esm/ui/js/diff2html-ui-base.js` 与第 3 项体积 spike:在 npm 扁平布局下通过、换到严格布局才 resolve 失败,是这类 spike 最典型的假绿
+- **`test/fixtures/` 的生成脚本与 `scripts/` 下的 bench / size 门禁脚本必须是零依赖纯 JS,可由 `node <路径>` 直接执行**,`package.json` 里的 `fixtures` / `bench:startup` / `size` 只是别名。理由与下方 matrix 档"完全不装依赖"同源:这些脚本要在没有 pnpm、没有 `node_modules` 的 matrix 机器上跑,一旦写成 TS 或引入 devDependency,matrix 档就只能退回"装一点点",而那是第 10 节明令禁止的
 
 **产物结构**:
 
@@ -309,12 +324,14 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 
 - `changeOrigin: true` → `Host` 头改写为后端的 `127.0.0.1:<port>`
 - `configure` 中把 `Origin` 头重写为后端自身 origin
-- `configure` 中从 `os.tmpdir()` 的单实例注册表(5.8)读出 token,注入 `Cookie` 头
+- `configure` 中从 `os.tmpdir()` 的单实例注册表(5.8)读出 port 与 token,注入 `Cookie` 头
+
+**因此注册表文件的写入必须与 server 同期落地(S1),不能等到 S3c。** 5.8 的单实例能力可以拆开:**"server 启动即把 port + token 写进注册表"属 S1**(含 5.8 要求的 `0o600` + `O_EXCL`),**"启动时探活复用已有实例"与"空闲 45 秒退出"才属 S3c**。若把整个注册表推到 S3c,S1–S3b 期间 dev proxy 就没有 token 来源,而那段时间里"临时给后端加个放宽校验的环境变量"恰好是最短路径——正是第 10 节明令禁止、且第 7 节总原则("门禁不得晚于它所保护的代码")要求消除的那种排期。
 
 **CI 分层**——`tsdown` 要求 Node `^22.18 || >=24.11`、Vite 8 要求 `>=22.12`,均高于产品运行时下限 22.0.0,因此 CI 必须拆成两层。矩阵作业测的是**用户真正拿到的产物**,而非 TS 源码:
 
-1. **build 作业**(Node 24):`biome ci` → `tsc --noEmit` → `vitest run`(单元/集成,直接跑 TS 源码)→ 构建 → 检查产物体积门禁(5.5)→ 上传 `dist/` artifact
-2. **matrix 作业**(Node **22.0.x** / 24 / 26 × macOS / Windows / Linux):下载 `dist/` artifact,**不安装任何 devDependency**,跑纯 JS 编写的冒烟套件(`node:test`)——CLI 启动、status、diff、5.10 的两层只读验证、冷启动 ≤300ms 测量、版本守卫(在低于下限的 Node 上必须打印友好提示而非 SyntaxError)
+1. **build 作业**(Node 24):`pnpm/action-setup` → `actions/setup-node`(`cache: 'pnpm'`)→ `pnpm install --frozen-lockfile` → `biome ci` → `tsc --noEmit` → `vitest run`(单元/集成,直接跑 TS 源码)→ 构建 → 检查产物体积门禁(5.5)→ 上传 `dist/` artifact。**`pnpm/action-setup` 必须排在 `actions/setup-node` 之前**,否则后者的 `cache: 'pnpm'` 找不到 pnpm 可执行文件,缓存步骤直接失败
+2. **matrix 作业**(Node **22.0.x** / 24 / 26 × macOS / Windows / Linux):下载 `dist/` artifact,**完全不执行安装、也不需要 pnpm**,用 `node --test` 直接打到纯 JS 编写的冒烟套件文件(不经 `package.json` 的 script)——CLI 启动、status、diff、5.10 的两层只读验证、冷启动 ≤300ms 测量、版本守卫(在低于下限的 Node 上必须打印友好提示而非 SyntaxError)。**不得改成"装一点点"**(如 `pnpm install --prod`),理由见第 10 节
 3. 5.10 的 fake git wrapper 靠 PATH 劫持,与代码是否打包无关,归属 matrix 作业
 
 ### 5.12 后端接口契约
@@ -326,7 +343,7 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 | 端点 | 返回 | 说明 |
 |---|---|---|
 | `GET /` | `dist/web` 静态资源 | 固定文件名不加 hash(见 5.9) |
-| `GET /api/state` | `{ branch: BranchState, files: FileEntry[] }` | 对应 5.2 的**单次** status 调用 |
+| `GET /api/state` | `{ branch: BranchState, files: FileEntry[], watch: WatchState }` | 对应 5.2 的**单次** status 调用;`watch` 见下 |
 | `GET /api/diff?path=&oldPath=` | `DiffPayload` | 按文件懒加载;`oldPath` 仅重命名条目传(5.2 的双路径要求) |
 | `GET /api/events` | SSE | 事件 `change` / `heartbeat`;5.8 的空闲退出以本端点的连接数判定,不另设保活端点 |
 
@@ -335,8 +352,9 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 - `FileEntry { path; oldPath?; kind: 'tracked' | 'untracked'; staged; unstaged; renameScore? }`——`staged` / `unstaged` 承载 `porcelain=v2` 的双状态位,`oldPath` + `renameScore` 来自 5.2 的 `2 ` 记录
 - `BranchState { head; detached: boolean; upstream: null | { ahead; behind }; operation?: 'rebase' | 'merge' | … }`——**`upstream: null` 即"无上游"**。第 6 节要求无 `# branch.ab` 行时展示"无上游"而非 0/0,把它编码进类型而非留作约定,前端就不可能漏掉这条分支
 - `DiffPayload` 为判别联合:`{ kind: 'text', patch }` / `{ kind: 'binary' }` / `{ kind: 'too-large', size }` / `{ kind: 'untracked-text', patch }`
+- `WatchState { mode: 'native' | 'polling'; tier: 'A' | 'B' | 'C' }`——承载 5.7 的档位与是否已降级。**第 6 节多处要求"UI 明确标注降级模式",而降级既可能是 C 档的既定形态、也可能是 A/B 档运行中落到轮询兜底,前端无从自己推断,必须由后端告知**;放进协议类型也正是 5.0 边界不变式第 4 条(前端不内联 git / 监听知识)的要求
 
-**字段定型时机**:**payload 的字段与判别式在 S1/S2 即定型,即使 `binary` / `too-large` / 重命名标注的填充逻辑要到 S4 才实现**。S4 之前后端可以永远不返回这几个分支,但类型里必须先有。这与第 7 节"第一批 fixture 决定解析器结构"是同一条论证:字段晚定,等于前端在 S2 按 `kind: 'text'` 单一形状写死,S4 再回头改渲染分支。
+**字段定型时机**:**payload 的字段与判别式在 S1/S2 即定型,即使 `binary` / `too-large` / 重命名标注的填充逻辑要到 S4 才实现、`watch` 的真实取值要到 S3b 才有**。在此之前后端可以永远不返回那几个分支、`watch` 固定返回占位值,但类型里必须先有。这与第 7 节"第一批 fixture 决定解析器结构"是同一条论证:字段晚定,等于前端在 S2 按 `kind: 'text'` 单一形状、按"永远不降级"写死,S3b / S4 再回头改渲染分支。
 
 **错误约定**:`{ error: { code, message } }`,`message` **不含绝对路径**(与 5.9 及 S5 的安全自查一致)。
 
@@ -387,7 +405,7 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 
 - [ ] `[S1]` 5.10 的**主门禁**(fake git wrapper 劫持并断言 git 子命令只出现在只读白名单)与浏览器拉起的单点断言均通过,并随 git 封装层一同纳入 CI 门禁
 - [ ] `[S2]` 5.10 的**第二层**(`chmod -R a-w .git` 后跑完整流程)通过并纳入 matrix 作业;Windows 上改用只读 ACL 或显式跳过,不得静默通过
-- [ ] `[S1]` **dev 代理未以放宽后端校验实现**:后端代码中不存在任何绕过 Host / Origin / token 校验的环境变量或分支;`vite dev` 下页面功能正常
+- [ ] `[S1/S2]` **dev 代理未以放宽后端校验实现**:后端代码中不存在任何绕过 Host / Origin / token 校验的环境变量或分支;`vite dev` 下经代理发出的请求能通过后端三道校验拿到 `/api/state`(S1 即可验到这一步——此时前端尚未建立,以请求本身通过为准;完整页面功能待 S2)
 - [ ] `[S0/S1]` **5.0 的架构边界可自动断言**:CI 中存在规则或脚本,能在「`src/web` 反向 import `src/server`(`shared/` 除外)」或「`server/git` 之外出现 git 子进程调用」时失败。import 方向部分由 Biome 的 `noRestrictedImports` 承担(S0 建立),子进程单点部分与 5.10 主门禁合并断言(S1 建立)
 
 **性能与资源**
@@ -406,10 +424,13 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 
 - [ ] `[S0/S2]` **产物体积门禁**:5.5 的三行门禁(前端 JS 明文 ≤350 KB / gzip ≤120 KB、CSS 明文 ≤40 KB)自动化测量并纳入 CI;S0 的 spike 预估与 S2 的收口实测均回填 5.5 表格
 - [ ] `[S0]` **静态检查进 CI**:`biome ci` 与 `tsc --noEmit` 均为 CI 门禁,失败即阻断
-- [ ] `[S2]` **下限档跑的是构建产物**:CI matrix 的 Node **22.0.x** 档在不安装任何 devDependency 的前提下,对下载的 `dist/` artifact 跑通全部冒烟套件;5.10 的两层只读验证与冷启动 ≤300ms 测量均在构建产物上执行,而非 TS 源码(matrix 作业本身在 S0 即拉起,此项以冒烟套件补齐为准)
-- [ ] `[S0]` **发布产物内容干净**:`npm pack` 结果只含 `bin/`、`dist/`、README、LICENSE、`package.json`,不含 `src/`、配置文件、测试与任何 devDependency
+- [ ] `[S2]` **下限档跑的是构建产物**:CI matrix 的 Node **22.0.x** 档在完全不执行安装的前提下,对下载的 `dist/` artifact 跑通全部冒烟套件;5.10 的两层只读验证与冷启动 ≤300ms 测量均在构建产物上执行,而非 TS 源码(matrix 作业本身在 S0 即拉起,此项以冒烟套件补齐为准)
+- [ ] `[S0]` **发布产物内容干净**:`pnpm pack --dry-run --json` 列出的文件清单只含 `bin/`、`dist/`、README、LICENSE、`package.json`,不含 `src/`、配置文件、测试与任何 devDependency。注意打包出的 `package.json` 因 pnpm 的 manifest obfuscation 本就与仓库里的不同(剥离 `packageManager` 与 publish 生命周期脚本),核对时勿误判(见第 10 节)
+- [ ] `[S0]` **pnpm 安装可复现**:干净环境(无 store 缓存、无 `node_modules`)下 `pnpm install --frozen-lockfile` 通过且不修改 `pnpm-lock.yaml`
+- [ ] `[S0]` **`allowBuilds` 白名单生效**:安装后 `.git/hooks` 下确有 lefthook 写入的钩子文件且能触发——**以钩子文件实际存在为准,不以安装日志无报错为准**,漏列白名单时安装本身是成功的(见 5.11)
+- [ ] `[S0]` **pnpm 设置写在正确的文件里**:`allowBuilds` 等设置位于 `pnpm-workspace.yaml`;`package.json` 无 `pnpm` 字段、`.npmrc` 无非 auth 设置——**pnpm 11 对写错位置的设置是静默忽略**,故此项须逐个设置确认实际生效(如上一条以钩子文件为准),不能只看文件里写了什么(见 5.11)
 - [ ] `[S1/S5]` `npm i -g gitglance` 后在 Node 22+ 环境下能正常运行,macOS / Windows / Linux 三端均验证通过;低于 22 时打印明确的版本要求提示并以非 0 退出,**不得是 SyntaxError 或 Node 异常栈**——版本守卫必须先于任何可能超出该语法/API 范围的模块加载执行
-- [ ] `[S0]` **`bin/gitglance.js` 未被构建管线触碰**:发布产物中该文件与仓库源文件逐字节一致,且在低于下限的 Node 上仍能正确报错(与上方版本守卫验收项联测)
+- [ ] `[S0]` **`bin/gitglance.js` 未被构建管线触碰**:跑完完整构建后,该文件与仓库源文件逐字节一致,且不出现在任何打包入口中(该文件在 S0 即须定稿——它是手写保守语法 JS、不参与构建,内容不依赖后续阶段;真机上"低于下限的 Node 打印友好提示"部分见上方版本守卫项,标 `[S1/S5]`)
 
 ## 7. 实施阶段
 
@@ -419,19 +440,19 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 
 | 阶段 | 内容 | 注意事项 |
 |---|---|---|
-| **S0** | 工具链脚手架:`package.json`(含 `engines` / `files` / scripts)、Vite + tsdown 配置、两份 tsconfig、Biome、lefthook、冷启动测量脚本;**按 5.0 建立目录骨架与依赖方向断言规则**;CI 两层作业骨架,且 **matrix 层的三平台 × Node 22/24/26 即刻拉起**(初期跑占位冒烟即可) | 三项前提验证须在本阶段收口,见下方「S0 的三项前提验证」。matrix 提前拉起是为了让 Windows / Linux 回归从第一天起持续存在,而不是堆到 S5 一次性暴露 |
-| **S1** | CLI 脚手架 + HTTP server(**按 5.9 最终形态实现,含三道校验**)+ git shell 封装(status/diff)+ **5.12 协议类型随 server 一同定型** + **测试数据第一批** + **5.10 主门禁入 CI** | server 一建立即是最终形态,5.11 的 dev proxy 三道改写同期落地。**先做前端再补校验的顺序,会把"临时加环境变量放宽后端"变成本阶段内的最短路径,而那是第 10 节明令禁止的做法** |
+| **S0** | 工具链脚手架:`package.json`(含 `engines` / `files` / scripts / `packageManager`)、`pnpm-lock.yaml`、`pnpm-workspace.yaml`(承载 `allowBuilds` 等全部 pnpm 设置)、`.gitignore`、**`bin/gitglance.js`(手写定稿,见 5.1)**、Vite + tsdown 配置、两份 tsconfig、Biome、lefthook、冷启动测量脚本;**按 5.0 建立目录骨架与依赖方向断言规则**;CI 两层作业骨架,且 **matrix 层的三平台 × Node 22/24/26 即刻拉起**(初期跑占位冒烟即可) | 三项前提验证须在本阶段收口,见下方「S0 的三项前提验证」。matrix 提前拉起是为了让 Windows / Linux 回归从第一天起持续存在,而不是堆到 S5 一次性暴露。`bin/gitglance.js` 放在 S0 是因为它不参与构建、内容不依赖后续阶段,而第 6 节"未被构建管线触碰"这条验收项要成立,它必须在构建管线建立的同一阶段就已存在 |
+| **S1** | CLI 脚手架 + HTTP server(**按 5.9 最终形态实现,含三道校验**)+ **注册表文件写入(port + token,`0o600` + `O_EXCL`)** + git shell 封装(status/diff)+ **5.12 协议类型随 server 一同定型** + **测试数据第一批** + **5.10 主门禁入 CI** | server 一建立即是最终形态,5.11 的 dev proxy 三道改写同期落地。**注册表的"写入"必须在本阶段**,否则 dev proxy 无 token 来源(见 5.11);"探活复用"与"空闲退出"留 S3c。**先做前端再补校验的顺序,会把"临时加环境变量放宽后端"变成本阶段内的最短路径,而那是第 10 节明令禁止的做法** |
 | **S2** | 前端变更列表 + diff2html 渲染 + 按文件懒加载联动,基础样式(Tailwind `@theme` 承载 VS Code token) | 收口时实测并回填 5.5 的产物体积表;5.10 第二层(只读 `.git` 冒烟)在此建立并入 matrix 作业 |
 | **S3a** | 分支状态展示(只读) | — |
 | **S3b** | 自动刷新:SSE 通道 + `.git` 非递归 watch + A / B 档 `isIgnored` 过滤 + C 档轮询 + 通用轮询兜底(5.7) | **首个交付物是"三档强制指定的内部环境变量"**——没有它,后续所有档位的验收项在单机上都无从自查 |
-| **S3c** | 进程生命周期:单实例注册表(`os.tmpdir()` + `0o600` + `O_EXCL` + HTTP 探活)+ 空闲 45 秒退出(5.8) | — |
+| **S3c** | 进程生命周期:启动时读注册表并对已记录端口做 **HTTP 探活**、命中则复用已有实例;空闲 45 秒退出 + 退出时清理注册表(5.8) | 注册表文件的**写入**已在 S1(见该行);本阶段补的是**消费**它的那一半 |
 | **S4** | Diff 边界情况处理:未跟踪文件/新文件/删除/重命名标注/二进制/超大文件 + git 异常状态(空仓库、detached HEAD、rebase 进行中、worktree、bare)+ **测试数据第二批** | 5.3 的 SHA-256 空树常量在本阶段实测回填 |
 | **S5** | Windows / Linux 真机验证 + 安全**加固自查**(端口选择、token 熵、CSP 实测生效、错误信息不泄漏绝对路径) | 安全**实现**已在 S1,本阶段只做真机与渗透式复核。Windows 路径与浏览器拉起、Linux 降级路径必须在真机上触发验证,CI 跑通不等于可用 |
 | **S6** | 开源准备(见第 8 节) | — |
 
 S3 拆出的三件事**按 S3a → S3b → S3c 顺序逐个收口,不得并行推进**——三者互相独立,合并推进时任一处的故障都会被另外两处的噪声掩盖。
 
-**S0 的三项前提验证**——每一项都是某个方案能否成立的前提而非既定事实,任一项不通过都在 S0 内改方案,不带进后续阶段:
+**S0 的三项前提验证**——每一项都是某个方案能否成立的前提而非既定事实,任一项不通过都在 S0 内改方案,不带进后续阶段。**三项一律在 pnpm 的严格 node_modules 布局下执行**(见 5.11):在 npm 扁平布局下通过、换到严格布局才 resolve 失败,是这类 spike 最典型的假绿。
 
 1. `@import "tailwindcss"` 在 Tailwind v4 构建期展开后,后续 `@import` 的内容确实保持 unlayered(5.6)。不通过则改用不引 preflight + 自写最小 reset 的备选方案
 2. 深导入 `diff2html/lib-esm/ui/js/diff2html-ui-base.js` 能被 Rolldown 正确 tree-shake、hljs 实例可注入、`highlightCode()` 实际出颜色(5.5)。不通过则 S2 的整条渲染路径需重做,必须在编码开始前暴露
@@ -452,25 +473,28 @@ S3 拆出的三件事**按 S3a → S3b → S3c 顺序逐个收口,不得并行�
 - **License**:MIT。运行时依赖 diff2html 为 MIT、highlight.js 为 BSD-3-Clause,均兼容
 - **仓库/包名**:`gitglance`(2026-07-28 复核 npm registry 返回 404,确认未占用;`git-glance` 已被他人占用 v1.0.1,仅影响搜索时的混淆,不构成冲突。GitHub 仓库名待发布前确认)
 - **需要补的东西**:README(功能说明+安装步骤)、LICENSE 文件、清理硬编码的个人路径/凭据、简单的 Issue/PR 规范、semver + GitHub Releases
-- **发布产物约定**:`package.json` 的 `files` 字段白名单为 `bin/`、`dist/`、README、LICENSE;`prepublishOnly` 执行完整构建;发布前用 `npm pack --dry-run` 核对产物内容,确认不含 `src/`、配置文件与测试(验收见第 6 节)。前端依赖(diff2html / highlight.js / preact)在构建期即被打进 `dist/web/app.js`,后端只用 Node 标准库,因此 **`dependencies` 为空**——用户 `npm i -g` 时零传递依赖安装,应在 README 中说明
+- **发布产物约定**:`package.json` 的 `files` 字段白名单为 `bin/`、`dist/`、README、LICENSE;`prepublishOnly` 执行完整构建;发布前用 `pnpm pack --dry-run --json` 核对产物内容,确认不含 `src/`、配置文件与测试(验收见第 6 节)。前端依赖(diff2html / highlight.js / preact)在构建期即被打进 `dist/web/app.js`,后端只用 Node 标准库,因此 **`dependencies` 为空**——用户 `npm i -g` 时零传递依赖安装,应在 README 中说明
+- **`pnpm publish` 与 `npm publish` 的差异**(均已实测,见第 10 节):pnpm 默认会做 git 检查(工作区必须干净、分支需匹配),这层检查有价值、**不要用 `--no-git-checks` 关掉**;`prepublishOnly` **确实会被执行**,上一条不会落空。另注意 pnpm 打包时默认做 **manifest obfuscation**——会从发布出去的 `package.json` 里剥掉 `packageManager` 字段与 publish 生命周期脚本。这对本项目是想要的(用户侧不该看到我们的开发期工具链),**不要用 `--skip-manifest-obfuscation` 关掉**,但核对产物时要知道打出来的 `package.json` 本就与仓库里的不同,别误判为产物不干净
 - **版本号约定**:首个 npm 发布版本为 **0.1.0**。在 0.x 阶段保留破坏性调整的余地(尤其是 CLI 参数与端口/token 行为),待第 6 节验收标准**全部**通过、且三端真机验证完毕后再发 **1.0.0**。不要为了"看起来正式"直接从 1.0.0 起步——本工具的核心承诺是只读与零副作用,1.0.0 应当是这些承诺被 5.10 两层验证覆盖之后的结果,而不是起点
 - **平台支持**:正式支持 macOS / Windows / Linux 三端,均需测试保证可用。用 GitHub Actions 三端 runner 跑测试,并在每个平台上做人工验证。CI 版本矩阵 **Node 22 / 24 / 26** × 三平台(22 这档同时覆盖 5.7 的 B 档与 C 档);`package.json` 的 `engines.node` 声明为 `>=22.0.0`
 
 ## 9. 开发方式
 
 - 全程使用 Claude Code 进行开发,按第 7 节 S0–S6 顺序推进
-- 项目根目录维护 `CLAUDE.md`,避免开发过程中"发明"未授权的写操作或功能。**`CLAUDE.md` 是每轮会话无条件加载的常驻上下文,因此只承载摘要与路由,不承载论证** —— 内容为三部分:
+- 项目根目录维护 `CLAUDE.md`,避免开发过程中"发明"未授权的写操作或功能。**`CLAUDE.md` 是每轮会话无条件加载的常驻上下文,因此只承载摘要与路由,不承载论证** —— **至少**包含以下三部分:
   - 第 4 节 Non-goals **摘要**(4.1、4.2 两类各保留条目本身,理由删去)
   - 第 10 节「被排除的做法」中**违反后不报错、只是静默出错**的条目,压成一行式红线(只写规则,不写理由)
-  - 一张「改哪块 → 动手前先读本文档哪节」的路由表,覆盖第 5 节各小节
+  - 一张「改哪块 → 动手前先读本文档哪节」的路由表,**覆盖第 5 节各小节**(5.0–5.12 每节都要有落点)
+
+  另按实际需要承载几项同样"每轮都用得上、且不适合放进 spec"的内容,当前为:产品定位一句话、**两个 git 作用域的区分**(产品运行时的 git 受零写操作约束,开发流程的 git 不受——这条不澄清会导致工具拒绝执行本仓库的正常版本控制操作)、提交约定、常用命令表、开发阶段概览。新增此类内容前先确认它不属于"论证",论证一律留在 spec。
 - **第 10 节仍是「被排除的做法」的唯一来源**,`CLAUDE.md` 不再逐条转写整表;增删禁止项只改第 10 节,避免同一条约束散落多处、改一漏二
 - 每个阶段完成后,对照第 6 节中标记为本阶段的验收项自查,不堆到后期集中验证
 
 **阶段收口判据(Definition of Done)**——一个阶段算完成,须同时满足三条:
 
 1. 第 6 节中标记为本阶段的验收项**全部**打勾;因客观条件(如缺真机)无法当场验证的,显式记为待 S5 复核,而不是默认通过
-2. `biome ci`、`tsc --noEmit`、`npm test`,以及截至本阶段已建立的冒烟与门禁脚本(只读性两层验证、体积、冷启动)全部为绿
-3. `CLAUDE.md` 第 3 节命令表已补全本阶段新增的 npm script
+2. `biome ci`、`tsc --noEmit`、`pnpm test`,以及截至本阶段已建立的冒烟与门禁脚本(只读性两层验证、体积、冷启动)全部为绿
+3. `CLAUDE.md` 第 3 节命令表已补全本阶段新增的 `package.json` script
 
 ## 10. 附录:关键决策的依据
 
@@ -504,7 +528,7 @@ S3 拆出的三件事**按 S3a → S3b → S3c 顺序逐个收口,不得并行�
 - **`html()` 不含语法高亮**:核对 `lib-esm/ui/js/diff2html-ui-base.js`,高亮由 `Diff2HtmlUI.highlightCode()` 完成,依赖 `./highlight.js-helpers` 的 `closeTags` / `nodeStream` / `mergeStreams` / `getLanguage`;`draw()` 内部为 `targetElement.innerHTML = …` 后逐项绑定事件。模块明文体积:`diff2html-ui-base.js` 7,252 B、`highlight.js-helpers.js` 13,699 B、`diff2html.js` 1,556 B、`diff2html-templates.js` 12,711 B。diff2html 的 `package.json` **无 `exports` 字段**,深导入合法。这是 5.5 允许深导入 ui-base 源码模块的依据
 - **hljs 的三个"语言"实际不存在**:`highlight.js@11.11.1/es/languages/{jsx,tsx,toml}.js` 实测均 404;`ini.js` 中 `aliases: ['toml']`、`javascript.js` 中 `aliases: ['js','jsx','mjs','cjs']`、`typescript.js` 含 `tsx`。这是 5.5 语言清单定为 22 个真实模块的依据
 - **语言子集体积实测**(`es/languages/*.js` 明文,22 个模块):swift 22,517 / typescript 21,359 / scss 19,468 / css 18,884 / javascript 17,756 / php 14,425 / cpp 12,689 / sql 11,990 / ruby 9,944 / python 9,190 / csharp 8,562 / c 8,292 / kotlin 7,464 / xml 7,007 / bash 6,523 / java 6,233 / rust 6,130 / markdown 5,253 / yaml 5,022 / go 3,195 / ini 2,352 / json 1,343 B,**合计 225,598 B**;`es/core.js` 仅 202 B(入口再引内部模块)。压缩后约 130 KB / gzip 约 40 KB,是 5.5 JS 门禁的主导项
-- **hljs 主题 CSS 的必要性**:实测 `diff2html.min.css` 中含 hljs 的规则数为 **0**,预构建 slim 包也只含 hljs 运行时与语言定义、不含配色。需另引 `highlight.js/styles/*.min.css`(`github.min.css` 1,309 B、`github-dark.min.css` 1,315 B)。这是 5.5 体积表补两行的依据
+- **hljs 主题 CSS 的必要性**:实测 `diff2html.min.css` 中含 hljs 的规则数为 **0**,预构建 slim 包也只含 hljs 运行时与语言定义、不含配色。需另引 `highlight.js/styles/*.css`(**体积数取自 min 版**:`github.min.css` 1,309 B、`github-dark.min.css` 1,315 B,合计约 2.6 KB;5.6 的 `@import` 写的是非 min 的 `github.css` / `github-dark.css`,构建期由 Vite 压缩,最终产物对齐 min 版口径)。这是 5.5 体积表补两行的依据
 - **diff2html 模板中的内联 `style=` 出现 0 次**(`lib-esm/diff2html-templates.js` 实测);`draw()` 改样式走 CSSOM(`el.style.display = …`),不受 CSP 约束。这是 5.9 严格 CSP 不需要 `'unsafe-inline'` 的依据
 - **前端框架体积量级**:Preact 运行时约 4 KB gzip,React 19 + ReactDOM 约 42 KB gzip,Svelte 5 编译后运行时约 2-5 KB。Svelte 的劣势在工具链而非体积——Biome 2.x 对 `.svelte` 仅覆盖 `<script>` 块,模板与样式仍需 Prettier + `prettier-plugin-svelte`,与 5.11 "一个二进制一份配置" 的取向冲突。这是 5.4 选 Preact 的依据
 
@@ -523,6 +547,14 @@ S3 拆出的三件事**按 S3a → S3b → S3c 顺序逐个收口,不得并行�
 - **CSP 指令的回退规则**:`frame-ancestors` / `base-uri` / `form-action` 均**不回退到 `default-src`**,`default-src 'none'` 对它们无效,须显式声明。这是 5.9 补这三个指令的依据
 - **冷启动实测**:node 启动 + `http.listen` + 一次 `git status --porcelain=v2 --branch -uall -z` 全程约 **30ms 墙钟**(裸 node 启动约 10-30ms),300ms 预算充裕
 - **npm 包名**:`gitglance` registry 返回 404,未被占用;`git-glance` 为他人 1.0.1,仅影响搜索时的混淆,不构成冲突
+- **pnpm 相关事实**(2026-08-06 就本机 pnpm 11.20.0 逐条实测 + 官方迁移文档复核;此前本组曾按 pnpm 10 撰写并标记"尚未实测",其中一条已证伪,见下):
+  - **版本**:latest 为 **11.20.0**,`packageManager` 即钉此版本。**pnpm 11 相对 10 有三处破坏性变更,恰好全部打在 5.11 的配置面上**,因此本项目按 11 而非 10 落地
+  - **`onlyBuiltDependencies` 在 pnpm 11 已被移除**:与 `neverBuiltDependencies` / `ignoredBuiltDependencies` / `onlyBuiltDependenciesFile` / `ignoreDepScripts` 一并合并为单一的 **`allowBuilds`** map 设置(`{ 包名: true | false }`)。这是 5.11 白名单写法的直接依据
+  - **配置文件位置**:pnpm 11 **不再读 `package.json` 的 `pnpm` 字段**,也**不再把 `.npmrc` 当通用设置文件**(只留 registry 与鉴权);pnpm 专有设置一律走 `pnpm-workspace.yaml`(或全局 `~/.config/pnpm/config.yaml`),原 `.npmrc` 的 kebab-case 键改为 camelCase。**写错位置不报错、无 deprecation 警告,只是设置静默不生效**(pnpm/pnpm#11536 记录了 `pnpm.overrides` / `pnpm.patchedDependencies` 被静默忽略的实例)。另注意环境变量前缀由 `npm_config_*` 改为 `pnpm_config_*`
+  - **`pnpm pack` 有 `--dry-run`**(实测 `pnpm pack --help`),另有 `--json` 可直接以 JSON 打印 tarball 内容清单。**此条修正了本节此前"`pnpm pack` 无 `--dry-run`"的错误断言**,第 6 节与第 8 节的产物核对口径随之改回 `--dry-run --json`,不必实际落 tarball
+  - **`pnpm publish` 的 git 检查**:默认要求工作区干净、分支匹配(`--no-git-checks` 可关,但不关),`npm publish` 无此行为。**`prepublishOnly` 确实会被执行**——`--ignore-scripts` 的帮助文本为 "Ignores any publish related lifecycle scripts (prepublishOnly, postpublish, and the like)"、`--force` 的帮助文本提到 "useful when a `prepublishOnly` script bumps the version",两处互证。另:pnpm 11 起 `publish` / `login` / `view` 等不再委托 npm CLI,改为原生实现
+  - **manifest obfuscation**:`pnpm pack` / `publish` 默认从打包出的 `package.json` 剥离 `packageManager` 字段与 publish 生命周期脚本(`--skip-manifest-obfuscation` 可关)。这是第 8 节提醒"核对产物时别把这份差异误判为不干净"的依据
+  - **Corepack 的去留**:Node TSC 已投票停止随发行版分发 Corepack,**Node 25+ 的官方发行版不再自带**(24 及以前仍带),需要时改为 `npm i -g corepack`。CI 矩阵含 Node 26,因此这是 5.11 选 `pnpm/action-setup` 而非 `corepack enable` 的直接依据
 
 **被排除的做法**
 
@@ -536,10 +568,11 @@ S3 拆出的三件事**按 S3a → S3b → S3c 顺序逐个收口,不得并行�
 | 空树哈希用 `git hash-object -t tree /dev/null` | 同上,`/dev/null` 不可移植;`git mktree` 则会写对象库,违反只读承诺 |
 | Linux 上直接用不带 `ignore` 的 `fs.watch({recursive:true})` | Node 在 Linux 是用户态实现,逐条目(含普通文件)注册 inotify 且不做排除,会耗尽 `max_user_watches` 并波及用户机器上的其他工具(详见 5.7)。**这正是 5.7 的 C 档在低版本 Linux 上宁可退回轮询、也不建递归 watch 的原因** |
 | Linux 上自行遍历目录树逐个注册 watch(手写一份递归监听) | Node 24.14.0 的 `ignore` 在 Linux 上即为注册前跳过,官方能力已覆盖该需求;自行实现等于维护一份更易出错的等价物。**被排除的是"手写 Linux 递归注册"这件事,不是"按平台/Node 版本选择策略"**——后者正是 5.7 三档方案本身 |
-| 用 try/catch 或传入选项后观察行为来探测 `ignore` 是否可用 | `fs.watch` 对未知选项**静默忽略**,不抛错也无返回值差异,探测必然误判为"可用"。在 Linux 上这会让 C 档静默退化成上面第一行被禁止的无 `ignore` 递归 watch。必须按 `process.versions.node` 做 semver 比对 |
+| 用 try/catch 或传入选项后观察行为来探测 `ignore` 是否可用 | 探测要成立,得依赖"支持的版本上传非法 `ignore` 会抛 `ERR_INVALID_ARG_TYPE`、不支持的版本上因选项被忽略而不抛"这一**内部实现细节**——它不是文档承诺的行为,一次校验时机调整就会让探测反过来把 A 档误判成 C 档、或把 C 档误判成 A 档。而后者在 Linux 上正是上面第一行被禁止的无 `ignore` 递归 watch,静默耗尽用户机器的 inotify 配额。`process.versions.node` 的 semver 比对与官方"自 24.14.0 起可用"的承诺一一对应,无此风险 |
 | B 档把 `isIgnored` 过滤放在 debounce 之后 | 过滤的目的是不让 `node_modules` 的写入噪声顶开 debounce 窗口;放在其后则窗口照样被反复重置、刷新照旧触发,过滤形同虚设 |
 | `ignore` 模式写成 `node_modules/**` 等含斜杠形式 | 含斜杠会使 minimatch 的 `matchBase` 失效:既匹配不到 `node_modules` 目录自身,也匹配不到 monorepo 中嵌套的 `packages/*/node_modules`,过滤形同虚设 |
 | `ignore` 传不含斜杠的字符串 basename 模式 | `matchBase` 只在模式为单段时把整条路径替换成 basename 再比,而 macOS / Windows 的原生 watcher 交给匹配器的是事件的**相对路径**(`node_modules/.bin/foo` → basename `foo`),模式 `node_modules` 匹配不上,过滤在这两个平台上完全失效(Linux 因为是对遍历条目本身求值才碰巧成立)。必须传**逐段匹配函数**,三档共用(详见 5.7) |
+| 降级轮询用裁剪过参数的 `git status`(如省掉 `-uall` / `--branch`) | 省掉 `-uall` 后 git 把未跟踪目录折叠成一行 `dir/`,**在一个已存在的未跟踪目录里新增文件不改变输出**,轮询判定"无变化"、页面静默不刷新——而这正是 agent 边跑边生成文件时最常见的形态;省掉 `--branch` 则丢掉提交与切分支的检测。轮询与主查询必须是逐字相同的一条命令(详见 5.7 / 5.2) |
 | 只靠 `-z` 解决路径转义 | `-z` 管不到 `git diff` 补丁正文的头部行,非 ASCII 路径仍会显示为 `\351\234\200` 转义串,须叠加 `-c core.quotePath=false`(详见 5.2) |
 | 重命名文件按单路径取 diff | git 只看到一侧无法配对,重命名会退化成全新增文件,"重命名识别并标注"落空(详见 5.2) |
 | 单实例注册表写进 `.git/` 或工作区 | 污染 `git status`,实质违背零写操作承诺 |
@@ -551,6 +584,10 @@ S3 拆出的三件事**按 S3a → S3b → S3c 顺序逐个收口,不得并行�
 | 让 `bin/gitglance.js` 参与 TS 编译或作为打包入口 | 可能被注入超出 Node 22 的语法、或被合并进主模块,低于下限的用户拿到解析期 SyntaxError,5.1 的版本守卫在解析期即失效 |
 | 为本地开发在后端加放宽 Host / Origin / token 校验的环境变量或分支 | 等于把 5.9 的正面防御做成一个可被误开的开关。dev server 的跨源问题应在代理层改写请求头解决,后端零 dev 分支(详见 5.11) |
 | 依赖 Node 原生 type stripping 直接运行 `.ts` 产品代码 | 会把运行时下限从 22.0.0 顶到 22.18(type stripping 在 22 线的可用版本),与 5.1 覆盖 Node 22 全线的取舍冲突;且每次启动都要付一次转换开销,挤占第 6 节的 300ms 冷启动预算。产品代码一律发布为已转译的 JS |
+| pnpm 开 `shamefullyHoist: true` 或 `nodeLinker: hoisted` | 用扁平化掩盖 phantom dependency:本机构建通过,换到别人机器、CI 或改依赖版本后才 resolve 失败,而那时问题已离开引入它的那次改动。严格布局暴露的正是必须暴露的问题——5.5 深导入 diff2html 内部模块的方案更需要这层校验 |
+| 把 pnpm 设置写进 `package.json` 的 `pnpm` 字段或 `.npmrc` | pnpm 11 两处都不再读取,**且是静默忽略、无 deprecation 警告**。后果不是报错而是"约束看起来写了、实际没生效"——`allowBuilds` 写错位置即等同于没写(hooks 静默不装),禁止扁平化的设置写错位置即等同于没禁。全部 pnpm 设置只放 `pnpm-workspace.yaml`(详见 5.11) |
+| matrix 作业用 `pnpm install --prod` 之类的"装一点点"代替完全不装 | 仍会建 `node_modules`、且要求每个 matrix 机器上有 pnpm,而该作业的全部意义是**只跑用户真正拿到的 `dist/` 产物**;一旦装了东西,测的就不再是那个东西,5.11 拆两层 CI 的理由随之落空 |
+| 靠 `corepack enable` 在 CI 里准备 pnpm | Corepack 正在从 Node 发行版剥离,而 CI 矩阵含 Node 26;哪天基础镜像不再自带,这一步就从"能用"变成失败或静默走到系统里的另一个 pnpm 版本。用 `pnpm/action-setup` 读 `packageManager` 字段(详见 5.11) |
 
 **外部参考**
 
@@ -566,4 +603,8 @@ S3 拆出的三件事**按 S3a → S3b → S3c 顺序逐个收口,不得并行�
 - [MDN:CSS Cascade Layers —— 无层声明与层内声明的优先级](https://developer.mozilla.org/en-US/docs/Web/CSS/@layer)
 - [tsdown 文档:面向库的 Rolldown 打包器](https://tsdown.dev/guide/)
 - [Biome 文档:formatter 与 linter](https://biomejs.dev/)
+- [pnpm v10 → v11 迁移指南:`allowBuilds`、配置文件位置变更](https://pnpm.io/migration)
+- [pnpm 11.0 发布说明:破坏性变更清单](https://pnpm.io/blog/releases/11.0)
+- [pnpm/pnpm#11536:pnpm 11 静默忽略 `package.json` 的 `pnpm` 字段](https://github.com/pnpm/pnpm/issues/11536)
+- [Node.js TSC 投票停止随发行版分发 Corepack](https://socket.dev/blog/node-js-tsc-votes-to-stop-distributing-corepack)
 - [Node.js Release Working Group:LTS 时间表](https://github.com/nodejs/Release)
