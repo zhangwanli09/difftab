@@ -1,0 +1,15 @@
+# git hooks(spec §5.11)。安装由 pnpm 的 allowBuilds 白名单放行 lefthook 的
+# postinstall 脚本完成 —— 漏列白名单时安装本身仍会成功,只是 hooks 静默不装,
+# 因此验收以 .git/hooks 下钩子文件实际存在为准(spec §6)。
+
+pre-commit:
+  parallel: true
+  jobs:
+    - name: biome
+      glob: "*.{js,mjs,cjs,ts,tsx,json,jsonc,css}"
+      run: pnpm exec biome check --no-errors-on-unmatched {staged_files}
+
+pre-push:
+  jobs:
+    - name: typecheck
+      run: pnpm run typecheck

@@ -1,0 +1,52 @@
+{
+  "name": "gitglance",
+  "version": "0.1.0",
+  "description": "Glance at what your AI coding agent changed — read-only local diff and branch viewer",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "gitglance": "bin/gitglance.js"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "packageManager": "pnpm@11.20.0",
+  "dependencies": {},
+  "scripts": {
+    "dev": "vite",
+    "build": "pnpm run build:web && pnpm run build:server",
+    "build:web": "vite build",
+    "build:server": "tsdown",
+    "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.web.json --noEmit",
+    "lint": "biome check",
+    "test": "vitest run",
+    "test:smoke": "node --test \"test/smoke/*.test.js\"",
+    "bench:startup": "node scripts/bench-startup.mjs",
+    "size": "node scripts/size.mjs",
+    "prepublishOnly": "pnpm run build",
+    "check:pack": "node scripts/check-pack.mjs",
+    "check:css": "node scripts/check-css-cascade.mjs",
+    "check:bin": "node scripts/check-bin-untouched.mjs"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.7",
+    "@preact/signals": "2.11.0",
+    "@tailwindcss/vite": "4.3.3",
+    "@types/node": "^22.20.1",
+    "diff2html": "3.4.56",
+    "highlight.js": "11.11.1",
+    "lefthook": "2.1.10",
+    "preact": "10.29.8",
+    "tailwindcss": "4.3.3",
+    "tsdown": "0.22.14",
+    "typescript": "7.0.2",
+    "vite": "8.2.1",
+    "vitest": "4.1.10"
+  }
+}

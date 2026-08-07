@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.tmp/
+*.tgz
+*.log
+
+# 测试仓库 fixture 由脚本生成,不入库
+test/fixtures/repos/
+
+.DS_Store

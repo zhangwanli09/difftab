@@ -1,0 +1,24 @@
+{
+  // 前后端两份 tsconfig 的公共部分(spec §5.11)。
+  //
+  // 只放**两边必须一致**的东西 —— 严格性开关与语法约束。target / lib /
+  // moduleResolution / types / jsx 各自不同,留在各自的文件里。
+  //
+  // 抽出来的理由是严格性会漂移:这些开关写两份时,收紧其中一份、忘掉另一份,
+  // 半个代码库就静默少了一道检查,没有任何东西会因此变红。
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "exactOptionalPropertyTypes": true,
+
+    // 保持语法可擦除(禁 enum 与参数属性),为将来若改用原生 type stripping 留门
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "isolatedModules": true,
+
+    "skipLibCheck": true,
+    "noEmit": true
+  }
+}

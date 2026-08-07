@@ -1,0 +1,25 @@
+{
+  // 前端类型检查(spec §5.11)。JSX 走 Preact 的 automatic runtime。
+  // 严格性开关见 tsconfig.base.json。
+  // 只包含 src/web 与 src/server/shared —— 后者是前端唯一允许 import 的后端目录
+  // (spec §5.0 依赖方向;运行时的强制由 biome.json 的 noRestrictedImports 承担)。
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    // 只取 Vite 的客户端类型(CSS 副作用 import、import.meta.env),
+    // 不取 @types/node —— 前端拿不到也不该拿到 Node API
+    "types": ["vite/client"],
+
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact"
+  },
+  "include": [
+    "src/web/**/*.ts",
+    "src/web/**/*.tsx",
+    "src/server/shared/**/*.ts",
+    "test/unit/web/**/*.ts"
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  // 后端 TS 与三份 .ts 构建配置的类型检查(spec §5.11)。严格性开关见 tsconfig.base.json。
+  //
+  // 注意 scripts/*.mjs 与 test/smoke/*.js **不在**任何 tsconfig 里 —— 它们是纯 JS,
+  // 不参与类型检查,因此拿不到 @types/node@^22 的 API 上限保护;这两处用错新 API
+  // 只会在 CI 的 Node 22 档变红,而不是在 `pnpm typecheck` 就拦住。
+  //
+  // target / lib 取 ES2023 且 @types/node 锁 ^22:用到 Node 24+ 才有的内置 API
+  // 或超出 ES2023 的语法时,tsc 在编译期即报错,不必等 CI 的 Node 22 档跑到。
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "types": ["node"]
+  },
+  "include": [
+    "src/server/**/*.ts",
+    // 前端侧的单测在 test/unit/web/,归 tsconfig.web.json ——
+    // 两份 tsconfig 的 moduleResolution 与 lib 不同,同一文件不能被两边同时收
+    "test/unit/server/**/*.ts",
+    "vite.config.ts",
+    "vitest.config.ts",
+    "tsdown.config.ts"
+  ]
+}
