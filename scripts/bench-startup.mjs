@@ -7,13 +7,9 @@
 // 「ready」的口径:**监听成功并打印 URL**。首次 `git status` 交由第一个 HTTP 请求
 // 惰性执行、不计入 —— 否则该指标会随被测仓库规模漂移,失去回归意义。
 //
-// S0 是骨架:此时 bin/gitglance.js 拉起的后端还只打印一行占位输出,量到的是
-// 「node 启动 + 动态 import dist/server/main.js + 第一行 stdout」。
-// TODO(S1):接真实启动流程并入 CI 门禁。届时 ready 的判据应当由**后端的输出契约**
-// 承担 —— main.ts 在 listen 成功后打印且只打印一行可机器识别的 URL,本处的
-// READY_PATTERN 收敛成只认 URL 那一种形态。下面 `gitglance: ` 这个分支是 S0 占位
-// 输出的权宜,它会匹配任何以该前缀开头的行(启动横幅、警告、降级提示都算),
-// 留到 S1 就成了「量到一个没有意义的数字却显示绿色」。
+// 判据由**后端的输出契约**承担:cli/start.ts 在 listen 成功后打印的第一行是且只是
+// URL,因此 READY_PATTERN 只认 URL 这一种形态。不要放宽成「以 gitglance: 开头的行」
+// —— 那会匹配上启动横幅、警告、降级提示,于是量到一个没有意义的数字却显示绿色。
 
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -25,7 +21,7 @@ const entry = join(repoRoot, 'bin', 'gitglance.js');
 /** spec §6 的门禁值。 */
 const BUDGET_MS = 300;
 const RUNS = 7;
-const READY_PATTERN = /^(http:\/\/127\.0\.0\.1:\d+|gitglance: )/;
+const READY_PATTERN = /^http:\/\/127\.0\.0\.1:\d+\//;
 // S1 起被测进程是常驻 HTTP server:它不会退出,ready 行没出现时 'exit' 也就永远不来。
 // 没有这道超时,单次测量会挂死,而这一步在 9 个 matrix 组合里都跑 —— 结果不是失败,
 // 是 job 一直烧到 GitHub 的 6 小时上限。取门禁的 20 倍,正常路径够宽、异常路径够快。

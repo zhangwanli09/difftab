@@ -1,11 +1,13 @@
 // 后端入口(spec §5.1)。由 bin/gitglance.js 在版本守卫通过后动态 import。
 //
-// S0 只到「产物形态成立 + 冷启动测量脚本有东西可量」为止:
-// TODO(S1) 仓库定位与前置检查、node:http server(§5.9 三道校验的最终形态)、
-//          注册表文件写入(port + token,0o600 + O_EXCL)、git 封装层、拉起浏览器。
+// 本文件只做「解析参数 → 分派」,启动流程本身在 cli/start.ts ——
+// 依赖方向是 bin → server/cli → server/http → {server/git, server/watch}(spec §5.0)。
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { CliUsageError, HELP_TEXT, parseCliArgs } from './cli/args.ts';
+import { start } from './cli/start.ts';
+import { PreflightError } from './git/repo.ts';
 
 /**
  * 版本号只有 package.json 一个来源。
@@ -23,11 +25,38 @@ function readVersion(): string {
   return manifest.version;
 }
 
+/** 一句话友好报错,不是 Node 异常栈(spec §5.2 的启动前置检查)。 */
+function fail(message: string): never {
+  // **`writeSync` 而不是 `process.stderr.write`**:后者写到**管道**时在 Windows 上
+  // 是异步的,紧跟着 `process.exit()` 会把还在缓冲区里的内容整条丢掉 —— 而冒烟测试
+  // 正是用管道 spawn 去断言这句提示的。丢了之后的症状是 stderr 全空,跟真正的病因
+  // (退出太快)毫无相似之处。
+  writeSync(2, `gitglance: ${message}\n`);
+  process.exit(1);
+}
+
 export async function main(argv: string[]): Promise<void> {
-  if (argv.includes('--version') || argv.includes('-v')) {
+  let options: ReturnType<typeof parseCliArgs>;
+  try {
+    options = parseCliArgs(argv);
+  } catch (cause) {
+    if (cause instanceof CliUsageError) fail(`${cause.message}\n\n${HELP_TEXT}`);
+    throw cause;
+  }
+
+  if (options.help) {
+    process.stdout.write(HELP_TEXT);
+    return;
+  }
+  if (options.version) {
     process.stdout.write(`gitglance ${readVersion()}\n`);
     return;
   }
 
-  process.stdout.write('gitglance: S0 scaffolding — the server lands in S1.\n');
+  try {
+    await start({ cwd: process.cwd(), noOpen: options.noOpen });
+  } catch (cause) {
+    if (cause instanceof PreflightError) fail(cause.message);
+    throw cause;
+  }
 }

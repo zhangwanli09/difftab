@@ -13,7 +13,14 @@
     "lib": ["ES2023"],
     "module": "nodenext",
     "moduleResolution": "nodenext",
-    "types": ["node"]
+    "types": ["node"],
+
+    // 后端源码内部一律写 `./foo.ts` 这样的真实文件名。
+    // nodenext 默认要求写成 `./foo.js`(即「写产物名、由解析器映射回源码」),
+    // 但后端产物是 tsdown 打出来的**单文件 ESM**,那些 `.js` 说明符在运行时根本
+    // 不存在,只会让人以为 dist/ 下有一棵同构的文件树。这里不 emit,打包由
+    // rolldown 解析,写真名不产生任何运行时代价。
+    "allowImportingTsExtensions": true
   },
   "include": [
     "src/server/**/*.ts",

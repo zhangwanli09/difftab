@@ -124,12 +124,19 @@ jobs:
           const { readdirSync } = require('node:fs');
           const files = readdirSync('test/smoke').filter((f) => f.endsWith('.test.js'));
           if (files.length === 0) { console.error('test/smoke/ 下没有任何 *.test.js —— node --test 会静默跑 0 个用例'); process.exit(1); }
+          // §5.10 的主门禁是 4.1「零写操作」承诺在开发期唯一的自动化护栏。
+          // 按文件名点名一次:改名、搬走、误删都会在这里响亮地失败,而不是变成
+          // 一次「少跑了一个文件」的绿勾。
+          if (!files.includes('readonly.test.js')) { console.error('只读性主门禁 test/smoke/readonly.test.js 不见了'); process.exit(1); }
           console.log('发现 ' + files.length + ' 个冒烟文件:' + files.join(', '));
           "
 
       # 本档**完全不执行安装、也不需要 pnpm**:它的全部意义就是只跑用户真正拿到的
       # dist/ 产物。一旦装了东西,测的就不再是那个东西(spec §5.11 / §10)。
       # 因此直接 node --test 打到冒烟套件文件,不经 package.json 的 script。
+      #
+      # 套件自带 fixture 生成(test/fixtures/make.mjs,零依赖纯 JS),所以这里除了
+      # runner 自带的 git 之外不需要任何前置步骤;§5.10 的主门禁也在其中。
       - name: 冒烟测试(跑 dist/ 产物)
         run: node --test "test/smoke/*.test.js"
 
