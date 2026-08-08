@@ -34,10 +34,25 @@ jobs:
           node-version: 24
           cache: pnpm
 
+      # LEFTHOOK=1 是必需的:lefthook 的 postinstall 在检测到 CI 时会**跳过**
+      # `lefthook install`(postinstall.js 里 `isEnabled(process.env.CI) &&
+      # !isEnabled(process.env.LEFTHOOK)` 直接 return)。不设这个变量的话,
+      # 生命周期脚本照跑、却不写钩子,下面那条验收就永远为假 —— 而它为假的原因
+      # 与 allowBuilds 无关,属于假红。
       - run: pnpm install --frozen-lockfile
+        env:
+          LEFTHOOK: '1'
 
-      # allowBuilds 白名单生效的验收:以钩子文件实际存在为准,不以安装日志无报错为准。
-      # 漏列白名单时安装本身是成功的,只是 hooks 静默没装(spec §5.11 / §6)。
+      # allowBuilds 白名单生效的验收,两条一起看(spec §5.11 / §6):
+      #   1. 直接问 pnpm 自己忽略了谁 —— 漏列白名单时**安装本身是成功的**,
+      #      只是构建脚本被静默跳过,所以不能以「安装没报错」为准;
+      #   2. 钩子文件实际存在 —— 证的是脚本不仅跑了,还真干了活。
+      - name: pnpm 没有忽略任何构建脚本
+        run: |
+          out=$(pnpm ignored-builds)
+          echo "$out"
+          echo "$out" | grep -q 'None' || { echo 'FAIL 有依赖的构建脚本被忽略 —— 检查 pnpm-workspace.yaml 的 allowBuilds'; exit 1; }
+
       - name: lefthook hooks 已写入 .git/hooks
         run: test -f .git/hooks/pre-commit && test -f .git/hooks/pre-push
 
