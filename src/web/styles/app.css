@@ -1,0 +1,31 @@
+/* 样式入口(spec §5.6)。
+ *
+ * 层叠方案:无层(unlayered)样式在层叠中永远胜过有层样式,与特异性无关,
+ * 而 Tailwind v4 把 preflight 放在 @layer base、工具类放在 @layer utilities。
+ * 因此把 hljs 主题与 diff2html 的 CSS 以 unlayered 形式引在其后,
+ * 结构上就不可能被 preflight 压过。
+ *
+ * 两条随之而来的硬约束:
+ *   1. 这两份 CSS 不得放进任何 @layer —— 一旦入层,这层保障就被拆掉了;
+ *   2. diff2html 渲染出的内部元素只能靠覆写 --d2h-* 变量改配色,
+ *      不得用 Tailwind 工具类去压(无层的 d2h CSS 同样胜过 @layer utilities)。
+ *
+ * hljs 主题必须排在 diff2html.min.css 之前(diff2html 官方 README 的要求);
+ * 深色那份必须带媒体条件 —— 两份主题都是无条件的 .hljs { … } 规则、自身零 @media,
+ * 平铺引入的结果是 github-dark 无条件覆盖 github、浅色主题直接失效。
+ */
+
+@import "tailwindcss";
+@import "highlight.js/styles/github.css";
+@import "highlight.js/styles/github-dark.css" (prefers-color-scheme: dark);
+@import "diff2html/bundles/css/diff2html.min.css";
+@import "./vscode-theme.css";
+
+@theme {
+  /* 设计 token 命名与数值参照 VS Code 颜色 token,复刻 Dark+/Light+ 观感。
+     TODO(S2):随变更列表 / 分支状态 / diff 容器补齐。 */
+  --color-editor-background: #ffffff;
+  --color-editor-foreground: #3b3b3b;
+  --color-side-bar-background: #f8f8f8;
+  --color-panel-border: #e5e5e5;
+}

@@ -1,0 +1,35 @@
+/* VS Code token 与 --d2h-* 的深浅两套取值(spec §5.6)。
+ *
+ * 本文件必须保持 unlayered —— 由 app.css 在 diff2html.min.css 之后无层引入。
+ * 改 diff2html 配色只能覆写下面这些 --d2h-* 变量,不得用 Tailwind 工具类去压。
+ * 首版不做页面内的明暗手动开关,统一由 prefers-color-scheme 切换。
+ *
+ * TODO(S2):随基础样式收口补齐 VS Code Dark+/Light+ 的完整取值。
+ */
+
+:root {
+  color-scheme: light dark;
+}
+
+/* 深色取值改的是 **token 本身**,不是某个具体元素的属性。
+ *
+ * 反面写法是在这里再写一遍 `body { background-color: #1f1f1f }`:那样 body 看着
+ * 是对的,而 --color-editor-background 在深色下仍是浅色值 —— 任何别的地方读这个
+ * token 都会拿到错的颜色,并且每加一个 token 就得在第二个块里配一条平行的硬编码。
+ * S2 要接的变更列表、分支栏、diff 容器全都读这些 token,现在写歪后面全歪。 */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-editor-background: #1f1f1f;
+    --color-editor-foreground: #cccccc;
+    --color-side-bar-background: #181818;
+    --color-panel-border: #2b2b2b;
+  }
+}
+
+body {
+  background-color: var(--color-editor-background);
+  color: var(--color-editor-foreground);
+  font-family:
+    ui-sans-serif, -apple-system, "Segoe UI", "Noto Sans", "PingFang SC", "Microsoft YaHei",
+    sans-serif;
+}
