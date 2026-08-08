@@ -8,13 +8,14 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import { makeFixtures } from '../fixtures/make.mjs';
-import { authedGet, BIN, httpGet, startGitglance } from './helpers.js';
+import { authedGet, BIN, cleanupOnExit, httpGet, once, startGitglance } from './helpers.js';
 
 let workdir;
 let repos;
 let server;
+cleanupOnExit(() => workdir);
 
 /** 递归列出仓库里的所有文件(相对路径),用来证明工具没往里写东西。 */
 function listFiles(dir, prefix = '') {
@@ -27,18 +28,19 @@ function listFiles(dir, prefix = '') {
   return out.sort();
 }
 
-before(async () => {
+/**
+ * 共享的 fixture 与被测进程。**不用 `before()`** —— 下限档 Node 22.0.0 的 runner
+ * 不等它就开跑用例(理由与复现见 helpers.js 的 `once()`)。用到共享状态的用例
+ * 一律以 `await setup()` 开头;自己起进程的用例不需要。
+ */
+const setup = once(async () => {
   workdir = mkdtempSync(join(tmpdir(), 'gitglance-server-'));
   repos = makeFixtures(join(workdir, 'repos'));
   server = await startGitglance({ cwd: repos.unicodePaths });
 });
 
-after(async () => {
-  await server?.stop();
-  rmSync(workdir, { recursive: true, force: true });
-});
-
-test('stdout 的第一行是且只是 URL —— 冷启动门禁以它为 ready 判据', () => {
+test('stdout 的第一行是且只是 URL —— 冷启动门禁以它为 ready 判据', async () => {
+  await setup();
   const first = server.stdout.split('\n')[0];
   assert.match(first, /^http:\/\/127\.0\.0\.1:\d+\/\?token=\d+\./);
   assert.equal(first, server.url);
@@ -47,6 +49,7 @@ test('stdout 的第一行是且只是 URL —— 冷启动门禁以它为 ready 
 });
 
 test('第 1 道:Host 不是 127.0.0.1/localhost 加本端口一律 403', async () => {
+  await setup();
   // 带着**有效** cookie 发,这样 403 只可能出自 Host 那一道
   for (const host of ['evil.example', `evil.example:${server.port}`, '127.0.0.1', 'localhost']) {
     const res = await authedGet(server.port, server.token, '/api/state', { Host: host });
@@ -60,6 +63,7 @@ test('第 1 道:Host 不是 127.0.0.1/localhost 加本端口一律 403', async (
 });
 
 test('第 2 道:Origin 非空且不等于自身则 403,且响应不带任何 CORS 头', async () => {
+  await setup();
   const bad = await authedGet(server.port, server.token, '/api/state', {
     Origin: 'http://evil.example',
   });
@@ -75,6 +79,7 @@ test('第 2 道:Origin 非空且不等于自身则 403,且响应不带任何 COR
 });
 
 test('第 3 道:URL 上的 token 换成 HttpOnly cookie 并 302 掉 query', async () => {
+  await setup();
   const res = await httpGet(server.port, `/?token=${encodeURIComponent(server.token)}`);
   assert.equal(res.status, 302);
   assert.equal(res.headers.location, '/');
@@ -86,6 +91,7 @@ test('第 3 道:URL 上的 token 换成 HttpOnly cookie 并 302 掉 query', asyn
 });
 
 test('第 3 道:没有 token 一律 403,静态资源与 SSE 端点无例外', async () => {
+  await setup();
   for (const path of [
     '/',
     '/app.js',
@@ -103,6 +109,7 @@ test('第 3 道:没有 token 一律 403,静态资源与 SSE 端点无例外', as
 });
 
 test('安全响应头出现在每一个响应上,包括被拒的那些', async () => {
+  await setup();
   const responses = [
     await httpGet(server.port, '/api/state'),
     await authedGet(server.port, server.token, '/api/state'),
@@ -120,6 +127,7 @@ test('安全响应头出现在每一个响应上,包括被拒的那些', async (
 });
 
 test('静态资源按白名单映射,拼路径读文件的写法一个都不留', async () => {
+  await setup();
   const ok = await authedGet(server.port, server.token, '/app.js');
   assert.equal(ok.status, 200);
   assert.match(ok.headers['content-type'], /javascript/);
@@ -138,6 +146,7 @@ test('静态资源按白名单映射,拼路径读文件的写法一个都不留'
 });
 
 test('只有 GET —— 出现非幂等方法即 405', async () => {
+  await setup();
   for (const method of ['POST', 'PUT', 'DELETE', 'PATCH']) {
     const res = await authedGet(server.port, server.token, '/api/state', {}, method);
     assert.equal(res.status, 405, `${method} 返回了 ${res.status}`);
@@ -145,6 +154,7 @@ test('只有 GET —— 出现非幂等方法即 405', async () => {
 });
 
 test('路径含非 ASCII / 空格 / 引号的文件,在产物上也不出现转义残留', async () => {
+  await setup();
   const state = JSON.parse((await authedGet(server.port, server.token, '/api/state')).body);
   const tricky = state.files.find((f) => f.path.includes('需求'));
   assert.ok(tricky, `列表里没有非 ASCII 路径:${JSON.stringify(state.files.map((f) => f.path))}`);
@@ -167,6 +177,7 @@ test('路径含非 ASCII / 空格 / 引号的文件,在产物上也不出现转�
 });
 
 test('注册表落在 os.tmpdir(),权限 0600,仓库目录内无任何新增文件', async () => {
+  await setup();
   const before = listFiles(repos.staged);
   const other = await startGitglance({ cwd: repos.staged });
   try {
@@ -199,6 +210,7 @@ test('注册表落在 os.tmpdir(),权限 0600,仓库目录内无任何新增文�
 });
 
 test('空仓库(尚无提交)下不崩溃:列表与分支状态正常,diff 走空树基准', async () => {
+  await setup();
   const empty = await startGitglance({ cwd: repos.empty });
   try {
     const state = JSON.parse((await authedGet(empty.port, empty.token, '/api/state')).body);

@@ -4,11 +4,54 @@
 // CI 里那条「数一遍冒烟文件」的检查也不会把它算进去。
 
 import { spawn } from 'node:child_process';
+import { rmSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
 import { resolve } from 'node:path';
 
 export const REPO_ROOT = resolve(import.meta.dirname, '..', '..');
 export const BIN = resolve(REPO_ROOT, 'bin', 'gitglance.js');
+
+/**
+ * 一次性的懒初始化,**替代 `node:test` 的顶层 `before()`**。
+ *
+ * Node 22.0.0 —— 也就是本项目运行时下限、matrix 专门有一档跑它 —— 的 test runner
+ * **不等顶层异步 `before()` 完成就开跑该文件的用例**(已在本机 22.0.0 复现:依赖
+ * 共享 server 的用例全部在 1ms 内以 `undefined` 失败,而自己起进程的用例照常通过;
+ * 24 / 26 上正常)。`after()` 同样会提早触发,清理撞上还在写的文件报 ENOTEMPTY。
+ *
+ * 所以不用钩子:把准备工作包成一个记忆化的 Promise,每个用例开头 `await` 它。
+ * 语义完全等价,却不依赖 runner 的钩子时序——在哪个 Node 上都对。
+ */
+export function once(factory) {
+  let pending;
+  return () => (pending ??= factory());
+}
+
+/**
+ * 进程真正退出时清理临时目录。
+ *
+ * 同样是绕开 `after()`:`process.on('exit')` 由 Node 自己保证时机,且必须是同步
+ * 操作 —— rmSync 正合适。
+ */
+export function cleanupOnExit(getDir) {
+  process.on('exit', () => {
+    const dir = getDir();
+    if (dir) rmSync(dir, { recursive: true, force: true });
+  });
+}
+
+/**
+ * 还活着的被测进程。
+ *
+ * 不再有 `after()` 来收尾(见 `once()`),所以在这里兜底:退出时统一 kill,
+ * 否则 runner 会被子进程的 stdio 句柄吊住,表现为「测试全过但命令不返回」。
+ * 本文件先于各测试文件被 import,这个处理器因此也先注册、先执行 —— 排在
+ * `cleanupOnExit` 删目录之前。
+ */
+const alive = new Set();
+process.on('exit', () => {
+  for (const child of alive) child.kill();
+});
 
 /**
  * 拉起 CLI 并等到它打印出 URL。
@@ -27,6 +70,8 @@ export function startGitglance({ cwd, env = {}, timeoutMs = 20_000 } = {}) {
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+    alive.add(child);
+    child.on('close', () => alive.delete(child));
 
     let stdout = '';
     let stderr = '';
@@ -46,6 +91,13 @@ export function startGitglance({ cwd, env = {}, timeoutMs = 20_000 } = {}) {
       if (!match || settled) return;
       settled = true;
       clearTimeout(timer);
+      // 被测进程不再吊住 runner 的事件循环:用例跑完 → 循环空 → 进程退出 →
+      // 上面那个 'exit' 处理器统一 kill。不 unref 的话,任何一个没被显式 stop 的
+      // server 都会让 `node --test` 跑完全部用例后**永远不返回**(已实测)。
+      // stop() 里会 ref 回来,否则 kill 之后等 'close' 时循环可能已经空了
+      child.unref();
+      child.stdout.unref();
+      child.stderr.unref();
       resolvePromise({
         child,
         url: match[1],
@@ -60,6 +112,7 @@ export function startGitglance({ cwd, env = {}, timeoutMs = 20_000 } = {}) {
         stop: () =>
           new Promise((done) => {
             if (child.exitCode !== null || child.signalCode !== null) return done();
+            child.ref();
             child.once('close', () => done());
             child.kill();
           }),

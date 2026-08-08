@@ -14,12 +14,19 @@
 // 4.1 的「零写操作」是产品核心承诺,本文件是它在开发期唯一的自动化护栏。
 
 import assert from 'node:assert/strict';
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { after, before, test } from 'node:test';
+import { test } from 'node:test';
 import { makeFixtures } from '../fixtures/make.mjs';
-import { authedGet, parseTrace, REPO_ROOT, startGitglance } from './helpers.js';
+import {
+  authedGet,
+  cleanupOnExit,
+  once,
+  parseTrace,
+  REPO_ROOT,
+  startGitglance,
+} from './helpers.js';
 
 /**
  * 只读白名单。
@@ -31,6 +38,7 @@ const READ_ONLY = new Set(['version', 'rev-parse', 'status', 'diff', 'ls-files']
 
 let workdir;
 let tracePath;
+cleanupOnExit(() => workdir);
 
 /**
  * 在一个 fixture 仓库上跑一遍「列表 + 若干 diff」,全程记进同一份 trace 日志。
@@ -53,7 +61,11 @@ async function exercise(cwd, diffQueries) {
 /** 仓库相对路径 → `/api/diff` 的 query。 */
 const byPath = (path) => `path=${encodeURIComponent(path)}`;
 
-before(async () => {
+/**
+ * 跑完整流程并把 trace 日志读回来。**不用 `before()`** —— 理由见 helpers.js 的
+ * `once()`:下限档 Node 22.0.0 的 runner 不等它。
+ */
+const trace = once(async () => {
   workdir = mkdtempSync(join(tmpdir(), 'gitglance-readonly-'));
   // fixture 生成本身是「开发流程的 git」,大量写操作 —— 必须在 GIT_TRACE 之外完成,
   // 否则它们会混进日志,门禁要么假红、要么被迫放宽白名单(那才是真正危险的)
@@ -67,17 +79,15 @@ before(async () => {
   await exercise(repos.renames, ['path=src%2Fkept-renamed.txt&oldPath=src%2Fkept.txt']);
   await exercise(repos.deletions, [byPath('staged-deleted.txt')]);
   await exercise(repos.empty, [byPath('untracked.txt'), byPath('staged-before-first-commit.txt')]);
+
+  return parseTrace(readFileSync(tracePath, 'utf8'));
 });
 
-after(() => {
-  rmSync(workdir, { recursive: true, force: true });
-});
-
-test('劫持真的生效 —— 日志里确实记到了东西', () => {
+test('劫持真的生效 —— 日志里确实记到了东西', async () => {
   // 这条不是凑数的。GIT_TRACE 没生效(路径不是绝对的、env 没传下去、
   // 产品换了个不经封装层的方式调 git)时,下面那条白名单断言会对着一个**空数组**
   // 通过 —— 而假绿的只读门禁比没有门禁更糟(spec §5.10)
-  const commands = parseTrace(readFileSync(tracePath, 'utf8'));
+  const commands = await trace();
   assert.ok(commands.length >= 8, `只记到 ${commands.length} 条 git 调用,劫持多半没生效`);
 
   const seen = new Set(commands.map((c) => c.subcommand));
@@ -86,8 +96,8 @@ test('劫持真的生效 —— 日志里确实记到了东西', () => {
   }
 });
 
-test('只出现只读白名单里的子命令', () => {
-  const commands = parseTrace(readFileSync(tracePath, 'utf8'));
+test('只出现只读白名单里的子命令', async () => {
+  const commands = await trace();
   const violations = commands.filter((c) => !READ_ONLY.has(c.subcommand));
   assert.deepEqual(
     violations.map((c) => c.argv.join(' ')),
@@ -96,8 +106,8 @@ test('只出现只读白名单里的子命令', () => {
   );
 });
 
-test('diff 调用一律带上 -c core.quotePath=false 之外的只读形态,且不含 -M 之外的写标志', () => {
-  const commands = parseTrace(readFileSync(tracePath, 'utf8'));
+test('diff 调用一律带上 -c core.quotePath=false 之外的只读形态,且不含 -M 之外的写标志', async () => {
+  const commands = await trace();
   const diffs = commands.filter((c) => c.subcommand === 'diff');
   assert.ok(diffs.length > 0);
   for (const diff of diffs) {
@@ -111,8 +121,8 @@ test('diff 调用一律带上 -c core.quotePath=false 之外的只读形态,且�
   }
 });
 
-test('status 的参数逐字固定 —— 降级轮询将来要复用同一条', () => {
-  const commands = parseTrace(readFileSync(tracePath, 'utf8'));
+test('status 的参数逐字固定 —— 降级轮询将来要复用同一条', async () => {
+  const commands = await trace();
   for (const cmd of commands.filter((c) => c.subcommand === 'status')) {
     assert.deepEqual(cmd.argv, ['status', '--porcelain=v2', '--branch', '-uall', '-z']);
   }
