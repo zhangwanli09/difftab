@@ -33,10 +33,10 @@
 | 类型检查 | `pnpm typecheck`(`tsc --noEmit`,前后端各一份 tsconfig,严格性开关共用 `tsconfig.base.json`) | ✅ S0 |
 | 格式化 + lint | `pnpm lint`(`biome check`)/ CI 用 `biome ci` | ✅ S0 |
 | 单元/集成测试(Vitest,直接跑 TS 源码) | `pnpm test`。用例按被测代码分 `test/unit/server/` 与 `test/unit/web/`,分别归两份 tsconfig | ✅ S0(hljs 语言装配)+ S1(解析器、三道校验、未跟踪 diff 构造、对真实 fixture 的集成、dev proxy) |
-| 冒烟测试(纯 JS,跑构建产物,含只读性两层验证) | `pnpm test:smoke`(CI matrix 档不经 script,直接 `node --test "test/smoke/*.test.js"`) | ✅ S0(版本守卫、版本号一致性、产物只 import 标准库)+ ✅ S1 第一层(`GIT_TRACE` 白名单断言 + 子进程单点断言 + 三道校验);第二层(只读 `.git`)S2 入 CI |
-| 测试仓库 fixture 生成 | `pnpm fixtures`(默认写 `test/fixtures/repos/`;测试自己调 `makeFixtures()` 写临时目录) | ✅ S1 第一批,第二批 S4 |
+| 冒烟测试(纯 JS,跑构建产物,含只读性两层验证) | `pnpm test:smoke`(CI matrix 档不经 script,直接 `node --test "test/smoke/*.test.js"`) | ✅ S0(版本守卫、版本号一致性、产物只 import 标准库)+ ✅ S1 第一层(`GIT_TRACE` 白名单断言 + 子进程单点断言 + 三道校验);第二层(只读 `.git`)S2a 入 CI |
+| 测试仓库 fixture 生成 | `pnpm fixtures`(默认写 `test/fixtures/repos/`;测试自己调 `makeFixtures()` 写临时目录) | ✅ S1 第一批,第二批分两次:diff 相关归 S4a、异常状态归 S4b |
 | 冷启动耗时测量(对构建产物,≤300ms 门禁) | `pnpm bench:startup` | ✅ S1 接真实流程(本机中位数 ~40ms) |
-| 产物体积门禁 | `pnpm size` | ✅ S0,S2 收口回填实测 |
+| 产物体积门禁 | `pnpm size` | ✅ S0,S2c 收口回填实测 |
 | 样式层叠门禁(unlayered + hljs 在前 + 深色带媒体条件) | `pnpm check:css` | ✅ S0 |
 | 发布产物内容门禁(`pnpm pack --dry-run --json`) | `pnpm check:pack` | ✅ S0 |
 | `bin/gitglance.js` 未被构建管线触碰 | `pnpm check:bin`(内部跑一次完整构建) | ✅ S0 |
@@ -46,6 +46,8 @@
 架构边界由 `biome.json` 的 `noRestrictedImports` overrides 承担,随 `pnpm lint` / `biome ci` 一起跑,不另设命令:import 方向、`node:child_process` 只许出现在 `server/git` 与 `server/cli`、以及不得直接引用 diff2html 的传递依赖。**每个受限目录的 patterns 必须自带全部条目**——Biome 的 overrides 对同一规则是替换而非合并,靠后一条 override 覆盖同一文件时,前一条的 patterns 会整个失效。
 
 ## 4. 动手前先读 spec 的哪节
+
+**改这块 → 读哪节**
 
 | 改这块 | 动手前读 |
 |---|---|
@@ -60,6 +62,22 @@
 | CLI 入口、Node 版本下限、后端产物形态 | spec §5.1 |
 | 构建配置、CI 分层、tsconfig、dev proxy | spec §5.11 |
 | 只读性验证、冷启动与体积门禁 | spec §5.10、§6 |
+
+**做哪个阶段 → 本会话必读哪几节**。spec 全文约 47k token,整篇读进来会挤掉实现所需的上下文;按本表只读该阶段真正用得上的几节(约 20k),是 spec §7 把 S2 / S3b / S4 拆成子阶段时一并定下的切口。**"明确不必读"是省上下文的手段,不是豁免**——第 5 节红线全程有效,与本会话读没读对应小节无关。
+
+| 做这个阶段 | 本会话必读 | 明确不必读 |
+|---|---|---|
+| **S2a** 骨架 + 变更列表 + 只读第二层 | §5.0、§5.4、§5.12、§5.10、§5.11 的「Dev server 与 5.9 的交互」段、§6 的「变更列表」「只读性与本地安全」两组 | §5.5、§5.6、§5.7、§10 的「前端渲染与体积」「样式层叠」 |
+| **S2b** diff 渲染 + 懒加载 | §5.5、§5.2 的懒加载与重命名双路径两条、§5.12 的 `DiffPayload`、§10「前端渲染与体积」、§6「Diff 正确性与边界」组 | §5.6、§5.7、§5.8 |
+| **S2c** 主题样式 + 体积收口 | §5.6、§5.5 的体积表、§10「样式层叠」、§6 的「样式、主题与语法高亮」「构建产物与发布」两组 | §5.2、§5.7、§5.10 |
+| **S3a** 分支状态展示 | §5.2 的 `# branch.ab` 缺失一条、§5.12 的 `BranchState`、§6「变更列表与分支状态」组 | §5.5、§5.6、§5.7、§5.11 |
+| **S3b1** SSE 通道 + 档位骨架 | §5.7 的 debounce / `.git` 非递归两条、§5.8 的 SSE 心跳段、§5.12 的 `WatchState` | §5.5、§5.6、§10「前端渲染与体积」 |
+| **S3b2** 三档监听 + 轮询兜底 | §5.7 全节、§10「Node 运行时与 `fs.watch`」、§6「自动刷新与三档监听」组 | §5.5、§5.6、§5.9 |
+| **S3c** 进程生命周期 | §5.8、§5.9 的 token 段、§6「进程生命周期与单实例」组 | §5.5、§5.6、§5.7 |
+| **S4a** diff 边界情况 | §5.2、§5.12 的 `DiffPayload`、§10「git 行为」、§7 的 fixture 第二批清单 | §5.6、§5.7、§5.11 |
+| **S4b** git 异常状态 | §5.3、§5.2 的仓库定位段、§5.12 的 `BranchState`、§10「git 行为」 | §5.5、§5.6、§5.7 |
+| **S5** 三端真机 + 安全自查 | §5.9、§5.1 的拉起浏览器段、§6 全表复核 | — |
+| **S6** 开源准备 | §8 | — |
 
 ## 5. 红线
 
@@ -81,14 +99,14 @@
 
 ## 7. 开发阶段
 
-**当前进度:S1 已收口(CI 全绿),下一步 S2** —— CLI + HTTP server(§5.9 三道校验最终形态)+ 注册表写入 + git 封装层 + §5.12 协议类型 + fixture 第一批 + §5.10 主门禁 + 冷启动门禁接真实流程。spec §6 的 5 个 `[S1]` 验收项已勾;`[S1/S2]`(拉起浏览器看变更视图、dev 代理)与 `[S1/S5]`(三端真机)按"做完前一半也不勾"的规矩留空。**每收口一个阶段回来改这一行。**
+**当前进度:S1 已收口(CI 全绿),下一步 S2a** —— CLI + HTTP server(§5.9 三道校验最终形态)+ 注册表写入 + git 封装层 + §5.12 协议类型 + fixture 第一批 + §5.10 主门禁 + 冷启动门禁接真实流程。spec §6 的 5 个 `[S1]` 验收项已勾;`[S1/S2b]`(拉起浏览器看变更视图、dev 代理)与 `[S1/S5]`(三端真机)按"做完前一半也不勾"的规矩留空。**每收口一个阶段回来改这一行。**
 
 S1 收口时踩到的一条,写在这里因为它会再犯:**CI 只有下限档红是常态,而下限档红的原因往往不在产品代码**。本次是 Node 22.0.0 的 `node --test` 不等顶层 `before()`(证据见 spec §10),24/26 与本机全绿、三平台 22.0.x 同时红。matrix 把 22 这档钉在 **22.0.x 而不是 22 线最新版**,价值就在这里。
 
-S0 工具链脚手架(含 `pnpm-lock.yaml`、`pnpm-workspace.yaml` 的 `allowBuilds` 白名单、`.gitignore`、**手写定稿的 `bin/gitglance.js`**)+ 三项前提验证(在 pnpm 严格 node_modules 布局下跑)+ 三平台 CI 矩阵拉起 → S1 CLI + HTTP server(**含 §5.9 三道校验的最终形态**)+ **注册表文件写入(port + token)** + git 封装 + 只读主门禁 + fixture 第一批 → S2 变更列表 + diff2html 渲染 + 懒加载 → **S3a** 分支状态 → **S3b** 自动刷新 → **S3c** 进程生命周期(注册表**探活复用** + 空闲退出)→ S4 diff 边界情况 + git 异常状态 + fixture 第二批 → S5 Windows/Linux 真机验证 + 安全加固自查(**CI 跑通不等于可用**)→ S6 开源准备。各阶段展开见 spec §7。
+S0 工具链脚手架(含 `pnpm-lock.yaml`、`pnpm-workspace.yaml` 的 `allowBuilds` 白名单、`.gitignore`、**手写定稿的 `bin/gitglance.js`**)+ 三项前提验证(在 pnpm 严格 node_modules 布局下跑)+ 三平台 CI 矩阵拉起 → S1 CLI + HTTP server(**含 §5.9 三道校验的最终形态**)+ **注册表文件写入(port + token)** + git 封装 + 只读主门禁 + fixture 第一批 → **S2a** 变更列表 + 只读 `.git` 第二层 → **S2b** diff2html 渲染 + 懒加载 → **S2c** 主题样式 + 体积收口 → **S3a** 分支状态 → **S3b1** SSE 通道 + 档位骨架 → **S3b2** 三档监听 + 轮询兜底 → **S3c** 进程生命周期(注册表**探活复用** + 空闲退出)→ **S4a** diff 边界情况 → **S4b** git 异常状态(两者各配一半 fixture 第二批)→ S5 Windows/Linux 真机验证 + 安全加固自查(**CI 跑通不等于可用**)→ S6 开源准备。各阶段展开见 spec §7。
 
-- **S3a / S3b / S3c 按序逐个收口,不得并行推进**;S3b 的首个交付物是三档强制指定的环境变量
-- **门禁不得晚于它所保护的代码**:只读白名单断言随 git 封装层在 S1 落地,安全校验随 server 在 S1 落地,注册表写入同期落地(dev proxy 靠它拿 token)——**不得为让 dev 跑通而在后端放宽校验**(见第 5 节红线)
+- **全部子阶段按序逐个收口,不得并行推进**(S2a→S2b→S2c、S3a→S3b1→S3b2→S3c、S4a→S4b);S3b1 的首个交付物是三档强制指定的环境变量。拆分依据见 spec §7,**开工第一件事是按第 4 节那张阶段表确定本会话该读 spec 哪几节**
+- **门禁不得晚于它所保护的代码**:只读白名单断言随 git 封装层在 S1 落地,安全校验随 server 在 S1 落地,注册表写入同期落地(dev proxy 靠它拿 token),只读 `.git` 第二层前移到 S2a(它保护的封装层 S1 就有了)——**不得为让 dev 跑通而在后端放宽校验**(见第 5 节红线)
 - **每个阶段完成后立即对照 spec §6 中标记为本阶段的 `[Sx]` 验收项自查**,并满足 spec §9 的三条收口判据,不堆到后期集中验证
 - **打勾以 CI 绿为准,不以本机绿为准**;`[Sx/Sy]` 做完前一半也不勾。本机绿而 CI 红是常态(见第 5 节 `allowBuilds` 那条的实测)
 - 测试数据分两批,时机与清单见 spec §7 末段;fixture 脚本对测试仓库的 git 写操作属"开发流程的 git",见第 1 节
