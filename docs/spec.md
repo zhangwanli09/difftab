@@ -345,7 +345,8 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
    - `node --test` 在一个用例都没匹配上时是 **0 用例、exit 0**。因此本档在跑测试之前必须先数一遍冒烟文件、数不到就失败:一次改名或某个平台上的引号行为不同,会把「只读承诺的唯一自动化保护」变成一个什么都没跑的绿勾
    - **体积门禁不进本档**:matrix 下载的是同一份 `dist/`,字节完全相同,再跑 9 遍不增加覆盖,反而引入方差 —— gzip 输出长度取决于各 Node 大版本自带的 zlib,贴着预算的行会只在某一个 Node 上红。它归 build 作业跑一次
 3. **old-node-guard 作业**(Node 20,即**低于下限**):不下载产物,直接 `node bin/gitglance.js`,断言 exit 1 + 打印友好提示 + stderr 无 `SyntaxError` + stdout 为空。单列一档是因为 build 与 matrix 都跑在 ≥22 上,而守卫要防的是**解析期**失败 —— 在 22+ 上文件早已解析成功,那条路径永远测不到。冒烟里那条「不含 `?.` / `??` / 顶层 await / 私有字段 / `||=`」的正则清单只是它的替身,替身按具体语法逐条列举,`catch {}`、对象展开、class 静态块等一律漏网
-4. 5.10 的 fake git wrapper 靠 PATH 劫持,与代码是否打包无关,归属 matrix 作业
+4. 5.10 的主门禁靠 `GIT_TRACE` 记录,与代码是否打包无关,归属 matrix 作业
+5. **冒烟测试不得依赖 `node:test` 的顶层 `before()` / `after()`**:下限档 Node 22.0.0 的 runner **不等顶层异步 `before()` 完成就开跑该文件的用例**(2026-08-08 在本机 22.0.0 复现,证据见第 10 节),`after()` 同样提早触发。准备工作要写成记忆化的 Promise、由各用例自己 `await`。这条只在下限档红,24 / 26 全绿 —— 正是 matrix 要有一档真跑在下限上的理由
 
 ### 5.12 后端接口契约
 
@@ -382,7 +383,7 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 **启动与仓库识别**
 
 - [ ] `[S1/S2]` 在任意 git 仓库目录下执行 CLI 命令,能自动识别仓库并在浏览器打开对应变更视图(S1 验到启动与拉起浏览器,变更视图待 S2)
-- [ ] `[S1]` 空仓库(尚无提交)下工具不崩溃:diff 基准降级为空树哈希,列表与分支状态展示合理
+- [x] `[S1]` 空仓库(尚无提交)下工具不崩溃:diff 基准降级为空树哈希,列表与分支状态展示合理
 - [ ] `[S4]` detached HEAD、rebase/merge 进行中等状态下工具不崩溃,分支状态降级并明确标注当前处于何种状态
 - [ ] `[S4]` git worktree、submodule 目录下能正常启动;bare 仓库给出明确提示而非崩溃
 
@@ -398,7 +399,7 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 - [ ] `[S4]` 新文件/删除文件/重命名正确展示,二进制文件仅提示变更不做内容 diff,超大文件(如 >5MB)提示不支持预览而非卡死
 - [ ] `[S4]` 重命名的文件在懒加载点开后标注为"重命名"(展示 `rename from/to` 与相似度),而非退化成一个全新增文件
 - [ ] `[S2]` 单次变更 300+ 文件的仓库下,列表能正常展示、点击单个文件的 diff 响应及时,浏览器主线程不出现可感知冻结
-- [ ] `[S1]` 路径含非 ASCII 字符(中文/日文/emoji)、空格、引号的文件,在列表与 diff 中均正确展示,不出现 `\351\234\200` 这类转义残留(S1 即可在封装层输出上验证,不必等渲染)
+- [x] `[S1]` 路径含非 ASCII 字符(中文/日文/emoji)、空格、引号的文件,在列表与 diff 中均正确展示,不出现 `\351\234\200` 这类转义残留(S1 即可在封装层输出上验证,不必等渲染)
 
 **自动刷新与三档监听**
 
@@ -418,14 +419,14 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 
 **只读性与本地安全**
 
-- [ ] `[S1]` 5.10 的**主门禁**(fake git wrapper 劫持并断言 git 子命令只出现在只读白名单)与浏览器拉起的单点断言均通过,并随 git 封装层一同纳入 CI 门禁
+- [x] `[S1]` 5.10 的**主门禁**(`GIT_TRACE` 记录并断言 git 子命令只出现在只读白名单,外加一条「确实记到了东西」的正面断言)与浏览器拉起的单点断言均通过,并随 git 封装层一同纳入 CI 门禁
 - [ ] `[S2]` 5.10 的**第二层**(`chmod -R a-w .git` 后跑完整流程)通过并纳入 matrix 作业;Windows 上改用只读 ACL 或显式跳过,不得静默通过
 - [ ] `[S1/S2]` **dev 代理未以放宽后端校验实现**:后端代码中不存在任何绕过 Host / Origin / token 校验的环境变量或分支;`vite dev` 下经代理发出的请求能通过后端三道校验拿到 `/api/state`(S1 即可验到这一步——此时前端尚未建立,以请求本身通过为准;完整页面功能待 S2)
-- [ ] `[S0/S1]` **5.0 的架构边界可自动断言**:CI 中存在规则或脚本,能在「`src/web` 反向 import `src/server`(`shared/` 除外)」或「`server/git` 之外出现 git 子进程调用」时失败。import 方向部分由 Biome 的 `noRestrictedImports` 承担(S0 建立),子进程单点部分与 5.10 主门禁合并断言(S1 建立)
+- [x] `[S0/S1]` **5.0 的架构边界可自动断言**:CI 中存在规则或脚本,能在「`src/web` 反向 import `src/server`(`shared/` 除外)」或「`server/git` 之外出现 git 子进程调用」时失败。import 方向部分由 Biome 的 `noRestrictedImports` 承担(S0 建立),子进程单点部分与 5.10 主门禁合并断言(S1 建立)
 
 **性能与资源**
 
-- [ ] `[S1]` **冷启动 · CLI 侧**:进程 ready 并输出 URL ≤ 300ms,自动化测量并纳入 CI 门禁。**"ready" 的口径明确为「监听成功并打印 URL」**,首次 `git status` 交由第一个 HTTP 请求惰性执行、不计入——否则该指标会随被测仓库规模漂移,失去回归意义
+- [x] `[S1]` **冷启动 · CLI 侧**:进程 ready 并输出 URL ≤ 300ms,自动化测量并纳入 CI 门禁。**"ready" 的口径明确为「监听成功并打印 URL」**,首次 `git status` 交由第一个 HTTP 请求惰性执行、不计入——否则该指标会随被测仓库规模漂移,失去回归意义
 - [ ] `[S2]` **冷启动 · 浏览器侧**:浏览器进程已在运行的前提下,首屏渲染 ≤ 1s(人工验证)。冷启动浏览器进程本身的耗时(通常 2-5s)与 `npx` 首次下载解包耗时均不计入,后者在 README 中说明
 - [ ] `[S3b]` 资源占用:原生监听模式下空闲时内存/CPU 接近零;降级轮询模式下空闲 CPU < 1%
 
@@ -532,6 +533,8 @@ S3 拆出的三件事**按 S3a → S3b → S3c 顺序逐个收口,不得并行�
 - **status 的重命名检测比的是 HEAD → index**(2026-08-08 实测):`git mv a b` 之后把 b 的内容全部重写但**不 `git add`**,git 仍报 `2 ... R100 b\0a`(只是 Y 位变成 M)——index 里躺着的是一次 100% 纯改名。要拿到"相似度阈值之下 → 拆成 `1 D. a` + `1 A. b`"这个形态,重写必须一并入 index。这是 S1 第一批 fixture 里那两个重命名样本一个 add、一个不 add 的原因
 - **`GIT_TRACE` 的记录形态**(2026-08-08 实测,git 2.50.1):`GIT_TRACE=<绝对路径>` 时每次调用在日志里留下一行 `trace: built-in: git status --porcelain=v2 --branch -uall -z`——注意 `-c core.quotePath=false` 已被 git 前端消化,**不出现在这一行**(白名单断言不受影响,但 `core.quotePath` 的生效与否得靠别的断言证);`git --version` 记作 `built-in: git version`,故白名单里那一项叫 `version`。外部子命令与 git 内部再起的进程分别记作 `trace: exec:` / `trace: run_command:`。给相对路径时 git 会警告并退回 stderr。这是 5.10 主门禁改用 `GIT_TRACE` 的依据
 - **Windows 上 fake git wrapper 的两条死路**(2026-08-08 实测):(a) Node 自 20.12 起,不带 `shell` 时 spawn `.cmd` / `.bat` 直接抛 `EINVAL`(CVE-2024-27980 的修复),而 PATH 劫持在 Windows 上只有 `.cmd` / `.exe` 两种可用形态;(b) 退而把 node 二进制装成 `git`(POSIX 符号链接 / Windows 复制)+ `NODE_OPTIONS=--require <shim>` 时,node 自己的 CLI 解析先跑——实测 `git -c core.quotePath=false status --porcelain=v2 -z` 到达 shim 时 `process.argv` 是 `[<node>, '<cwd>/core.quotePath=false', 'status', '--porcelain=v2', '-z']`:`-c` 被当成 node 的 `--check` 吃掉,其后第一个参数还被 `path.resolve` 改写。记到的"完整子命令"因此是错的。这两条是 5.10 主门禁放弃 PATH 劫持的依据
+- **Node 22.0.0 的 `node --test` 不等顶层 `before()`**(2026-08-08 实测,先在 CI 三平台的 22.0.x 档同时红、后在本机 22.0.0 复现):顶层异步 `before()` 尚在执行时该文件的用例就已开跑——依赖其中所建 server 的用例全部在 1ms 内以读取 `undefined` 失败,而自己起进程的用例照常通过;`after()` 同样提早触发,清理撞上还在写的 fixture 报 `ENOTEMPTY`。Node 24 / 26 上行为正确,因此**本机绿、CI 也只有下限那一档红**。这是 5.11 要求冒烟套件改用记忆化 Promise、不用 runner 钩子的依据,也是"matrix 的 22 档必须钉在 22.0.x 而不是 22 线最新版"这条设置第一次真正兑现价值
+- **未被显式 stop 的被测子进程会吊住 `node --test`**(同日实测):去掉 `after()` 之后,残留 server 的 stdio 管道让 runner 的事件循环永不清空,表现为**全部用例通过、命令却不返回**。因此 ready 后 `unref()` 子进程与其 stdio,并在 `process.on('exit')` 里统一 kill;`stop()` 里要 `ref()` 回来,否则 kill 之后等 `'close'` 时循环可能已经空了
 
 ### Node 运行时与 `fs.watch`
 
