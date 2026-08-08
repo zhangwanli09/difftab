@@ -276,11 +276,14 @@ const isIgnored = (p: string) => p.split(/[\\/]/).some(seg => IGNORE_NAMES.has(c
 
 4.1 的"零写操作"是产品核心承诺,需要能自动化证伪,而不是靠人工审查代码。**"前后 `git status` 比对无变化"强度不足**——它发现不了写进 `.git/` 但不改变 status 输出的操作(意外触发 gc、写 index、创建对象)。因此采用两层验证,均纳入 CI 门禁:
 
-1. **主门禁**:测试期间用 fake git wrapper 劫持所有 git 调用并记录完整子命令,断言只出现只读白名单(`status` / `diff` / `rev-parse` / `ls-files` / `symbolic-ref` 等)
-   - **Windows 上 shim 的形态需单独落地**:PATH 劫持要求存在一个 Windows 认得的可执行文件(`git.cmd` / `git.exe`),裸的无扩展名脚本不会被找到;且 Node 的 `spawn` 不带 `shell` 时对 `.cmd` 的解析与 POSIX 不同。**S1 建立主门禁时须在 CI 的 Windows 档实测确认劫持真的生效**——只在 macOS 上验过就推广,会让 Windows 档变成"门禁跑了但什么都没劫持到"的假绿,而假绿的只读门禁比没有门禁更糟
+1. **主门禁**:测试期间用 git 自带的 **`GIT_TRACE=<绝对路径>`** 记录产品发出的每一次 git 调用(含完整参数),断言子命令只出现在只读白名单(`status` / `diff` / `rev-parse` / `ls-files` 等)。S1 落地为 `test/smoke/readonly.test.js`,归 matrix 作业,三平台同一套写法
+   - **原方案"PATH 上放一个 fake git wrapper"已在 S1 排除**,原因正是当初标出来的那条 Windows 风险:PATH 劫持要求一个 Windows 认得的可执行文件,而 Node 自 20.12 起不带 `shell` 就**拒绝 spawn `.cmd` / `.bat`**;退而把 node 二进制装成 `git` 时,node 自己的 CLI 解析会先把参数吃掉一截,记到的"完整子命令"是错的。两条均已实测,依据见第 10 节
+   - `GIT_TRACE` 反而多覆盖一层:git **内部**再起的子进程(自动 gc 之类)同样入账,而那正是"写进 `.git/` 但不改变 status 输出"的典型——本节开头排除"前后 `git status` 比对"时说的就是它
+   - **必须同时断言"确实记到了东西"**:环境变量没传下去、路径给成相对的、产品换了个不经封装层的方式调 git,都会让白名单断言对着一个**空数组**通过。假绿的只读门禁比没有门禁更糟,因此门禁里要有一条正面断言——完整流程跑完后,日志里必须见到 `status` / `diff` / `rev-parse` / `ls-files`
 2. **冒烟测试**:`chmod -R a-w .git` 后跑一遍完整流程,任何写尝试都会直接失败暴露
+   - 这一层要求产品**不得让 git 写 index**:`git status` 默认会把刷新过的 stat 缓存写回 `.git/index`,它不改变 status 输出(所以第一层与"前后比对"都看不见),但只读 `.git` 下会当场失败。封装层统一设 `GIT_OPTIONAL_LOCKS=0` 规避,该变量在 git < 2.15 上不存在、设了无害
 
-**唯一的非 git 子进程豁免**:5.1 的拉起浏览器(`open` / `cmd /c start ""` / `xdg-open`)。它不经过 git 封装层、fake git wrapper 也劫持不到,因此需在测试里**单独断言**:产品代码中除 git 封装层外只存在这一处 `child_process` 调用,且被调命令来自这三者的固定映射、参数只有 URL 一项。CI 里该调用需可通过环境变量关闭,避免每次跑测试都弹出浏览器。
+**唯一的非 git 子进程豁免**:5.1 的拉起浏览器(`open` / `cmd /c start ""` / `xdg-open`)。它不经过 git 封装层、`GIT_TRACE` 也记不到,因此需在测试里**单独断言**:产品代码中除 git 封装层外只存在这一处 `child_process` 调用,且被调命令来自这三者的固定映射、参数只有 URL 一项。该静态断言查的是**相等**而非"没有多余的"——只查多出来的一半时,两处调用点双双改名会让白名单静默变成空表。CI 里该调用需可通过环境变量关闭,避免每次跑测试都弹出浏览器。
 
 ### 5.11 开发工具链与构建
 
@@ -473,11 +476,14 @@ S3 拆出的三件事**按 S3a → S3b → S3c 顺序逐个收口,不得并行�
 
 **门禁与测试数据的建立时机**:
 
-- **5.10 主门禁(fake git wrapper 白名单断言)在 S1 与 git 封装层同阶段建立**。封装层只有一处子进程调用,断言成本极低;而它是 4.1 "零写操作"承诺在开发期唯一的自动化护栏,晚一个阶段就多一个阶段没有护栏
+- **5.10 主门禁(`GIT_TRACE` 白名单断言)在 S1 与 git 封装层同阶段建立**。封装层只有一处子进程调用,断言成本极低;而它是 4.1 "零写操作"承诺在开发期唯一的自动化护栏,晚一个阶段就多一个阶段没有护栏
 - **5.10 第二层(只读 `.git` 冒烟)在 S2 建立并入 matrix 作业**。需一并明确 **Windows 上该层改用只读 ACL 或显式跳过**——`chmod -R a-w` 在 Windows 无等价语义,照搬会让 matrix 的 Windows 档假绿
 - **测试数据分两批**。生成脚本对测试仓库执行 `git init` 等写操作,属开发流程的 git,不受 4.1 约束(作用域见 `CLAUDE.md` 第 1 节):
   - **第一批(S1)——决定解析器结构,不是边界修补**:路径含非 ASCII 字符/空格/引号的文件、重命名(含相似度识别阈值边界)、已暂存改动(执行过 `git add`)、无上游的新建分支、空仓库(`git init` 后无提交)。这五项分别决定 5.2 的 `-z` 与 `core.quotePath=false` 是否真的生效、解析循环是有状态还是无状态平铺、`# branch.ab` 缺失的降级路径、以及 5.3 的 diff 基准该做成怎样的接口形状——S4 才引入等于 S1 先按 HEAD 写死再返工。另需一个 300+ 文件变更的仓库,S2 验收懒加载时即需就位
-  - **第二批(S4)——边界与异常**:新增文件、删除文件、二进制文件变更、超过 5MB 的大文件、detached HEAD、rebase 进行中、linked worktree、bare 仓库
+  - **删除与未跟踪符号链接从第二批上调到第一批**(2026-08-08 修订,起因见下)。判据始终是"是否决定结构",而这两项都决定 5.2 里**取 diff 前那次分流**——即"已跟踪走 `git diff`,未跟踪读磁盘"这个二选一本身:
+    - **已暂存的删除**(`git rm` 之后):路径已从 index 里摘掉,`git ls-files` 输出为空(已实测),但 status 照报 `1 D.`、基准侧也还在。用 `ls-files` 当分流判据会把它误判成未跟踪、进而去读一个不存在的文件。"已跟踪"的正确定义是 **HEAD ∪ index**,不是 index——这是判据的定义问题,不是边界修补
+    - **未跟踪的符号链接**:`git status -uall` 把它报成 `? <链接>`(已实测),于是它进变更列表、点得到。读磁盘那条路必须用 `lstat` 而非 `stat`,否则 5.2 的仓库边界校验形同虚设——校验的是链接自身的路径,读到的却是链接目标,一个指向仓库外的链接就能让接口把仓库外的文件内容当作新增文件返回。fixture 里的链接**故意指向仓库外一个内容已知的文件**,断言补丁里不含该内容
+  - **第二批(S4)——边界与异常**:新增文件、二进制文件变更、超过 5MB 的大文件、detached HEAD、rebase 进行中、linked worktree、bare 仓库
 
 两批均逐项对照第 6 节验收标准验证。
 
@@ -523,6 +529,9 @@ S3 拆出的三件事**按 S3a → S3b → S3c 顺序逐个收口,不得并行�
 - **`git diff` 补丁正文的路径转义**:`-z` 只作用于 `status` / `numstat` 等列表输出,`git diff` 正文的 `diff --git` / `---` / `+++` / `rename from|to` 行仍会 C 风格转义(实测输出 `diff --git "a/docs/\351\234\200\346\261\202\346\226\207\346\241\243.md" ...`);加 `-c core.quotePath=false` 后原样输出。这是 5.2 强制该参数的依据
 - **重命名在按文件懒加载下的退化**:实测 `git diff HEAD -- <新路径>` 对重命名文件输出 `new file mode` + `--- /dev/null`(识别为全新增);`git diff HEAD -M -- <新路径> <旧路径>` 才输出 `similarity index` + `rename from/to`。这是 5.2 要求传两个路径的依据
 - **`porcelain=v2 -z` 的重命名记录格式**:实测为 `2 <XY> ... R100 <新路径>\0<旧路径>`,一条记录占两个 NUL 段;另实测无上游分支时不输出 `# branch.ab` 行。这是 5.2 两个解析陷阱的依据
+- **status 的重命名检测比的是 HEAD → index**(2026-08-08 实测):`git mv a b` 之后把 b 的内容全部重写但**不 `git add`**,git 仍报 `2 ... R100 b\0a`(只是 Y 位变成 M)——index 里躺着的是一次 100% 纯改名。要拿到"相似度阈值之下 → 拆成 `1 D. a` + `1 A. b`"这个形态,重写必须一并入 index。这是 S1 第一批 fixture 里那两个重命名样本一个 add、一个不 add 的原因
+- **`GIT_TRACE` 的记录形态**(2026-08-08 实测,git 2.50.1):`GIT_TRACE=<绝对路径>` 时每次调用在日志里留下一行 `trace: built-in: git status --porcelain=v2 --branch -uall -z`——注意 `-c core.quotePath=false` 已被 git 前端消化,**不出现在这一行**(白名单断言不受影响,但 `core.quotePath` 的生效与否得靠别的断言证);`git --version` 记作 `built-in: git version`,故白名单里那一项叫 `version`。外部子命令与 git 内部再起的进程分别记作 `trace: exec:` / `trace: run_command:`。给相对路径时 git 会警告并退回 stderr。这是 5.10 主门禁改用 `GIT_TRACE` 的依据
+- **Windows 上 fake git wrapper 的两条死路**(2026-08-08 实测):(a) Node 自 20.12 起,不带 `shell` 时 spawn `.cmd` / `.bat` 直接抛 `EINVAL`(CVE-2024-27980 的修复),而 PATH 劫持在 Windows 上只有 `.cmd` / `.exe` 两种可用形态;(b) 退而把 node 二进制装成 `git`(POSIX 符号链接 / Windows 复制)+ `NODE_OPTIONS=--require <shim>` 时,node 自己的 CLI 解析先跑——实测 `git -c core.quotePath=false status --porcelain=v2 -z` 到达 shim 时 `process.argv` 是 `[<node>, '<cwd>/core.quotePath=false', 'status', '--porcelain=v2', '-z']`:`-c` 被当成 node 的 `--check` 吃掉,其后第一个参数还被 `path.resolve` 改写。记到的"完整子命令"因此是错的。这两条是 5.10 主门禁放弃 PATH 劫持的依据
 
 ### Node 运行时与 `fs.watch`
 
@@ -592,6 +601,7 @@ S3 拆出的三件事**按 S3a → S3b → S3c 顺序逐个收口,不得并行�
 | 陈旧实例用 pid 存活判断 | pid 会被系统复用,误判会把用户带到指向别人进程的页面 |
 | 仅用 token 防 DNS rebinding | token 挡不住同源判定本身,正面防御是校验 `Host` 头(详见 5.9) |
 | 用"前后 `git status` 比对"验证只读性 | 发现不了写进 `.git/` 但不改变 status 输出的操作(详见 5.10) |
+| 只读性主门禁用 PATH 上的 fake git wrapper | Windows 上落不了地:`.cmd` / `.bat` 形态被 Node ≥ 20.12 的 spawn 直接拒绝,`node.exe` 复制成 `git.exe` 的形态则被 node 自己的 CLI 解析吃掉参数,记到的子命令是错的(两条均已实测,见上)。改用 git 自带的 `GIT_TRACE`,三端同一套写法,且连 git 内部再起的子进程一并入账(详见 5.10) |
 | 用 Tailwind 工具类覆盖 diff2html 渲染出的内部元素 | diff2html 的 CSS 是 unlayered,在层叠中胜过 `@layer utilities`,工具类写了不生效。改配色只能覆写 `--d2h-*` CSS 变量(详见 5.6) |
 | 把 hljs 主题或 `diff2html.min.css` 放进 `@layer` | 一旦入层就与 Tailwind preflight 同处层叠体系,"无层胜有层"这层结构性保障随即失效,重新退回逐条比特异性的脆弱状态(详见 5.6) |
 | 让 `bin/gitglance.js` 参与 TS 编译或作为打包入口 | 可能被注入超出 Node 22 的语法、或被合并进主模块,低于下限的用户拿到解析期 SyntaxError,5.1 的版本守卫在解析期即失效 |
