@@ -1,0 +1,156 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# CI 分两层(spec §5.11):
+#   build   —— tsdown 要求 Node ^22.18 || >=24.11、Vite 8 要求 >=22.12,均高于
+#              产品运行时下限 22.0.0,所以工具链只跑在一档较新的 Node 上;
+#   matrix  —— 测的是**用户真正拿到的产物**,三平台 × Node 22.0.x / 24 / 26,
+#              完全不执行安装、也不需要 pnpm。
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build & static checks (Node 24)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # pnpm/action-setup 必须排在 actions/setup-node 之前,
+      # 否则后者的 cache: 'pnpm' 找不到 pnpm 可执行文件,缓存步骤直接失败。
+      # 不传 version —— 让它读 package.json 的 packageManager 字段(唯一事实来源);
+      # 也不用 corepack enable:Corepack 已不再随 Node 25+ 发行版分发。
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # allowBuilds 白名单生效的验收:以钩子文件实际存在为准,不以安装日志无报错为准。
+      # 漏列白名单时安装本身是成功的,只是 hooks 静默没装(spec §5.11 / §6)。
+      - name: lefthook hooks 已写入 .git/hooks
+        run: test -f .git/hooks/pre-commit && test -f .git/hooks/pre-push
+
+      # pnpm 设置写在正确的文件里:pnpm 11 对写错位置的设置是静默忽略(spec §6)
+      - name: pnpm 设置不在 package.json / .npmrc 里
+        run: |
+          node -e "if ('pnpm' in require('./package.json')) { console.error('package.json 里出现了 pnpm 字段 —— pnpm 11 不再读取它'); process.exit(1) }"
+          if [ -f .npmrc ]; then
+            grep -vE '^\s*(#|$)' .npmrc | grep -vE '^(registry|@[^:]+:registry|//)' && { echo '.npmrc 里出现了非 registry/auth 设置'; exit 1; } || true
+          fi
+
+      - run: pnpm exec biome ci
+      - run: pnpm run typecheck
+      - run: pnpm run test
+
+      # 构建 + bin/gitglance.js 未被构建管线触碰(该脚本内部会跑一次完整构建)
+      - run: pnpm run check:bin
+
+      # 体积门禁只在这里跑一次。matrix 档下载的是**同一份** dist/ 产物,字节完全相同,
+      # 再跑 9 遍不增加任何覆盖,却引入一个本不存在的方差面:gzip 的输出长度取决于
+      # 各 Node 大版本自带的 zlib,贴着预算的行会只在某一个 Node 上红,看起来像平台
+      # 问题而其实不是。matrix 档该跑的是真有平台维度的东西(冒烟、冷启动)。
+      - name: 产物体积门禁(spec §5.5)
+        run: pnpm run size
+
+      - name: 样式层叠方案生效(spec §5.6)
+        run: pnpm run check:css
+
+      - name: 发布产物内容干净(spec §8)
+        run: pnpm run check:pack
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+          retention-days: 3
+
+  matrix:
+    name: smoke ${{ matrix.os }} · Node ${{ matrix.node }}
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        # 22.0.x 是产品运行时下限本身,不是 22 线的最新版 —— 下限档要真的跑在下限上
+        node: ['22.0.x', '24', '26']
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      # `node --test` 在一个用例都没匹配上时是 **0 用例、exit 0** —— 一次改名、
+      # 一次目录搬迁,或某个平台上的引号行为不同,就会把「只读承诺的唯一自动化保护」
+      # (S1 起 §5.10 的主门禁就落在 test/smoke/)变成一个什么都没跑的绿勾。
+      # 先数一遍,数不到就响亮地失败。
+      - name: 冒烟用例确实被发现了
+        shell: bash
+        run: |
+          node -e "
+          const { readdirSync } = require('node:fs');
+          const files = readdirSync('test/smoke').filter((f) => f.endsWith('.test.js'));
+          if (files.length === 0) { console.error('test/smoke/ 下没有任何 *.test.js —— node --test 会静默跑 0 个用例'); process.exit(1); }
+          console.log('发现 ' + files.length + ' 个冒烟文件:' + files.join(', '));
+          "
+
+      # 本档**完全不执行安装、也不需要 pnpm**:它的全部意义就是只跑用户真正拿到的
+      # dist/ 产物。一旦装了东西,测的就不再是那个东西(spec §5.11 / §10)。
+      # 因此直接 node --test 打到冒烟套件文件,不经 package.json 的 script。
+      - name: 冒烟测试(跑 dist/ 产物)
+        run: node --test "test/smoke/*.test.js"
+
+      - name: 冷启动测量(spec §6,≤300ms)
+        run: node scripts/bench-startup.mjs
+
+  # 版本守卫的**正面**验证:在一个真正低于下限的 Node 上跑 bin/gitglance.js。
+  #
+  # 为什么另起一档:matrix 与 build 都跑在 ≥22 上,而守卫要防的是**解析期**失败 ——
+  # 在 22+ 上文件早已解析成功,守卫必然执行,那条路径永远测不到。冒烟里那条
+  # 「不含 ?. / ?? / 顶层 await / #私有字段 / ||=」的正则清单是它的替身:替身按
+  # 5 个具体语法逐条列举,而 catch {}、对象展开、class 静态块、** 等一律漏网,
+  # 后果正是 §6 禁止的「用户看到 SyntaxError 而不是友好提示」。这一档直接断言那句话。
+  #
+  # 本档不需要 dist/:守卫在 import 主模块**之前**就退出了(冒烟里另有一条断言
+  # stdout 为空,证的就是这个顺序)。
+  old-node-guard:
+    name: 版本守卫 · Node 20(低于下限)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+
+      - name: 低于下限时给友好提示,而不是 SyntaxError
+        shell: bash
+        run: |
+          set +e
+          out=$(node bin/gitglance.js --version 2>err.txt)
+          status=$?
+          err=$(cat err.txt)
+          echo "exit=$status"; echo "stdout=[$out]"; echo "stderr=$err"
+          [ "$status" -eq 1 ]                        || { echo 'FAIL 期望以 1 退出'; exit 1; }
+          [ -z "$out" ]                              || { echo 'FAIL 主模块被加载了 —— 守卫没有先于 import 执行'; exit 1; }
+          case "$err" in *SyntaxError*) echo 'FAIL 解析期就炸了,守卫根本没来得及跑'; exit 1;; esac
+          case "$err" in *'requires Node.js'*) ;; *) echo 'FAIL 没有打印友好提示'; exit 1;; esac
+          echo 'PASS 版本守卫在真实的低版本 Node 上按预期工作'
