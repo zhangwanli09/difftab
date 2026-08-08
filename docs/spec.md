@@ -374,6 +374,8 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 
 每条前缀的 `[Sx]` 标记的是**该项第一次可被验证的阶段**(对应第 7 节),不是它最终定稿的阶段;`[Sx/Sy]` 表示前一阶段可验证其可自动化的部分、后一阶段补齐余下部分(通常是真机或跨平台部分)。第 7 节的收口判据要求一个阶段结束时,标记为该阶段的项**全部**打勾。本节不含 `[S6]` 项——S6 的收口清单在第 8 节。
 
+**打勾的口径:门禁在 CI 上真的跑绿过,而不是在本机跑通过。** 本机绿而 CI 红是常态(实测:lefthook 的 postinstall 在 `CI` 置位时跳过写钩子,本机永远看不到这个),`[Sx/Sy]` 的前一半做完也不勾——整条满足才勾。S0 的 6 项由 CI run `31229259473` 收口(11 个作业全绿,含三平台 × Node 22.0.x/24/26 九档)。
+
 **启动与仓库识别**
 
 - [ ] `[S1/S2]` 在任意 git 仓库目录下执行 CLI 命令,能自动识别仓库并在浏览器打开对应变更视图(S1 验到启动与拉起浏览器,变更视图待 S2)
@@ -433,15 +435,15 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 **构建产物与发布**
 
 - [ ] `[S0/S2]` **产物体积门禁**:5.5 的三行门禁(前端 JS 明文 ≤350 KB / gzip ≤120 KB、CSS 明文 ≤40 KB)自动化测量并纳入 CI;S0 的 spike 预估与 S2 的收口实测均回填 5.5 表格
-- [ ] `[S0]` **静态检查进 CI**:`biome ci` 与 `tsc --noEmit` 均为 CI 门禁,失败即阻断
+- [x] `[S0]` **静态检查进 CI**:`biome ci` 与 `tsc --noEmit` 均为 CI 门禁,失败即阻断
 - [ ] `[S2]` **下限档跑的是构建产物**:CI matrix 的 Node **22.0.x** 档在完全不执行安装的前提下,对下载的 `dist/` artifact 跑通全部冒烟套件;5.10 的两层只读验证与冷启动 ≤300ms 测量均在构建产物上执行,而非 TS 源码(matrix 作业本身在 S0 即拉起,此项以冒烟套件补齐为准)
-- [ ] `[S0]` **发布产物内容干净**:`pnpm pack --dry-run --json` 列出的文件清单只含 `bin/`、`dist/`、README、LICENSE、`package.json`,不含 `src/`、配置文件、测试与任何 devDependency。注意打包出的 `package.json` 因 pnpm 的 manifest obfuscation 本就与仓库里的不同(剥离 `packageManager` 与 publish 生命周期脚本),核对时勿误判(见第 10 节)
-- [ ] `[S0]` **pnpm 安装可复现**:干净环境(无 store 缓存、无 `node_modules`)下 `pnpm install --frozen-lockfile` 通过且不修改 `pnpm-lock.yaml`
-- [ ] `[S0]` **`allowBuilds` 白名单生效**:两条一起看——(a) `pnpm ignored-builds` 报告 `None`;(b) 安装后 `.git/hooks` 下确有 lefthook 写入的钩子文件且能触发。**不以安装日志无报错为准**,漏列白名单时安装本身是成功的、构建脚本只是被静默跳过(见 5.11)。(a) 直接问 pnpm 自己忽略了谁,(b) 证明脚本不仅跑了还真干了活;两条互补,少任何一条都有一整类漏网
+- [x] `[S0]` **发布产物内容干净**:`pnpm pack --dry-run --json` 列出的文件清单只含 `bin/`、`dist/`、README、LICENSE、`package.json`,不含 `src/`、配置文件、测试与任何 devDependency。注意打包出的 `package.json` 因 pnpm 的 manifest obfuscation 本就与仓库里的不同(剥离 `packageManager` 与 publish 生命周期脚本),核对时勿误判(见第 10 节)
+- [x] `[S0]` **pnpm 安装可复现**:干净环境(无 store 缓存、无 `node_modules`)下 `pnpm install --frozen-lockfile` 通过且不修改 `pnpm-lock.yaml`
+- [x] `[S0]` **`allowBuilds` 白名单生效**:两条一起看——(a) `pnpm ignored-builds` 报告 `None`;(b) 安装后 `.git/hooks` 下确有 lefthook 写入的钩子文件且能触发。**不以安装日志无报错为准**,漏列白名单时安装本身是成功的、构建脚本只是被静默跳过(见 5.11)。(a) 直接问 pnpm 自己忽略了谁,(b) 证明脚本不仅跑了还真干了活;两条互补,少任何一条都有一整类漏网
   - CI 上跑 (b) 必须给安装步骤设 `LEFTHOOK=1`:lefthook 的 postinstall 检测到 `CI` 就**跳过** `lefthook install`,生命周期脚本照跑却不写钩子。不设的话该项恒为假,且失败原因与 `allowBuilds` 无关,是假红(已实测)
-- [ ] `[S0]` **pnpm 设置写在正确的文件里**:`allowBuilds` 等设置位于 `pnpm-workspace.yaml`;`package.json` 无 `pnpm` 字段、`.npmrc` 无非 auth 设置——**pnpm 11 对写错位置的设置是静默忽略**,故此项须逐个设置确认实际生效(如上一条以钩子文件为准),不能只看文件里写了什么(见 5.11)
+- [x] `[S0]` **pnpm 设置写在正确的文件里**:`allowBuilds` 等设置位于 `pnpm-workspace.yaml`;`package.json` 无 `pnpm` 字段、`.npmrc` 无非 auth 设置——**pnpm 11 对写错位置的设置是静默忽略**,故此项须逐个设置确认实际生效(如上一条以钩子文件为准),不能只看文件里写了什么(见 5.11)
 - [ ] `[S1/S5]` `npm i -g gitglance` 后在 Node 22+ 环境下能正常运行,macOS / Windows / Linux 三端均验证通过;低于 22 时打印明确的版本要求提示并以非 0 退出,**不得是 SyntaxError 或 Node 异常栈**——版本守卫必须先于任何可能超出该语法/API 范围的模块加载执行
-- [ ] `[S0]` **`bin/gitglance.js` 未被构建管线触碰**:跑完完整构建后,该文件与仓库源文件逐字节一致,且不出现在任何打包入口中(该文件在 S0 即须定稿——它是手写保守语法 JS、不参与构建,内容不依赖后续阶段;真机上"低于下限的 Node 打印友好提示"部分见上方版本守卫项,标 `[S1/S5]`)
+- [x] `[S0]` **`bin/gitglance.js` 未被构建管线触碰**:跑完完整构建后,该文件与仓库源文件逐字节一致,且不出现在任何打包入口中(该文件在 S0 即须定稿——它是手写保守语法 JS、不参与构建,内容不依赖后续阶段;真机上"低于下限的 Node 打印友好提示"部分见上方版本守卫项,标 `[S1/S5]`)
 
 ## 7. 实施阶段
 
