@@ -155,16 +155,23 @@ scripts/               bench:startup、size 门禁
 - **`html()` 不做语法高亮**(已实测,见第 10 节)。高亮位于 `Diff2HtmlUI.highlightCode()`,它依赖 `highlight.js-helpers` 的 `closeTags` / `nodeStream` / `mergeStreams` / `getLanguage`——先把整个文件的代码合起来交给 hljs,再按 diff 的行边界切回、补齐跨行未闭合的标签。**被排除的是三个预构建 UI bundle,不是 UI 层的源码**:允许深导入 ESM 源码模块 `diff2html/lib-esm/ui/js/diff2html-ui-base.js`,它参与 tree-shaking、hljs 实例由我们注入,深导入合法(模块体积与依据见第 10 节)。自行重写这段切分逻辑不在本项目要解决的问题之列
   - `draw()` 内部是 `innerHTML` 赋值 + 命令式绑定事件,**必须放在 Preact 的 ref/effect 之后**,不与 vdom 争夺同一棵子树(与 5.4 的 keyed reconcile 不冲突:列表由 Preact 管,单文件 diff 容器由 `Diff2HtmlUI` 管)
   - 用不到的开关一律关掉:`synchronisedScroll` / `fileListToggle` / `fileContentToggle` / `stickyFileHeaders` 全部 `false`,只留 `highlight: true`
-- `import hljs from 'highlight.js/lib/core'`,再**逐个显式注册**语言。清单为 **22 个真实语言模块**:`javascript` / `typescript` / `json` / `css` / `scss` / `xml` / `markdown` / `python` / `go` / `rust` / `java` / `kotlin` / `swift` / `c` / `cpp` / `csharp` / `bash` / `yaml` / `ini` / `sql` / `php` / `ruby`。**别名不是模块,不得单独 import**——`jsx` / `mjs` / `cjs` 属 `javascript`,`tsx` / `ts` 属 `typescript`,`toml` 属 **`ini`**,`html` 属 `xml`;`registerLanguage` 注册主模块时别名一并生效(`highlight.js/lib/languages/{jsx,tsx,toml}` 三个路径实际不存在,写了会在构建期 resolve 失败,已实测)。**未命中的语言退化为 plaintext,不报错**——注册清单是白名单,增删语言即增删体积,这正是放弃预构建包换来的可控性
+  - **`highlight: true` 时 `draw()` 内部已经调过 `highlightCode()`,不要在 `draw()` 后再手工调一次**。第二次调用读到的 `textContent` 仍是纯文本,但 `nodeStream(line)` 拿到的已是第一遍插入的 `hljs-*` span,`mergeStreams` 会把两份流交织进同一行 —— 结果是嵌套重复的 span,且高亮开销白付一倍。二选一:要么只 `draw()`,要么 `highlight: false` + 手工调
+- `import hljs from 'highlight.js/lib/core'`,再**逐个显式注册**语言。清单为 **22 个真实语言模块**:`javascript` / `typescript` / `json` / `css` / `scss` / `xml` / `markdown` / `python` / `go` / `rust` / `java` / `kotlin` / `swift` / `c` / `cpp` / `csharp` / `bash` / `yaml` / `ini` / `sql` / `php` / `ruby`。**别名不是模块,不得单独 import**——`jsx` / `mjs` / `cjs` 属 `javascript`,`tsx` / `ts` 属 `typescript`,`toml` 属 **`ini`**,`html` 属 `xml`;`registerLanguage` 注册主模块时别名一并生效(`highlight.js/lib/languages/{jsx,tsx,toml}` 三个路径实际不存在,写了会在构建期 resolve 失败,已实测)。注册清单是白名单,增删语言即增删体积,这正是放弃预构建包换来的可控性
+  - **`plaintext` 必须与这 22 个一起注册**,它是兜底而非语言。「未命中的语言退化为 plaintext」不是自动发生的:`highlightCode()` 里 `hljs.getLanguage(x) === undefined` 时把语言改写为字面量 `'plaintext'`,`getLanguage()` 对无扩展名/未知扩展名也直接返回 `'plaintext'`,随后无条件调用 `hljs.highlight(text, { language: 'plaintext' })`。而 `lib/core` **不自带** plaintext,漏注册时这一步抛 `Unknown language: "plaintext"`,异常从 `highlightCode()` 冒到调用方,**整个 diff 视图渲染失败**——不是那一个文件退化。触发条件极普通:diff 里出现 `LICENSE` / `Dockerfile` / `notes.txt` / `.lua` 即可(已实测)。模块本身 318 B,对体积无影响
 - diff2html 的两个传递依赖(`diff`、`@profoundlogic/hogan`)由打包器一并处理。注意 `@profoundlogic/hogan` 只有 CJS 入口(无 `module` / `exports` 字段),需打包器的 CJS 互操作,不影响可行性但也不要指望它被 tree-shake
 
 **产物体积门禁**(当前为预算值而非承诺值。S0 的 spike 先给出预估以决定是否需要当场砍语言清单,S2 收口时填入最终实测,见第 7 节):
 
 | 产物 | 门禁 | S0 spike 预估 | S2 收口实测 |
 |---|---|---|---|
-| 前端 JS(明文) | ≤ 350 KB | S0 填入 | S2 填入 |
-| 前端 JS(gzip) | ≤ 120 KB | S0 填入 | S2 填入 |
-| 前端 CSS(明文,含 `diff2html.min.css` 17 KB + hljs 双主题 2.6 KB + Tailwind 产物) | ≤ 40 KB | S0 填入 | S2 填入 |
+| 前端 JS(明文) | ≤ 350 KB | **196.0 KB** | S2 填入 |
+| 前端 JS(gzip) | ≤ 120 KB | **65.6 KB** | S2 填入 |
+| 前端 CSS(明文,含 `diff2html.min.css` 17 KB + hljs 双主题 2.6 KB + Tailwind 产物) | ≤ 40 KB | **22.3 KB** | S2 填入 |
+
+S0 spike 的口径:22 个语言模块 + `plaintext` 全部注册 + 深导入 `diff2html-ui-base` + `@preact/signals` + Preact,
+经 Vite 8(Rolldown)构建、压缩后的 `dist/web/app.js` / `app.css`。三行均在预算内,
+**语言清单不需要在 S0 砍**。余量最紧的是 CSS(22.3 / 40 KB),而它的增量来自 Tailwind 工具类,
+与语言清单无关;JS 两行各剩四成以上,S2 接入真实组件后仍有空间。
 
 对照基线:diff2html slim 预构建包单文件即 302 KB(min)。门禁纳入 CI(见第 6 节)。
 
@@ -331,8 +338,11 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 **CI 分层**——`tsdown` 要求 Node `^22.18 || >=24.11`、Vite 8 要求 `>=22.12`,均高于产品运行时下限 22.0.0,因此 CI 必须拆成两层。矩阵作业测的是**用户真正拿到的产物**,而非 TS 源码:
 
 1. **build 作业**(Node 24):`pnpm/action-setup` → `actions/setup-node`(`cache: 'pnpm'`)→ `pnpm install --frozen-lockfile` → `biome ci` → `tsc --noEmit` → `vitest run`(单元/集成,直接跑 TS 源码)→ 构建 → 检查产物体积门禁(5.5)→ 上传 `dist/` artifact。**`pnpm/action-setup` 必须排在 `actions/setup-node` 之前**,否则后者的 `cache: 'pnpm'` 找不到 pnpm 可执行文件,缓存步骤直接失败
-2. **matrix 作业**(Node **22.0.x** / 24 / 26 × macOS / Windows / Linux):下载 `dist/` artifact,**完全不执行安装、也不需要 pnpm**,用 `node --test` 直接打到纯 JS 编写的冒烟套件文件(不经 `package.json` 的 script)——CLI 启动、status、diff、5.10 的两层只读验证、冷启动 ≤300ms 测量、版本守卫(在低于下限的 Node 上必须打印友好提示而非 SyntaxError)。**不得改成"装一点点"**(如 `pnpm install --prod`),理由见第 10 节
-3. 5.10 的 fake git wrapper 靠 PATH 劫持,与代码是否打包无关,归属 matrix 作业
+2. **matrix 作业**(Node **22.0.x** / 24 / 26 × macOS / Windows / Linux):下载 `dist/` artifact,**完全不执行安装、也不需要 pnpm**,用 `node --test` 直接打到纯 JS 编写的冒烟套件文件(不经 `package.json` 的 script)——CLI 启动、status、diff、5.10 的两层只读验证、冷启动 ≤300ms 测量。**不得改成"装一点点"**(如 `pnpm install --prod`),理由见第 10 节
+   - `node --test` 在一个用例都没匹配上时是 **0 用例、exit 0**。因此本档在跑测试之前必须先数一遍冒烟文件、数不到就失败:一次改名或某个平台上的引号行为不同,会把「只读承诺的唯一自动化保护」变成一个什么都没跑的绿勾
+   - **体积门禁不进本档**:matrix 下载的是同一份 `dist/`,字节完全相同,再跑 9 遍不增加覆盖,反而引入方差 —— gzip 输出长度取决于各 Node 大版本自带的 zlib,贴着预算的行会只在某一个 Node 上红。它归 build 作业跑一次
+3. **old-node-guard 作业**(Node 20,即**低于下限**):不下载产物,直接 `node bin/gitglance.js`,断言 exit 1 + 打印友好提示 + stderr 无 `SyntaxError` + stdout 为空。单列一档是因为 build 与 matrix 都跑在 ≥22 上,而守卫要防的是**解析期**失败 —— 在 22+ 上文件早已解析成功,那条路径永远测不到。冒烟里那条「不含 `?.` / `??` / 顶层 await / 私有字段 / `||=`」的正则清单只是它的替身,替身按具体语法逐条列举,`catch {}`、对象展开、class 静态块等一律漏网
+4. 5.10 的 fake git wrapper 靠 PATH 劫持,与代码是否打包无关,归属 matrix 作业
 
 ### 5.12 后端接口契约
 
@@ -418,7 +428,7 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 
 - [ ] `[S0/S2]` **样式层叠方案生效**:构建产物中 hljs 主题与 `diff2html.min.css` 均为 unlayered 且 hljs 在前;Tailwind preflight 未破坏 diff2html 渲染(行号列宽、边框、表格对齐正常),深浅两套主题下均验证(S0 的前提验证只证 unlayered 成立,渲染观感待 S2)
 - [ ] `[S2]` **深浅主题各自生效**:`github-dark.css` 在构建产物中确实被 `(prefers-color-scheme: dark)` 包住;切换系统外观后语法高亮配色随之切换,浅色下不是深色配色
-- [ ] `[S0/S2]` **语法高亮真的出颜色**:diff 中的代码按语言着色(而非只有 diff 增删底色);清单外的语言退化为 plaintext 且不报错(S0 的 spike 即需看到颜色,否则深导入方案不成立)
+- [ ] `[S0/S2]` **语法高亮真的出颜色**:diff 中的代码按语言着色(而非只有 diff 增删底色);清单外的语言退化为 plaintext 且不报错(S0 的 spike 即需看到颜色,否则深导入方案不成立)。**退化路径要有单测守着**:`hljs.highlight(x, { language: 'plaintext' })` 不抛异常 —— 光看 spike 样例是发现不了的,样例里的语言全在清单内
 
 **构建产物与发布**
 

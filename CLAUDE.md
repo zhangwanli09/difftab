@@ -23,22 +23,27 @@
 
 包管理器为 **pnpm**,版本由 `package.json` 的 `packageManager` 字段固定;首次 clone 后 `pnpm install --frozen-lockfile`。
 
-仓库尚无 `package.json`(S0 阶段建立)。下表为规划中的命令,**每新增一个 `package.json` script,立即回来补全本节**——过期比缺失更糟。
+**每新增一个 `package.json` script,立即回来补全本节**——过期比缺失更糟。
 
 | 用途 | 命令 | 状态 |
 |---|---|---|
-| 本地启动(构建产物) | `node bin/gitglance.js`(在任意 git 仓库目录下) | S1 建立 |
-| 开发模式(Vite dev server + 后端) | `pnpm dev` | S0 建立 |
-| 构建(前端 Vite + 后端 tsdown) | `pnpm build` | S0 建立 |
-| 类型检查 | `pnpm typecheck`(`tsc --noEmit`,两份 tsconfig) | S0 建立 |
-| 格式化 + lint | `pnpm lint`(`biome check`)/ CI 用 `biome ci` | S0 建立 |
-| 单元/集成测试(Vitest,直接跑 TS 源码) | `pnpm test` | S1 建立 |
-| 冒烟测试(纯 JS,跑构建产物,含只读性两层验证) | `pnpm test:smoke`(CI matrix 档不经 script,直接 `node --test`) | 第一层(git 白名单断言)S1 入 CI,第二层(只读 `.git`)S2 入 CI |
+| 本地启动(构建产物) | `node bin/gitglance.js`(在任意 git 仓库目录下) | S1 接真实流程 |
+| 开发模式(Vite dev server + 后端) | `pnpm dev` | ✅ S0(后端待 S1) |
+| 构建(前端 Vite + 后端 tsdown) | `pnpm build`(= `build:web` + `build:server`) | ✅ S0 |
+| 类型检查 | `pnpm typecheck`(`tsc --noEmit`,前后端各一份 tsconfig,严格性开关共用 `tsconfig.base.json`) | ✅ S0 |
+| 格式化 + lint | `pnpm lint`(`biome check`)/ CI 用 `biome ci` | ✅ S0 |
+| 单元/集成测试(Vitest,直接跑 TS 源码) | `pnpm test`。用例按被测代码分 `test/unit/server/` 与 `test/unit/web/`,分别归两份 tsconfig | ✅ S0(hljs 语言装配) |
+| 冒烟测试(纯 JS,跑构建产物,含只读性两层验证) | `pnpm test:smoke`(CI matrix 档不经 script,直接 `node --test "test/smoke/*.test.js"`) | ✅ S0(版本守卫、版本号一致性、产物只 import 标准库);第一层(git 白名单断言)S1 入 CI,第二层(只读 `.git`)S2 入 CI |
 | 测试仓库 fixture 生成 | `pnpm fixtures` | 第一批 S1,第二批 S4 |
-| 冷启动耗时测量(对构建产物,≤300ms 门禁) | `pnpm bench:startup` | S0 建立骨架,S1 接真实流程并入门禁 |
-| 产物体积门禁 | `pnpm size` | S0 随 spike 建立,S2 收口回填实测 |
+| 冷启动耗时测量(对构建产物,≤300ms 门禁) | `pnpm bench:startup` | ✅ S0 骨架,S1 接真实流程 |
+| 产物体积门禁 | `pnpm size` | ✅ S0,S2 收口回填实测 |
+| 样式层叠门禁(unlayered + hljs 在前 + 深色带媒体条件) | `pnpm check:css` | ✅ S0 |
+| 发布产物内容门禁(`pnpm pack --dry-run --json`) | `pnpm check:pack` | ✅ S0 |
+| `bin/gitglance.js` 未被构建管线触碰 | `pnpm check:bin`(内部跑一次完整构建) | ✅ S0 |
 
-`fixtures` / `bench:startup` / `size` **只是别名**——脚本本体必须是零依赖纯 JS、可由 `node <路径>` 直接执行,因为它们要在没有 pnpm、没有 `node_modules` 的 CI matrix 机器上跑(见 spec §5.11)。
+`fixtures` / `bench:startup` / `size` / `check:css` **只是别名**——脚本本体必须是零依赖纯 JS、可由 `node <路径>` 直接执行,因为它们要在没有 pnpm、没有 `node_modules` 的 CI matrix 机器上跑(见 spec §5.11)。`check:pack` / `check:bin` 需要 pnpm,只在 CI 的 build 作业跑。
+
+架构边界由 `biome.json` 的 `noRestrictedImports` overrides 承担,随 `pnpm lint` / `biome ci` 一起跑,不另设命令:import 方向、`node:child_process` 只许出现在 `server/git` 与 `server/cli`、以及不得直接引用 diff2html 的传递依赖。**每个受限目录的 patterns 必须自带全部条目**——Biome 的 overrides 对同一规则是替换而非合并,靠后一条 override 覆盖同一文件时,前一条的 patterns 会整个失效。
 
 ## 4. 动手前先读 spec 的哪节
 
