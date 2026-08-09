@@ -101,7 +101,20 @@ export type DiffPayload =
   | { kind: 'text'; patch: string }
   | { kind: 'untracked-text'; patch: string }
   | { kind: 'binary' }
-  | { kind: 'too-large'; size: number };
+  | {
+      kind: 'too-large';
+      /** 文件字节数。**不足以解释拒绝的原因**,见 `reason`。 */
+      size: number;
+      /**
+       * 哪个阈值拦下了它:`size` 是体积超 5MB,`lines` 是行数超 50,000(§5.2 两个
+       * 触发口都在 server/git/diff.ts)。
+       *
+       * 少了这个字段,行数那一路的文件前端只能拿到一个几百 KB 的体积 —— 既解释不了
+       * 为什么不预览,按 MB 取整还会显示「文件过大(0 MB)」。判别原因属 git 侧知识,
+       * 前端无法从 `size` 反推(§5.0 不变式 4)。
+       */
+      reason: 'size' | 'lines';
+    };
 
 /** 错误响应。`message` 不含绝对路径(§5.12 / §5.9)。 */
 export interface ErrorPayload {

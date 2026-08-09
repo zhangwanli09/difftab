@@ -76,7 +76,9 @@ describe('untrackedDiff', () => {
     // 50,001 行、总共约 100 KB,远在 5MB 之下
     writeFileSync(join(root, 'many-lines.txt'), `${'x\n'.repeat(50_001)}`);
     const payload = await untrackedDiff(root, 'many-lines.txt');
-    expect(payload.kind).toBe('too-large');
+    // reason 必须是 lines 而不是 size:体积只有约 100 KB,前端若只拿到体积就会
+    // 显示「文件过大(0 MB)」这种自相矛盾的话(§5.12)
+    expect(payload).toEqual({ kind: 'too-large', size: 100_002, reason: 'lines' });
   });
 
   test('文件不在了给明确错误,而不是抛一个 ENOENT 栈', async () => {

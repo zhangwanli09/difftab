@@ -131,7 +131,7 @@ export async function untrackedDiff(root: string, path: string): Promise<DiffPay
   }
 
   if (!info.isFile()) throw new DiffRequestError('invalid-path', 'not a regular file');
-  if (info.size > MAX_BYTES) return { kind: 'too-large', size: info.size };
+  if (info.size > MAX_BYTES) return { kind: 'too-large', size: info.size, reason: 'size' };
 
   const buffer = await readFile(abs);
   // 已跟踪文件的二进制判定以 `git diff --numstat` 为准(git 自身含 .gitattributes
@@ -144,7 +144,9 @@ export async function untrackedDiff(root: string, path: string): Promise<DiffPay
   // 「一行空内容 + 末尾无换行」的假 hunk
   const lines = text === '' ? [] : text.split('\n');
   if (endsWithNewline) lines.pop();
-  if (lines.length > MAX_LINES) return { kind: 'too-large', size: info.size };
+  // 体积没超、行数超了 —— `reason` 区分的就是这条路径:文件可能只有几百 KB,
+  // 光把体积报给前端解释不了为什么不预览(§5.12)
+  if (lines.length > MAX_LINES) return { kind: 'too-large', size: info.size, reason: 'lines' };
 
   const head = newFileHeader(path, info.mode & 0o111 ? '100755' : '100644');
   if (lines.length === 0) {

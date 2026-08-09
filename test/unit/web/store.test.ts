@@ -232,7 +232,9 @@ describe('loadDiff(§5.2 的按文件懒加载)', () => {
       text,
       { kind: 'untracked-text', patch: '+new\n' },
       { kind: 'binary' },
-      { kind: 'too-large', size: 6 * 1024 * 1024 },
+      { kind: 'too-large', size: 6 * 1024 * 1024, reason: 'size' },
+      // 行数那一路的体积不大 —— 两条都过一遍,免得 store 将来「顺手」按体积做判断
+      { kind: 'too-large', size: 100 * 1024, reason: 'lines' },
     ] satisfies DiffPayload[]) {
       stubJson(payload);
       await loadDiff(file({ path: 'a.bin', unstaged: 'M' }));
