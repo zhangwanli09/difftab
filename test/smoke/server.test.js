@@ -12,6 +12,9 @@ import { test } from 'node:test';
 import { makeFixtures } from '../fixtures/make.mjs';
 import { authedGet, BIN, cleanupOnExit, httpGet, once, startGitglance } from './helpers.js';
 
+/** 本文件用得到的 fixture。生成全部 8 个要 600ms 上下,其中一半这里根本不打开。 */
+const NEEDED = ['unicodePaths', 'staged', 'empty'];
+
 let workdir;
 let repos;
 let server;
@@ -35,7 +38,7 @@ function listFiles(dir, prefix = '') {
  */
 const setup = once(async () => {
   workdir = mkdtempSync(join(tmpdir(), 'gitglance-server-'));
-  repos = makeFixtures(join(workdir, 'repos'));
+  repos = makeFixtures(join(workdir, 'repos'), NEEDED);
   server = await startGitglance({ cwd: repos.unicodePaths });
 });
 

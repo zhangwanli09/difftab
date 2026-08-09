@@ -62,11 +62,38 @@ export const TRICKY_PATHS = [
   ...(WINDOWS ? [] : ['docs/she "said".md']),
 ];
 
-export function makeFixtures(destDir) {
+/**
+ * 全部仓库名。既是 `only` 的校验表,也是「没生成的仓库」那几个报错 getter 的清单。
+ */
+export const ALL_REPOS = [
+  'unicodePaths',
+  'renames',
+  'staged',
+  'deletions',
+  'noUpstream',
+  'upstreamTracking',
+  'empty',
+  'manyFiles',
+];
+
+/**
+ * 生成测试仓库。`only` 给出需要哪几个(省略即全部)。
+ *
+ * 加 `only` 是因为整套要跑 30 多次 git、约 600ms,其中 `manyFiles` 一个就占三分之一
+ * (640 次写 + 对 320 个路径 `git add -A`),而**没有任何一个冒烟文件打开它**。
+ * 三个冒烟文件各在自己的进程里建一次(`node --test` 一文件一进程,memo 共享不了),
+ * 这笔开销在 CI 的 9 档矩阵上要付 27 次,Windows 上 git 起进程还要慢上数倍。
+ */
+export function makeFixtures(destDir, only) {
   const dest = resolve(destDir);
   rmSync(dest, { recursive: true, force: true });
   mkdirSync(dest, { recursive: true });
   const env = fixtureEnv(dest);
+
+  for (const name of only ?? []) {
+    if (!ALL_REPOS.includes(name)) throw new Error(`未知的 fixture 仓库:${name}`);
+  }
+  const wanted = (name) => only === undefined || only.includes(name);
 
   const git = (cwd, ...args) =>
     execFileSync('git', args, { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
@@ -96,7 +123,7 @@ export function makeFixtures(destDir) {
 
   // 1. 路径含非 ASCII / 空格 / 引号 —— 验 §5.2 的 `-z`(列表)与
   //    `core.quotePath=false`(补丁正文头部行)是否真的都生效
-  {
+  if (wanted('unicodePaths')) {
     const cwd = init('unicode-paths');
     for (const path of TRICKY_PATHS) write(cwd, path, 'one\ntwo\nthree\n');
     commit(cwd, 'add files with tricky paths');
@@ -114,7 +141,7 @@ export function makeFixtures(destDir) {
   // 2. 重命名 —— 验解析循环是有状态的:`2 ` 记录占**两个** NUL 段。
   //    同时给出一个改动过大、落在相似度阈值(默认 50%)之下的例子,
   //    git 会把它报成 D + A 而不是 R,前端的「重命名」标注不该在那里出现
-  {
+  if (wanted('renames')) {
     const cwd = init('renames');
     write(cwd, 'src/kept.txt', Array.from({ length: 20 }, (_, i) => `line ${i}`).join('\n') + '\n');
     write(
@@ -149,7 +176,7 @@ export function makeFixtures(destDir) {
 
   // 3. 已暂存改动 —— 验双状态位。agent 执行过 `git add` 后,已暂存的改动仍要能
   //    展示不遗漏,这正是 diff 基准取 `git diff HEAD` 而不是 `git diff` 的理由
-  {
+  if (wanted('staged')) {
     const cwd = init('staged');
     write(cwd, 'a.txt', 'a1\n');
     write(cwd, 'b.txt', 'b1\n');
@@ -168,7 +195,7 @@ export function makeFixtures(destDir) {
   }
 
   // 3b. 删除 + 未跟踪符号链接 —— 决定「已跟踪 / 未跟踪」那次分流的判据本身(§7 末段)
-  {
+  if (wanted('deletions')) {
     const cwd = init('deletions');
     write(cwd, 'staged-deleted.txt', 'gone from the index\n');
     write(cwd, 'worktree-deleted.txt', 'gone from the worktree\n');
@@ -197,7 +224,7 @@ export function makeFixtures(destDir) {
 
   // 4. 无上游的新建分支 —— **不输出 `# branch.ab` 行**(已实测)。
   //    此时必须展示「无上游」而不是 0/0,更不能因取不到字段而崩溃
-  {
+  if (wanted('noUpstream')) {
     const cwd = init('no-upstream');
     write(cwd, 'readme.txt', 'hello\n');
     commit(cwd, 'initial');
@@ -209,7 +236,7 @@ export function makeFixtures(destDir) {
   // 4b. 有上游、且 ahead/behind 都非零 —— 上一项的对照面。
   //     没有它,「解析 `# branch.ab`」这条路径在整个 fixture 集里一次都走不到,
   //     而那时 upstream 恒为 null 的实现看起来一样绿
-  {
+  if (wanted('upstreamTracking')) {
     const origin = init('upstream-origin');
     write(origin, 'shared.txt', 'v1\n');
     commit(origin, 'initial');
@@ -232,7 +259,7 @@ export function makeFixtures(destDir) {
   // 5. 空仓库(`git init` 后无提交)—— HEAD 不存在,`git diff HEAD` 直接 fatal,
   //    diff 基准须降级为空树哈希(§5.3)。**放一个已 add 的文件**:否则全是未跟踪,
   //    空树基准那条路径一次都走不到,而它正是本项要证的东西
-  {
+  if (wanted('empty')) {
     const cwd = init('empty');
     write(cwd, 'staged-before-first-commit.txt', 'no commits yet\n');
     git(cwd, 'add', 'staged-before-first-commit.txt');
@@ -241,7 +268,7 @@ export function makeFixtures(destDir) {
   }
 
   // 6. 300+ 文件变更 —— S2 验收懒加载时即需就位(agent 单次改 300+ 文件是常态)
-  {
+  if (wanted('manyFiles')) {
     const cwd = init('many-files');
     for (let i = 0; i < 320; i += 1) {
       write(cwd, `pkg/mod${String(i).padStart(3, '0')}.ts`, `export const value${i} = ${i};\n`);
@@ -251,6 +278,17 @@ export function makeFixtures(destDir) {
       write(cwd, `pkg/mod${String(i).padStart(3, '0')}.ts`, `export const value${i} = ${i + 1};\n`);
     }
     repos.manyFiles = cwd;
+  }
+
+  // 没生成的仓库不能是 undefined:调用方会拿着它去 spawn,cwd 变成进程当前目录,
+  // 报出来的错与真正的原因(「你没把这个仓库列进 only」)八竿子打不着
+  for (const name of ALL_REPOS) {
+    if (name in repos) continue;
+    Object.defineProperty(repos, name, {
+      get() {
+        throw new Error(`fixture 仓库 ${name} 没有生成 —— 把它加进 makeFixtures 的 only 参数`);
+      },
+    });
   }
 
   return repos;

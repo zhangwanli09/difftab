@@ -184,6 +184,36 @@ export function parseTrace(log) {
 }
 
 /**
+ * 跑一遍产品的**完整流程**:起进程 → `/api/state` → 给列表里每个文件取一次 diff → 退出。
+ *
+ * 放在 helpers 而不是各测试文件里,是因为 §5.10 两层门禁的全部价值都建立在「流程真的
+ * 走到了被保护的那段代码」上。两份各自维护的流程定义意味着 S4a 新增的分支
+ * (binary / too-large / 重命名双路径)接进其中一份、另一份静默漏掉,而两边都不会红。
+ *
+ * diff 请求由 `/api/state` 的返回**推导**而不是手写清单:重命名条目自带 `oldPath`,
+ * 手写时漏传它就会走进「退化成全新增文件」那条分支(spec §5.2),读起来却像覆盖到了。
+ *
+ * 逐个串行发,不 `Promise.all`:每个请求在后端都是一次 git 子进程,而这个流程会被指到
+ * 320 文件的仓库上。并发只会把它变成 320 个同时在跑的 git。
+ */
+export async function runFullFlow(cwd, { env } = {}) {
+  const server = await startGitglance({ cwd, ...(env ? { env } : {}) });
+  try {
+    const state = await authedGet(server.port, server.token, '/api/state');
+    const files = JSON.parse(state.body).files ?? [];
+    const diffs = [];
+    for (const file of files) {
+      const query = new URLSearchParams({ path: file.path });
+      if (file.oldPath) query.set('oldPath', file.oldPath);
+      diffs.push(await authedGet(server.port, server.token, `/api/diff?${query}`));
+    }
+    return { cwd, state, files, diffs, stderr: server.stderr };
+  } finally {
+    await server.stop();
+  }
+}
+
+/**
  * 带上会话 cookie 的请求。
  *
  * cookie 名的字面量只在这里出现一次。冒烟测试跑的是 `dist/` 产物、不能 import TS

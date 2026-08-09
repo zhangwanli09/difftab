@@ -29,4 +29,13 @@ export interface FixtureRepos {
   manyFiles: string;
 }
 
-export declare function makeFixtures(destDir: string): FixtureRepos;
+export type FixtureName = keyof FixtureRepos;
+
+/** 全部仓库名。既是 `only` 的校验表,也是未生成仓库那几个报错 getter 的清单。 */
+export declare const ALL_REPOS: readonly FixtureName[];
+
+/**
+ * `only` 省略即生成全部。只列一部分时,**未生成的仓库仍在返回值上**,但读它会抛 ——
+ * 给 undefined 会让调用方带着它去 spawn,错得离原因很远。
+ */
+export declare function makeFixtures(destDir: string, only?: readonly FixtureName[]): FixtureRepos;
