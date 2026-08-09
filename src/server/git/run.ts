@@ -21,8 +21,13 @@ const GLOBAL_CONFIG = ['-c', 'core.quotePath=false'];
  *
  * `GIT_OPTIONAL_LOCKS=0` 是只读承诺的一部分而不是性能开关:默认情况下 `git status`
  * 会顺手把刷新过的 stat 缓存写回 `.git/index`。那不改变 status 的输出,因此
- * 「前后 `git status` 比对」这类验证发现不了它(§5.10 排除该做法的原因之一),
- * 但 §5.10 第二层(`chmod -R a-w .git` 后跑完整流程)会当场炸给我们看。
+ * 「前后 `git status` 比对」这类验证发现不了它(§5.10 排除该做法的原因之一)。
+ *
+ * **把这一行删掉,只读 `.git` 那半层门禁照样全绿**(已实测,见 §10):git 把 index
+ * 回写当 best-effort,`.git` 不可写时它静默跳过、exit 0、stderr 全空。真正看得见
+ * 的是 §5.10 第二层的 **B 半**——在可写的 `.git` 上前后做逐字节快照比对
+ * (`test/smoke/readonly-git-dir.test.js`)。别把 B 半当成 A 半的重复给删了。
+ *
  * 该变量在 git < 2.15 上不存在,设了也无害 —— 那个区间的 git 只是照旧写 index。
  *
  * `GIT_TERMINAL_PROMPT=0` 防止任何意外的凭据交互把无人值守的进程挂住。
