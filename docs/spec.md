@@ -385,7 +385,7 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 
 **启动与仓库识别**
 
-- [ ] `[S1/S2b]` 在任意 git 仓库目录下执行 CLI 命令,能自动识别仓库并在浏览器打开对应变更视图(S1 验到启动与拉起浏览器,变更视图待 S2b)
+- [x] `[S1/S2b]` 在任意 git 仓库目录下执行 CLI 命令,能自动识别仓库并在浏览器打开对应变更视图(S1 验到启动与拉起浏览器,变更视图待 S2b)
 - [x] `[S1]` 空仓库(尚无提交)下工具不崩溃:diff 基准降级为空树哈希,列表与分支状态展示合理
 - [ ] `[S4b]` detached HEAD、rebase/merge 进行中等状态下工具不崩溃,分支状态降级并明确标注当前处于何种状态
 - [ ] `[S4b]` git worktree、submodule 目录下能正常启动;bare 仓库给出明确提示而非崩溃
@@ -397,11 +397,11 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 
 **Diff 正确性与边界**
 
-- [ ] `[S2b]` Diff 展示内容与 `git diff HEAD` 结果一致;agent 执行过 `git add` 后,已暂存的改动仍能正常展示不遗漏
+- [x] `[S2b]` Diff 展示内容与 `git diff HEAD` 结果一致;agent 执行过 `git add` 后,已暂存的改动仍能正常展示不遗漏
 - [ ] `[S4a]` 未跟踪的新文件能展示为全新增内容,而非在列表里可见却点开无 diff
 - [ ] `[S4a]` 新文件/删除文件/重命名正确展示,二进制文件仅提示变更不做内容 diff,超大文件(如 >5MB)提示不支持预览而非卡死
 - [ ] `[S4a]` 重命名的文件在懒加载点开后标注为"重命名"(展示 `rename from/to` 与相似度),而非退化成一个全新增文件
-- [ ] `[S2b]` 单次变更 300+ 文件的仓库下,列表能正常展示、点击单个文件的 diff 响应及时,浏览器主线程不出现可感知冻结
+- [x] `[S2b]` 单次变更 300+ 文件的仓库下,列表能正常展示、点击单个文件的 diff 响应及时,浏览器主线程不出现可感知冻结
 - [x] `[S1]` 路径含非 ASCII 字符(中文/日文/emoji)、空格、引号的文件,在列表与 diff 中均正确展示,不出现 `\351\234\200` 这类转义残留(S1 即可在封装层输出上验证,不必等渲染)
 
 **自动刷新与三档监听**
@@ -424,7 +424,7 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 
 - [x] `[S1]` 5.10 的**主门禁**(`GIT_TRACE` 记录并断言 git 子命令只出现在只读白名单,外加一条「确实记到了东西」的正面断言)与浏览器拉起的单点断言均通过,并随 git 封装层一同纳入 CI 门禁
 - [x] `[S2a]` 5.10 的**第二层**(A 只读 `.git` 跑完整流程 + B `.git` 逐字节比对及其正面对照)通过并纳入 matrix 作业;Windows 上 A 半改用只读 ACL 或显式跳过,不得静默通过
-- [ ] `[S1/S2b]` **dev 代理未以放宽后端校验实现**:后端代码中不存在任何绕过 Host / Origin / token 校验的环境变量或分支;`vite dev` 下经代理发出的请求能通过后端三道校验拿到 `/api/state`(S1 即可验到这一步——此时前端尚未建立,以请求本身通过为准;完整页面功能待 S2b)
+- [x] `[S1/S2b]` **dev 代理未以放宽后端校验实现**:后端代码中不存在任何绕过 Host / Origin / token 校验的环境变量或分支;`vite dev` 下经代理发出的请求能通过后端三道校验拿到 `/api/state`(S1 即可验到这一步——此时前端尚未建立,以请求本身通过为准;完整页面功能待 S2b)
 - [x] `[S0/S1]` **5.0 的架构边界可自动断言**:CI 中存在规则或脚本,能在「`src/web` 反向 import `src/server`(`shared/` 除外)」或「`server/git` 之外出现 git 子进程调用」时失败。import 方向部分由 Biome 的 `noRestrictedImports` 承担(S0 建立),子进程单点部分与 5.10 主门禁合并断言(S1 建立)
 
 **性能与资源**
@@ -437,7 +437,7 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 
 - [ ] `[S0/S2c]` **样式层叠方案生效**:构建产物中 hljs 主题与 `diff2html.min.css` 均为 unlayered 且 hljs 在前;Tailwind preflight 未破坏 diff2html 渲染(行号列宽、边框、表格对齐正常),深浅两套主题下均验证(S0 的前提验证只证 unlayered 成立,渲染观感待 S2c)
 - [ ] `[S2c]` **深浅主题各自生效**:`github-dark.css` 在构建产物中确实被 `(prefers-color-scheme: dark)` 包住;切换系统外观后语法高亮配色随之切换,浅色下不是深色配色
-- [ ] `[S0/S2b]` **语法高亮真的出颜色**:diff 中的代码按语言着色(而非只有 diff 增删底色);清单外的语言退化为 plaintext 且不报错(S0 的 spike 即需看到颜色,否则深导入方案不成立)。**退化路径要有单测守着**:`hljs.highlight(x, { language: 'plaintext' })` 不抛异常 —— 光看 spike 样例是发现不了的,样例里的语言全在清单内
+- [x] `[S0/S2b]` **语法高亮真的出颜色**:diff 中的代码按语言着色(而非只有 diff 增删底色);清单外的语言退化为 plaintext 且不报错(S0 的 spike 即需看到颜色,否则深导入方案不成立)。**退化路径要有单测守着**:`hljs.highlight(x, { language: 'plaintext' })` 不抛异常 —— 光看 spike 样例是发现不了的,样例里的语言全在清单内
 
 **构建产物与发布**
 

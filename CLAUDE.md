@@ -99,7 +99,7 @@
 
 ## 7. 开发阶段
 
-**当前进度:S2b 已实现并本机验证通过,待 CI 绿后打勾收口,下一步 S2c** —— `/api/diff` 接线 + `DiffView` 把 `draw()` 放进 effect + 四个 `DiffPayload` 分支各有渲染 + 按文件懒加载(一次点击一个请求)。本机实测:320 文件仓库列全、20 次点击 = 20 次请求、点击到渲染中位 50ms;真实 TS diff 上 177 个 hljs span / 12 类,**嵌套 span 只有 hljs 自身的语法嵌套(params>attr、string>subst),没有重复高亮**;`.txt` 走 plaintext 兜底不报错;dev 代理下整页功能同样正常。产物 JS 从 S2a 的 23.5 KB 回到 198.9 KB(gzip 66.5 / CSS 25.3),**体积门禁不再空转**。待勾:`[S2b]` 两条 + `[S0/S2b]` + `[S1/S2b]` 两条。**每收口一个阶段回来改这一行。**
+**当前进度:S2b 已收口(CI 全绿,run `31292552317` 11 个作业),下一步 S2c** —— `/api/diff` 接线 + `DiffView` 把 `draw()` 放进 effect + 四个 `DiffPayload` 分支各有渲染 + 按文件懒加载(一次点击一个请求)。本机实测:320 文件仓库列全、20 次点击 = 20 次请求、点击到渲染中位 50ms;真实 TS diff 上 177 个 hljs span / 12 类,**嵌套 span 只有 hljs 自身的语法嵌套(params>attr、string>subst),没有重复高亮**;`.txt` 走 plaintext 兜底不报错;dev 代理下整页功能同样正常。产物 JS 从 S2a 的 23.5 KB 回到 198.9 KB(gzip 66.5 / CSS 25.3),**体积门禁不再空转**,下限档也第一次跑在含 diff2html/hljs 的产物上。spec §6 的 2 个 `[S2b]` + `[S0/S2b]` + 2 个 `[S1/S2b]` 已勾。**每收口一个阶段回来改这一行。**
 
 S2b 留给 S3b1 的一条(现已修掉,但同一个坑在接 SSE 时会以别的形状再来):**取 diff 时把状态从 `ready` 回退成 `loading`,等于把渲染 diff 的子树整个卸载再重挂**,diff2html 画好的 DOM 连同滚动位置一起没。今天只是「再点一次当前行闪一下空白」,S3b1 之后每个 `change` 事件都会走这条路,而 §5.4 要求刷新不丢选中文件与滚动位置——那正是引入框架的理由。判据:**同一个 path 重新取时不回退 loading,换 path 才清空**;单测钉在 store 层(拆掉即红,已弄红验证过)。
 
