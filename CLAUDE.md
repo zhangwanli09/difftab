@@ -33,7 +33,7 @@
 | 类型检查 | `pnpm typecheck`(`tsc --noEmit`,前后端各一份 tsconfig,严格性开关共用 `tsconfig.base.json`) | ✅ S0 |
 | 格式化 + lint | `pnpm lint`(`biome check`)/ CI 用 `biome ci` | ✅ S0 |
 | 单元/集成测试(Vitest,直接跑 TS 源码) | `pnpm test`。用例按被测代码分 `test/unit/server/` 与 `test/unit/web/`,分别归两份 tsconfig | ✅ S0(hljs 语言装配)+ S1(解析器、三道校验、未跟踪 diff 构造、对真实 fixture 的集成、dev proxy) |
-| 冒烟测试(纯 JS,跑构建产物,含只读性两层验证) | `pnpm test:smoke`(CI matrix 档不经 script,直接 `node --test "test/smoke/*.test.js"`) | ✅ S0(版本守卫、版本号一致性、产物只 import 标准库)+ ✅ S1 第一层(`GIT_TRACE` 白名单断言 + 子进程单点断言 + 三道校验)+ 🕒 S2a 第二层(`readonly-git-dir.test.js`:A 只读 `.git` / B `.git` 逐字节比对,见第 7 节)——**本机通过、待 CI**,A 半在 Windows(icacls)与 Linux 容器(chmod 对 root 无效)上的行为只有 matrix 说了算 |
+| 冒烟测试(纯 JS,跑构建产物,含只读性两层验证) | `pnpm test:smoke`(CI matrix 档不经 script,直接 `node --test "test/smoke/*.test.js"`) | ✅ S0(版本守卫、版本号一致性、产物只 import 标准库)+ ✅ S1 第一层(`GIT_TRACE` 白名单断言 + 子进程单点断言 + 三道校验)+ ✅ S2a 第二层(`readonly-git-dir.test.js`:A 只读 `.git` / B `.git` 逐字节比对,见第 7 节) |
 | 测试仓库 fixture 生成 | `pnpm fixtures`(默认写 `test/fixtures/repos/`;测试自己调 `makeFixtures()` 写临时目录) | ✅ S1 第一批,第二批分两次:diff 相关归 S4a、异常状态归 S4b |
 | 冷启动耗时测量(对构建产物,≤300ms 门禁) | `pnpm bench:startup` | ✅ S1 接真实流程(本机中位数 ~40ms) |
 | 产物体积门禁 | `pnpm size` | ✅ S0,S2c 收口回填实测 |
@@ -99,9 +99,11 @@
 
 ## 7. 开发阶段
 
-**当前进度:S2a 本机已完成、待 CI 绿后勾验收项,下一步 S2b** —— 前端骨架(Preact + signals + `/api/state`)+ 变更列表(三组、按 path keyed)+ 最小样式 + §5.10 第二层。S1 已收口(CI 全绿)。spec §6 的 5 个 `[S1]` 验收项已勾;`[S1/S2b]`(拉起浏览器看变更视图、dev 代理)与 `[S1/S5]`(三端真机)按"做完前一半也不勾"的规矩留空。**每收口一个阶段回来改这一行。**
+**当前进度:S2a 已收口(CI 全绿),下一步 S2b** —— 前端骨架(Preact + signals + `/api/state`)+ 变更列表(三组、按 path keyed)+ 最小样式 + §5.10 第二层。spec §6 的 3 个 `[S2a]` 与 5 个 `[S1]` 验收项已勾;`[S1/S2b]`(拉起浏览器看变更视图、dev 代理)与 `[S1/S5]`(三端真机)按"做完前一半也不勾"的规矩留空。**每收口一个阶段回来改这一行。**
 
-S2a 踩到的一条,值得记住因为它是"门禁自己假绿"那一类:**spec §5.10 第二层原本写的"`chmod -R a-w .git` 后跑完整流程,任何写尝试都会直接失败暴露"是错的**——git 把 index 回写当 best-effort,`.git` 只读时它静默跳过、exit 0、stderr 全空(已实测并回填 spec §10)。于是故意删掉 `GIT_OPTIONAL_LOCKS=0` 的产物照样能让那一层全绿。现改为 A(只读 `.git` 跑通)+ B(可写 `.git` 上逐字节快照比对 + 一条"不设该变量的对照组确实改了 `.git`"的正面断言)两半,缺一不可。**判据仍是那句老话:门禁必须能在被保护的东西坏掉时变红,写完先把它弄红一次再说。**
+S2a 踩到两条。第一条是"门禁自己假绿"那一类:**spec §5.10 第二层原本写的"`chmod -R a-w .git` 后跑完整流程,任何写尝试都会直接失败暴露"是错的**——git 把 index 回写当 best-effort,`.git` 只读时它静默跳过、exit 0、stderr 全空(已实测并回填 spec §10)。于是故意删掉 `GIT_OPTIONAL_LOCKS=0` 的产物照样能让那一层全绿。现改为 A(只读 `.git` 跑通)+ B(可写 `.git` 上逐字节快照比对 + 一条"不设该变量的对照组确实改了 `.git`"的正面断言)两半,缺一不可。**判据仍是那句老话:门禁必须能在被保护的东西坏掉时变红,写完先把它弄红一次再说。**
+
+第二条重复了 S1 的形态、值得再记一次:**CI 只有下限档红,而红的原因不在产品代码**。这次是 Windows × Node 22.0.x 的退出钩子 `rmSync` 报 `EBUSY`——Windows 删不掉仍是某进程 cwd 的目录,而 `child.kill()` 返回时进程还没被回收。**30 条断言全过、进程仍以 1 退出**。竞态一直都在,是"按需生成 fixture"拿掉了掩盖它的遍历延迟才暴露。教训有二:**收尾失败不该盖过断言结果**(重试 + 只警告);以及**性能优化会掀开被时序掩盖的 bug**,证据见 spec §10。
 
 S1 收口时踩到的一条,写在这里因为它会再犯:**CI 只有下限档红是常态,而下限档红的原因往往不在产品代码**。本次是 Node 22.0.0 的 `node --test` 不等顶层 `before()`(证据见 spec §10),24/26 与本机全绿、三平台 22.0.x 同时红。matrix 把 22 这档钉在 **22.0.x 而不是 22 线最新版**,价值就在这里。
 

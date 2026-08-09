@@ -392,7 +392,7 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 
 **变更列表与分支状态**
 
-- [ ] `[S2a]` 变更文件列表状态标识准确,与 `git status` 结果一致;已暂存、未暂存、未跟踪三类文件均正确展示;未跟踪目录展开到文件粒度而非折叠成 `dir/`
+- [x] `[S2a]` 变更文件列表状态标识准确,与 `git status` 结果一致;已暂存、未暂存、未跟踪三类文件均正确展示;未跟踪目录展开到文件粒度而非折叠成 `dir/`
 - [ ] `[S3a]` 当前分支、ahead/behind 计数与 `git status` 结果一致;分支无上游(无 `# branch.ab` 行)时展示"无上游"而非 0/0 或报错
 
 **Diff 正确性与边界**
@@ -423,7 +423,7 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 **只读性与本地安全**
 
 - [x] `[S1]` 5.10 的**主门禁**(`GIT_TRACE` 记录并断言 git 子命令只出现在只读白名单,外加一条「确实记到了东西」的正面断言)与浏览器拉起的单点断言均通过,并随 git 封装层一同纳入 CI 门禁
-- [ ] `[S2a]` 5.10 的**第二层**(A 只读 `.git` 跑完整流程 + B `.git` 逐字节比对及其正面对照)通过并纳入 matrix 作业;Windows 上 A 半改用只读 ACL 或显式跳过,不得静默通过
+- [x] `[S2a]` 5.10 的**第二层**(A 只读 `.git` 跑完整流程 + B `.git` 逐字节比对及其正面对照)通过并纳入 matrix 作业;Windows 上 A 半改用只读 ACL 或显式跳过,不得静默通过
 - [ ] `[S1/S2b]` **dev 代理未以放宽后端校验实现**:后端代码中不存在任何绕过 Host / Origin / token 校验的环境变量或分支;`vite dev` 下经代理发出的请求能通过后端三道校验拿到 `/api/state`(S1 即可验到这一步——此时前端尚未建立,以请求本身通过为准;完整页面功能待 S2b)
 - [x] `[S0/S1]` **5.0 的架构边界可自动断言**:CI 中存在规则或脚本,能在「`src/web` 反向 import `src/server`(`shared/` 除外)」或「`server/git` 之外出现 git 子进程调用」时失败。import 方向部分由 Biome 的 `noRestrictedImports` 承担(S0 建立),子进程单点部分与 5.10 主门禁合并断言(S1 建立)
 
@@ -443,7 +443,7 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 
 - [ ] `[S0/S2c]` **产物体积门禁**:5.5 的三行门禁(前端 JS 明文 ≤350 KB / gzip ≤120 KB、CSS 明文 ≤40 KB)自动化测量并纳入 CI;S0 的 spike 预估与 S2c 的收口实测均回填 5.5 表格
 - [x] `[S0]` **静态检查进 CI**:`biome ci` 与 `tsc --noEmit` 均为 CI 门禁,失败即阻断
-- [ ] `[S2a]` **下限档跑的是构建产物**:CI matrix 的 Node **22.0.x** 档在完全不执行安装的前提下,对下载的 `dist/` artifact 跑通全部冒烟套件;5.10 的两层只读验证与冷启动 ≤300ms 测量均在构建产物上执行,而非 TS 源码(matrix 作业本身在 S0 即拉起,此项以冒烟套件补齐为准)
+- [x] `[S2a]` **下限档跑的是构建产物**:CI matrix 的 Node **22.0.x** 档在完全不执行安装的前提下,对下载的 `dist/` artifact 跑通全部冒烟套件;5.10 的两层只读验证与冷启动 ≤300ms 测量均在构建产物上执行,而非 TS 源码(matrix 作业本身在 S0 即拉起,此项以冒烟套件补齐为准)
 - [x] `[S0]` **发布产物内容干净**:`pnpm pack --dry-run --json` 列出的文件清单只含 `bin/`、`dist/`、README、LICENSE、`package.json`,不含 `src/`、配置文件、测试与任何 devDependency。注意打包出的 `package.json` 因 pnpm 的 manifest obfuscation 本就与仓库里的不同(剥离 `packageManager` 与 publish 生命周期脚本),核对时勿误判(见第 10 节)
 - [x] `[S0]` **pnpm 安装可复现**:干净环境(无 store 缓存、无 `node_modules`)下 `pnpm install --frozen-lockfile` 通过且不修改 `pnpm-lock.yaml`
 - [x] `[S0]` **`allowBuilds` 白名单生效**:两条一起看——(a) `pnpm ignored-builds` 报告 `None`;(b) 安装后 `.git/hooks` 下确有 lefthook 写入的钩子文件且能触发。**不以安装日志无报错为准**,漏列白名单时安装本身是成功的、构建脚本只是被静默跳过(见 5.11)。(a) 直接问 pnpm 自己忽略了谁,(b) 证明脚本不仅跑了还真干了活;两条互补,少任何一条都有一整类漏网
