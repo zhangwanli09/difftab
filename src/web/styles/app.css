@@ -21,9 +21,15 @@
 @import "diff2html/bundles/css/diff2html.min.css";
 @import "./vscode-theme.css";
 
+/* 扫描范围写死成 src/web —— Tailwind v4 的自动探测以最近的项目根为基准,
+ * 探测范围一旦与预期不符,结果是**工具类静默缺失**(没有报错,只是样式没了)。
+ * 显式给出比赌它探对更省事。路径相对本文件所在目录。 */
+@source "../";
+
 @theme {
   /* 设计 token 命名与数值参照 VS Code 颜色 token,复刻 Dark+/Light+ 观感。
-     TODO(S2):随变更列表 / 分支状态 / diff 容器补齐。 */
+     TODO(S2c):深浅两套主题与 --d2h-* 覆写在那一阶段收口;S2a 的列表只用
+     Tailwind 自带的中性色,够看清即可。 */
   --color-editor-background: #ffffff;
   --color-editor-foreground: #3b3b3b;
   --color-side-bar-background: #f8f8f8;

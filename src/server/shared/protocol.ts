@@ -4,8 +4,10 @@
 // watch 的真实取值要到 S3b。晚定的代价是前端按 kind: 'text' 单一形状、按「永远不
 // 降级」写死,后面再回头改渲染分支(spec §5.12「字段定型时机」)。
 //
-// 本文件只描述**形状**,不含任何解析逻辑 —— git 知识(状态位含义、空树哈希、
-// 路径转义、重命名判定)一律留在 server/git,前端不得出现第二份实现(§5.0 不变式 4)。
+// 本文件描述**形状**,外加解释这些形状所需的谓词。**解析**逻辑(把 git 的字节变成
+// 这些形状)一律留在 server/git;而**状态位的含义**按 §5.0 不变式 4 正是本文件的职责,
+// 否则每个消费者都会各自把 `staged !== '.'` 这类判据再写一遍,而那些判据并不都对
+// (见下面 `hasStagedChange` 的注释)。
 
 /**
  * `porcelain=v2` 的单侧状态位。
@@ -28,6 +30,31 @@ export interface FileEntry {
   unstaged: StatusCode;
   /** 重命名/复制的相似度(`R100` → 100)。 */
   renameScore?: number;
+}
+
+/**
+ * 该条目在**暂存区侧**是否有改动(porcelain 的 X 位)。
+ *
+ * 判据看起来只是 `staged !== '.'`,但三种取值里有两种不能按字面读,所以它必须
+ * 只有一份实现(§5.0 不变式 4):
+ * - `?` 是本协议对未跟踪的编码、**不是** porcelain 的状态位,只出现在 `unstaged` 上;
+ *   未跟踪自成一类,靠 `kind` 判定,不能靠状态位;
+ * - `U`(未合并)两侧同时为 `U`,按字面读会让一个冲突文件同时进「已暂存」和
+ *   「未暂存」两组。**TODO(S4b)**:合并冲突应当单独成组 —— §5.3 的 git 异常状态归
+ *   那一阶段,在此之前维持现状(进两组)而不是让它从列表里消失,后者更糟。
+ */
+export function hasStagedChange(entry: FileEntry): boolean {
+  return entry.kind === 'tracked' && entry.staged !== '.';
+}
+
+/** 同上,工作区侧(porcelain 的 Y 位)。未跟踪不算在内 —— 它由 `isUntracked` 承担。 */
+export function hasUnstagedChange(entry: FileEntry): boolean {
+  return entry.kind === 'tracked' && entry.unstaged !== '.';
+}
+
+/** 未跟踪。判据是 `kind`,不是 `unstaged === '?'`(理由见 `hasStagedChange`)。 */
+export function isUntracked(entry: FileEntry): boolean {
+  return entry.kind === 'untracked';
 }
 
 export interface BranchState {
