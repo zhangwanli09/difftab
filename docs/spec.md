@@ -155,23 +155,31 @@ scripts/               bench:startup、size 门禁
 - **`html()` 不做语法高亮**(已实测,见第 10 节)。高亮位于 `Diff2HtmlUI.highlightCode()`,它依赖 `highlight.js-helpers` 的 `closeTags` / `nodeStream` / `mergeStreams` / `getLanguage`——先把整个文件的代码合起来交给 hljs,再按 diff 的行边界切回、补齐跨行未闭合的标签。**被排除的是三个预构建 UI bundle,不是 UI 层的源码**:允许深导入 ESM 源码模块 `diff2html/lib-esm/ui/js/diff2html-ui-base.js`,它参与 tree-shaking、hljs 实例由我们注入,深导入合法(模块体积与依据见第 10 节)。自行重写这段切分逻辑不在本项目要解决的问题之列
   - `draw()` 内部是 `innerHTML` 赋值 + 命令式绑定事件,**必须放在 Preact 的 ref/effect 之后**,不与 vdom 争夺同一棵子树(与 5.4 的 keyed reconcile 不冲突:列表由 Preact 管,单文件 diff 容器由 `Diff2HtmlUI` 管)
   - 用不到的开关一律关掉:`synchronisedScroll` / `fileListToggle` / `fileContentToggle` / `stickyFileHeaders` 全部 `false`,只留 `highlight: true`
+  - **`colorScheme` 传 `'light'`,不传 `'auto'`**——深浅切换由 5.6 覆写的 `--d2h-*` 承担,不走 diff2html 自带那套 class 门控的 `--d2h-dark-*`。传 `'auto'` 不报错,只是深色下我们的 VS Code 取值一条都不生效(机制与实测见 5.6 与第 10 节)
   - **`highlight: true` 时 `draw()` 内部已经调过 `highlightCode()`,不要在 `draw()` 后再手工调一次**。第二次调用读到的 `textContent` 仍是纯文本,但 `nodeStream(line)` 拿到的已是第一遍插入的 `hljs-*` span,`mergeStreams` 会把两份流交织进同一行 —— 结果是嵌套重复的 span,且高亮开销白付一倍。二选一:要么只 `draw()`,要么 `highlight: false` + 手工调
 - `import hljs from 'highlight.js/lib/core'`,再**逐个显式注册**语言。清单为 **22 个真实语言模块**:`javascript` / `typescript` / `json` / `css` / `scss` / `xml` / `markdown` / `python` / `go` / `rust` / `java` / `kotlin` / `swift` / `c` / `cpp` / `csharp` / `bash` / `yaml` / `ini` / `sql` / `php` / `ruby`。**别名不是模块,不得单独 import**——`jsx` / `mjs` / `cjs` 属 `javascript`,`tsx` / `ts` 属 `typescript`,`toml` 属 **`ini`**,`html` 属 `xml`;`registerLanguage` 注册主模块时别名一并生效(`highlight.js/lib/languages/{jsx,tsx,toml}` 三个路径实际不存在,写了会在构建期 resolve 失败,已实测)。注册清单是白名单,增删语言即增删体积,这正是放弃预构建包换来的可控性
   - **`plaintext` 必须与这 22 个一起注册**,它是兜底而非语言。「未命中的语言退化为 plaintext」不是自动发生的:`highlightCode()` 里 `hljs.getLanguage(x) === undefined` 时把语言改写为字面量 `'plaintext'`,`getLanguage()` 对无扩展名/未知扩展名也直接返回 `'plaintext'`,随后无条件调用 `hljs.highlight(text, { language: 'plaintext' })`。而 `lib/core` **不自带** plaintext,漏注册时这一步抛 `Unknown language: "plaintext"`,异常从 `highlightCode()` 冒到调用方,**整个 diff 视图渲染失败**——不是那一个文件退化。触发条件极普通:diff 里出现 `LICENSE` / `Dockerfile` / `notes.txt` / `.lua` 即可(已实测)。模块本身 318 B,对体积无影响
 - diff2html 的两个传递依赖(`diff`、`@profoundlogic/hogan`)由打包器一并处理。注意 `@profoundlogic/hogan` 只有 CJS 入口(无 `module` / `exports` 字段),需打包器的 CJS 互操作,不影响可行性但也不要指望它被 tree-shake
 
-**产物体积门禁**(当前为预算值而非承诺值。S0 的 spike 先给出预估以决定是否需要当场砍语言清单,S2c 收口时填入最终实测,见第 7 节):
+**产物体积门禁**(门禁值为预算而非承诺。S0 的 spike 先给出预估以决定是否需要当场砍语言清单,S2c 收口时填入最终实测,见第 7 节):
 
 | 产物 | 门禁 | S0 spike 预估 | S2c 收口实测 |
 |---|---|---|---|
-| 前端 JS(明文) | ≤ 350 KB | **196.0 KB** | S2c 填入 |
-| 前端 JS(gzip) | ≤ 120 KB | **65.6 KB** | S2c 填入 |
-| 前端 CSS(明文,含 `diff2html.min.css` 17 KB + hljs 双主题 2.6 KB + Tailwind 产物) | ≤ 40 KB | **22.3 KB** | S2c 填入 |
+| 前端 JS(明文) | ≤ 350 KB | **196.0 KB** | **199.5 KB**(余 43%) |
+| 前端 JS(gzip) | ≤ 120 KB | **65.6 KB** | **66.7 KB**(余 44%) |
+| 前端 CSS(明文,含 `diff2html.min.css` 17 KB + hljs 双主题 2.6 KB + Tailwind 产物) | ≤ 40 KB | **22.3 KB** | **28.3 KB**(余 29%) |
 
 S0 spike 的口径:22 个语言模块 + `plaintext` 全部注册 + 深导入 `diff2html-ui-base` + `@preact/signals` + Preact,
 经 Vite 8(Rolldown)构建、压缩后的 `dist/web/app.js` / `app.css`。三行均在预算内,
 **语言清单不需要在 S0 砍**。余量最紧的是 CSS(22.3 / 40 KB),而它的增量来自 Tailwind 工具类,
 与语言清单无关;JS 两行各剩四成以上,S2b 接入真实组件后仍有空间。
+
+**S2c 收口实测的口径与结论**(2026-08-09,`node scripts/size.mjs --json` 对 `pnpm build` 的产物):
+JS 两行比 S0 spike 各高约 1 KB —— 那是真实组件、store 与 signals 的全部增量,
+**spike 的预估基本就是终值**,因为主导项(语言清单)没变。CSS 从 22.3 涨到 28.3 KB,
+6 KB 全部来自本阶段:VS Code token 的两套取值 + 组件实际用到的那些工具类。
+**三行余量都在 29% 以上,首版无需砍语言清单**;后续若要加语言,先回来看这张表。
+注意 CSS 仍是余量最紧的一行,而它对"多写几个工具类"最敏感 —— 加 token 时留意这条。
 
 对照基线:diff2html slim 预构建包单文件即 302 KB(min)。门禁纳入 CI(见第 6 节)。
 
@@ -201,6 +209,20 @@ S0 spike 的口径:22 个语言模块 + `plaintext` 全部注册 + 深导入 `di
 **深色主题的 `@import` 必须带媒体条件**:两份 hljs 主题都是无条件的 `.hljs { … }` 规则、自身不含任何 `@media`(已实测,见第 10 节),平铺引入的结果是 `github-dark` 无条件覆盖 `github`、浅色主题直接失效(第 6 节有"深浅两套主题下均验证"的验收项)。媒体条件不引入层叠层,上面的 unlayered 保障不受影响。
 
 同理,`--d2h-*` 与 VS Code token 的深浅两套取值也统一由 `prefers-color-scheme` 切换,**首版不做页面内的明暗手动开关**——那需要为 hljs 主题 CSS 在构建期加作用域前缀,与"轻量优先"的取向不符。
+
+**diff2html 自带的深色方案不用**(2026-08-09 就 3.4.56 实测,依据见第 10 节)。它的深色配色由渲染时挂在容器上的 class 门控:`colorScheme: 'auto'` 输出 `.d2h-auto-color-scheme`,对应规则整块包在 diff2html 自带的那唯一一个 `@media (prefers-color-scheme: dark)` 里,读的是**另一套** `--d2h-dark-*` 变量。
+
+- **`Diff2HtmlUI` 的 `colorScheme` 固定传 `'light'`**:它输出 `.d2h-light-color-scheme`,而这个 class 在 diff2html 的 CSS 里**一条规则都没有**(实测),于是全部配色都落在无前缀的基础规则上,深浅切换完全由我们覆写的同一套 `--d2h-*` 承担。**这不是"只支持浅色"**,恰恰相反——它是深色能按 VS Code 取值出来的前提
+- 传 `'auto'` 的后果是静默的:`.d2h-auto-color-scheme .d2h-xxx` 特异性 (0,2,0) 稳压基础规则 (0,1,0),深色下读回 `--d2h-dark-*` 里 GitHub 的取值,我们的 VS Code 深色一条都不生效,而页面看上去只是"深色不太像 VS Code",不像出错
+- 且 3.4.56 的 auto 块里有一处真实缺口:`.d2h-deleted` 被写成 `.d2h-dark-color-scheme .d2h-deleted` 而非 `.d2h-auto-color-scheme .d2h-deleted`(实测),auto 模式下深色盖不到它。即走它的方案仍要自己补规则,收益为负
+- 换来的好处是**深浅只声明一次**:23 个无前缀 `--d2h-*` 一律写成 `var(--color-…)` 指向 VS Code token,token 自己在 `prefers-color-scheme` 里翻。CSS 变量在**使用时**解析,间接引用拿到的是当时生效的取值,因此不存在"加了浅色忘了深色"这一半
+- 但**并排视图那对"改动行"不跟着无脑映射**:diff2html 为 `.d2h-file-diff .d2h-del.d2h-change` / `.d2h-ins.d2h-change` 另留了 `--d2h-change-del-color` / `--d2h-change-ins-color`(默认是琥珀 `#fdf2d0` 与浅绿 `#ded`,与纯增删的 `#fee8e9` / `#dfd` 不同色系),而 **VS Code 的 diff 编辑器没有这一档区分**——成对修改的两侧用的就是 `diffEditor.insertedTextBackground` / `removedTextBackground`。故这两个变量**刻意指向与纯增删相同的 token**,主动放弃上游那档琥珀。这是取舍不是遗漏,注释里必须这么写:写成"比纯增删淡一档"会让下一个人以为区分还在
+
+**这套覆写的生效条件是"unlayered **且** 排在 diff2html 之后"两条,不是一条**:我们的 `:root` 与 diff2html 自己的 `:host,:root` 特异性同为 (0,1,0),胜出**纯靠源码顺序**(实测产物里 d2h 在前、我们在后)。把 `@import "./vscode-theme.css"` 挪到 `@import "diff2html/…"` 之前,23 条覆写会**整片静默失效**、配色退回 GitHub 那套,而"块是 unlayered"这条断言照样通过。故 `check:css` 那条断言必须**同时**查三件事:声明 `--d2h-*` 的块全部 unlayered;diff2html 那块与我们那块**都存在**——缺哪一侧都说明有一份 CSS 没被打进产物,顺序断言会对着空集合通过;且后者整个排在前者之后。**「哪块是我们的」由 `vscode-theme.css` 里的一条哨兵声明(`--gg-d2h-map`)认定,不按值的形状猜**:按"值里有没有 `var(--color-…)`"区分会给出**误导性红**——深色下给某个 `--d2h-*` 补一条字面量覆写(完全正当)就会被归到 diff2html 那一侧,于是门禁报「检查 `@import` 顺序」而顺序根本没问题。哨兵由我们自己写、自己控制,值怎么变都不影响分类,且它不见了本身就是一条正面断言。顺带把"覆写有没有覆全"也钉住:**diff2html 声明的每一个无前缀 `--d2h-*` 都必须出现在我们那个块里**,删掉半张映射表同样是静默退色。
+
+**Tailwind v4 会裁掉没被引用的 `@theme` 变量**(2026-08-09 就 4.3.3 实测,见第 10 节):被工具类用到、或被我们自己的 CSS 以 `var()` 引用到的 token 都会输出到产物,两者都没有的会被丢掉。上一条"`--d2h-*` 一律指向 VS Code token"因此是安全的——那就是一次 `var()` 引用。但**引用名写错时没有任何报错**:引用侧留下一个无定义的 `var()`,该属性变为 unset,颜色悄悄没了。故 `check:css` 增一条断言:产物中每个不带 fallback 的 `var(--…)` 引用都必须在产物里找得到定义(`--tw-*` 除外,它们由 `@property` 声明)。
+
+**深色那半是 delta,于是"声明侧"也有同一形状的静默失效**:`vscode-theme.css` 的 `@media (prefers-color-scheme: dark)` 里只列与浅色不同的 token,名字**写错一个字符不会有任何症状**——上面那条断言查的是**引用**侧,而一条 `--color-git-modifed: …` 在语法上就是个合法的新自定义属性,连"无定义"都算不上(它反而给 `defined` 集合添了一个成员)。后果是深色下那个 token 悄悄留在浅色取值上。故 `check:css` 再增一条:**产物里凡在深色媒体条件内声明的 `--color-*`,都必须在深色条件之外也有声明**。反向不查——浅色有而深色没有,正是"深浅共用同一取值"的正常写法(见 5.5 的六个 diff 底色)。
 
 **随之而来的一条硬约束**:diff2html 渲染出的内部元素**只能通过覆写 `--d2h-*` CSS 变量改配色,不得用 Tailwind 工具类去压**——无层的 diff2html CSS 同样会胜过 `@layer utilities`,写了也不生效(见第 10 节禁止项)。同理,hljs 主题与 diff2html 的 CSS **不得放进任何 `@layer`**,一旦放进去就把上面这层保障拆掉了。
 
@@ -303,8 +325,15 @@ const isIgnored = (p: string) => p.split(/[\\/]/).some(seg => IGNORE_NAMES.has(c
 | 格式化 / lint | Biome | 2.5.7 | 一个二进制覆盖 format + lint + import 排序,一份配置 |
 | git hooks | lefthook | 2.1.10 | 单 YAML,不需要额外的 lint-staged |
 | 测试 | Vitest + `node:test` | 4.1.10 | 分层用途见下方 CI 一段 |
+| DOM 测试环境 | happy-dom | 20.11.2 | 只给 `src/web` 的渲染路径用,按目录分环境。见下方「DOM 测试环境」一段 |
 
 **未采用**:React 19(~42 KB gzip,与"最轻"定位相悖)、Svelte 5(Biome 不支持 `.svelte` 模板/样式,需额外挂 Prettier)、Node 原生 type stripping 直接运行 `.ts`(会把运行时下限从 22.0.0 顶到 22.18,且给冷启动加转换开销,见第 10 节禁止项)。
+
+**DOM 测试环境**(2026-08-09 于 S2c 加入):5.5 那几条"违反后不报错、只是静默出错"的约束——`draw()` 后重复调 `highlightCode()` 产生嵌套重复 span、漏注册 `plaintext` 炸掉整个 diff 视图、`colorScheme` 一旦回到 `auto` 就让 5.6 的深色取值静默失效——**都只有在真实 DOM 上跑一遍才断言得了**,而在此之前 `src/web/diff/` 与组件是零自动化覆盖。选 happy-dom 而非 jsdom:纯 JS、无原生依赖、启动快,本项目只需要 `innerHTML` 与属性/class 断言这一档能力。
+
+- **环境按目录分,不全局开**:`test/unit/web/` 用 happy-dom,`test/unit/server/` 保持 node。给后端用例套一层 DOM 全局,是把"前端拿不到也不该拿到 Node API"那条边界反向捅一刀
+- **落地方式是 Vitest 的 `projects`,不是 `environmentMatchGlobs`**——后者在 Vitest 4 已被移除(实测 4.1.10 的类型定义里已无此键)
+- 它仍只是开发期依赖:matrix 档不装依赖、跑的是 `node --test` 冒烟套件,不受影响
 
 **包管理器**——pnpm 只用于开发期,不改变 2. 的分发口径,也不改变 `dependencies` 为空这一事实。**版本钉 pnpm 11**,本节的配置面按 11 描述(11 相对 10 有三处破坏性变更,均直接打在下列条目上,依据见第 10 节):
 
@@ -368,7 +397,8 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 
 - `FileEntry { path; oldPath?; kind: 'tracked' | 'untracked'; staged; unstaged; renameScore? }`——`staged` / `unstaged` 承载 `porcelain=v2` 的双状态位,`oldPath` + `renameScore` 来自 5.2 的 `2 ` 记录
 - `BranchState { head; detached: boolean; upstream: null | { ahead; behind }; operation?: 'rebase' | 'merge' | … }`——**`upstream: null` 即"无上游"**。第 6 节要求无 `# branch.ab` 行时展示"无上游"而非 0/0,把它编码进类型而非留作约定,前端就不可能漏掉这条分支
-- `DiffPayload` 为判别联合:`{ kind: 'text', patch }` / `{ kind: 'binary' }` / `{ kind: 'too-large', size }` / `{ kind: 'untracked-text', patch }`
+- `DiffPayload` 为判别联合:`{ kind: 'text', patch }` / `{ kind: 'binary' }` / `{ kind: 'too-large', size, reason: 'size' | 'lines' }` / `{ kind: 'untracked-text', patch }`
+  - **`too-large` 必须带 `reason`**(2026-08-09 于 S2c 补,原因见本节末「字段定型时机」)。它有**两个**触发口:体积超 5MB 与行数超 50,000(5.2)。只带 `size` 时,行数那一路的文件可能只有几百 KB,前端手里唯一的数字既解释不了为什么不预览、按 MB 取整还会显示「文件过大(0 MB)」这种自相矛盾的话。判别原因属后端知识,前端不该也无法从 `size` 反推
 - `WatchState { mode: 'native' | 'polling'; tier: 'A' | 'B' | 'C' }`——承载 5.7 的档位与是否已降级。**第 6 节多处要求"UI 明确标注降级模式",而降级既可能是 C 档的既定形态、也可能是 A/B 档运行中落到轮询兜底,前端无从自己推断,必须由后端告知**;放进协议类型也正是 5.0 边界不变式第 4 条(前端不内联 git / 监听知识)的要求
 
 **字段定型时机**:**payload 的字段与判别式在 S1 / S2b 即定型,即使 `binary` / `too-large` / 重命名标注的填充逻辑要到 S4a 才实现、`watch` 的真实取值要到 S3b1 才有**。在此之前后端可以永远不返回那几个分支、`watch` 固定返回占位值,但类型里必须先有。这与第 7 节"第一批 fixture 决定解析器结构"是同一条论证:字段晚定,等于前端在 S2b 按 `kind: 'text'` 单一形状、按"永远不降级"写死,S3b / S4 再回头改渲染分支。
@@ -572,6 +602,7 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 - **语言子集体积实测**(`es/languages/*.js` 明文,22 个模块):swift 22,517 / typescript 21,359 / scss 19,468 / css 18,884 / javascript 17,756 / php 14,425 / cpp 12,689 / sql 11,990 / ruby 9,944 / python 9,190 / csharp 8,562 / c 8,292 / kotlin 7,464 / xml 7,007 / bash 6,523 / java 6,233 / rust 6,130 / markdown 5,253 / yaml 5,022 / go 3,195 / ini 2,352 / json 1,343 B,**合计 225,598 B**;`es/core.js` 仅 202 B(入口再引内部模块)。压缩后约 130 KB / gzip 约 40 KB,是 5.5 JS 门禁的主导项
 - **hljs 主题 CSS 的必要性**:实测 `diff2html.min.css` 中含 hljs 的规则数为 **0**,预构建 slim 包也只含 hljs 运行时与语言定义、不含配色。需另引 `highlight.js/styles/*.css`(**体积数取自 min 版**:`github.min.css` 1,309 B、`github-dark.min.css` 1,315 B,合计约 2.6 KB;5.6 的 `@import` 写的是非 min 的 `github.css` / `github-dark.css`,构建期由 Vite 压缩,最终产物对齐 min 版口径)。这是 5.5 体积表补两行的依据
 - **diff2html 模板中的内联 `style=` 出现 0 次**(`lib-esm/diff2html-templates.js` 实测);`draw()` 改样式走 CSSOM(`el.style.display = …`),不受 CSP 约束。这是 5.9 严格 CSP 不需要 `'unsafe-inline'` 的依据
+- **happy-dom 的 `Attr.nodeName` 返回空字符串**(2026-08-09 实测 20.11.2:同一个 `class="hljs-keyword"` 属性上 `name` / `localName` 都正常、`nodeName` 为 `''`),而 diff2html 的 `mergeStreams.open()` 恰好用 `attr.nodeName` 重新序列化属性。后果:凡是走过 `mergeStreams` 的行——即带 `<del>` / `<ins>` 词级标记的增删行——`class="hljs-keyword"` 先变成 `="hljs-keyword"`、再被解析成裸属性 `hljs-keyword=""`,**类名丢失**。**只影响 DOM 测试环境**(浏览器里 `nodeName` 就是 `class`,S2b 在真机上实测 177 个 hljs span / 12 类)。因此 `test/unit/web/` 里"高亮出颜色"这类断言必须压在**上下文行**上——它不经 `mergeStreams`。顺带的好处:`draw()` 后重复调 `highlightCode()` 时连上下文行也会被卷进 `mergeStreams`,类名整片消失(span 数 20+ → 0),那条禁令因此在 happy-dom 上更容易被抓住
 - **前端框架体积量级**:Preact 运行时约 4 KB gzip,React 19 + ReactDOM 约 42 KB gzip,Svelte 5 编译后运行时约 2-5 KB。Svelte 的劣势在工具链而非体积——Biome 2.x 对 `.svelte` 仅覆盖 `<script>` 块,模板与样式仍需 Prettier + `prettier-plugin-svelte`,与 5.11 "一个二进制一份配置" 的取向冲突。这是 5.4 选 Preact 的依据
 
 ### 样式层叠
@@ -579,6 +610,8 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 - **Tailwind preflight 与 diff2html 的冲突面**:实测 `tailwindcss@4.3.3/preflight.css`(8,489 B)与 `diff2html@3.4.56/bundles/css/diff2html.min.css`(17,331 B)。preflight 会做 `*{box-sizing:border-box;margin:0;padding:0;border:0 solid}`、`table{border-collapse:collapse}`、`h1-h6{font-size:inherit;font-weight:inherit}`、`button,input{font:inherit;border-radius:0}` 等重置;而 diff2html **自带**了所有关键声明——`.d2h-diff-table{border-collapse:collapse}`、`.line-num1`/`.line-num2`/`.d2h-code-linenumber`/`.d2h-code-side-linenumber` 均含 `box-sizing:border-box`、边框写作 `border:solid var(--d2h-line-border-color);border-width:0 1px`(类选择器特异性 0,1,0 稳压 preflight 的 0,0,0),`.d2h-file-list{list-style:none;margin:0;padding:0}` 亦自声明。唯一实质差异是 `<td>` 的 1px UA 默认 padding 被清零,反使跨浏览器渲染更一致。这是 5.6 决定引入完整 preflight 的依据
 - **层叠层优先级**:CSS Cascade Layers 规定**无层(unlayered)的常规声明优先级高于任何层内的常规声明,与特异性无关**;Tailwind v4 将 preflight 置于 `@layer base`、工具类置于 `@layer utilities`。因此把 hljs 主题与 `diff2html.min.css` 以 unlayered 形式引在其后,即可结构性地保证不被 preflight 压过——代价是它们同样会压过 Tailwind 工具类。这是 5.6 层叠方案与"只能改 `--d2h-*` 变量"约束的共同依据
 - **hljs 两份主题都不含 `@media`**:`styles/github.css` 与 `styles/github-dark.css` 实测 `@media` 出现次数均为 **0**,两者都是无条件 `.hljs { … }` 规则。这是 5.6 给深色那份加 `(prefers-color-scheme: dark)` 媒体条件的依据
+- **diff2html 的深色配色由 class 门控,且 auto 那条路有缺口**(2026-08-09 就 `diff2html@3.4.56/bundles/css/diff2html.min.css` 逐条实测):整份 CSS 只有 **1 个** `@media`,即 `(prefers-color-scheme:dark)`,里面 29 条规则清一色以 `.d2h-auto-color-scheme` 前缀开头、且只读 `--d2h-dark-*`;`:host,:root` 里声明了 **47** 个变量(23 个无前缀 + 24 个 `--d2h-dark-*`),而所有颜色声明都写成 `prop:硬编码; prop:var(--d2h-…)` 双写、**没有任何一条只有硬编码值**——所以覆写无前缀的那 23 个即可完全接管配色。三点具体证据支撑 5.6 的"`colorScheme` 传 `'light'`":(a) `render-utils.js` 按 `colorScheme` 输出 `d2h-{dark,auto,light}-color-scheme` 三个 class 之一,而 `.d2h-light-color-scheme` 在 CSS 里出现 **0** 次,即它是个空 class;(b) auto 前缀规则特异性 (0,2,0) 稳压基础规则 (0,1,0),故 auto 模式下深色必然走 `--d2h-dark-*`;(c) auto 块里 `.d2h-deleted` 被误写成 `.d2h-dark-color-scheme .d2h-deleted`,是 29 条里唯一一条挂错前缀的,auto 模式下这条深色永远不生效
+- **Tailwind v4 裁剪未引用的 `@theme` 变量**(2026-08-09 就 4.3.3 + Vite 8 构建实测):在 `@theme` 里放三个探针 token,只被 `var()` 从我们自己的 CSS 引用的那个**出现在产物里**,谁都没引用的那个**被裁掉**,被工具类用到的照常输出;同时实测 `@theme` 的产出落在 **`@layer theme`** 内(故写在 `vscode-theme.css` 里的 unlayered 深色覆写天然压得住浅色取值,与 5.6 的层叠方案同向)。这是 5.6 允许"`--d2h-*` 指向 VS Code token"而不必改用 `@theme static` 的依据(后者会把 Tailwind 默认主题的全部变量一并吐出,直接压 CSS 的 40 KB 预算),也是 `check:css` 增加"无定义的 `var()` 引用即失败"那条断言的依据
 
 ### 工具链与发布
 
@@ -587,7 +620,7 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 - **TypeScript 7 的状态与二进制名**:Go 原生编译器于 **2026-07-08** 稳定发布(7.0.2 为 latest);已知 7.x 的命令行 declaration emit 仍在完善中,本项目只用 `--noEmit` 做类型检查、转译交给 Vite / tsdown,不触及该短板。`typescript@7.0.2` 的 `bin` 字段实测为 `{"tsc": "bin/tsc"}`——**命令是 `tsc` 不是 `tsgo`**;`tsgo` 是预览包 `@typescript/native-preview` 的二进制名(该包仍在发布,latest `7.0.0-dev.20260707.2`),稳定版并入 `typescript` 主包后二进制名回归 `tsc`
 - **`@types/node` 的 latest 是 26.1.2**,与产品运行时下限 22.0.0 相差四个大版本。锁 `^22` 是 5.1 API 上限守卫成立的前提,不锁则 TS 会放行 Node 24+ 才有的内置 API
 - **CSP 指令的回退规则**:`frame-ancestors` / `base-uri` / `form-action` 均**不回退到 `default-src`**,`default-src 'none'` 对它们无效,须显式声明。这是 5.9 补这三个指令的依据
-- **冷启动实测**:node 启动 + `http.listen` + 一次 `git status --porcelain=v2 --branch -uall -z` 全程约 **30ms 墙钟**(裸 node 启动约 10-30ms),300ms 预算充裕
+- **冷启动实测**:node 启动 + `http.listen` + 一次 `git status --porcelain=v2 --branch -uall -z` 全程约 **30ms 墙钟**(裸 node 启动约 10-30ms),300ms 预算充裕。**浏览器侧**(2026-08-09 于 S2c,Chrome、已在运行的进程、本仓库 18 个变更文件):`app.js` / `app.css` 各 1ms 内取完,`/api/state` 在 **47ms** 返回,`first-contentful-paint` **56-72ms**(三次刷新),列表 18 行全部就位 —— 1s 预算的十几分之一。这是 6. 那条"首屏渲染 ≤ 1s"的实测依据
 - **npm 包名**:`gitglance` registry 返回 404,未被占用;`git-glance` 为他人 1.0.1,仅影响搜索时的混淆,不构成冲突
 - **pnpm 相关事实**(2026-08-06 就本机 pnpm 11.20.0 逐条实测 + 官方迁移文档复核;此前本组曾按 pnpm 10 撰写并标记"尚未实测",其中一条已证伪,见下):
   - **版本**:latest 为 **11.20.0**,`packageManager` 即钉此版本。**pnpm 11 相对 10 有三处破坏性变更,恰好全部打在 5.11 的配置面上**,因此本项目按 11 而非 10 落地
