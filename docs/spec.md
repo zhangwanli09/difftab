@@ -280,8 +280,11 @@ const isIgnored = (p: string) => p.split(/[\\/]/).some(seg => IGNORE_NAMES.has(c
    - **原方案"PATH 上放一个 fake git wrapper"已在 S1 排除**,原因正是当初标出来的那条 Windows 风险:PATH 劫持要求一个 Windows 认得的可执行文件,而 Node 自 20.12 起不带 `shell` 就**拒绝 spawn `.cmd` / `.bat`**;退而把 node 二进制装成 `git` 时,node 自己的 CLI 解析会先把参数吃掉一截,记到的"完整子命令"是错的。两条均已实测,依据见第 10 节
    - `GIT_TRACE` 反而多覆盖一层:git **内部**再起的子进程(自动 gc 之类)同样入账,而那正是"写进 `.git/` 但不改变 status 输出"的典型——本节开头排除"前后 `git status` 比对"时说的就是它
    - **必须同时断言"确实记到了东西"**:环境变量没传下去、路径给成相对的、产品换了个不经封装层的方式调 git,都会让白名单断言对着一个**空数组**通过。假绿的只读门禁比没有门禁更糟,因此门禁里要有一条正面断言——完整流程跑完后,日志里必须见到 `status` / `diff` / `rev-parse` / `ls-files`
-2. **冒烟测试**:`chmod -R a-w .git` 后跑一遍完整流程,任何写尝试都会直接失败暴露
-   - 这一层要求产品**不得让 git 写 index**:`git status` 默认会把刷新过的 stat 缓存写回 `.git/index`,它不改变 status 输出(所以第一层与"前后比对"都看不见),但只读 `.git` 下会当场失败。封装层统一设 `GIT_OPTIONAL_LOCKS=0` 规避,该变量在 git < 2.15 上不存在、设了无害
+2. **冒烟测试**:跑一遍完整流程,证明 `.git` 没被动过。这一层由**两半**组成,缺一不可(S2a 落地为 `test/smoke/readonly-git-dir.test.js`,归 matrix 作业):
+   - **A · 只读 `.git`**:`chmod -R a-w .git` 后跑完整流程。凡是**会报错**的写尝试(创建对象、写 lock 文件、意外触发的 gc)当场暴露。Windows 上 `chmod` 挡不住写入(Node 只映射只读属性,对目录无效),改用 `icacls` 的拒绝 ACL,拿不到则**显式跳过并打印原因**,不得静默通过。这一半必须自带一条"锁真的锁上了"的探针断言——root 用户、某些容器挂载下 `chmod` 不生效,那时用例照常变绿却什么都没验证
+   - **B · `.git` 逐字节不变**:在**可写**的 `.git` 上前后各拍一次快照(每个文件的 size + mtime + 内容摘要)并比对。**A 单独不成立**,这是 2026-08-08 的实测修订:git 把 index 回写当作 best-effort,`.git` 只读时它**静默跳过,exit 0、stderr 全空**(证据见第 10 节)——于是漏掉 `GIT_OPTIONAL_LOCKS=0` 时 A 照样全绿,而那恰恰是本层唯一要保护的东西
+     - B 需要一个**会触发 index 回写**的仓库状态(把某个"内容与 index 一致、只是 stat 过期"的文件的 mtime 改旧),并自带一条**正面对照**:同一仓库上直接跑一条不设 `GIT_OPTIONAL_LOCKS=0` 的 `git status`,断言 `.git` 这次确实变了。没有它,"产品没改动 `.git`"会在仓库压根不触发回写时变成一句对谁都成立的空话——与主门禁必须有"确实记到了东西"是同一条道理
+   - 本层要求产品**不得让 git 写 index**:`git status` 默认会把刷新过的 stat 缓存写回 `.git/index`,它不改变 status 输出(所以第一层与"前后比对"都看不见)。封装层统一设 `GIT_OPTIONAL_LOCKS=0` 规避,该变量在 git < 2.15 上不存在、设了无害
 
 **唯一的非 git 子进程豁免**:5.1 的拉起浏览器(`open` / `cmd /c start ""` / `xdg-open`)。它不经过 git 封装层、`GIT_TRACE` 也记不到,因此需在测试里**单独断言**:产品代码中除 git 封装层外只存在这一处 `child_process` 调用,且被调命令来自这三者的固定映射、参数只有 URL 一项。该静态断言查的是**相等**而非"没有多余的"——只查多出来的一半时,两处调用点双双改名会让白名单静默变成空表。CI 里该调用需可通过环境变量关闭,避免每次跑测试都弹出浏览器。
 
@@ -420,7 +423,7 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 **只读性与本地安全**
 
 - [x] `[S1]` 5.10 的**主门禁**(`GIT_TRACE` 记录并断言 git 子命令只出现在只读白名单,外加一条「确实记到了东西」的正面断言)与浏览器拉起的单点断言均通过,并随 git 封装层一同纳入 CI 门禁
-- [ ] `[S2a]` 5.10 的**第二层**(`chmod -R a-w .git` 后跑完整流程)通过并纳入 matrix 作业;Windows 上改用只读 ACL 或显式跳过,不得静默通过
+- [ ] `[S2a]` 5.10 的**第二层**(A 只读 `.git` 跑完整流程 + B `.git` 逐字节比对及其正面对照)通过并纳入 matrix 作业;Windows 上 A 半改用只读 ACL 或显式跳过,不得静默通过
 - [ ] `[S1/S2b]` **dev 代理未以放宽后端校验实现**:后端代码中不存在任何绕过 Host / Origin / token 校验的环境变量或分支;`vite dev` 下经代理发出的请求能通过后端三道校验拿到 `/api/state`(S1 即可验到这一步——此时前端尚未建立,以请求本身通过为准;完整页面功能待 S2b)
 - [x] `[S0/S1]` **5.0 的架构边界可自动断言**:CI 中存在规则或脚本,能在「`src/web` 反向 import `src/server`(`shared/` 除外)」或「`server/git` 之外出现 git 子进程调用」时失败。import 方向部分由 Biome 的 `noRestrictedImports` 承担(S0 建立),子进程单点部分与 5.10 主门禁合并断言(S1 建立)
 
@@ -460,7 +463,7 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 | **S0** | 工具链脚手架:`package.json`(含 `engines` / `files` / scripts / `packageManager`)、`pnpm-lock.yaml`、`pnpm-workspace.yaml`(承载 `allowBuilds` 等全部 pnpm 设置)、`.gitignore`、**`bin/gitglance.js`(手写定稿,见 5.1)**、Vite + tsdown 配置、两份 tsconfig、Biome、lefthook、冷启动测量脚本;**按 5.0 建立目录骨架与依赖方向断言规则**;CI 两层作业骨架,且 **matrix 层的三平台 × Node 22/24/26 即刻拉起**(初期跑占位冒烟即可) | 三项前提验证须在本阶段收口,见下方「S0 的三项前提验证」。matrix 提前拉起是为了让 Windows / Linux 回归从第一天起持续存在,而不是堆到 S5 一次性暴露。`bin/gitglance.js` 放在 S0 是因为它不参与构建、内容不依赖后续阶段,而第 6 节"未被构建管线触碰"这条验收项要成立,它必须在构建管线建立的同一阶段就已存在 |
 | **S1** | CLI 脚手架 + HTTP server(**按 5.9 最终形态实现,含三道校验**)+ **注册表文件写入(port + token,`0o600` + `O_EXCL`)** + git shell 封装(status/diff)+ **5.12 协议类型随 server 一同定型** + **测试数据第一批** + **5.10 主门禁入 CI** | server 一建立即是最终形态,5.11 的 dev proxy 三道改写同期落地。**注册表的"写入"必须在本阶段**,否则 dev proxy 无 token 来源(见 5.11);"探活复用"与"空闲退出"留 S3c。**先做前端再补校验的顺序,会把"临时加环境变量放宽后端"变成本阶段内的最短路径,而那是第 10 节明令禁止的做法** |
 | **S2a** | 前端骨架(Preact 挂载 + signals state)+ `/api/state` 接线 + 变更列表组件(三类文件,按 path keyed)+ 让列表可读的最小样式;**5.10 第二层(只读 `.git` 冒烟)在此建立并入 matrix 作业**;冒烟套件补齐到跑构建产物 | 只读第二层保护的是 **S1 已落地**的 git 封装层(`GIT_OPTIONAL_LOCKS=0`),按本节总原则它本就该排在 S2 开头而非末尾。样式只做"能看清列表"这一档,主题留 S2c |
-| **S2b** | `/api/diff` 接线 + 深导入 `diff2html-ui-base` + hljs 22 语言与 `plaintext` 注册 + `draw()` 置于 Preact 的 ref/effect + 按文件懒加载联动 + 300+ 文件的性能验证;`app.css` 按 5.6 的顺序引入渲染所需 CSS(hljs 双主题 + `diff2html.min.css`,unlayered) | 高亮要出颜色就必须先有 hljs 主题 CSS,故 CSS 的 `@import` 骨架归本阶段、主题 token 归 S2c。5.5 那三条"静默出错"约束(`draw()` 后不得补调 `highlightCode()`、`plaintext` 必须注册、别名不是模块)全部落在本阶段 |
+| **S2b** | `/api/diff` 接线 + 深导入 `diff2html-ui-base` + hljs 22 语言与 `plaintext` 注册 + `draw()` 置于 Preact 的 ref/effect + 按文件懒加载联动 + 300+ 文件的性能验证;`app.css` 按 5.6 的顺序引入渲染所需 CSS(hljs 双主题 + `diff2html.min.css`,unlayered) | 高亮要出颜色就必须先有 hljs 主题 CSS,故 CSS 的 `@import` 骨架归本阶段、主题 token 归 S2c。5.5 那三条"静默出错"约束(`draw()` 后不得补调 `highlightCode()`、`plaintext` 必须注册、别名不是模块)全部落在本阶段。**入场时先确认体积门禁不再空转**:S2a 删掉 S0 spike 后没有任何入口 import `diff/`,产物 JS 从 196 KB 掉到 23.5 KB,两条 JS 预算因此暂时对着一个不含 diff2html / hljs 的产物通过;S0 那三项前提验证所量的东西要到本阶段接回渲染路径才重新被产物覆盖 |
 | **S2c** | Tailwind `@theme` 承载 VS Code token + `vscode-theme.css` 覆写 `--d2h-*` + 深浅两套主题 | 收口时实测并回填 5.5 的产物体积表;观感类验收项要压在 S2b 真实渲染出的 DOM 上才验得了,故排在其后 |
 | **S3a** | 分支状态展示(只读) | — |
 | **S3b1** | SSE 通道:端点 + 15s 心跳 + 前端 `EventSource` + `visibilitychange` 重连 + `.git` 目录级**非递归** watch + debounce + `WatchState` 接真实取值 | **首个交付物是"三档强制指定的内部环境变量"**——没有它,S3b2 所有档位的验收项在单机上都无从自查 |
@@ -489,9 +492,10 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 **门禁与测试数据的建立时机**:
 
 - **5.10 主门禁(`GIT_TRACE` 白名单断言)在 S1 与 git 封装层同阶段建立**。封装层只有一处子进程调用,断言成本极低;而它是 4.1 "零写操作"承诺在开发期唯一的自动化护栏,晚一个阶段就多一个阶段没有护栏
-- **5.10 第二层(只读 `.git` 冒烟)在 S2a 建立并入 matrix 作业**——它保护的是 S1 就已落地的 git 封装层(`GIT_OPTIONAL_LOCKS=0`),按本节总原则不该拖到 S2 末尾。需一并明确 **Windows 上该层改用只读 ACL 或显式跳过**——`chmod -R a-w` 在 Windows 无等价语义,照搬会让 matrix 的 Windows 档假绿
+- **5.10 第二层(`.git` 不被写入的冒烟)在 S2a 建立并入 matrix 作业**——它保护的是 S1 就已落地的 git 封装层(`GIT_OPTIONAL_LOCKS=0`),按本节总原则不该拖到 S2 末尾。需一并明确 **Windows 上 A 半改用只读 ACL 或显式跳过**——`chmod -R a-w` 在 Windows 无等价语义,照搬会让 matrix 的 Windows 档假绿;而 A 半即便在 POSIX 上也只覆盖"会报错的写",B 半的逐字节比对才是漏设 `GIT_OPTIONAL_LOCKS=0` 唯一看得见的地方(见 5.10)
 - **测试数据分两批**。生成脚本对测试仓库执行 `git init` 等写操作,属开发流程的 git,不受 4.1 约束(作用域见 `CLAUDE.md` 第 1 节):
   - **第一批(S1)——决定解析器结构,不是边界修补**:路径含非 ASCII 字符/空格/引号的文件、重命名(含相似度识别阈值边界)、已暂存改动(执行过 `git add`)、无上游的新建分支、空仓库(`git init` 后无提交)。这五项分别决定 5.2 的 `-z` 与 `core.quotePath=false` 是否真的生效、解析循环是有状态还是无状态平铺、`# branch.ab` 缺失的降级路径、以及 5.3 的 diff 基准该做成怎样的接口形状——S4 才引入等于 S1 先按 HEAD 写死再返工。另需一个 300+ 文件变更的仓库,S2b 验收懒加载时即需就位
+  - **另需一个整目录未跟踪的样本**(2026-08-09 补):这是 `-uall` **唯一能被证伪**的形态。上面那批未跟踪文件都落在已被跟踪的目录里,折不折叠长得一样;只有当整个目录都未跟踪时,缺 `-uall` 才会把它折成一行 `? dir/`(已实测),而那正是 5.2 那条红线要防的东西——agent 新建一整个目录是最常见的形态之一,折叠后列表里只剩一个点不开的目录条目
   - **删除与未跟踪符号链接从第二批上调到第一批**(2026-08-08 修订,起因见下)。判据始终是"是否决定结构",而这两项都决定 5.2 里**取 diff 前那次分流**——即"已跟踪走 `git diff`,未跟踪读磁盘"这个二选一本身:
     - **已暂存的删除**(`git rm` 之后):路径已从 index 里摘掉,`git ls-files` 输出为空(已实测),但 status 照报 `1 D.`、基准侧也还在。用 `ls-files` 当分流判据会把它误判成未跟踪、进而去读一个不存在的文件。"已跟踪"的正确定义是 **HEAD ∪ index**,不是 index——这是判据的定义问题,不是边界修补
     - **未跟踪的符号链接**:`git status -uall` 把它报成 `? <链接>`(已实测),于是它进变更列表、点得到。读磁盘那条路必须用 `lstat` 而非 `stat`,否则 5.2 的仓库边界校验形同虚设——校验的是链接自身的路径,读到的却是链接目标,一个指向仓库外的链接就能让接口把仓库外的文件内容当作新增文件返回。fixture 里的链接**故意指向仓库外一个内容已知的文件**,断言补丁里不含该内容
@@ -544,6 +548,7 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 - **status 的重命名检测比的是 HEAD → index**(2026-08-08 实测):`git mv a b` 之后把 b 的内容全部重写但**不 `git add`**,git 仍报 `2 ... R100 b\0a`(只是 Y 位变成 M)——index 里躺着的是一次 100% 纯改名。要拿到"相似度阈值之下 → 拆成 `1 D. a` + `1 A. b`"这个形态,重写必须一并入 index。这是 S1 第一批 fixture 里那两个重命名样本一个 add、一个不 add 的原因
 - **`GIT_TRACE` 的记录形态**(2026-08-08 实测,git 2.50.1):`GIT_TRACE=<绝对路径>` 时每次调用在日志里留下一行 `trace: built-in: git status --porcelain=v2 --branch -uall -z`——注意 `-c core.quotePath=false` 已被 git 前端消化,**不出现在这一行**(白名单断言不受影响,但 `core.quotePath` 的生效与否得靠别的断言证);`git --version` 记作 `built-in: git version`,故白名单里那一项叫 `version`。外部子命令与 git 内部再起的进程分别记作 `trace: exec:` / `trace: run_command:`。给相对路径时 git 会警告并退回 stderr。这是 5.10 主门禁改用 `GIT_TRACE` 的依据
 - **Windows 上 fake git wrapper 的两条死路**(2026-08-08 实测):(a) Node 自 20.12 起,不带 `shell` 时 spawn `.cmd` / `.bat` 直接抛 `EINVAL`(CVE-2024-27980 的修复),而 PATH 劫持在 Windows 上只有 `.cmd` / `.exe` 两种可用形态;(b) 退而把 node 二进制装成 `git`(POSIX 符号链接 / Windows 复制)+ `NODE_OPTIONS=--require <shim>` 时,node 自己的 CLI 解析先跑——实测 `git -c core.quotePath=false status --porcelain=v2 -z` 到达 shim 时 `process.argv` 是 `[<node>, '<cwd>/core.quotePath=false', 'status', '--porcelain=v2', '-z']`:`-c` 被当成 node 的 `--check` 吃掉,其后第一个参数还被 `path.resolve` 改写。记到的"完整子命令"因此是错的。这两条是 5.10 主门禁放弃 PATH 劫持的依据
+- **只读 `.git` 挡不住 index 回写,只是让它静默失败**(2026-08-08 实测,git 2.50.1 / macOS):仓库里 `touch` 一个内容未变的已跟踪文件后,默认的 `git status` 会把 `.git/index` 重写一遍(mtime 由 `1786200108` 变为 `1786200120`),设 `GIT_OPTIONAL_LOCKS=0` 则不变——**这一点与预期一致**;但把 `.git` 整棵 `chmod -R a-w` 之后再跑同一条默认 `git status`,它 **exit 0、stderr 全空**,只是没写成。也就是说 5.10 第二层若只做"锁死 `.git` 跑一遍、不失败即通过",对漏设 `GIT_OPTIONAL_LOCKS=0` 是**假绿**(已在故意去掉该变量的产物上复现:A 半 3 条全过,B 半报 `index` 变了)。这是 5.10 第二层拆成 A/B 两半、并给 B 半配一条正面对照的依据
 - **Node 22.0.0 的 `node --test` 不等顶层 `before()`**(2026-08-08 实测,先在 CI 三平台的 22.0.x 档同时红、后在本机 22.0.0 复现):顶层异步 `before()` 尚在执行时该文件的用例就已开跑——依赖其中所建 server 的用例全部在 1ms 内以读取 `undefined` 失败,而自己起进程的用例照常通过;`after()` 同样提早触发,清理撞上还在写的 fixture 报 `ENOTEMPTY`。Node 24 / 26 上行为正确,因此**本机绿、CI 也只有下限那一档红**。这是 5.11 要求冒烟套件改用记忆化 Promise、不用 runner 钩子的依据,也是"matrix 的 22 档必须钉在 22.0.x 而不是 22 线最新版"这条设置第一次真正兑现价值
 - **未被显式 stop 的被测子进程会吊住 `node --test`**(同日实测):去掉 `after()` 之后,残留 server 的 stdio 管道让 runner 的事件循环永不清空,表现为**全部用例通过、命令却不返回**。因此 ready 后 `unref()` 子进程与其 stdio,并在 `process.on('exit')` 里统一 kill;`stop()` 里要 `ref()` 回来,否则 kill 之后等 `'close'` 时循环可能已经空了
 
