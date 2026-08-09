@@ -32,11 +32,27 @@ export function once(factory) {
  *
  * 同样是绕开 `after()`:`process.on('exit')` 由 Node 自己保证时机,且必须是同步
  * 操作 —— rmSync 正合适。
+ *
+ * **`maxRetries` 不是保险起见,是 Windows 上的必需品**(2026-08-09 实测,CI 的
+ * windows × Node 22.0.x 档):Windows 不允许删除一个仍是某进程当前工作目录的
+ * 文件夹,而被测进程正是以 fixture 仓库为 cwd 起来的。上面那个处理器的
+ * `child.kill()` 只是发出终止请求,返回时系统尚未回收进程,紧接着的 rmSync 就撞上
+ * `EBUSY: resource busy or locked, rmdir …\repos\unicode-paths`。
+ * rimraf 的重试是同步的(`Atomics.wait`),在退出钩子里可用。
+ *
+ * 重试用尽后**只警告不抛**:此时全部断言都已跑完,删不掉一个临时目录是收尾的
+ * 事故而不是产品缺陷,让它把一整档 CI 变红只会淹掉真正的失败。目录在 `os.tmpdir()`
+ * 下,系统自己会回收。
  */
 export function cleanupOnExit(getDir) {
   process.on('exit', () => {
     const dir = getDir();
-    if (dir) rmSync(dir, { recursive: true, force: true });
+    if (!dir) return;
+    try {
+      rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+    } catch (cause) {
+      process.stderr.write(`# 清理临时目录失败(不影响断言结果):${cause.message}\n`);
+    }
   });
 }
 

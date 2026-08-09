@@ -561,6 +561,7 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
   - macOS / Windows 侧 `watchers.js` 是拿**事件的相对路径**(如 `node_modules/.bin/foo`)调用匹配器,basename 为 `foo`,模式 `node_modules` 匹配不上 → 过滤完全失效
   - 这是 5.7 把 `IGNORE` 定为逐段匹配函数而非字符串模式、并单列 A 档 macOS/Windows 过滤验收项的依据
 - **Linux 用户态递归监听的实际开销**:`lib/fs.js` 中 `recursive && !isMacOS && !isWindows` 时走 `internal/fs/recursive_watch.js`;核对其 `#watchFolder`,它对遍历到的**每个目录项(含普通文件)**都调用 `#watchFile` 注册 watch,并非只对目录注册;且初次遍历时对每个条目 `emit('change','rename',...)`,启动即产生事件风暴。这是 5.7 判定配额风险、并把 debounce 列为必需项的依据
+- **Windows 上删不掉「仍是某进程 cwd」的目录**(2026-08-09 实测,CI 的 windows × Node 22.0.x 档):冒烟套件以 fixture 仓库为 cwd 起被测进程,退出钩子里 `child.kill()` 返回时系统尚未回收该进程,紧接着的 `rmSync` 报 `EBUSY: resource busy or locked, rmdir …\repos\unicode-paths`。**全部断言都已通过、进程仍以 1 退出**,整档因此变红。这条一直存在,只是把 fixture 从 8 个减到按需生成之后,原先掩盖竞态的那点遍历延迟没有了才暴露。对策是 `rmSync` 带 `maxRetries`(rimraf 的重试是 `Atomics.wait`,同步、在退出钩子里可用),重试用尽只警告不抛 —— 收尾失败不该盖过断言结果。这是 5.11 冒烟套件清理逻辑的依据,也是「matrix 必须有一档真跑在下限上」第二次兑现价值
 - **`os.tmpdir()` 的权限差异**:macOS 上为每用户 0700 私有目录(实测 `/var/folders/.../T` mode 700),Linux 上为 `/tmp`(1777,同机其他用户可读)。这是 5.8 要求注册表文件 `0o600` 的依据
 
 ### 前端渲染与体积
