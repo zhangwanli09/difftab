@@ -10,12 +10,27 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { readDiff } from '../../../src/server/git/diff.ts';
 import { locateRepo, resolveDiffBase } from '../../../src/server/git/repo.ts';
 import { readStatus } from '../../../src/server/git/status.ts';
+import type { DiffPayload } from '../../../src/server/shared/protocol.ts';
 import {
   type FixtureRepos,
   makeFixtures,
   OUTSIDE_SECRET,
   TRICKY_PATHS,
 } from '../../fixtures/make.mjs';
+
+/**
+ * 断言这是一份带补丁的 payload,并把补丁正文取出来。
+ *
+ * `(payload as { patch: string }).patch` 是**转型不是收窄**:`DiffPayload` 的形状将来
+ * 变了(S4a 要填 binary / too-large 两个分支),那个写法会安静地给出 undefined,后面
+ * 的 `toContain` 断言随之报一句与真正原因无关的话。这里先按判别式收窄,再取字段。
+ */
+function patchOf(payload: DiffPayload): string {
+  if (payload.kind !== 'text' && payload.kind !== 'untracked-text') {
+    throw new Error(`期望的是带补丁的 payload,拿到的是 ${payload.kind}`);
+  }
+  return payload.patch;
+}
 
 let dest: string;
 let repos: FixtureRepos;
@@ -44,8 +59,9 @@ describe('路径转义(§6:不出现 \\351\\234\\200 这类残留)', () => {
   test('补丁正文的头部行同样原样 —— `-z` 管不到这里,靠 core.quotePath=false', async () => {
     const tricky = TRICKY_PATHS[0] as string;
     const payload = await readDiff(repos.unicodePaths, { path: tricky });
+    // 已跟踪文件走的是 git 自己的补丁,不是未跟踪那条手工构造的路
     expect(payload.kind).toBe('text');
-    const patch = (payload as { patch: string }).patch;
+    const patch = patchOf(payload);
     expect(patch).toContain(`diff --git a/${tricky} b/${tricky}`);
     expect(patch).not.toMatch(/\\[0-7]{3}/);
   });
@@ -158,7 +174,7 @@ describe('删除与符号链接 —— 决定「已跟踪 / 未跟踪」的分�
       expect(files.find((f) => f.path === 'link-to-outside')?.unstaged).toBe('?');
 
       const payload = await readDiff(repos.deletions, { path: 'link-to-outside' });
-      const patch = (payload as { patch: string }).patch;
+      const patch = patchOf(payload);
       // 这条是安全断言:读磁盘那条路一旦用回跟随链接的 stat,
       // 仓库外那个文件的内容就会原样出现在补丁里
       expect(patch).not.toContain(OUTSIDE_SECRET);
@@ -226,7 +242,20 @@ describe('仓库定位', () => {
   });
 });
 
-test('300+ 文件变更的仓库能一次列全', async () => {
-  const { files } = await readStatus(repos.manyFiles);
-  expect(files.length).toBeGreaterThanOrEqual(300);
+describe('300+ 文件变更(§6:列表列全,单个文件的 diff 及时)', () => {
+  test('列表一次列全', async () => {
+    const { files } = await readStatus(repos.manyFiles);
+    expect(files.length).toBeGreaterThanOrEqual(300);
+  });
+
+  test('取一个文件的 diff 就只回这一个文件 —— 懒加载的判据在补丁内容上', async () => {
+    // 「按文件懒加载」在前端是「一次点击一个请求」,在这里是「一个请求一个文件」。
+    // 少了这条,一个漏了 pathspec 的 `git diff` 会把 320 个文件的补丁一次性回给
+    // 浏览器:功能看起来完全正常,只是主线程冻上几秒(§5.2 / §6)
+    const payload = await readDiff(repos.manyFiles, { path: 'pkg/mod001.ts' });
+    expect(payload.kind).toBe('text');
+    const patch = patchOf(payload);
+    expect(patch.match(/^diff --git /gm)).toHaveLength(1);
+    expect(patch).toContain('pkg/mod001.ts');
+  });
 });
