@@ -8,7 +8,7 @@
 // 被排除的是三个预构建 UI bundle(-ui / -ui-slim / -ui-base),**不是** UI 层源码:
 // 深导入下面的 diff2html-ui-base ESM 源码模块参与 tree-shaking、hljs 实例由我们注入,
 // 是允许且推荐的。ColorSchemeType 只取类型 —— enum 作为值 import 会把整个枚举对象
-// 带进产物,而我们只需要字面量 'auto'。
+// 带进产物,而我们只需要字面量 'light'(为什么是它见下面 colorScheme 那段)。
 
 import type { ColorSchemeType } from 'diff2html/lib-esm/types.js';
 import { Diff2HtmlUI } from 'diff2html/lib-esm/ui/js/diff2html-ui-base.js';
@@ -34,10 +34,24 @@ export function renderDiff(target: HTMLElement, patch: string): void {
       highlight: true,
       drawFileList: false,
       outputFormat: 'side-by-side',
-      // diff2html 自带的 auto 方案:输出 .d2h-auto-color-scheme,其规则由
-      // diff2html.min.css 里唯一那个 @media (prefers-color-scheme: dark) 包住,
-      // 与 §5.6 「深浅两套取值统一由 prefers-color-scheme 切换」一致
-      colorScheme: 'auto' as ColorSchemeType,
+      /**
+       * **必须是 'light',不能是 'auto'**(spec §5.6 / §5.5)。
+       *
+       * 这不是"只支持浅色"—— 恰恰相反,它是深色能按 VS Code 取值出来的前提。
+       * diff2html 的深色配色由容器上的 class 门控:'auto' 输出 `.d2h-auto-color-scheme`,
+       * 对应规则整块包在 d2h 自带的那个 `@media (prefers-color-scheme: dark)` 里、读的是
+       * **另一套** `--d2h-dark-*`,而特异性 (0,2,0) 稳压基础规则 (0,1,0) ——
+       * 于是 vscode-theme.css 覆写的那 23 个 `--d2h-*` 在深色下一条都不生效,
+       * 页面只是"深色不太像 VS Code",不报错。
+       *
+       * 'light' 输出的 `.d2h-light-color-scheme` 在 d2h 的 CSS 里一条规则都没有(实测),
+       * 全部配色因此落在无前缀的基础规则上,深浅由我们自己那套 token 承担。
+       * 顺带避开 3.4.56 的一处缺口:auto 块里 `.d2h-deleted` 挂错成了
+       * `.d2h-dark-color-scheme .d2h-deleted`,auto 模式下深色永远盖不到它。
+       *
+       * 改回 'auto' 会被 test/unit/web/render.test.ts 那条 class 断言拦下。
+       */
+      colorScheme: 'light' as ColorSchemeType,
     },
     getHljs(),
   );

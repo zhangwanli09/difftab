@@ -7,9 +7,9 @@
 //   2. 那个容器在 vdom 里**永远没有子节点**,否则两边会对着同一棵子树各改各的,
 //      Preact 下一次 diff 时按自己记得的空子树去比对真实的一大棵 DOM。
 //
-// 四个 `kind` 全部在这里分支。binary / too-large 的**填充逻辑**要到 S4a 才落地
-// (后端现在还不返回它们),但渲染分支现在就得有 —— 按单一形状写死,等于把 S4a
-// 变成一次回头改渲染的返工(§5.12「字段定型时机」)。
+// 四个 `kind` 全部在这里分支。binary / too-large 目前只由**未跟踪**那条路填(§5.2 的
+// NUL 探测与两个阈值),已跟踪那一侧要到 S4a 才有;但两个渲染分支现在就得在 ——
+// 按单一形状写死,等于把 S4a 变成一次回头改渲染的返工(§5.12「字段定型时机」)。
 
 import type { ComponentChildren } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
@@ -19,7 +19,7 @@ import { diffState } from '../state/store';
 
 /** 提示行的统一外观 —— 空态、加载中、错误、二进制、超大文件共用。 */
 function Notice({ children }: { children: ComponentChildren }) {
-  return <p class="p-4 text-sm text-neutral-500">{children}</p>;
+  return <p class="p-4 text-sm text-description-foreground">{children}</p>;
 }
 
 /**
@@ -47,17 +47,25 @@ function Patch({ patch }: { patch: string }) {
 /**
  * 体积的可读写法。
  *
- * **不能一律按 MB 取整**:`too-large` 有两个触发口(§5.2),体积超 5MB 是一个,
- * 行数超 50,000 是另一个 —— 后者的文件可能只有几百 KB,按 MB 取整会显示
- * 「文件过大(0 MB)」,自相矛盾且把真正的原因(行太多)盖掉了。
- *
- * TODO(S4a):`DiffPayload` 现在只带体积、不带触发原因,所以这里最多做到「数字不
- * 荒谬」。要把「行数太多」说出来得先改 §5.12 的协议类型,那属 S4a 填充这两个分支
- * 的时候一并定。
+ * **不能一律按 MB 取整**:`reason: 'lines'` 那一路的文件可能只有几百 KB(§5.12),
+ * 按 MB 取整会显示「0 MB」。
  */
 function formatSize(bytes: number): string {
   const mb = bytes / 1024 / 1024;
   return mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+/**
+ * 拒绝预览的原因(§5.12 的 `reason`)。
+ *
+ * 两个触发口的文案必须不同:行数那一路的体积可能只有几百 KB,单说「文件过大」会
+ * 让用户对着一个不大的数字发愣。**具体阈值(5MB / 50,000 行)刻意不写在这里** ——
+ * 它属 server/git 那一侧的判据,复述一遍就是第二份事实来源(§5.0 不变式 4)。
+ */
+function tooLargeNotice(payload: Extract<DiffPayload, { kind: 'too-large' }>): string {
+  return payload.reason === 'lines'
+    ? `文件行数过多,不预览(共 ${formatSize(payload.size)})。`
+    : `文件过大(${formatSize(payload.size)}),不预览。`;
 }
 
 function Payload({ payload }: { payload: DiffPayload }) {
@@ -65,11 +73,12 @@ function Payload({ payload }: { payload: DiffPayload }) {
     case 'text':
     case 'untracked-text':
       return <Patch patch={payload.patch} />;
-    // TODO(S4a):后端填充这两个分支时一并核对文案与 §6 的「仅提示变更不做内容 diff」
+    // TODO(S4a):后端把已跟踪那一侧的两个分支填上时,一并核对文案与 §6 的
+    // 「二进制文件仅提示变更不做内容 diff」「超大文件提示不支持预览而非卡死」
     case 'binary':
       return <Notice>二进制文件,不做内容比对。</Notice>;
     case 'too-large':
-      return <Notice>文件过大({formatSize(payload.size)}),不预览。</Notice>;
+      return <Notice>{tooLargeNotice(payload)}</Notice>;
   }
 }
 
@@ -81,7 +90,7 @@ export function DiffView() {
 
   return (
     <div>
-      <h2 class="border-b border-neutral-200 px-4 py-2 font-mono text-sm break-all">
+      <h2 class="border-b border-panel-border bg-title-bar-background px-4 py-2 font-mono text-sm break-all">
         {state.path}
       </h2>
       {state.status === 'loading' && <Notice>读取中…</Notice>}

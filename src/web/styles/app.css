@@ -1,7 +1,8 @@
 /* 样式入口(spec §5.6)。
  *
  * 层叠方案:无层(unlayered)样式在层叠中永远胜过有层样式,与特异性无关,
- * 而 Tailwind v4 把 preflight 放在 @layer base、工具类放在 @layer utilities。
+ * 而 Tailwind v4 把 preflight 放在 @layer base、工具类放在 @layer utilities、
+ * 本文件 @theme 的产出放在 @layer theme(三者均已实测,见 spec §10)。
  * 因此把 hljs 主题与 diff2html 的 CSS 以 unlayered 形式引在其后,
  * 结构上就不可能被 preflight 压过。
  *
@@ -26,12 +27,72 @@
  * 显式给出比赌它探对更省事。路径相对本文件所在目录。 */
 @source "../";
 
+/* 设计 token(spec §5.6)。
+ *
+ * 命名照搬 VS Code 的颜色 token(`editor.background` → `--color-editor-background`),
+ * 取值复刻 Light Modern / Dark Modern 的观感 —— **轻量优先于视觉还原度**,所以是
+ * 近似而不是逐值移植,个别值(告警条那两个)为可读性做了微调。
+ *
+ * 本块只写**浅色**一套,深色那套作为 delta 写在 vscode-theme.css 的媒体查询里。
+ * 两处的分工不能反:@theme 同时负责产出工具类,而工具类的名字来自这里的键名。
+ *
+ * **别在这里加"以后可能用得上"的 token**:Tailwind v4 会把既没被工具类、也没被
+ * 我们自己的 CSS 以 var() 引用的 @theme 变量整个裁掉(已实测,见 spec §10),
+ * 于是它在产物里根本不存在 —— 留着只会让人以为页面在用它。
+ */
 @theme {
-  /* 设计 token 命名与数值参照 VS Code 颜色 token,复刻 Dark+/Light+ 观感。
-     TODO(S2c):深浅两套主题与 --d2h-* 覆写在那一阶段收口;S2a 的列表只用
-     Tailwind 自带的中性色,够看清即可。 */
+  /* --- 编辑器与外壳 ------------------------------------------------------ */
   --color-editor-background: #ffffff;
   --color-editor-foreground: #3b3b3b;
   --color-side-bar-background: #f8f8f8;
+  --color-side-bar-section-header-background: #f0f0f0;
+  --color-title-bar-background: #f8f8f8;
   --color-panel-border: #e5e5e5;
+  /* 次要文字:目录前缀、计数、提示行。VS Code 的 descriptionForeground */
+  --color-description-foreground: #6f6f6f;
+  --color-focus-border: #005fb8;
+  --color-text-link-foreground: #005fb8;
+
+  /* --- 列表(变更列表整条都归它) ---------------------------------------- */
+  --color-list-hover-background: #e8e8e8;
+  --color-list-active-selection-background: #e4e6f1;
+  --color-list-active-selection-foreground: #000000;
+
+  /* --- 告警条(取不到状态时那一条) -------------------------------------- */
+  /* 底色深浅各一份;边框那个**深浅共用**:同一个偏暗的黄在 #fdf6d3 与 #352a05 上都够
+   * 分明,深色那边不必另给一份(所以 vscode-theme.css 的 delta 里没有它)。 */
+  --color-warning-background: #fdf6d3;
+  --color-warning-border: #b89500;
+
+  /* --- git 装饰色:变更列表的状态位徽章按这套上色 ------------------------ */
+  --color-git-modified: #895503;
+  --color-git-deleted: #ad0707;
+  --color-git-added: #587c0c;
+  --color-git-untracked: #007100;
+  --color-git-conflicting: #ad0707;
+
+  /* --- diff 底色:由 vscode-theme.css 映射到 --d2h-* --------------------- */
+  /* 下面六个**刻意深浅共用同一取值**:它们是半透明叠加,VS Code 自己的默认值也是
+   * 深浅共用一套(`diffEditor.insertedTextBackground` 等),底色一换观感自然跟着换。
+   * 换成不透明取值就必须在深色那边再维护一份平行的硬编码。 */
+  --color-diff-inserted-background: rgb(155 185 85 / 0.2);
+  --color-diff-inserted-text-background: rgb(155 185 85 / 0.45);
+  --color-diff-inserted-border: rgb(155 185 85 / 0.5);
+  --color-diff-removed-background: rgb(255 0 0 / 0.16);
+  --color-diff-removed-text-background: rgb(255 0 0 / 0.32);
+  --color-diff-removed-border: rgb(255 0 0 / 0.35);
+  /* 并排视图里"这一侧没有对应行"的空占位格(VS Code 的 diffEditor.diagonalFill)。
+   * 这个**不能**深浅共用:它叠在底色上要的是"比周围亮一点",深色下得换成白色叠加,
+   * 所以 vscode-theme.css 的媒体查询里有它的对应值。 */
+  --color-diff-diagonal-fill: rgb(0 0 0 / 0.06);
+
+  /* --- 字体 -------------------------------------------------------------- */
+  /* 这两个键名有额外作用:Tailwind 的 --default-font-family / --default-mono-font-family
+   * 指向它们,preflight 因此会把 --font-sans 应用到 html,`font-mono` 工具类会用
+   * --font-mono。所以字体不需要在 vscode-theme.css 里再写一遍 body 规则。 */
+  --font-sans:
+    ui-sans-serif, -apple-system, "Segoe UI", "Noto Sans", "PingFang SC", "Microsoft YaHei",
+    sans-serif;
+  --font-mono:
+    ui-monospace, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }

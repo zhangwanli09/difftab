@@ -37,18 +37,39 @@ function splitPath(path: string): { dir: string; name: string } {
     : { dir: path.slice(0, slash + 1), name: path.slice(slash + 1) };
 }
 
+/**
+ * 状态位的**颜色**,同样只是展示(与 `CODE_LABELS` 一对)。
+ *
+ * 取的是 VS Code `gitDecoration.*` 那套 token,让徽章的颜色语义与用户在编辑器里
+ * 看到的一致(§5.6)。深浅两套取值在 token 层翻,这里不出现 `dark:` 变体。
+ */
+const CODE_COLORS: Record<StatusCode, string> = {
+  '.': 'text-description-foreground',
+  M: 'text-git-modified',
+  T: 'text-git-modified',
+  A: 'text-git-added',
+  D: 'text-git-deleted',
+  R: 'text-git-modified',
+  C: 'text-git-added',
+  U: 'text-git-conflicting',
+  '?': 'text-git-untracked',
+};
+
 function StatusBadge({ code }: { code: StatusCode }) {
   return (
     <span
       title={CODE_LABELS[code]}
-      class="w-5 shrink-0 text-center font-mono text-xs text-neutral-500"
+      class={`w-5 shrink-0 text-center font-mono text-xs ${CODE_COLORS[code]}`}
     >
       {code}
     </span>
   );
 }
 
-const ROW_CLASS = 'flex w-full items-baseline gap-2 px-3 py-1 text-left text-sm';
+// focus-visible 那两个类是键盘可达性的最低档:列表项是 <button>,而 preflight 清掉了
+// UA 默认焦点环。用 focus-border token 画,深浅都跟着翻
+const ROW_CLASS =
+  'flex w-full items-baseline gap-2 px-3 py-1 text-left text-sm focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus-border';
 
 function FileRow({ file, group }: { file: FileEntry; group: ChangeGroup['id'] }) {
   const { dir, name } = splitPath(file.path);
@@ -63,9 +84,15 @@ function FileRow({ file, group }: { file: FileEntry; group: ChangeGroup['id'] })
    * 换成本写法后 0.2ms / 0.5ms。绝对值都不大 —— 记在这里是因为行内容还会长
    * (S4a 的重命名标注),而这条路径 S3b1 起每个 SSE 事件都要走一遍。
    */
+  // 基础类只写一次,三元里只放选中/未选中的**差量** —— 两个分支各拼一遍 ROW_CLASS 的话,
+  // 以后"选中行也加个 X"要改两处,而 diff 上也看不出到底哪个分支变了
   const rowClass = useComputed(
     () =>
-      `${ROW_CLASS} ${selectedPath.value === file.path ? 'bg-neutral-200' : 'hover:bg-neutral-100'}`,
+      `${ROW_CLASS} ${
+        selectedPath.value === file.path
+          ? 'bg-list-active-selection-background text-list-active-selection-foreground'
+          : 'hover:bg-list-hover-background'
+      }`,
   );
   return (
     <li>
@@ -79,13 +106,13 @@ function FileRow({ file, group }: { file: FileEntry; group: ChangeGroup['id'] })
         {/* 每个分组只展示它自己那一侧的状态位 —— 「已暂存」看 X,其余看 Y */}
         <StatusBadge code={group === 'staged' ? file.staged : file.unstaged} />
         <span class="truncate">
-          {dir && <span class="text-neutral-500">{dir}</span>}
+          {dir && <span class="text-description-foreground">{dir}</span>}
           <span>{name}</span>
         </span>
         {/* 重命名的判据是 oldPath 存在,不是比对路径(§5.0 不变式 4)。
             点开后的 rename from/to 与相似度标注属 S4a,这里只把旧路径说清楚。 */}
         {file.oldPath && (
-          <span class="truncate text-xs text-neutral-500">
+          <span class="truncate text-xs text-description-foreground">
             ← {file.oldPath}
             {file.renameScore !== undefined && ` (${file.renameScore}%)`}
           </span>
@@ -99,9 +126,9 @@ function Group({ group }: { group: ChangeGroup }) {
   if (group.files.length === 0) return null;
   return (
     <section>
-      <h2 class="sticky top-0 bg-neutral-100 px-3 py-1 text-xs font-medium text-neutral-600">
+      <h2 class="sticky top-0 bg-side-bar-section-header-background px-3 py-1 text-xs font-medium text-description-foreground">
         {group.title}
-        <span class="ml-1 text-neutral-400">{group.files.length}</span>
+        <span class="ml-1">{group.files.length}</span>
       </h2>
       <ul>
         {group.files.map((file) => (
@@ -114,7 +141,7 @@ function Group({ group }: { group: ChangeGroup }) {
 
 export function ChangeList({ files }: { files: readonly FileEntry[] }) {
   if (files.length === 0) {
-    return <p class="px-3 py-2 text-sm text-neutral-500">工作区干净,没有变更。</p>;
+    return <p class="px-3 py-2 text-sm text-description-foreground">工作区干净,没有变更。</p>;
   }
   return (
     <div>
