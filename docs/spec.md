@@ -460,18 +460,18 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 **性能与资源**
 
 - [x] `[S1]` **冷启动 · CLI 侧**:进程 ready 并输出 URL ≤ 300ms,自动化测量并纳入 CI 门禁。**"ready" 的口径明确为「监听成功并打印 URL」**,首次 `git status` 交由第一个 HTTP 请求惰性执行、不计入——否则该指标会随被测仓库规模漂移,失去回归意义
-- [ ] `[S2c]` **冷启动 · 浏览器侧**:浏览器进程已在运行的前提下,首屏渲染 ≤ 1s(人工验证)。冷启动浏览器进程本身的耗时(通常 2-5s)与 `npx` 首次下载解包耗时均不计入,后者在 README 中说明
+- [x] `[S2c]` **冷启动 · 浏览器侧**:浏览器进程已在运行的前提下,首屏渲染 ≤ 1s(人工验证)。冷启动浏览器进程本身的耗时(通常 2-5s)与 `npx` 首次下载解包耗时均不计入,后者在 README 中说明
 - [ ] `[S3b2]` 资源占用:原生监听模式下空闲时内存/CPU 接近零;降级轮询模式下空闲 CPU < 1%
 
 **样式、主题与语法高亮**
 
-- [ ] `[S0/S2c]` **样式层叠方案生效**:构建产物中 hljs 主题与 `diff2html.min.css` 均为 unlayered 且 hljs 在前;Tailwind preflight 未破坏 diff2html 渲染(行号列宽、边框、表格对齐正常),深浅两套主题下均验证(S0 的前提验证只证 unlayered 成立,渲染观感待 S2c)
-- [ ] `[S2c]` **深浅主题各自生效**:`github-dark.css` 在构建产物中确实被 `(prefers-color-scheme: dark)` 包住;切换系统外观后语法高亮配色随之切换,浅色下不是深色配色
+- [x] `[S0/S2c]` **样式层叠方案生效**:构建产物中 hljs 主题与 `diff2html.min.css` 均为 unlayered 且 hljs 在前;Tailwind preflight 未破坏 diff2html 渲染(行号列宽、边框、表格对齐正常),深浅两套主题下均验证(S0 的前提验证只证 unlayered 成立,渲染观感待 S2c)
+- [x] `[S2c]` **深浅主题各自生效**:`github-dark.css` 在构建产物中确实被 `(prefers-color-scheme: dark)` 包住;切换系统外观后语法高亮配色随之切换,浅色下不是深色配色
 - [x] `[S0/S2b]` **语法高亮真的出颜色**:diff 中的代码按语言着色(而非只有 diff 增删底色);清单外的语言退化为 plaintext 且不报错(S0 的 spike 即需看到颜色,否则深导入方案不成立)。**退化路径要有单测守着**:`hljs.highlight(x, { language: 'plaintext' })` 不抛异常 —— 光看 spike 样例是发现不了的,样例里的语言全在清单内
 
 **构建产物与发布**
 
-- [ ] `[S0/S2c]` **产物体积门禁**:5.5 的三行门禁(前端 JS 明文 ≤350 KB / gzip ≤120 KB、CSS 明文 ≤40 KB)自动化测量并纳入 CI;S0 的 spike 预估与 S2c 的收口实测均回填 5.5 表格
+- [x] `[S0/S2c]` **产物体积门禁**:5.5 的三行门禁(前端 JS 明文 ≤350 KB / gzip ≤120 KB、CSS 明文 ≤40 KB)自动化测量并纳入 CI;S0 的 spike 预估与 S2c 的收口实测均回填 5.5 表格
 - [x] `[S0]` **静态检查进 CI**:`biome ci` 与 `tsc --noEmit` 均为 CI 门禁,失败即阻断
 - [x] `[S2a]` **下限档跑的是构建产物**:CI matrix 的 Node **22.0.x** 档在完全不执行安装的前提下,对下载的 `dist/` artifact 跑通全部冒烟套件;5.10 的两层只读验证与冷启动 ≤300ms 测量均在构建产物上执行,而非 TS 源码(matrix 作业本身在 S0 即拉起,此项以冒烟套件补齐为准)
 - [x] `[S0]` **发布产物内容干净**:`pnpm pack --dry-run --json` 列出的文件清单只含 `bin/`、`dist/`、README、LICENSE、`package.json`,不含 `src/`、配置文件、测试与任何 devDependency。注意打包出的 `package.json` 因 pnpm 的 manifest obfuscation 本就与仓库里的不同(剥离 `packageManager` 与 publish 生命周期脚本),核对时勿误判(见第 10 节)
