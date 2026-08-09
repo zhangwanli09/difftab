@@ -6,8 +6,9 @@
 // 那三个谓词看着像 `!== '.'` 的同义反复,其实不是,`?` 与 `U` 都不能按字面读。
 // 本文件只负责把它们组织成三组;「重命名」同理看 `oldPath` 而不比对路径。
 
-import { signal } from '@preact/signals';
+import { computed, signal } from '@preact/signals';
 import {
+  type DiffPayload,
   type ErrorPayload,
   type FileEntry,
   hasStagedChange,
@@ -23,12 +24,33 @@ export const repoState = signal<RepoState | null>(null);
 export const loadError = signal<string | null>(null);
 
 /**
- * 当前选中的文件路径。
+ * 当前选中文件的 diff 请求状态。
+ *
+ * 三态显式建模而不是「payload + 一个 loading 布尔」:后者在切换文件的那一瞬间会
+ * 同时持有上一个文件的 payload 与 loading=true,渲染时到底信哪个全看写法,而写错
+ * 的症状是**在 A 文件的标题下显示 B 文件的 diff** —— 不报错,只是不对。
+ *
+ * 每一态都带着 `path`,DiffPane 因此能在渲染前确认「这份结果属于当前选中的文件」。
+ */
+export type DiffRequestState =
+  | { status: 'loading'; path: string }
+  | { status: 'ready'; path: string; payload: DiffPayload }
+  | { status: 'error'; path: string; message: string };
+
+/** null 表示还没选过任何文件。 */
+export const diffState = signal<DiffRequestState | null>(null);
+
+/**
+ * 当前选中的文件路径 —— **派生量,不是第二份状态**。
+ *
+ * 早先它是一个独立 signal,与 `diffState.path` 由 `selectFile` 一同写。两个来源就有
+ * 「谁是真的」这个问题,组件里因此长出一条防两者错位的分支,而那条分支既走不到、
+ * 又得让后来的人反复确认它走不到。派生之后错位不可表示,分支自然消失。
  *
  * 存 path 而不是 `FileEntry` 对象:列表刷新后条目是新对象,存对象等于每次刷新
  * 都丢选中。path 是 §5.12 里 `/api/diff` 的键,天然是这个身份(§5.4)。
  */
-export const selectedPath = signal<string | null>(null);
+export const selectedPath = computed(() => diffState.value?.path ?? null);
 
 export type ChangeGroupId = 'staged' | 'unstaged' | 'untracked';
 
@@ -81,6 +103,24 @@ function messageFrom(text: string, status: number): string {
 }
 
 /**
+ * 取一个 JSON 端点,失败即抛一句可展示的话。
+ *
+ * 两个端点共用一份,是因为上面那条「错误正文先当文本读」的规矩必须只有一处实现:
+ * 两份拷贝里有一份被「顺手简化」成 `res.json()`,只有那个端点会退回显示
+ * 「Unexpected token 'E'…」,而它照样是绿的 —— 现有那条单测只盖 `/api/state`。
+ *
+ * 成功那一路仍走 `res.json()`:「未必是 JSON」只对错误正文成立,而 diff 的正文可以
+ * 到 5MB(§5.2 的阈值),先 `text()` 再 `JSON.parse()` 等于把它在内存里存两份。
+ *
+ * 竞态判据**不在这里**:两个调用方各有各的序号,且要在拿到结果后才比对(见下)。
+ */
+async function getJson<T>(url: string): Promise<T> {
+  const res = await fetch(url, { headers: { Accept: 'application/json' } });
+  if (!res.ok) throw new Error(messageFrom(await res.text(), res.status));
+  return (await res.json()) as T;
+}
+
+/**
  * 已发出的最新一次请求的序号。
  *
  * S3b1 起 SSE 的每个 `change` 事件都会调一次 `loadState()`,而 agent 跑动期间事件
@@ -100,10 +140,7 @@ let latestRequest = 0;
 export async function loadState(): Promise<void> {
   const ticket = ++latestRequest;
   try {
-    const res = await fetch('/api/state', { headers: { Accept: 'application/json' } });
-    const text = await res.text();
-    if (!res.ok) throw new Error(messageFrom(text, res.status));
-    const state = JSON.parse(text) as RepoState;
+    const state = await getJson<RepoState>('/api/state');
     if (ticket !== latestRequest) return;
     repoState.value = state;
     loadError.value = null;
@@ -111,4 +148,65 @@ export async function loadState(): Promise<void> {
     if (ticket !== latestRequest) return;
     loadError.value = toMessage(cause);
   }
+}
+
+/** `loadState` 那套竞态判据的 diff 版。两条请求各有各的序号,互不影响。 */
+let latestDiffRequest = 0;
+
+/**
+ * 取**一个**文件的 diff(spec §5.2 的按文件懒加载)。
+ *
+ * 两处不能省的细节:
+ *
+ * - **重命名条目必须把 `oldPath` 一并传给后端**。只传新路径时 git 只看到一侧、无法
+ *   配对,会把重命名退化成一个全新增文件(已实测,§5.2),「重命名识别并标注」随之
+ *   落空 —— 而页面上看到的是一个内容完整、只是少了 rename from/to 的 diff,不像出错。
+ *   判据是 `oldPath` 存在,不是自己比对路径(§5.0 不变式 4)
+ * - **一次点击只发一个请求**。禁止预取整个列表:agent 单次改 300+ 文件是常态,
+ *   全仓 diff 会冻结浏览器主线程数秒到数十秒(§5.2 / §6 的 300+ 文件验收项)
+ */
+export async function loadDiff(entry: FileEntry): Promise<void> {
+  const ticket = ++latestDiffRequest;
+  const current = diffState.value;
+  /**
+   * **同一个文件重新取时不回退到 loading 态**。
+   *
+   * 回退的代价不是闪一下:`ready` 变 `loading` 会让渲染 diff 的那棵子树整个卸载,
+   * diff2html 画好的 DOM 连同滚动位置一起没了,补丁回来后从零重画。今天的表现是
+   * 「再点一次当前行(或它在另一组里的那一行)整个面板闪空」;到 S3b1 之后,每个
+   * SSE `change` 事件都会走这里,而 §5.4 要求刷新**不丢选中文件与滚动位置** ——
+   * 那正是不自己写 reconcile、改用框架的理由,在这里回退等于把它退掉。
+   *
+   * 换文件才必须清空:留着上一个文件的 payload,新标题下会短暂挂着旧 diff。
+   */
+  if (current?.status !== 'ready' || current.path !== entry.path) {
+    diffState.value = { status: 'loading', path: entry.path };
+  }
+  try {
+    const query = new URLSearchParams({ path: entry.path });
+    if (entry.oldPath) query.set('oldPath', entry.oldPath);
+    const payload = await getJson<DiffPayload>(`/api/diff?${query}`);
+    // 用户在等待期间点了别的文件 —— 这份结果已经是过期的那一个
+    if (ticket !== latestDiffRequest) return;
+    diffState.value = { status: 'ready', path: entry.path, payload };
+  } catch (cause) {
+    if (ticket !== latestDiffRequest) return;
+    diffState.value = { status: 'error', path: entry.path, message: toMessage(cause) };
+  }
+}
+
+/**
+ * 选中一个文件并拉它的 diff。
+ *
+ * 列表只把 `FileEntry` 交回来,「取 diff 要带哪些参数」留在本文件 —— 组件里再写一遍
+ * 就等于把 §5.2 的双路径要求复制了一份,而两份里漏改一份是不会报错的。
+ *
+ * diff 的错误**不写进 `loadError`**:那条横幅说的是「列表取不到」,一个文件的 diff
+ * 失败不该让整个页面看起来坏掉,它显示在右侧自己的位置上。
+ *
+ * 点当前这一行**照样重新取**,这是有意的:在 S3b1 的自动刷新到位之前,再点一次是
+ * 用户唯一的手动刷新手段。上面那条「同一个 path 不回退 loading」正好让它不闪。
+ */
+export function selectFile(entry: FileEntry): void {
+  void loadDiff(entry);
 }

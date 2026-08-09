@@ -1,29 +1,11 @@
 // 应用外壳:左侧变更列表,右侧 diff 容器(spec §5.4)。
 //
-// 本阶段(S2a)只接 `/api/state`。右侧是占位:diff2html 的深导入、hljs 注册与
-// 按文件懒加载全部属 S2b —— 那几条「违反后不报错、只是静默出错」的约束(draw()
-// 后不得补调 highlightCode()、plaintext 必须注册)需要整会话的上下文,提前拼一半
-// 只会把它们埋在别的改动里(spec §7 拆分 S2 的理由)。
+// 两侧的所有权是分开的:列表归 Preact 的 keyed reconcile,单文件 diff 容器归
+// `Diff2HtmlUI`(§5.5,见 DiffView.tsx)。
 
-import { loadError, repoState, selectedPath } from '../state/store';
+import { loadError, repoState } from '../state/store';
 import { ChangeList } from './ChangeList';
-
-function DiffPane() {
-  const path = selectedPath.value;
-  return (
-    <section class="flex-1 overflow-auto p-4">
-      {path === null ? (
-        <p class="text-sm text-neutral-500">从左侧选一个文件。</p>
-      ) : (
-        <div>
-          <h2 class="font-mono text-sm break-all">{path}</h2>
-          {/* TODO(S2b):换成 /api/diff + diff2html 渲染容器 */}
-          <p class="mt-2 text-sm text-neutral-500">diff 渲染在 S2b 接入。</p>
-        </div>
-      )}
-    </section>
-  );
-}
+import { DiffView } from './DiffView';
 
 export function App() {
   const state = repoState.value;
@@ -52,7 +34,11 @@ export function App() {
             <ChangeList files={state.files} />
           )}
         </nav>
-        <DiffPane />
+        {/* diff 容器自己滚:列表侧的滚动位置在 SSE 刷新时要留住(§5.4),
+            两侧共用一个滚动容器就做不到 */}
+        <section class="min-w-0 flex-1 overflow-auto">
+          <DiffView />
+        </section>
       </div>
     </div>
   );
