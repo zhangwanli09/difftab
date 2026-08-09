@@ -57,6 +57,24 @@ describe('路径转义(§6:不出现 \\351\\234\\200 这类残留)', () => {
   });
 });
 
+describe('未跟踪(§6:展开到文件粒度,不折叠成 `dir/`)', () => {
+  test('整个目录未跟踪时,列表里是里面的每个文件', async () => {
+    // 这条钉的是 `-uall`。少了它,git 只报一行 `? 未跟踪目录/`,列表里就是一个
+    // 点不开的目录条目 —— 而 agent 新建一整个目录是最常见的形态之一
+    const { files } = await readStatus(repos.unicodePaths);
+    const paths = files.map((f) => f.path);
+    expect(paths).toContain('未跟踪目录/a.md');
+    expect(paths).toContain('未跟踪目录/sub/b.md');
+    expect(paths.filter((p) => p.endsWith('/'))).toEqual([]);
+  });
+
+  test('这些文件点得开 —— 未跟踪那条路读磁盘构造补丁', async () => {
+    const payload = await readDiff(repos.unicodePaths, { path: '未跟踪目录/sub/b.md' });
+    expect(payload.kind).toBe('untracked-text');
+    expect(payload).toHaveProperty('patch', expect.stringContaining('+nested two'));
+  });
+});
+
 describe('重命名', () => {
   test('status 给出新旧两个路径与相似度', async () => {
     const { files } = await readStatus(repos.renames);

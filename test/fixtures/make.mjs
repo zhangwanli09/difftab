@@ -102,6 +102,12 @@ export function makeFixtures(destDir) {
     commit(cwd, 'add files with tricky paths');
     for (const path of TRICKY_PATHS) write(cwd, path, 'one\ntwo modified\nthree\n');
     write(cwd, 'docs/未跟踪 文件.md', 'brand new\n');
+    // 整个目录都未跟踪 —— 这是 `-uall` 唯一能被证伪的形态:少了它,git 把它折叠成
+    // 一行 `? 未跟踪目录/`,列表里只剩一个点不开的目录条目(§5.2 / §6)。
+    // 上面那个未跟踪文件在 `docs/` 里,而 `docs/` 已被跟踪,折不折叠都长一样,
+    // 证不了这条
+    write(cwd, '未跟踪目录/a.md', 'nested one\n');
+    write(cwd, '未跟踪目录/sub/b.md', 'nested two\n');
     repos.unicodePaths = cwd;
   }
 
