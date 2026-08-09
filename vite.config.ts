@@ -9,6 +9,35 @@ import { BIND_HOST, cookieName } from './src/server/http/security.ts';
 const webRoot = fileURLToPath(new URL('./src/web', import.meta.url));
 const outDir = fileURLToPath(new URL('./dist/web', import.meta.url));
 
+/**
+ * Preact 的 JSX 设置。**具名导出是为了让 vitest.config.ts import 同一份**,而不是
+ * 各抄一遍字面量:抄两份时漂移是静默的,而且方向最坏 —— 生产构建这侧改了
+ * (换 importSource、加第三条 alias、runtime 改 classic),测试仍按旧设置转换,
+ * 于是**测试跑的不是要发的那条流水线**,而套件全绿。与上面 BIND_HOST / cookieName
+ * 从后端单一来源拿是同一条理由。
+ *
+ * JSX 走 Vite 8 的 Oxc 选项,不引 @preact/preset-vite(它会拖入 @babel/core)。
+ * 代价是失去 prefresh 的组件状态保留 HMR,整页刷新对本项目够用(spec §5.11)。
+ *
+ * alias 是 Oxc 选项的补位,不是重复设置:dev 下 Vite 的依赖预扫描不吃 oxc.jsx,
+ * 会按默认 importSource 去找 react/jsx-dev-runtime 并报 "could not be resolved"
+ * (build 走 oxc.jsx 因此正常)。两条 alias 把这条路补上,dev / build 行为一致。
+ */
+export const preactJsx = {
+  oxc: {
+    jsx: {
+      runtime: 'automatic',
+      importSource: 'preact',
+    },
+  },
+  resolve: {
+    alias: {
+      'react/jsx-runtime': 'preact/jsx-runtime',
+      'react/jsx-dev-runtime': 'preact/jsx-dev-runtime',
+    },
+  },
+} as const;
+
 // 函数形态是为了拿到 `command`:`devProxy()` 会去读注册表,而它在 `vite build`
 // 下毫无意义 —— 对象形态里那个展开在配置**加载时**就求值,于是 `pnpm build`
 // (以及 CI 的 build 作业)会凭空打一条「先在另一个终端起后端」的警告。
@@ -18,24 +47,7 @@ export default defineConfig(({ command }) => ({
   base: './',
   plugins: [tailwindcss()],
 
-  // JSX 走 Vite 8 的 Oxc 选项,不引 @preact/preset-vite(它会拖入 @babel/core)。
-  // 代价是失去 prefresh 的组件状态保留 HMR,整页刷新对本项目够用(spec §5.11)。
-  oxc: {
-    jsx: {
-      runtime: 'automatic',
-      importSource: 'preact',
-    },
-  },
-
-  // alias 是 Oxc 选项的补位,不是重复设置:dev 下 Vite 的依赖预扫描不吃 oxc.jsx,
-  // 会按默认 importSource 去找 react/jsx-dev-runtime 并报 "could not be resolved"
-  // (build 走 oxc.jsx 因此正常)。两条 alias 把这条路补上,dev / build 行为一致。
-  resolve: {
-    alias: {
-      'react/jsx-runtime': 'preact/jsx-runtime',
-      'react/jsx-dev-runtime': 'preact/jsx-dev-runtime',
-    },
-  },
+  ...preactJsx,
 
   build: {
     outDir,

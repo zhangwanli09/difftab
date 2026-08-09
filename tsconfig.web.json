@@ -20,6 +20,7 @@
     "src/web/**/*.ts",
     "src/web/**/*.tsx",
     "src/server/shared/**/*.ts",
-    "test/unit/web/**/*.ts"
+    "test/unit/web/**/*.ts",
+    "test/unit/web/**/*.tsx"
   ]
 }
