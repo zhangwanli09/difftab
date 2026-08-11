@@ -10,6 +10,8 @@ import { DiffRequestError, readDiff } from '../git/diff.ts';
 import type { RepoInfo } from '../git/repo.ts';
 import { readStatus } from '../git/status.ts';
 import type { ErrorPayload, RepoState, WatchState } from '../shared/protocol.ts';
+import { initialMode, resolveTier } from '../watch/tier.ts';
+import { createWatcher, type WatchHandle } from '../watch/watcher.ts';
 import { ASSETS, readAsset } from './assets.ts';
 import {
   BIND_HOST,
@@ -22,14 +24,7 @@ import {
   tokenCookie,
   tokensMatch,
 } from './security.ts';
-
-/**
- * TODO(S3b):监听档位与降级状态的真实取值随 §5.7 落地。
- *
- * 字段现在就必须有:晚定等于前端在 S2 按「永远不降级」写死,S3b 再回头改渲染分支
- * (spec §5.12「字段定型时机」)。
- */
-const PLACEHOLDER_WATCH: WatchState = { mode: 'native', tier: 'A' };
+import { createSseChannel } from './sse.ts';
 
 export interface GlanceServer {
   port: number;
@@ -83,6 +78,44 @@ export async function startServer(repo: RepoInfo): Promise<GlanceServer> {
   // 端口是 listen 之后才知道的,token 里又要绑端口 —— 先起 server,再合成 token
   let token = '';
   let port = 0;
+
+  /**
+   * 档位在**启动时**定,不等第一个订阅者。
+   *
+   * `/api/state` 里就带着它(§5.12),而那个请求先于任何 SSE 连接到达;更要紧的是
+   * `GITGLANCE_WATCH_TIER` 写错时要在启动那一刻响亮地失败,而不是等到某次订阅。
+   * 判定本身是纯计算(读 `process.versions.node` 与 `process.platform`),不落在
+   * §6 的 300ms 冷启动预算上。
+   */
+  const tier = resolveTier();
+  const watchState: WatchState = { mode: initialMode(tier), tier };
+
+  const events = createSseChannel();
+
+  /**
+   * 监听**懒起**:第一个 SSE 订阅者到了才建,起了就一直留到关服务。
+   *
+   * 两头都是有理由的。懒起是因为 §6 的冷启动门禁量的是「监听成功并打印 URL」,而
+   * S3b2 的 A/B 档要在 repoRoot 上建递归 watch —— Linux 上那是用户态遍历整棵树,
+   * 大仓库里足以把 300ms 预算一口吃掉,而此刻还没有任何人在等变更通知。
+   * 不随最后一个订阅者关掉,则是因为刷新页面 = 断开再连,那会让上面那趟遍历
+   * 每刷新一次重来一遍;空闲着的原生 watch 本身开销接近零(§6 的资源占用项)。
+   */
+  let watcher: WatchHandle | null = null;
+  const ensureWatcher = () => {
+    if (watcher !== null) return;
+    watcher = createWatcher({
+      gitDir: repo.gitDir,
+      onChange: () => events.send('change', {}),
+      // TODO(S3b2):这里是降级为 1.5s 轮询的挂点 —— 届时还要把 watchState.mode
+      // 翻成 'polling' 并推一个 change,让前端重取 /api/state 看到降级(§5.7)
+      onError: (cause) => {
+        process.stderr.write(
+          `gitglance: file watching degraded — ${sanitizeMessage(cause.message, repo.root)}\n`,
+        );
+      },
+    });
+  };
 
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     // 只读工具不需要任何非幂等端点(spec §5.12)
@@ -140,7 +173,7 @@ export async function startServer(repo: RepoInfo): Promise<GlanceServer> {
         sendJson(res, 200, {
           branch: status.branch,
           files: status.files,
-          watch: PLACEHOLDER_WATCH,
+          watch: watchState,
         } satisfies RepoState);
         return;
       }
@@ -156,10 +189,43 @@ export async function startServer(repo: RepoInfo): Promise<GlanceServer> {
         return;
       }
 
-      // TODO(S3b):SSE 通道随自动刷新一同落地。端点在 §5.12 的清单里,但它的
-      // 连接计数正是 §5.8 空闲退出的判据,两者属 S3b / S3c,不在本阶段提前拼一半。
+      /**
+       * SSE(spec §5.8 / §5.12)。**三道校验在上面已经统一走过**,这里没有例外分支 ——
+       * 「所有端点(含 SSE)统一校验」正是 §5.9 第 4 条。
+       */
       case '/api/events': {
-        sendError(res, 501, 'not-implemented', 'live updates land in a later milestone');
+        const headers = {
+          ...SECURITY_HEADERS,
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          Connection: 'keep-alive',
+        };
+        // HEAD 不能落进下面那条长连接:它永远不会有正文,却会把连接吊到超时
+        if (req.method === 'HEAD') {
+          res.writeHead(200, headers);
+          res.end();
+          return;
+        }
+        res.writeHead(200, headers);
+        // 先写一行注释把响应头顶出去:在此之前浏览器不会派发 `open`,dev 下的
+        // Vite 代理也可能一直攒着不发,表现为「页面连上了但第一个事件迟到 15 秒」
+        res.write(': connected\n\n');
+
+        /**
+         * 两个监听器都必须挂在 `events.add` **之前**。
+         *
+         * `close` 覆盖全部断开路径(关标签、刷新、进程被 kill 掉对端);`error` 则是
+         * 长连接独有的一条:写向一条已经结束的响应,`write()` 不会同步抛,而是在 `res`
+         * 上**异步** emit 一个 `'error'` —— 一个零监听器的 EventEmitter 收到 `'error'`
+         * 是整个进程带着裸栈崩掉,而不是丢一条心跳。
+         *
+         * 顺序则是因为 add 之后、挂上之前的那一小段里断开的话,就再没人把它摘出去:
+         * 心跳会一直写向一条死响应,§5.8 的空闲退出也永远数不回 0。
+         */
+        res.on('close', () => events.remove(res));
+        res.on('error', () => events.remove(res));
+
+        events.add(res);
+        ensureWatcher();
         return;
       }
 
@@ -225,6 +291,10 @@ export async function startServer(repo: RepoInfo): Promise<GlanceServer> {
     url: `http://${BIND_HOST}:${port}/?token=${encodeURIComponent(token)}`,
     close: () =>
       new Promise<void>((resolvePromise) => {
+        // 顺序有讲究:先停监听与心跳,再断连接。反过来的话,断连引发的
+        // `.git` 事件(没有)与正在发的心跳会写向已经 destroy 的 socket
+        watcher?.close();
+        events.close();
         for (const socket of sockets) socket.destroy();
         server.close(() => resolvePromise());
       }),

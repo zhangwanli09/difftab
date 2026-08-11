@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { CliUsageError, HELP_TEXT, parseCliArgs } from './cli/args.ts';
 import { start } from './cli/start.ts';
 import { PreflightError } from './git/repo.ts';
+import { WatchTierError } from './watch/tier.ts';
 
 /**
  * 版本号只有 package.json 一个来源。
@@ -56,7 +57,10 @@ export async function main(argv: string[]): Promise<void> {
   try {
     await start({ cwd: process.cwd(), noOpen: options.noOpen });
   } catch (cause) {
-    if (cause instanceof PreflightError) fail(cause.message);
+    // 两者都是「还没开始干活就发现参数不对」,收成同一句话友好报错。
+    // WatchTierError 只可能来自内部环境变量写错,但它同样不该甩一屏 Node 栈 ——
+    // 而且那种场合下栈顶是 resolveTier,读起来像产品坏了
+    if (cause instanceof PreflightError || cause instanceof WatchTierError) fail(cause.message);
     throw cause;
   }
 }
