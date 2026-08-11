@@ -136,17 +136,22 @@ let latestRequest = 0;
  * 不带任何鉴权参数:token 在生产下由启动 URL 的 302 换成了 HttpOnly cookie、在
  * `vite dev` 下由代理注入(§5.9 / §5.11),两条路径浏览器都会自动带上。前端因此
  * 完全不接触 token —— 它一旦落到 JS 能读的地方,HttpOnly 就白设了。
+ *
+ * 返回值是「`repoState` 这次换上新快照了吗」,给 `refresh()` 用:失败与被后一次请求
+ * 顶掉都返回 false,而这两种情况下 `repoState` 里留着的都是**上一份**快照。
  */
-export async function loadState(): Promise<void> {
+export async function loadState(): Promise<boolean> {
   const ticket = ++latestRequest;
   try {
     const state = await getJson<RepoState>('/api/state');
-    if (ticket !== latestRequest) return;
+    if (ticket !== latestRequest) return false;
     repoState.value = state;
     loadError.value = null;
+    return true;
   } catch (cause) {
-    if (ticket !== latestRequest) return;
+    if (ticket !== latestRequest) return false;
     loadError.value = toMessage(cause);
+    return false;
   }
 }
 
@@ -209,4 +214,31 @@ export async function loadDiff(entry: FileEntry): Promise<void> {
  */
 export function selectFile(entry: FileEntry): void {
   void loadDiff(entry);
+}
+
+/**
+ * 一次 SSE `change` 之后要重取的东西(spec §5.7 / §5.8)。
+ *
+ * 三条不显然的地方:
+ *
+ * - **打开着的 diff 也要重取**,不能只刷列表:文件内容变了而列表条目没变(还是那个
+ *   `1 .M`)是最常见的形态,只刷列表的话右侧停在旧补丁上,而页面看不出任何异样。
+ *   `loadDiff` 里那条「同一个 path 不回退 loading」正是为这条路准备的 —— 否则每个
+ *   事件都会把 diff2html 画好的 DOM 连同滚动位置一起卸载重挂(§5.4)
+ * - **先 state 后 diff,且用新列表里的条目**:重命名条目取 diff 必须带 `oldPath`
+ *   (§5.2 的双路径),而相似度是会变的,拿旧条目去取等于用过期的 `oldPath`。
+ *   **列表没换上新的就整个不取**:`loadState()` 失败时 `repoState` 留着的是上一份
+ *   快照,照着它找条目取 diff,恰好就是上面那句要避免的事 —— 而它不报错,只是
+ *   `oldPath` 过期(重命名退化成全新增)。被后一次 `refresh` 顶掉时同理:那一次
+ *   自己会接着取,这一次没有理由再拿旧列表补一枪
+ * - **选中的文件从列表里消失了就不动它**(改动被撤销、或被 commit 掉了)。留着最后
+ *   那份 diff,比把右侧突然清空更接近用户的心智 —— 他刚才在读的东西还在,只是
+ *   左侧不再高亮。切换文件自然会把它换掉
+ */
+export async function refresh(): Promise<void> {
+  if (!(await loadState())) return;
+  const path = selectedPath.value;
+  if (path === null) return;
+  const entry = repoState.value?.files.find((file) => file.path === path);
+  if (entry) await loadDiff(entry);
 }

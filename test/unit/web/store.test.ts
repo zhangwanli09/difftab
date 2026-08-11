@@ -11,6 +11,7 @@ import {
   loadDiff,
   loadError,
   loadState,
+  refresh,
   repoState,
   selectedPath,
   selectFile,
@@ -296,5 +297,105 @@ describe('loadDiff(§5.2 的按文件懒加载)', () => {
     // 微任务排空,让上面那个 void 出去的请求落地
     await vi.waitFor(() => expect(diffState.value?.status).toBe('ready'));
     expect(query(calls[0] as string).get('oldPath')).toBe('src/old.ts');
+  });
+});
+
+describe('refresh(一次 SSE change 之后要重取什么)', () => {
+  const text: DiffPayload = { kind: 'text', patch: 'old\n' };
+  const fresh: DiffPayload = { kind: 'text', patch: 'new\n' };
+
+  const stateWith = (files: FileEntry[]): RepoState => ({
+    branch: { head: 'main', detached: false, upstream: null },
+    files,
+    watch: { mode: 'native', tier: 'A' },
+  });
+
+  /** 按路径分派的 fetch 桩:refresh 会连着打两个不同的端点。 */
+  function stubEndpoints(state: RepoState, diff: DiffPayload): string[] {
+    const calls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        calls.push(url);
+        const body = url.startsWith('/api/state') ? state : diff;
+        return new Response(JSON.stringify(body), { status: 200 });
+      }),
+    );
+    return calls;
+  }
+
+  beforeEach(() => {
+    repoState.value = null;
+    diffState.value = null;
+    loadError.value = null;
+  });
+
+  test('没有选中文件时只重取列表', async () => {
+    const calls = stubEndpoints(stateWith([file({ path: 'a.txt', unstaged: 'M' })]), fresh);
+
+    await refresh();
+    expect(calls).toEqual(['/api/state']);
+    expect(diffState.value).toBeNull();
+  });
+
+  test('打开着的 diff 也重取 —— 只刷列表的话右侧会停在旧补丁上', async () => {
+    // 文件内容变了而列表条目没变(还是那个 `1 .M`)是最常见的形态,页面看不出异样
+    diffState.value = { status: 'ready', path: 'a.txt', payload: text };
+    const calls = stubEndpoints(stateWith([file({ path: 'a.txt', unstaged: 'M' })]), fresh);
+
+    await refresh();
+    expect(calls.some((url) => url.startsWith('/api/diff?'))).toBe(true);
+    expect(diffState.value).toEqual({ status: 'ready', path: 'a.txt', payload: fresh });
+  });
+
+  test('重取用的是新列表里的条目 —— oldPath 跟着变,不能拿旧条目去取', async () => {
+    // 相似度与配对结果都会随改动变化。用旧条目取等于用过期的 oldPath(§5.2 双路径)
+    diffState.value = { status: 'ready', path: 'new.ts', payload: text };
+    const calls = stubEndpoints(
+      stateWith([file({ path: 'new.ts', oldPath: 'renamed-again.ts', staged: 'R' })]),
+      fresh,
+    );
+
+    await refresh();
+    const diffCall = calls.find((url) => url.startsWith('/api/diff?')) ?? '';
+    expect(new URLSearchParams(diffCall.slice(diffCall.indexOf('?'))).get('oldPath')).toBe(
+      'renamed-again.ts',
+    );
+  });
+
+  test('选中的文件从列表里消失了就不去取它,右侧保留最后那份 diff', async () => {
+    // 改动被撤销或被 commit 掉了。把右侧突然清空比留着更让人困惑,而且合成一个
+    // 不带 oldPath 的条目去取,正好是「重命名退化成全新增」那条路
+    diffState.value = { status: 'ready', path: 'gone.txt', payload: text };
+    const calls = stubEndpoints(stateWith([file({ path: 'other.txt', unstaged: 'M' })]), fresh);
+
+    await refresh();
+    expect(calls).toEqual(['/api/state']);
+    expect(diffState.value).toEqual({ status: 'ready', path: 'gone.txt', payload: text });
+  });
+
+  test('列表取不到时不去取 diff —— 手上那份列表已经是过期的了', async () => {
+    /**
+     * **`repoState` 必须先有一份旧快照**,否则这条用例是假绿的:`loadState()` 失败
+     * 时它保持原值,只有原值非 null 才走得到「照着旧列表找条目」那一步 —— 而生产里
+     * 它一直是非 null(第一帧就取过了)。第一版把它留在 null 上,拿掉产品里的
+     * 提前返回照样全绿。旧列表的 oldPath 是过期的,拿它取 diff 正是重命名退化成
+     * 全新增那条路(§5.2)。
+     */
+    repoState.value = stateWith([file({ path: 'a.txt', oldPath: 'stale.txt', staged: 'R' })]);
+    diffState.value = { status: 'ready', path: 'a.txt', payload: text };
+    const calls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        calls.push(url);
+        return new Response('boom', { status: 500 });
+      }),
+    );
+
+    await refresh();
+    expect(calls).toEqual(['/api/state']);
+    expect(loadError.value).toBe('请求失败(HTTP 500)');
+    expect(diffState.value).toEqual({ status: 'ready', path: 'a.txt', payload: text });
   });
 });
