@@ -58,7 +58,13 @@ export function isUntracked(entry: FileEntry): boolean {
 }
 
 export interface BranchState {
-  /** 分支名;detached 时为 `# branch.head` 给出的字面量(git 输出 `(detached)`)。 */
+  /**
+   * 分支名;detached 时为 `# branch.head` 给出的字面量(git 输出 `(detached)`)。
+   *
+   * **空串的含义是「status 输出里根本没有 `# branch.head` 行」**(解析器的初值,
+   * 由 status.test.ts 钉着)。解析器不为此编一个 `main` / `HEAD` 出来 —— 那是在
+   * 事实来源这一层说假话;「取不到时显示什么」是展示决定,归消费者。
+   */
   head: string;
   detached: boolean;
   /**

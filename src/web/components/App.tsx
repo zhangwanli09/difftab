@@ -4,6 +4,7 @@
 // `Diff2HtmlUI`(§5.5,见 DiffView.tsx)。
 
 import { loadError, repoState } from '../state/store';
+import { BranchStatus } from './BranchStatus';
 import { ChangeList } from './ChangeList';
 import { DiffView } from './DiffView';
 
@@ -16,8 +17,12 @@ export function App() {
   return (
     <div class="flex h-screen flex-col bg-editor-background text-editor-foreground">
       <header class="flex shrink-0 items-baseline gap-3 border-b border-panel-border bg-title-bar-background px-3 py-2">
-        <span class="text-sm font-medium">GitGlance</span>
-        {/* TODO(S3a):当前分支与 ahead/behind;TODO(S3b2):监听降级标注 */}
+        <span class="shrink-0 text-sm font-medium">GitGlance</span>
+        {/* 分支状态只在拿到第一份 state 之后才画:没有它时 header 里少一段,
+            而不是先画一个「未知分支 无上游」再被真实取值换掉 —— 后者两秒内说了
+            一句假话,而「无上游」恰恰是本阶段要区分开的那个真实状态 */}
+        {state !== null && <BranchStatus branch={state.branch} />}
+        {/* TODO(S3b2):监听降级标注 */}
       </header>
 
       {error !== null && (
