@@ -241,6 +241,7 @@ JS 两行比 S0 spike 各高约 1 KB —— 那是真实组件、store 与 signa
 | **C** | Node < 24.14.0,Linux | **不建递归 watch**,工作区改动走 1.5s 轮询 | 同上 | 标注降级模式 |
 
 - **档位判定用 `process.versions.node` 的 semver 比对**,不得靠特性探测:任何探测写法都要依赖 `fs.watch` 对未知选项的处理这一未文档化的内部细节,误判的代价是在 Linux 上静默退化成无 `ignore` 的递归 watch(见第 10 节禁止项)
+- **三档须能由内部环境变量 `GITGLANCE_WATCH_TIER=A|B|C` 强制指定**(名字定在此处,以免两处实现各起一个)。一台机器只有一个 Node 版本、一个平台,而三档正是按这两者分的——没有它,第 6 节那六条档位验收项在单机上一条都无从自查。**取值不合法即启动失败,不得退回自动判定**:退回时手滑写错的那次照样启动成功、照样给出一个看着合理的档位,于是"我逐档验过了"建立在一次根本没生效的强制指定上。它不是给用户的开关,不进 `--help` 与 README
 - **B 档为什么安全**:macOS / Windows 走原生 FSEvents / `ReadDirectoryChangesW`,单句柄监听整棵树,本就没有配额问题;`ignore` 在这两个平台上本身也只是回调后过滤(已核对源码),我们自己在回调里调同一个匹配函数即可,不是重新实现监听
 - **B 档的过滤必须发生在 debounce 之前**,否则 `node_modules` 的写入噪声照样把 debounce 窗口顶开、触发无谓刷新
 - **C 档不是全盘轮询**:`.git` 侧的目录级非递归 watch 与 Node 版本无关,提交、切分支仍是即时的;只有工作区文件改动退化为 1.5s 轮询
@@ -593,6 +594,9 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 - **Linux 用户态递归监听的实际开销**:`lib/fs.js` 中 `recursive && !isMacOS && !isWindows` 时走 `internal/fs/recursive_watch.js`;核对其 `#watchFolder`,它对遍历到的**每个目录项(含普通文件)**都调用 `#watchFile` 注册 watch,并非只对目录注册;且初次遍历时对每个条目 `emit('change','rename',...)`,启动即产生事件风暴。这是 5.7 判定配额风险、并把 debounce 列为必需项的依据
 - **Windows 上删不掉「仍是某进程 cwd」的目录**(2026-08-09 实测,CI 的 windows × Node 22.0.x 档):冒烟套件以 fixture 仓库为 cwd 起被测进程,退出钩子里 `child.kill()` 返回时系统尚未回收该进程,紧接着的 `rmSync` 报 `EBUSY: resource busy or locked, rmdir …\repos\unicode-paths`。**全部断言都已通过、进程仍以 1 退出**,整档因此变红。这条一直存在,只是把 fixture 从 8 个减到按需生成之后,原先掩盖竞态的那点遍历延迟没有了才暴露。对策是 `rmSync` 带 `maxRetries`(rimraf 的重试是 `Atomics.wait`,同步、在退出钩子里可用),重试用尽只警告不抛 —— 收尾失败不该盖过断言结果。这是 5.11 冒烟套件清理逻辑的依据,也是「matrix 必须有一档真跑在下限上」第二次兑现价值
 - **`os.tmpdir()` 的权限差异**:macOS 上为每用户 0700 私有目录(实测 `/var/folders/.../T` mode 700),Linux 上为 `/tmp`(1777,同机其他用户可读)。这是 5.8 要求注册表文件 `0o600` 的依据
+- **非递归 watch 在 macOS 上确实收不到子目录里的写入**(2026-08-11 实测,Node 24.14.1 / macOS):对一个目录 `fs.watch(dir, { recursive: false })`,随后在**已存在的**子目录里建文件、建子目录、再建文件,回调一次都不响;改直接子文件 `HEAD` 则报 `('rename', 'HEAD')`。**先前一版实测把这条读反了**——那次在 `watch()` 前一刻才 `mkdirSync` 出子目录,于是启动阶段收到一条 `('rename','objects')`,被误当成"嵌套写入漏了过来",据此在 5.7 的 `.git` 侧加了一层按顶层段过滤的死代码。真正的成因是下一条。教训:测监听时必须让目录结构**先静下来**再建流,并把启动阶段单独收一段
+- **`fs.watch` 建流的那一刻会补报一两条事件**(同上实测):建流前后紧邻的写入会以 `('rename', <被监听目录自身的 basename>)` 之类的形态补进来。对本项目无害——debounce 把它合成一次多余的 `git status`——但它足以让"启动后什么都不做,断言零事件"这类用例偶发变红。5.7 那条"debounce 是必需项而非优化项"因此在 macOS 上也成立,理由与 Linux 的遍历风暴不同
+- **`server.requestTimeout` 掐不断已完成请求的长响应**(2026-08-11 实测,Node 24.14.1):把它压到 1s、服务端保持一条 200ms 一发的 `text/event-stream` 长响应,3s 后连接仍然活着、数据持续到达。这是 5.8 的 SSE 端点不需要为超时做任何特殊设置的依据(Node 18 早期曾有此问题,现已修复)
 
 ### 前端渲染与体积
 
