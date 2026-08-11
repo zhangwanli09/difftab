@@ -423,7 +423,7 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 **变更列表与分支状态**
 
 - [x] `[S2a]` 变更文件列表状态标识准确,与 `git status` 结果一致;已暂存、未暂存、未跟踪三类文件均正确展示;未跟踪目录展开到文件粒度而非折叠成 `dir/`
-- [ ] `[S3a]` 当前分支、ahead/behind 计数与 `git status` 结果一致;分支无上游(无 `# branch.ab` 行)时展示"无上游"而非 0/0 或报错
+- [x] `[S3a]` 当前分支、ahead/behind 计数与 `git status` 结果一致;分支无上游(无 `# branch.ab` 行)时展示"无上游"而非 0/0 或报错
 
 **Diff 正确性与边界**
 
