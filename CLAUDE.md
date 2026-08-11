@@ -32,8 +32,8 @@
 | 构建(前端 Vite + 后端 tsdown) | `pnpm build`(= `build:web` + `build:server`) | ✅ S0 |
 | 类型检查 | `pnpm typecheck`(`tsc --noEmit`,前后端各一份 tsconfig,严格性开关共用 `tsconfig.base.json`) | ✅ S0 |
 | 格式化 + lint | `pnpm lint`(`biome check`)/ CI 用 `biome ci` | ✅ S0 |
-| 单元/集成测试(Vitest,直接跑 TS 源码) | `pnpm test`。用例按被测代码分 `test/unit/server/` 与 `test/unit/web/`,分别归两份 tsconfig;**环境也按这两个目录分**(server=node、web=happy-dom),靠 `vitest.config.ts` 的 `projects` —— `environmentMatchGlobs` 在 Vitest 4 已被移除。**因此 include 是几条具体路径,放到 `test/unit/` 底下或第三个子目录里的用例不属于任何 project、压根不会被跑且套件照常全绿** —— `test/unit/server/test-layout.test.ts` 钉着这条,它**直接 import `vitest.config.ts` 把 include 编成正则**(不抄目录白名单:`server` 那档只收 `*.test.ts`,白名单式判据会漏掉 `test/unit/server/foo.test.tsx`),所以加 project 不必同步任何清单 | ✅ S0(hljs 语言装配)+ S1(解析器、三道校验、未跟踪 diff 构造、对真实 fixture 的集成、dev proxy)+ S2c(happy-dom 下的 diff2html 渲染路径与 DiffView 四分支) |
-| 冒烟测试(纯 JS,跑构建产物,含只读性两层验证) | `pnpm test:smoke`(CI matrix 档不经 script,直接 `node --test "test/smoke/*.test.js"`) | ✅ S0(版本守卫、版本号一致性、产物只 import 标准库)+ ✅ S1 第一层(`GIT_TRACE` 白名单断言 + 子进程单点断言 + 三道校验)+ ✅ S2a 第二层(`readonly-git-dir.test.js`:A 只读 `.git` / B `.git` 逐字节比对,见第 7 节) |
+| 单元/集成测试(Vitest,直接跑 TS 源码) | `pnpm test`。用例按被测代码分 `test/unit/server/` 与 `test/unit/web/`,分别归两份 tsconfig;**环境也按这两个目录分**(server=node、web=happy-dom),靠 `vitest.config.ts` 的 `projects` —— `environmentMatchGlobs` 在 Vitest 4 已被移除。**因此 include 是几条具体路径,放到 `test/unit/` 底下或第三个子目录里的用例不属于任何 project、压根不会被跑且套件照常全绿** —— `test/unit/server/test-layout.test.ts` 钉着这条,它**直接 import `vitest.config.ts` 把 include 编成正则**(不抄目录白名单:`server` 那档只收 `*.test.ts`,白名单式判据会漏掉 `test/unit/server/foo.test.tsx`),所以加 project 不必同步任何清单 | ✅ S0(hljs 语言装配)+ S1(解析器、三道校验、未跟踪 diff 构造、对真实 fixture 的集成、dev proxy)+ S2c(happy-dom 下的 diff2html 渲染路径与 DiffView 四分支)+ S3b1(档位判定与合并窗口、假时钟下的 15s 心跳、`EventSource` 替身下的连接开关) |
+| 冒烟测试(纯 JS,跑构建产物,含只读性两层验证) | `pnpm test:smoke`(CI matrix 档不经 script,直接 `node --test "test/smoke/*.test.js"`) | ✅ S0(版本守卫、版本号一致性、产物只 import 标准库)+ ✅ S1 第一层(`GIT_TRACE` 白名单断言 + 子进程单点断言 + 三道校验)+ ✅ S2a 第二层(`readonly-git-dir.test.js`:A 只读 `.git` / B `.git` 逐字节比对,见第 7 节) + ✅ S3b1(`/api/events` 过三道校验、真实 `git checkout -b` 推出 `change`、三档环境变量各给一份不同的 `watch` 载荷) |
 | 测试仓库 fixture 生成 | `pnpm fixtures`(默认写 `test/fixtures/repos/`;测试自己调 `makeFixtures()` 写临时目录) | ✅ S1 第一批,第二批分两次:diff 相关归 S4a、异常状态归 S4b |
 | 冷启动耗时测量(对构建产物,≤300ms 门禁) | `pnpm bench:startup` | ✅ S1 接真实流程(本机中位数 ~40ms) |
 | 产物体积门禁 | `pnpm size` | ✅ S0,S2c 收口回填实测 |
@@ -99,7 +99,13 @@
 
 ## 7. 开发阶段
 
-**当前进度:S3a 已收口(CI 全绿,run `31495046172` 11 个作业),下一步 S3b1** —— header 接上 `BranchStatus`,后端 S1 就已备齐(`# branch.ab` 缺失 → `upstream: null`),本阶段只是消费它。判据是**「无上游」与「已同步 0/0」必须是两份不同的输出**:`upstream?.ahead ?? 0` 那种写法不报错、不缺字段,只是把「没有可比对象」说成「与上游同步」;两条单测合起来钉这件事(无上游那份一个箭头都不许有 + 已同步那份两个 0 都得在),两种退化都先弄红过。header 的「首帧不画占位」压在**结构判据**上(`header` 的文本恰为 `GitGlance`)而非 `not.toContain('无上游')` —— 后者改一次文案就永远真空通过。浏览器实测三种形态:`+2 -1` → `main ↑2 ↓1`、无上游 fixture → 「无上游」、本仓库 `+0 -0` → 减淡的 `↑0 ↓0`。体积 JS 200.2 KB / gzip 67.0 / CSS 28.4 KB。spec §6 的 1 个 `[S3a]` 已勾。**每收口一个阶段回来改这一行。**
+**当前进度:S3b1 已收口(CI 全绿,run `31547136471` 11 个作业),下一步 S3b2** —— `.git` 侧非递归 watch + 150ms 合并窗口 + `/api/events`(15s 心跳,**三道校验一视同仁**)+ 前端 `EventSource` + `WatchState` 接真实取值,`GITGLANCE_WATCH_TIER=A|B|C` 作为首个交付物落地(取值不合法即启动失败,不退回自动判定,否则「我逐档验过了」会建立在一次没生效的强制指定上)。合并窗口是**「第一个事件起窗口、窗口内的后续事件被吞」**,不是「每来一个事件就往后推」—— 后者在 agent 持续写入下会一直不触发。监听**懒起**在第一个订阅者到达时(S3b2 的递归遍历会落在冷启动那条路径上),起了就留到关服务。浏览器实测:`git add` 与 `git checkout -b` 都无刷新地更新了页面,diff 容器**是同一个 DOM 节点**(§5.4 的滚动位置要求),心跳 15s 一发,dev 代理下同样流式通过。体积 JS 201.0 KB / gzip 67.4 / CSS 28.4 KB;冷启动中位 42.7ms。11 条新门禁**都先弄红过一次**。spec §6 的 1 个 `[S3b1]` 已勾。**每收口一个阶段回来改这一行。**
+
+**S3b1 踩到的三条,都属「以为在验的东西其实没在验」。** 第一条是我自己量错:先前一次实测把「macOS 非递归 watch 会漏进嵌套写入」读反了(在 `watch()` 前一刻才 `mkdirSync`,**建流那一刻补报的一两条事件**被当成了嵌套事件),据此加的顶层段过滤是**死代码** —— 强制红检时「objects 写入不触发」那条用例在拿掉过滤后照样绿,才暴露出来。干净复测后拆掉,两条实测都回填了 spec §10;单测里「等一个固定毫秒数」也换成了「写探针写到它真的响」的 arming 步骤。第二条:`refresh()` 在 `/api/state` 失败后仍会照着**上一份快照**找条目去取 diff(用过期的 `oldPath`,正是重命名退化成全新增那条路),而钉它的用例只因为 `beforeEach` 把 `repoState` 置成 null 才通过 —— 生产里它一直非 null。第三条:「切回标签页就重连」在它自己注释描述的场景里根本不触发 —— 半开 TCP 下 `readyState` 一直是 `OPEN`。**心跳因此在前端也有用途**:静默两拍就当它死了,而周期定在 `shared/protocol.ts`、前端由它推出 `STALE_MS`,两边各写一个 15000 会在改周期时静默分家。反过来,连接一直活着就说明每个 `change` 都推到过了,那时**不补取**(它取的可能是一份数 MB 的 diff,而切标签是这个工具最频繁的动作)。
+
+**S3b1 留给 S3b2 的两条**:`createWatcher` 的 `onError` 就是降级挂点,届时要把 `WatchState.mode` 翻成 `polling` **并推一个 `change`**,让前端重取 `/api/state` 才看得见降级;`WatchHandle.size` 是「`.git` 侧还活着吗」的唯一依据,出错的 watcher 已在 error 回调里摘掉,别再往里塞空壳。
+
+S3a 已收口(run `31495046172`)—— header 接上 `BranchStatus`,后端 S1 就已备齐(`# branch.ab` 缺失 → `upstream: null`),本阶段只是消费它。判据是**「无上游」与「已同步 0/0」必须是两份不同的输出**:`upstream?.ahead ?? 0` 那种写法不报错、不缺字段,只是把「没有可比对象」说成「与上游同步」;两条单测合起来钉这件事(无上游那份一个箭头都不许有 + 已同步那份两个 0 都得在),两种退化都先弄红过。header 的「首帧不画占位」压在**结构判据**上(`header` 的文本恰为 `GitGlance`)而非 `not.toContain('无上游')` —— 后者改一次文案就永远真空通过。spec §6 的 1 个 `[S3a]` 已勾。
 
 **S3a 留给 S3b2 的一条**:header 现在是 `state !== null && <BranchStatus …>`,而 S3b2 的监听降级标注会是**第三个**读同一个 `repoState` 的地方(§5.7 的 `WatchState`)。别再叠第三个 `state !== null` —— 那时要么一个 guard 包住 header 两项,要么把 `RepoState | null` + `loadError` 泛化成 `DiffRequestState` 那样的标签联合(store.ts 已为 diff 做过这件事,理由同处)。
 
