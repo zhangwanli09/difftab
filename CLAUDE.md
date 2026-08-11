@@ -105,6 +105,15 @@
 
 **S3b1 留给 S3b2 的两条**:`createWatcher` 的 `onError` 就是降级挂点,届时要把 `WatchState.mode` 翻成 `polling` **并推一个 `change`**,让前端重取 `/api/state` 才看得见降级;`WatchHandle.size` 是「`.git` 侧还活着吗」的唯一依据,出错的 watcher 已在 error 回调里摘掉,别再往里塞空壳。
 
+**S3b2 的开工点**(接着上面两条):
+
+- **先读**:§5.7 全节(尤其 `isIgnored` 那段与轮询那条)、§10「Node 运行时与 `fs.watch`」、§6「自动刷新与三档监听」组。明确不必读 §5.5 / §5.6 / §5.9
+- **落点在 `server/watch/`,不动 `http/`**:`createWatcher` 现在只收 `gitDir`,工作区那一半要么给它加 `repoRoot`、要么同目录另起一个由它编排 —— 无论哪种,`WatchHandle` 的 `size` / `close` 语义与「合并窗口在 `.git` 与工作区之间共用一个」都得保持,`server.ts` 那侧除了降级要翻 `mode` 之外不该再长东西
+- **第一件事是 `isIgnored`**:逐段匹配函数 + `caseFold`(macOS / Windows 归一,Linux 原样),三档共用一份。**A 档传给 `ignore`、B 档在回调最前面调同一个**(过滤必须在合并窗口之前,否则 `node_modules` 的噪声照样把窗口顶开)。字符串模式一律禁 —— 含斜杠的与不含的都各有各的失效方式
+- **轮询那条命令逐字复用 §5.2 的主查询**,`-uall` 与 `--branch` 一个都不能省(漏 `-uall` 的症状是「已存在的未跟踪目录里新增文件不刷新」,而那正是 agent 边跑边生成文件的形态)
+- **自查靠 `GITGLANCE_WATCH_TIER` 逐档跑**,这是 S3b1 交付它的全部理由;六条验收项都带 `/S5`,单机只能验到能验的那半,C 档在 Linux 上的真机验证留 S5
+- **每条门禁写完先弄红**:B 档那条尤其容易假绿 —— 按 basename 过滤在 macOS / Windows 上根本拦不住(原生 watcher 给的是相对路径),而「`node_modules` 下批量写文件不触发刷新」这条验收项按字面实现必挂
+
 S3a 已收口(run `31495046172`)—— header 接上 `BranchStatus`,后端 S1 就已备齐(`# branch.ab` 缺失 → `upstream: null`),本阶段只是消费它。判据是**「无上游」与「已同步 0/0」必须是两份不同的输出**:`upstream?.ahead ?? 0` 那种写法不报错、不缺字段,只是把「没有可比对象」说成「与上游同步」;两条单测合起来钉这件事(无上游那份一个箭头都不许有 + 已同步那份两个 0 都得在),两种退化都先弄红过。header 的「首帧不画占位」压在**结构判据**上(`header` 的文本恰为 `GitGlance`)而非 `not.toContain('无上游')` —— 后者改一次文案就永远真空通过。spec §6 的 1 个 `[S3a]` 已勾。
 
 **S3a 留给 S3b2 的一条**:header 现在是 `state !== null && <BranchStatus …>`,而 S3b2 的监听降级标注会是**第三个**读同一个 `repoState` 的地方(§5.7 的 `WatchState`)。别再叠第三个 `state !== null` —— 那时要么一个 guard 包住 header 两项,要么把 `RepoState | null` + `loadError` 泛化成 `DiffRequestState` 那样的标签联合(store.ts 已为 diff 做过这件事,理由同处)。
