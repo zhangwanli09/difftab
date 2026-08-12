@@ -7,6 +7,7 @@ import { loadError, repoState } from '../state/store';
 import { BranchStatus } from './BranchStatus';
 import { ChangeList } from './ChangeList';
 import { DiffView } from './DiffView';
+import { WatchBadge } from './WatchBadge';
 
 export function App() {
   const state = repoState.value;
@@ -18,11 +19,17 @@ export function App() {
     <div class="flex h-screen flex-col bg-editor-background text-editor-foreground">
       <header class="flex shrink-0 items-baseline gap-3 border-b border-panel-border bg-title-bar-background px-3 py-2">
         <span class="shrink-0 text-sm font-medium">GitGlance</span>
-        {/* 分支状态只在拿到第一份 state 之后才画:没有它时 header 里少一段,
-            而不是先画一个「未知分支 无上游」再被真实取值换掉 —— 后者两秒内说了
-            一句假话,而「无上游」恰恰是本阶段要区分开的那个真实状态 */}
-        {state !== null && <BranchStatus branch={state.branch} />}
-        {/* TODO(S3b2):监听降级标注 */}
+        {/* 分支状态与监听标注都只在拿到第一份 state 之后才画:没有它时 header 里
+            少一段,而不是先画一个「未知分支 无上游」再被真实取值换掉 —— 后者两秒内
+            说了一句假话,而「无上游」恰恰是 S3a 要区分开的那个真实状态。
+            **一个 guard 包住两项**,不是每项各写一次 `state !== null`:后者第三次
+            出现时就该合并了,而合并前每加一项都要重新想一遍「首帧画不画」 */}
+        {state !== null && (
+          <>
+            <BranchStatus branch={state.branch} />
+            <WatchBadge watch={state.watch} />
+          </>
+        )}
       </header>
 
       {error !== null && (
