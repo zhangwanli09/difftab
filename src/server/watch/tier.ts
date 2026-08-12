@@ -89,13 +89,9 @@ export function detectTier(nodeVersion: string, platform: string): WatchTier {
  * 自动判定的话在本机上多半照样给出 B 档,于是「我验过 B 档了」这个结论建立在
  * 一次根本没生效的强制指定上 —— 而 S3b2 的六条验收项全都压在这个变量上。
  */
-export function resolveTier(
-  env: NodeJS.ProcessEnv = process.env,
-  nodeVersion: string = process.versions.node,
-  platform: string = process.platform,
-): WatchTier {
+function forcedTier(env: NodeJS.ProcessEnv): WatchTier | null {
   const forced = env[TIER_ENV];
-  if (forced === undefined || forced.trim() === '') return detectTier(nodeVersion, platform);
+  if (forced === undefined || forced.trim() === '') return null;
 
   const tier = forced.trim().toUpperCase();
   if (tier !== 'A' && tier !== 'B' && tier !== 'C') {
@@ -104,14 +100,41 @@ export function resolveTier(
   return tier;
 }
 
+export function resolveTier(
+  env: NodeJS.ProcessEnv = process.env,
+  nodeVersion: string = process.versions.node,
+  platform: string = process.platform,
+): WatchTier {
+  return forcedTier(env) ?? detectTier(nodeVersion, platform);
+}
+
 /**
  * 该档位下**工作区通路**的既定形态(spec §5.12 的 `WatchState.mode`)。
  *
- * C 档一开始就以轮询为工作区通路,A / B 档则是原生监听。**TODO(S3b2)**:A / B 档
- * 运行中落到轮询兜底(ENOSPC / 网络盘 / Docker 卷)时,`mode` 要跟着翻成 `polling`
- * 并推一个 `change` 事件,让前端重取 `/api/state` 看到降级 —— 前端无从自己推断这件事
- * (§5.12),而在此之前工作区通路整个还没落地,取值只能是档位的既定形态。
+ * C 档一开始就以轮询为工作区通路,A / B 档则是原生监听。**它只是「还没起监听时
+ * 答什么」**:监听懒起(见 http/server.ts),起了之后真实取值由 `WatchHandle.mode`
+ * 给 —— A / B 档运行中落到轮询兜底时,那一侧会翻成 `polling`。
  */
 export function initialMode(tier: WatchTier): WatchState['mode'] {
   return tier === 'C' ? 'polling' : 'native';
+}
+
+/**
+ * 强制指定 A 档、但这个 Node 根本没有 `ignore` 时的一句提醒(没有则返回 null)。
+ *
+ * **不是报错**:「三档均可通过内部环境变量强制指定」是 §6 已经勾掉的验收项,
+ * 在 Node 22 上拒绝启动会把它推翻,而 macOS / Windows 上强制 A 档去看别的行为
+ * 也是正当用法。但沉默同样不行 —— Node 对未知选项是**静默忽略**,于是这次
+ * 「A 档」跑的是一个**没有任何过滤的递归 watch**:在 Linux 上那正是耗尽
+ * `fs.inotify.max_user_watches` 的那条路,而结论会写成「我验过 A 档了」。
+ */
+export function forcedTierWarning(
+  env: NodeJS.ProcessEnv = process.env,
+  nodeVersion: string = process.versions.node,
+): string | null {
+  // 归一走 `forcedTier`,不在这里再解析一遍:两份判据里松掉一份,警告会在它最该
+  // 出现的那次(手滑写成别的形式)静默失灵,而两份都归一化过的用例照样绿
+  if (forcedTier(env) !== 'A' || supportsIgnoreOption(nodeVersion)) return null;
+  const since = `${IGNORE_SINCE.major}.${IGNORE_SINCE.minor}.${IGNORE_SINCE.patch}`;
+  return `${TIER_ENV}=A on Node ${nodeVersion}: fs.watch has no "ignore" option before ${since}, so the recursive watch runs unfiltered — this is not tier A.`;
 }

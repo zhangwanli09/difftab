@@ -7,7 +7,7 @@
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -25,7 +25,8 @@ cleanupOnExit(() => workdir);
 /** 见 helpers.js 的 `once()`:下限档 Node 22.0.0 不等顶层 `before()`。 */
 const setup = once(async () => {
   workdir = mkdtempSync(join(tmpdir(), 'gitglance-events-'));
-  repos = makeFixtures(join(workdir, 'repos'), ['staged']);
+  // unicodePaths 是唯一带**整个未跟踪目录**的 fixture —— 轮询那条用例要的就是它
+  repos = makeFixtures(join(workdir, 'repos'), ['staged', 'unicodePaths']);
 });
 
 /**
@@ -166,6 +167,46 @@ test(`${TIER_ENV} 能把三档逐个强制指定出来`, async () => {
     // 否则前端的降级标注(S3b2)拿不到判据
     { mode: 'polling', tier: 'C' },
   ]);
+});
+
+test(`${TIER_ENV}=C:工作区改动经轮询推出 change,且已存在的未跟踪目录里也算数`, async () => {
+  await setup();
+  /**
+   * C 档(Node < 24.14 × Linux)**不建任何递归 watch**,工作区改动只能靠 1.5s 轮询
+   * 发现(§5.7)。这条用例同时钉住两件会静默出错的事:
+   *
+   * 1. 轮询这条通路真的接上了 —— 断了的话页面只是「不刷新」,不报任何错
+   * 2. 轮询用的是**逐字复用**的主查询。写入落在一个**已存在的**未跟踪目录里:
+   *    漏掉 `-uall` 时 git 把它折叠成一行 `? 未跟踪目录/`,新增文件根本不改变
+   *    status 输出,轮询判定「无变化」—— 而那正是 agent 边跑边生成文件的形态
+   */
+  const server = await startGitglance({ cwd: repos.unicodePaths, env: { [TIER_ENV]: 'C' } });
+  let probe;
+  try {
+    const received = openEvents(server.port, server.token, {
+      onChunk: (body) => body.includes('event: change'),
+    });
+
+    /**
+     * 反复写,而不是写一次然后等。
+     *
+     * 监听是懒起的(第一个订阅者到达时),而轮询的**首拍只建立基线**:抢在基线
+     * 之前写的那一份会被算进基线里,于是「没变化」是对的,用例却以超时失败、
+     * 读起来像轮询坏了。每拍换一个新文件名,则无论基线落在哪一刻,下一拍都必然
+     * 不同 —— 与「等一个够长的固定毫秒数」相比,它不依赖任何一台机器的快慢
+     */
+    let n = 0;
+    probe = setInterval(() => {
+      n += 1;
+      writeFileSync(join(repos.unicodePaths, '未跟踪目录', `poll-probe-${n}.md`), `probe ${n}\n`);
+    }, 400);
+
+    const res = await received;
+    assert.match(res.body, /event: change/);
+  } finally {
+    clearInterval(probe);
+    await server.stop();
+  }
 });
 
 test(`${TIER_ENV} 写错时是一句话报错,不是 Node 异常栈`, async () => {

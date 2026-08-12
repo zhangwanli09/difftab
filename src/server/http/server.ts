@@ -8,9 +8,9 @@ import type { Socket } from 'node:net';
 import { homedir } from 'node:os';
 import { DiffRequestError, readDiff } from '../git/diff.ts';
 import type { RepoInfo } from '../git/repo.ts';
-import { readStatus } from '../git/status.ts';
+import { readStatus, readStatusRaw } from '../git/status.ts';
 import type { ErrorPayload, RepoState, WatchState } from '../shared/protocol.ts';
-import { initialMode, resolveTier } from '../watch/tier.ts';
+import { forcedTierWarning, initialMode, resolveTier } from '../watch/tier.ts';
 import { createWatcher, type WatchHandle } from '../watch/watcher.ts';
 import { ASSETS, readAsset } from './assets.ts';
 import {
@@ -88,7 +88,9 @@ export async function startServer(repo: RepoInfo): Promise<GlanceServer> {
    * §6 的 300ms 冷启动预算上。
    */
   const tier = resolveTier();
-  const watchState: WatchState = { mode: initialMode(tier), tier };
+  // 强制指定的档位在这个 Node 上跑不出它该有的样子时提醒一句(不拦启动,理由见那边)
+  const tierWarning = forcedTierWarning();
+  if (tierWarning) process.stderr.write(`gitglance: ${tierWarning}\n`);
 
   const events = createSseChannel();
 
@@ -106,16 +108,43 @@ export async function startServer(repo: RepoInfo): Promise<GlanceServer> {
     if (watcher !== null) return;
     watcher = createWatcher({
       gitDir: repo.gitDir,
+      repoRoot: repo.root,
+      tier,
       onChange: () => events.send('change', {}),
-      // TODO(S3b2):这里是降级为 1.5s 轮询的挂点 —— 届时还要把 watchState.mode
-      // 翻成 'polling' 并推一个 change,让前端重取 /api/state 看到降级(§5.7)
-      onError: (cause) => {
+      /**
+       * 轮询探针。**注入而不是让 watch/ 自己去调 git**:git 子进程只许出现在
+       * server/git(§5.0 不变式 1),而 §5.0 的依赖方向里也没有 watch → git 这条边。
+       * 传进去的是主查询本身(`readStatusRaw` 用的就是 `STATUS_ARGS`),于是「轮询
+       * 与主查询逐字相同」这条红线在这里是**一处赋值**而不是两处各自维护的巧合。
+       * 拦住它的不是类型(签名只是 `() => Promise<string>`),是这个唯一的注入点
+       * 加上冒烟里那条「C 档在已存在的未跟踪目录里新增文件要推出 change」。
+       */
+      pollStatus: () => readStatusRaw(repo.root),
+      /**
+       * 降级为轮询(§5.7 的兜底)。**推一个 `change` 是必需的**:`mode` 只在
+       * `/api/state` 里,前端不重取就看不到降级 —— 而它自己无从推断这件事(§5.12),
+       * 于是页面会一直标着「原生监听」直到下一次真的有文件变更。
+       */
+      onDegrade: (cause) => {
         process.stderr.write(
           `gitglance: file watching degraded — ${sanitizeMessage(cause.message, repo.root)}\n`,
         );
+        events.send('change', {});
       },
     });
   };
+
+  /**
+   * 当前的监听状态(§5.12 的 `WatchState`)。
+   *
+   * **每次请求现算,不是启动时算一次**:降级发生在运行中,而算一次存起来的那份
+   * 不会报错,只是从此永远说「原生监听」。监听懒起(见上),还没起来时按档位的
+   * 既定形态答 —— C 档从第一份 `/api/state` 起就该是 `polling`。
+   */
+  const currentWatchState = (): WatchState => ({
+    mode: watcher?.mode ?? initialMode(tier),
+    tier,
+  });
 
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     // 只读工具不需要任何非幂等端点(spec §5.12)
@@ -173,7 +202,7 @@ export async function startServer(repo: RepoInfo): Promise<GlanceServer> {
         sendJson(res, 200, {
           branch: status.branch,
           files: status.files,
-          watch: watchState,
+          watch: currentWatchState(),
         } satisfies RepoState);
         return;
       }
@@ -225,7 +254,16 @@ export async function startServer(repo: RepoInfo): Promise<GlanceServer> {
         res.on('error', () => events.remove(res));
 
         events.add(res);
-        ensureWatcher();
+        /**
+         * **监听推到下一拍再起**,不在这个请求里同步建。
+         *
+         * Linux 上 A / B 档的递归 watch 是**用户态的同步遍历**(`readdirSync` +
+         * `statSync` 递归,已核对 `internal/fs/recursive_watch.js`),大仓库上要跑
+         * 几百毫秒到数秒。留在这里的话,它占住的是整条事件循环 —— 页面此刻正并发
+         * 发着 `/api/state` 与静态资源,那些请求会一起卡住,首屏因此变慢,
+         * 而症状与「监听很慢」毫无相似之处。
+         */
+        setImmediate(ensureWatcher);
         return;
       }
 

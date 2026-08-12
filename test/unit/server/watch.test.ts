@@ -7,14 +7,16 @@
 
 import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import {
   detectTier,
+  forcedTierWarning,
   initialMode,
   resolveTier,
   supportsIgnoreOption,
   TIER_ENV,
+  type WatchTier,
   WatchTierError,
 } from '../../../src/server/watch/tier.ts';
 import {
@@ -86,6 +88,18 @@ describe(`${TIER_ENV}(S3b2 六条验收项的自查前提)`, () => {
     expect(resolveTier({ [TIER_ENV]: '  ' }, '26.0.0', 'darwin')).toBe('A');
   });
 
+  test('在没有 `ignore` 的 Node 上强制 A 档:提醒一句,但照样启动', () => {
+    // 拒绝启动会推翻 §6 已勾的「三档均可通过内部环境变量强制指定」;沉默则更糟 ——
+    // Node 对未知选项是静默忽略,这次「A 档」跑的是一个**没有任何过滤的递归 watch**,
+    // 而结论会写成「我验过 A 档了」
+    expect(forcedTierWarning({ [TIER_ENV]: 'A' }, '22.0.0')).toMatch(/ignore/);
+    expect(forcedTierWarning({ [TIER_ENV]: ' a ' }, '24.13.0')).not.toBeNull();
+    // 够新的 Node、别的档、以及没强制指定时都不该有噪声
+    expect(forcedTierWarning({ [TIER_ENV]: 'A' }, '24.14.0')).toBeNull();
+    expect(forcedTierWarning({ [TIER_ENV]: 'B' }, '22.0.0')).toBeNull();
+    expect(forcedTierWarning({}, '22.0.0')).toBeNull();
+  });
+
   test('取值不合法时抛错,而不是悄悄退回自动判定', () => {
     // 退回自动判定的话,`GITGLANCE_WATCH_TIER=D` 在 macOS 上照样给出 B 档,于是
     // 「我验过 B 档了」建立在一次根本没生效的强制指定上
@@ -96,7 +110,7 @@ describe(`${TIER_ENV}(S3b2 六条验收项的自查前提)`, () => {
   });
 });
 
-describe('`.git` 侧的 watch(§5.7)', () => {
+describe('watch:`.git` 侧与工作区侧(§5.7,跑真实文件系统)', () => {
   const dirs: string[] = [];
   const handles: WatchHandle[] = [];
 
@@ -121,8 +135,34 @@ describe('`.git` 侧的 watch(§5.7)', () => {
     return gitDir;
   }
 
-  const watchFor = (gitDir: string, calls: number[], debounceMs = 200): WatchHandle => {
-    const handle = createWatcher({ gitDir, debounceMs, onChange: () => calls.push(Date.now()) });
+  /**
+   * 起一个 watcher 并登记好收尾。**默认 `tier: 'C'`,也就是只起 `.git` 侧** ——
+   * C 档一个递归 watch 都不建(§5.7),于是那一组断言的每一次回调都只能来自
+   * `.git` 侧那几个非递归 watch。换成 A / B 的话「objects 里的写入不触发」那条会红,
+   * 而红的原因是工作区那条递归 watch 也看得见它,与被测的东西无关。
+   *
+   * 轮询一律给恒定快照 + 一分钟周期 = 关掉它:本文件测的是 `fs.watch` 那条路,
+   * 轮询由 watch-tiers.test.ts 用假探针单独钉。
+   */
+  const watchFor = (
+    gitDir: string,
+    calls: number[],
+    {
+      debounceMs = 200,
+      tier = 'C',
+      repoRoot = dirname(gitDir),
+    }: { debounceMs?: number; tier?: WatchTier; repoRoot?: string } = {},
+  ): WatchHandle => {
+    const handle = createWatcher({
+      gitDir,
+      repoRoot,
+      tier,
+      pollStatus: async () => 'unchanged',
+      pollMs: 60_000,
+      debounceMs,
+      onChange: () => calls.push(Date.now()),
+      onDegrade: () => {},
+    });
     handles.push(handle);
     return handle;
   };
@@ -136,8 +176,7 @@ describe('`.git` 侧的 watch(§5.7)', () => {
    * 用探针写到它响为止,是唯一不依赖具体延迟数值的写法;`await` 一个固定毫秒数
    * 只是把不确定性挪到另一台更慢的机器上。
    */
-  async function armed(gitDir: string, calls: number[], debounceMs = 200): Promise<void> {
-    const probe = join(gitDir, 'gitglance-arm-probe');
+  async function armed(probe: string, calls: number[], debounceMs = 200): Promise<void> {
     await vi.waitFor(
       () => {
         writeFileSync(probe, String(Date.now()));
@@ -178,7 +217,7 @@ describe('`.git` 侧的 watch(§5.7)', () => {
     const gitDir = fakeGitDir();
     const calls: number[] = [];
     watchFor(gitDir, calls);
-    await armed(gitDir, calls);
+    await armed(join(gitDir, 'gitglance-arm-probe'), calls);
 
     writeFileSync(join(gitDir, 'HEAD'), 'ref: refs/heads/feature\n');
     await vi.waitFor(() => expect(calls.length).toBe(1), { timeout: 3000, interval: 20 });
@@ -188,7 +227,7 @@ describe('`.git` 侧的 watch(§5.7)', () => {
     const gitDir = fakeGitDir();
     const calls: number[] = [];
     watchFor(gitDir, calls);
-    await armed(gitDir, calls);
+    await armed(join(gitDir, 'gitglance-arm-probe'), calls);
 
     // index.lock → index → COMMIT_EDITMSG → HEAD 的 reflog → refs/heads/main
     writeFileSync(join(gitDir, 'index.lock'), '');
@@ -211,8 +250,8 @@ describe('`.git` 侧的 watch(§5.7)', () => {
     // 只是因为什么都没在听
     const gitDir = fakeGitDir();
     const calls: number[] = [];
-    watchFor(gitDir, calls, 50);
-    await armed(gitDir, calls, 50);
+    watchFor(gitDir, calls, { debounceMs: 50 });
+    await armed(join(gitDir, 'gitglance-arm-probe'), calls, 50);
 
     writeFileSync(join(gitDir, 'objects', 'ab', 'cdef0123'), 'object payload');
     mkdirSync(join(gitDir, 'objects', 'cd'), { recursive: true });
@@ -225,12 +264,72 @@ describe('`.git` 侧的 watch(§5.7)', () => {
     await vi.waitFor(() => expect(calls.length).toBe(1), { timeout: 3000, interval: 20 });
   }, 15_000);
 
+  /**
+   * 工作区侧,**跑真实文件系统**(§5.7 三档表 + §6「B 档:`node_modules` 的嵌套
+   * 子目录里批量写文件不触发刷新」)。
+   *
+   * 这一组不能写成 mock:要证伪的恰恰是「原生 watcher 到底把什么形状的路径交给
+   * 匹配器」—— macOS / Windows 给的是**事件的相对路径**(`node_modules/.bin/foo`),
+   * 按 basename 比对匹配不上,过滤完全失效(§10)。断言我们传了什么参数的用例
+   * 对这条一个字都说不上。
+   */
+  describe('工作区侧的三档(§5.7)', () => {
+    /** 在 `fakeGitDir` 那个骨架旁边补出工作区:`src/` + 一层嵌套的 `node_modules/`。 */
+    function watchRepo(tier: 'A' | 'B', calls: number[]): string {
+      const root = dirname(fakeGitDir());
+      for (const rel of ['src', 'node_modules/pkg/lib']) {
+        mkdirSync(join(root, ...rel.split('/')), { recursive: true });
+      }
+      writeFileSync(join(root, 'src', 'a.ts'), 'export const a = 1;\n');
+      writeFileSync(join(root, 'node_modules', 'pkg', 'lib', 'index.js'), 'module.exports = 1;\n');
+      watchFor(join(root, '.git'), calls, { debounceMs: 100, tier, repoRoot: root });
+      return root;
+    }
+
+    for (const tier of ['A', 'B'] as const) {
+      /**
+       * A 档的过滤靠 `fs.watch` 的 `ignore`,而它自 Node 24.14.0 才有 —— 在更低的
+       * 版本上强制指定 A 档,Node 会把这个未知选项**静默忽略**,于是这条用例会以
+       * 「过滤没生效」变红,而那正是 §5.7 判档要防的运行时行为,不是产品缺陷。
+       * 跳过而不是假装通过:跑在 24.14+ 上的 CI build 作业照样把它盖住。
+       */
+      const runs = tier === 'B' || supportsIgnoreOption(process.versions.node);
+      test.skipIf(!runs)(
+        `${tier} 档:node_modules 的嵌套子目录里批量写文件不触发刷新`,
+        async () => {
+          // 只写顶层目录本身证伪不了 basename 写法的缺陷(§6 明写了这一点):
+          // 那种写法在 Linux 上碰巧成立,只有嵌套路径才把它分开
+          const calls: number[] = [];
+          const repoRoot = watchRepo(tier, calls);
+          // 探针写在 `src/` 里:它不在忽略清单内,所以「响了」证明的正是工作区
+          // 那条递归 watch 已经在收事件
+          await armed(join(repoRoot, 'src', 'arm-probe.txt'), calls, 100);
+
+          const deep = join(repoRoot, 'node_modules', 'pkg', 'lib');
+          for (let i = 0; i < 20; i += 1) {
+            writeFileSync(join(deep, `chunk-${i}.js`), `module.exports = ${i};\n`);
+          }
+          mkdirSync(join(deep, 'nested'), { recursive: true });
+          writeFileSync(join(deep, 'nested', 'deeper.js'), 'module.exports = 2;\n');
+          await new Promise((r) => setTimeout(r, 600));
+          expect(calls).toHaveLength(0);
+
+          // 同一个 watcher 对仓库里的普通文件仍然是灵的 —— 否则上面那条断言只是
+          // 「什么都没在听」
+          writeFileSync(join(repoRoot, 'src', 'a.ts'), 'export const a = 2;\n');
+          await vi.waitFor(() => expect(calls.length).toBe(1), { timeout: 5000, interval: 20 });
+        },
+        20_000,
+      );
+    }
+  });
+
   test('close() 之后不再有回调', async () => {
     const gitDir = fakeGitDir();
     const calls: number[] = [];
-    const handle = watchFor(gitDir, calls, 50);
+    const handle = watchFor(gitDir, calls, { debounceMs: 50 });
     // 先确认它本来是灵的,否则下面那条「没有回调」可能只是因为流还没起来
-    await armed(gitDir, calls, 50);
+    await armed(join(gitDir, 'gitglance-arm-probe'), calls, 50);
 
     // 写完立刻关:合并窗口里那发定时器也必须被一并取消
     writeFileSync(join(gitDir, 'HEAD'), 'ref: refs/heads/x\n');

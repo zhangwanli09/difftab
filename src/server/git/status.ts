@@ -158,6 +158,21 @@ export function parseStatus(raw: string): StatusResult {
   return { branch: { head, detached, upstream }, files };
 }
 
+/**
+ * 主查询的**原始输出**,不解析。
+ *
+ * 存在的唯一理由是 §5.7 的降级轮询:它只需要回答「变没变」,而逐字节比对原始输出
+ * 既是最省的判据,也让「轮询与主查询是同一条命令」成为**构造上的事实**而不是
+ * 两处各自维护的巧合 —— 后者漏个 `-uall` 不报错,只是在一个已存在的未跟踪目录里
+ * 新增文件时页面不刷新(§5.2 / §5.7 的红线)。
+ *
+ * 比对解析后的结构也做得到,但那要么写一份深比较、要么 `JSON.stringify` 一遍,
+ * 而两者都会随协议类型增删字段而静默改变灵敏度。
+ */
+export async function readStatusRaw(root: string): Promise<string> {
+  return runGitStrict(STATUS_ARGS, root);
+}
+
 export async function readStatus(root: string): Promise<StatusResult> {
-  return parseStatus(await runGitStrict(STATUS_ARGS, root));
+  return parseStatus(await readStatusRaw(root));
 }
