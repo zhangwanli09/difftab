@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { DiffRequestError, readDiff } from '../../../src/server/git/diff.ts';
 import { locateRepo, resolveDiffBase } from '../../../src/server/git/repo.ts';
+import { GitError, runGit } from '../../../src/server/git/run.ts';
 import { readStatus } from '../../../src/server/git/status.ts';
 import type { DiffPayload } from '../../../src/server/shared/protocol.ts';
 import {
@@ -304,6 +305,23 @@ describe('diff 边界(§6:二进制只提示、超大不预览、新文件展示
     const payload = await readDiff(repos.diffEdges, { path: 'huge.txt' });
     expect(payload).toMatchObject({ kind: 'too-large', reason: 'size' });
     if (payload.kind === 'too-large') expect(payload.size).toBeGreaterThan(5 * 1024 * 1024);
+  });
+
+  test('超限时以 overflow 收尾,而不是 kill 自己引发的那个错误', async () => {
+    // `too-large` 那条分支全靠 `kind === 'overflow'` 认路,而掐断 git 之后到达的
+    // 错误会把它盖成 `exit`(实测 CI run 31755485278 的 windows × Node 22.0.x 档)。
+    //
+    // **这条在 POSIX 上不论有没有那道 guard 都是绿的** —— 那里 `'error'` 根本不触发。
+    // 留着它有两个理由:CI 的三个 Windows 档会真的执行到;以及它把判据压在**封装层**
+    // 而不是 6MB 那条端到端用例上,坏掉时给的是「kind 不对」而不是「接口回了 500」
+    const failure = await runGit(['diff', 'HEAD', '--', 'bulky.txt'], repos.diffEdges, {
+      maxStdoutBytes: 1024,
+    }).then(
+      () => null,
+      (cause: unknown) => cause,
+    );
+    expect(failure).toBeInstanceOf(GitError);
+    expect((failure as GitError).kind).toBe('overflow');
   });
 
   test('6MB 的文件只改一行照样看得见 —— 卡的是补丁不是文件', async () => {

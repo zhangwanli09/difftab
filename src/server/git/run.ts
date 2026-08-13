@@ -128,7 +128,31 @@ export function runGit(
       err.push(chunk);
     });
 
+    /**
+     * **`kill()` 之后到达的报错是这次 kill 的后果,不是新事实。**
+     *
+     * 实测(CI run 31755485278):超限掐断 git 之后,**windows × Node 22.0.x 那一档**
+     * 会走到下面的 `'error'` 分支,于是 `kind` 成了 `exit`——调用方认不出「补丁太大」
+     * 这个结论,`too-large` 那条分支静默变成一个 500;另外 8 档与本机全绿,因为那里
+     * 这个事件根本不触发。至于报的是 EPIPE(git 还写在管道上)还是 kill 本身失败,
+     * 无从也无需区分:**判定超限之后,任何错误都是我们自己动手的结果。**
+     *
+     * 所以只要已经判定超限,一律以 `overflow` 收尾;流上的 `'error'` 同样咽掉 ——
+     * 一个没人监听的流错误会以未捕获异常掀掉整个服务,而进程的死活由下面两个
+     * 事件负责报告,不需要它再说一遍。
+     */
+    const settleOverflow = () => rejectPromise(new GitError('overflow', argv, '', null));
+    for (const stream of [child.stdout, child.stderr]) {
+      stream.on('error', () => {
+        if (overflowed) settleOverflow();
+      });
+    }
+
     child.on('error', (cause: NodeJS.ErrnoException) => {
+      if (overflowed) {
+        settleOverflow();
+        return;
+      }
       // ENOENT 即 git 不在 PATH —— 前置检查靠它给出一句话友好报错(§5.2)
       rejectPromise(
         new GitError(
