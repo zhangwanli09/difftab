@@ -37,7 +37,28 @@ function fail(message: string): never {
   process.exit(1);
 }
 
+/**
+ * 读端先走了不算错误(`gitglance --no-open | head -1`:用户只想要那行 URL)。
+ *
+ * 之后每一次写都以 EPIPE 失败,而**在 Windows 上管道写是异步的**(POSIX 上同步),
+ * 失败因此以一个 `'error'` 事件到达 —— 零监听器的流收到 `'error'` 就是整个进程带着
+ * 裸栈以 1 退出。已在 CI 的 windows × Node 24 档实测到:`head` 一退,紧接着那句
+ * 「read-only view of this repository」就把服务打死了,而 macOS / Linux 上同一条路
+ * 一声不响(见 spec §10)。
+ *
+ * 服务本身没坏 —— 浏览器照常用得上,45 秒没人连再自己退,所以这里只是把 EPIPE
+ * 咽掉。**非 EPIPE 的错误照旧抛**:那是真出事了,不该借这条路一起被吞掉。
+ */
+function ignoreBrokenPipe(stream: NodeJS.WriteStream): void {
+  stream.on('error', (cause: NodeJS.ErrnoException) => {
+    if (cause.code !== 'EPIPE') throw cause;
+  });
+}
+
 export async function main(argv: string[]): Promise<void> {
+  ignoreBrokenPipe(process.stdout);
+  ignoreBrokenPipe(process.stderr);
+
   let options: ReturnType<typeof parseCliArgs>;
   try {
     options = parseCliArgs(argv);

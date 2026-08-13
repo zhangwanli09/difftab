@@ -127,17 +127,30 @@ test('没有任何客户端时,宽限期一到就自己退 —— 不留后台�
 test('stdout 的读端先走了(`| head -1`),空闲退出仍是干净的 0', async () => {
   await setup();
   /**
-   * 回归点:那句告别用的是 `writeSync`(Windows 上管道异步、写完就 exit 会整条丢掉),
-   * 而 `writeSync` 与 `process.stdout.write` 不同 —— 读端没了时它**抛 EPIPE**。
-   * 抛在空闲定时器的回调里,`closing` 已经合上,于是 `server.close()` 不再执行,
-   * 进程带着一屏 Node 栈以 1 退出,而这条路承诺的是干净的 0。
+   * `| head -1` 是这个形态最日常的来源:用户只想要那行 URL。读端一走,此后每一次写
+   * 都以 EPIPE 失败,而这条路上有**两处**写:
    *
-   * `| head -1` 是这个形态最日常的来源:用户只想要那行 URL。
+   * 1. 紧跟 URL 的那句「read-only view…」(普通的 `process.stdout.write`)。
+   *    **在 Windows 上管道写是异步的**,失败以 `'error'` 事件到达,零监听器的流收到
+   *    它就是整个进程带裸栈以 1 退出 —— 已在 CI 的 windows × Node 24 档实测到,
+   *    而 macOS / Linux 上同一条路一声不响(spec §10);
+   * 2. 宽限期走满时那句告别(`writeSync`,**同步抛** EPIPE)。抛在定时器回调里时
+   *    退出闩已经合上,`server.close()` 不再执行,同样以 1 退出。
+   *
+   * 所以断言有两条:退出码是干净的 0,**而且是熬到宽限期才退的**。只看退出码的话,
+   * 第 1 处那种「243ms 就崩了」会在某些平台上恰好也给出 0(比如崩在别处),
+   * 而这条路承诺的是「读端走了不影响服务,浏览器照常用得上」。
    */
-  const server = await startGitglance({ cwd: repos.staged, env: { [IDLE_ENV]: '1500' } });
+  const idleMs = 1500;
+  const server = await startGitglance({ cwd: repos.staged, env: { [IDLE_ENV]: String(idleMs) } });
+  const started = Date.now();
   server.child.stdout.destroy(); // 读端关掉,等同于 head 已经退了
 
-  assert.equal(await waitForExit(server), 0, '写不出告别就该当没这回事,而不是崩掉');
+  assert.equal(await waitForExit(server), 0, '写不出提示就该当没这回事,而不是崩掉');
+  assert.ok(
+    Date.now() - started > idleMs / 2,
+    '进程在宽限期之前就没了 —— 它是被某一次写打死的,不是自己走的',
+  );
   assert.doesNotMatch(server.stderr, /EPIPE| {4}at /, `stderr 里出现了 Node 栈:\n${server.stderr}`);
 });
 
