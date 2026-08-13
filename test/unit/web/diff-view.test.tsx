@@ -8,7 +8,7 @@ import { render } from 'preact';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DiffPayload } from '../../../src/server/shared/protocol';
 import { DiffView } from '../../../src/web/components/DiffView';
-import { diffState } from '../../../src/web/state/store';
+import { diffState, type RenameInfo } from '../../../src/web/state/store';
 
 /**
  * **那行上下文(`export const keep`)不是凑数的**:happy-dom 的 `Attr.nodeName` 返回空串
@@ -47,8 +47,8 @@ let container: HTMLElement;
  */
 const waitFor = (assert: () => void) => vi.waitFor(assert, { interval: 5 });
 
-const ready = (path: string, payload: DiffPayload) => {
-  diffState.value = { status: 'ready', path, payload };
+const ready = (path: string, payload: DiffPayload, rename: RenameInfo | null = null) => {
+  diffState.value = { status: 'ready', path, rename, payload };
 };
 
 /** DiffView 的最外层 div 下,最后一个元素就是 payload 那一档(提示行或 diff 容器)。 */
@@ -127,6 +127,45 @@ describe('DiffView', () => {
     // 判据钉在"这条里根本不该出现 MB"上 —— 早先写的 `not.toContain('0 MB,')`
     // **一次都不可能失败**:模板在尺寸与逗号之间还有个 `)`,那个逗号永远挨不上
     expect(byLines).not.toContain('MB');
+  });
+
+  it('重命名条目标注旧路径与相似度(§6:点开后要标注为重命名)', async () => {
+    ready('src/new name.ts', { kind: 'text', patch: patchFor('const x = 1;') }, {
+      oldPath: 'src/old name.ts',
+      score: 95,
+    } satisfies RenameInfo);
+
+    await waitFor(() => expect(container.textContent).toContain('重命名自'));
+    expect(container.textContent).toContain('src/old name.ts');
+    expect(container.textContent).toContain('95%');
+  });
+
+  it('相似度取不到时只说旧路径,不编一个百分比出来', async () => {
+    ready('b.ts', { kind: 'binary' }, { oldPath: 'a.ts', score: null });
+    await waitFor(() => expect(container.textContent).toContain('重命名自'));
+    // 「相似度 null%」「相似度 0%」都是在说一件 git 没说过的事;而 binary 这一路
+    // 压根没有补丁头,标注要是也跟着丢,页面上就再没有任何地方提过它是重命名
+    expect(container.textContent).not.toContain('相似度');
+    expect(container.textContent).toContain('二进制文件');
+  });
+
+  it('普通文件不出现重命名标注 —— 判据是 rename 而不是路径长得像', async () => {
+    ready('a.ts', { kind: 'text', patch: patchFor('const x = 1;') });
+    await waitFor(() => expect(container.textContent).toContain('const x'));
+    expect(container.textContent).not.toContain('重命名');
+  });
+
+  it('体积取不到时(已删除的文件)不把 0 说成 1 KB —— 两个 reason 都是', async () => {
+    // 已被删除的文件在工作区没有体积可取,后端给的是 0(§5.12)。formatSize 的
+    // `Math.max(1, …)` 会把它说成「1 KB」—— 一个编出来的数
+    ready('gone.txt', { kind: 'too-large', size: 0, reason: 'lines' });
+    await waitFor(() => expect(container.textContent).toContain('行数过多'));
+    expect(container.textContent).not.toContain('KB');
+
+    ready('also-gone.txt', { kind: 'too-large', size: 0, reason: 'size' });
+    await waitFor(() => expect(container.textContent).toContain('文件过大'));
+    expect(container.textContent).not.toContain('KB');
+    expect(container.textContent).not.toContain('MB');
   });
 
   it('同一个文件换补丁:容器留在原地,不卸载重挂', async () => {

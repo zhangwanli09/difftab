@@ -7,15 +7,15 @@
 //   2. 那个容器在 vdom 里**永远没有子节点**,否则两边会对着同一棵子树各改各的,
 //      Preact 下一次 diff 时按自己记得的空子树去比对真实的一大棵 DOM。
 //
-// 四个 `kind` 全部在这里分支。binary / too-large 目前只由**未跟踪**那条路填(§5.2 的
-// NUL 探测与两个阈值),已跟踪那一侧要到 S4a 才有;但两个渲染分支现在就得在 ——
-// 按单一形状写死,等于把 S4a 变成一次回头改渲染的返工(§5.12「字段定型时机」)。
+// 四个 `kind` 全部在这里分支。S4a 起两条路都会填 binary / too-large:未跟踪那条靠
+// NUL 探测与文件体积,已跟踪那条靠 `--numstat` 与 `lstat`(§5.2)—— 前端不区分来源,
+// 它拿到的就是同一个判别联合(§5.0 不变式 4)。
 
 import type { ComponentChildren } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
 import type { DiffPayload } from '../../server/shared/protocol';
 import { renderDiff } from '../diff/render';
-import { diffState } from '../state/store';
+import { diffState, type RenameInfo } from '../state/store';
 
 /** 提示行的统一外观 —— 空态、加载中、错误、二进制、超大文件共用。 */
 function Notice({ children }: { children: ComponentChildren }) {
@@ -63,9 +63,31 @@ function formatSize(bytes: number): string {
  * 它属 server/git 那一侧的判据,复述一遍就是第二份事实来源(§5.0 不变式 4)。
  */
 function tooLargeNotice(payload: Extract<DiffPayload, { kind: 'too-large' }>): string {
-  return payload.reason === 'lines'
-    ? `文件行数过多,不预览(共 ${formatSize(payload.size)})。`
-    : `文件过大(${formatSize(payload.size)}),不预览。`;
+  // 体积可能压根取不到:已被删除的文件在工作区已经没有了,后端给的是 0(§5.12)。
+  // 那时不能照着 formatSize 报一个「1 KB」—— 编一个数出来比不说更糟。
+  // 两个 reason 都会遇上这件事,所以判据只写一次
+  const size = payload.size > 0 ? formatSize(payload.size) : null;
+  if (payload.reason === 'lines') {
+    return size ? `文件行数过多,不预览(共 ${size})。` : '文件行数过多,不预览。';
+  }
+  return size ? `文件过大(${size}),不预览。` : '文件过大,不预览。';
+}
+
+/**
+ * 重命名标注(§6:「点开后标注为重命名,展示 rename from/to 与相似度」)。
+ *
+ * 补丁正文里的 `rename from/to` 由 diff2html 画在文件头上(旧名 → 新名),但那是
+ * 英文的 `RENAMED` 标签、且**不含相似度** —— 相似度来自 status 的 `R<score>`,
+ * 是我们自己带下来的。两者不重复:这一行说的是「这个条目是什么」,补丁头说的是
+ * 「这份补丁是什么」,而 binary / too-large 那几路压根没有补丁头。
+ */
+function RenameNotice({ rename }: { rename: RenameInfo }) {
+  return (
+    <p class="border-b border-panel-border px-4 py-1 text-xs text-description-foreground">
+      重命名自 <span class="font-mono break-all">{rename.oldPath}</span>
+      {rename.score !== null && `(相似度 ${rename.score}%)`}
+    </p>
+  );
 }
 
 function Payload({ payload }: { payload: DiffPayload }) {
@@ -73,8 +95,6 @@ function Payload({ payload }: { payload: DiffPayload }) {
     case 'text':
     case 'untracked-text':
       return <Patch patch={payload.patch} />;
-    // TODO(S4a):后端把已跟踪那一侧的两个分支填上时,一并核对文案与 §6 的
-    // 「二进制文件仅提示变更不做内容 diff」「超大文件提示不支持预览而非卡死」
     case 'binary':
       return <Notice>二进制文件,不做内容比对。</Notice>;
     case 'too-large':
@@ -93,6 +113,8 @@ export function DiffView() {
       <h2 class="border-b border-panel-border bg-title-bar-background px-4 py-2 font-mono text-sm break-all">
         {state.path}
       </h2>
+      {/* 三个状态下都标注:标注属于「选了哪个条目」,与补丁取到没有无关 */}
+      {state.rename && <RenameNotice rename={state.rename} />}
       {state.status === 'loading' && <Notice>读取中…</Notice>}
       {state.status === 'error' && <Notice>取不到这个文件的 diff:{state.message}</Notice>}
       {/* key 让换文件走卸载重挂,两次 draw() 因此不可能落在同一个元素上 */}

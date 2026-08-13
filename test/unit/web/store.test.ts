@@ -227,8 +227,8 @@ describe('loadDiff(§5.2 的按文件懒加载)', () => {
   });
 
   test('payload 原样落进 diffState —— binary / too-large 不例外', async () => {
-    // 这两个分支的填充逻辑属 S4a,但前端现在就不能按 kind: 'text' 单一形状写死
-    // (§5.12「字段定型时机」)
+    // 四个分支自 S4a 起后端都会真的返回(已跟踪那侧走 numstat,未跟踪那侧走 NUL
+    // 探测与体积),store 一律原样透传 —— 判别原因属后端知识(§5.12 / §5.0 不变式 4)
     for (const payload of [
       text,
       { kind: 'untracked-text', patch: '+new\n' },
@@ -239,8 +239,26 @@ describe('loadDiff(§5.2 的按文件懒加载)', () => {
     ] satisfies DiffPayload[]) {
       stubJson(payload);
       await loadDiff(file({ path: 'a.bin', unstaged: 'M' }));
-      expect(diffState.value).toEqual({ status: 'ready', path: 'a.bin', payload });
+      expect(diffState.value).toEqual({ status: 'ready', path: 'a.bin', rename: null, payload });
     }
+  });
+
+  test('重命名条目把旧路径与相似度一并带进状态,普通条目是 null', async () => {
+    // 标注跟着请求走,而不是渲染时回列表里现找:选中的文件随时可能从下一份列表里
+    // 消失(改动被撤销 / 被 commit),那时右侧刻意留着最后那份 diff,现找的写法会让
+    // 标注单独消失 —— 补丁里还带着 rename from/to,标题却说这是个普通文件
+    stubJson(text);
+    await loadDiff(
+      file({ path: 'src/new.ts', oldPath: 'src/old.ts', staged: 'R', renameScore: 87 }),
+    );
+    expect(diffState.value?.rename).toEqual({ oldPath: 'src/old.ts', score: 87 });
+
+    // git 没给相似度就不编一个:`?? 0` 会让页面说出「相似度 0%」这句 git 没说过的话
+    await loadDiff(file({ path: 'src/new.ts', oldPath: 'src/old.ts', staged: 'R' }));
+    expect(diffState.value?.rename).toEqual({ oldPath: 'src/old.ts', score: null });
+
+    await loadDiff(file({ path: 'plain.ts', unstaged: 'M' }));
+    expect(diffState.value?.rename).toBeNull();
   });
 
   test('两次点击重叠时后点的赢 —— 先发后到不会盖掉当前文件的 diff', async () => {
@@ -254,7 +272,12 @@ describe('loadDiff(§5.2 的按文件懒加载)', () => {
     ]);
     // 状态里的 path 与 payload 必须是同一个文件的:错位的症状是标题写着 A、
     // 底下渲染的是 B
-    expect(diffState.value).toEqual({ status: 'ready', path: 'fresh.txt', payload: fast });
+    expect(diffState.value).toEqual({
+      status: 'ready',
+      path: 'fresh.txt',
+      rename: null,
+      payload: fast,
+    });
   });
 
   test('一个文件取不到 diff 时不动整页的错误横幅', async () => {
@@ -262,31 +285,46 @@ describe('loadDiff(§5.2 的按文件懒加载)', () => {
     stubJson({ error: { code: 'not-found', message: '文件不在了' } }, 400);
 
     await loadDiff(file({ path: 'gone.txt', unstaged: 'D' }));
-    expect(diffState.value).toEqual({ status: 'error', path: 'gone.txt', message: '文件不在了' });
+    expect(diffState.value).toEqual({
+      status: 'error',
+      path: 'gone.txt',
+      rename: null,
+      message: '文件不在了',
+    });
     expect(loadError.value).toBeNull();
   });
 
   test('请求发出前就进 loading 态,且带的是新文件的 path', async () => {
     // 切换文件的那一瞬间若还留着上一个文件的 payload,渲染出来就是张冠李戴
-    diffState.value = { status: 'ready', path: 'old.txt', payload: text };
+    diffState.value = { status: 'ready', path: 'old.txt', rename: null, payload: text };
     stubJson(text);
     const pending = loadDiff(file({ path: 'new.txt', unstaged: 'M' }));
-    expect(diffState.value).toEqual({ status: 'loading', path: 'new.txt' });
+    expect(diffState.value).toEqual({ status: 'loading', path: 'new.txt', rename: null });
     await pending;
   });
 
   test('同一个文件重新取时不回退到 loading —— 否则每次刷新都把画好的 diff 拆掉重画', async () => {
     // 回退的代价不是闪一下:ready → loading 会让渲染 diff 的子树整个卸载,滚动位置
     // 随之丢失。S3b1 起每个 SSE change 事件都会走这里,而 §5.4 要求刷新不丢滚动位置
-    diffState.value = { status: 'ready', path: 'a.txt', payload: text };
+    diffState.value = { status: 'ready', path: 'a.txt', rename: null, payload: text };
     const fresh: DiffPayload = { kind: 'text', patch: 'updated\n' };
     stubJson(fresh);
 
     const pending = loadDiff(file({ path: 'a.txt', unstaged: 'M' }));
     // 请求在飞的这段时间里,上一份仍然挂着
-    expect(diffState.value).toEqual({ status: 'ready', path: 'a.txt', payload: text });
+    expect(diffState.value).toEqual({
+      status: 'ready',
+      path: 'a.txt',
+      rename: null,
+      payload: text,
+    });
     await pending;
-    expect(diffState.value).toEqual({ status: 'ready', path: 'a.txt', payload: fresh });
+    expect(diffState.value).toEqual({
+      status: 'ready',
+      path: 'a.txt',
+      rename: null,
+      payload: fresh,
+    });
   });
 
   test('selectFile 同时更新选中态并拉 diff —— 组件不必知道这是两件事', async () => {
@@ -340,17 +378,22 @@ describe('refresh(一次 SSE change 之后要重取什么)', () => {
 
   test('打开着的 diff 也重取 —— 只刷列表的话右侧会停在旧补丁上', async () => {
     // 文件内容变了而列表条目没变(还是那个 `1 .M`)是最常见的形态,页面看不出异样
-    diffState.value = { status: 'ready', path: 'a.txt', payload: text };
+    diffState.value = { status: 'ready', path: 'a.txt', rename: null, payload: text };
     const calls = stubEndpoints(stateWith([file({ path: 'a.txt', unstaged: 'M' })]), fresh);
 
     await refresh();
     expect(calls.some((url) => url.startsWith('/api/diff?'))).toBe(true);
-    expect(diffState.value).toEqual({ status: 'ready', path: 'a.txt', payload: fresh });
+    expect(diffState.value).toEqual({
+      status: 'ready',
+      path: 'a.txt',
+      rename: null,
+      payload: fresh,
+    });
   });
 
   test('重取用的是新列表里的条目 —— oldPath 跟着变,不能拿旧条目去取', async () => {
     // 相似度与配对结果都会随改动变化。用旧条目取等于用过期的 oldPath(§5.2 双路径)
-    diffState.value = { status: 'ready', path: 'new.ts', payload: text };
+    diffState.value = { status: 'ready', path: 'new.ts', rename: null, payload: text };
     const calls = stubEndpoints(
       stateWith([file({ path: 'new.ts', oldPath: 'renamed-again.ts', staged: 'R' })]),
       fresh,
@@ -366,12 +409,17 @@ describe('refresh(一次 SSE change 之后要重取什么)', () => {
   test('选中的文件从列表里消失了就不去取它,右侧保留最后那份 diff', async () => {
     // 改动被撤销或被 commit 掉了。把右侧突然清空比留着更让人困惑,而且合成一个
     // 不带 oldPath 的条目去取,正好是「重命名退化成全新增」那条路
-    diffState.value = { status: 'ready', path: 'gone.txt', payload: text };
+    diffState.value = { status: 'ready', path: 'gone.txt', rename: null, payload: text };
     const calls = stubEndpoints(stateWith([file({ path: 'other.txt', unstaged: 'M' })]), fresh);
 
     await refresh();
     expect(calls).toEqual(['/api/state']);
-    expect(diffState.value).toEqual({ status: 'ready', path: 'gone.txt', payload: text });
+    expect(diffState.value).toEqual({
+      status: 'ready',
+      path: 'gone.txt',
+      rename: null,
+      payload: text,
+    });
   });
 
   test('列表取不到时不去取 diff —— 手上那份列表已经是过期的了', async () => {
@@ -383,7 +431,7 @@ describe('refresh(一次 SSE change 之后要重取什么)', () => {
      * 全新增那条路(§5.2)。
      */
     repoState.value = stateWith([file({ path: 'a.txt', oldPath: 'stale.txt', staged: 'R' })]);
-    diffState.value = { status: 'ready', path: 'a.txt', payload: text };
+    diffState.value = { status: 'ready', path: 'a.txt', rename: null, payload: text };
     const calls: string[] = [];
     vi.stubGlobal(
       'fetch',
@@ -396,6 +444,11 @@ describe('refresh(一次 SSE change 之后要重取什么)', () => {
     await refresh();
     expect(calls).toEqual(['/api/state']);
     expect(loadError.value).toBe('请求失败(HTTP 500)');
-    expect(diffState.value).toEqual({ status: 'ready', path: 'a.txt', payload: text });
+    expect(diffState.value).toEqual({
+      status: 'ready',
+      path: 'a.txt',
+      rename: null,
+      payload: text,
+    });
   });
 });

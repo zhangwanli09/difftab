@@ -24,6 +24,20 @@ export const repoState = signal<RepoState | null>(null);
 export const loadError = signal<string | null>(null);
 
 /**
+ * 这次请求指向的条目是不是重命名来的,以及相似度(`null` = git 没给)。
+ *
+ * **它跟着请求走,不是在渲染时去列表里现找**:§6 要求打开的 diff 上标注重命名,
+ * 而选中的文件随时可能从下一份列表里消失(改动被撤销、被 commit 掉)。那时右侧
+ * 刻意留着最后那份 diff(见 `refresh`),现找的写法会让标注**单独**消失,
+ * 于是页面上是一份带 `rename from/to` 的补丁配着「这是个普通文件」的标题。
+ */
+export interface RenameInfo {
+  oldPath: string;
+  /** `R100` → 100。git 只在识别为重命名/复制时给,取不到就不显示。 */
+  score: number | null;
+}
+
+/**
  * 当前选中文件的 diff 请求状态。
  *
  * 三态显式建模而不是「payload + 一个 loading 布尔」:后者在切换文件的那一瞬间会
@@ -33,9 +47,20 @@ export const loadError = signal<string | null>(null);
  * 每一态都带着 `path`,DiffPane 因此能在渲染前确认「这份结果属于当前选中的文件」。
  */
 export type DiffRequestState =
-  | { status: 'loading'; path: string }
-  | { status: 'ready'; path: string; payload: DiffPayload }
-  | { status: 'error'; path: string; message: string };
+  | { status: 'loading'; path: string; rename: RenameInfo | null }
+  | { status: 'ready'; path: string; rename: RenameInfo | null; payload: DiffPayload }
+  | { status: 'error'; path: string; rename: RenameInfo | null; message: string };
+
+/**
+ * `FileEntry` 的重命名两个字段 → 一个可选对象。
+ *
+ * 判据是 `oldPath` 存在,**不是比对新旧路径**(§5.0 不变式 4:重命名与否是 git 的
+ * 判定,前端不重写一遍)。
+ */
+function renameOf(entry: FileEntry): RenameInfo | null {
+  if (entry.oldPath === undefined) return null;
+  return { oldPath: entry.oldPath, score: entry.renameScore ?? null };
+}
 
 /** null 表示还没选过任何文件。 */
 export const diffState = signal<DiffRequestState | null>(null);
@@ -173,6 +198,7 @@ let latestDiffRequest = 0;
 export async function loadDiff(entry: FileEntry): Promise<void> {
   const ticket = ++latestDiffRequest;
   const current = diffState.value;
+  const rename = renameOf(entry);
   /**
    * **同一个文件重新取时不回退到 loading 态**。
    *
@@ -185,7 +211,7 @@ export async function loadDiff(entry: FileEntry): Promise<void> {
    * 换文件才必须清空:留着上一个文件的 payload,新标题下会短暂挂着旧 diff。
    */
   if (current?.status !== 'ready' || current.path !== entry.path) {
-    diffState.value = { status: 'loading', path: entry.path };
+    diffState.value = { status: 'loading', path: entry.path, rename };
   }
   try {
     const query = new URLSearchParams({ path: entry.path });
@@ -193,10 +219,10 @@ export async function loadDiff(entry: FileEntry): Promise<void> {
     const payload = await getJson<DiffPayload>(`/api/diff?${query}`);
     // 用户在等待期间点了别的文件 —— 这份结果已经是过期的那一个
     if (ticket !== latestDiffRequest) return;
-    diffState.value = { status: 'ready', path: entry.path, payload };
+    diffState.value = { status: 'ready', path: entry.path, rename, payload };
   } catch (cause) {
     if (ticket !== latestDiffRequest) return;
-    diffState.value = { status: 'error', path: entry.path, message: toMessage(cause) };
+    diffState.value = { status: 'error', path: entry.path, rename, message: toMessage(cause) };
   }
 }
 

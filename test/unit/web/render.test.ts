@@ -46,6 +46,25 @@ index 1111111..2222222 100644
  }
 `;
 
+/**
+ * 重命名的补丁,**逐字取自 `git diff HEAD -M -- <新> <旧>` 的真实输出**(fixture
+ * `renames` 仓库)。头四行是只有传了两个路径才拿得到的那几行(§5.2):少传一个,
+ * git 给的是 `new file mode` + `--- /dev/null`,页面上看起来只是"一个全新增文件"。
+ */
+const RENAME_PATCH = `diff --git a/src/kept.txt b/src/kept-renamed.txt
+similarity index 88%
+rename from src/kept.txt
+rename to src/kept-renamed.txt
+index af8a489..3d3aa51 100644
+--- a/src/kept.txt
++++ b/src/kept-renamed.txt
+@@ -1,3 +1,3 @@
+ line 0
+-line 3
++line three, edited
+ line 4
+`;
+
 /** 无扩展名的文件 —— diff2html 会把语言改写成字面量 'plaintext'(§5.5)。 */
 const LICENSE_PATCH = `diff --git a/LICENSE b/LICENSE
 index 1111111..2222222 100644
@@ -106,6 +125,21 @@ describe('renderDiff', () => {
     expect(() => renderDiff(host, LICENSE_PATCH)).not.toThrow();
     expect(host.querySelector('.d2h-diff-table')).not.toBeNull();
     expect(host.textContent).toContain('MIT License');
+  });
+
+  it('重命名的补丁画成一个文件、新旧两个名字都在(§6:不退化成全新增)', () => {
+    renderDiff(host, RENAME_PATCH);
+
+    // 一个文件而不是两个:diff2html 把 `rename from/to` 认成同一个文件的两侧
+    expect(host.querySelectorAll('.d2h-file-wrapper')).toHaveLength(1);
+    // diff2html 把公共目录前缀提出来,写成 `src/{kept.txt → kept-renamed.txt}`(实测)。
+    // 那是**紧凑形式而不是完整旧路径**,DiffView 那条「重命名自 <旧路径>」因此不是重复
+    const header = host.querySelector('.d2h-file-name')?.textContent ?? '';
+    expect(header).toContain('kept.txt');
+    expect(header).toContain('kept-renamed.txt');
+    expect(header).toContain('→');
+    // 正文照常有内容 —— 只标注不渲染同样是坏的
+    expect(host.textContent).toContain('line three, edited');
   });
 
   it('容器上没有 d2h 自己那套深色 class —— 深浅归我们的 --d2h-* 覆写', () => {
