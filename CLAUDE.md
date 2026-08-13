@@ -95,6 +95,10 @@
 - 封装层统一设 `GIT_OPTIONAL_LOCKS=0`——否则 `git status` 会把 stat 缓存写回 `.git/index`;它不改变 status 输出,只读 `.git` 下也只是静默跳过、exit 0、stderr 全空,**只有 §5.10 第二层 B 半的逐字节快照比对看得见**
 - `porcelain=v2 -z` 的重命名记录占**两个** NUL 段;无上游时不输出 `# branch.ab` 行
 - 重命名取 diff 必须传新旧两个路径(`-M -- <新> <旧>`)
+- 封装层统一设 `GIT_LITERAL_PATHSPECS=1`——pathspec 默认是通配模式,`path=*` 会回一份整仓 diff,名字带 `*` 的文件会捎带上邻居的补丁
+- `diff --numstat -z` 的重命名记录占**三**段(空路径字段 + 旧 + 新,顺序与 porcelain 的 `2 ` 记录相反)——平铺切分会把路径当成记录
+- numstat 一次查询可回不止一条记录:**按路径挑、按合计算**,取 `[0]` 会在配不上对的重命名上放 6 万行补丁过闸
+- 二进制与行数两道判定在**取补丁之前**(numstat);5MB 那道对已跟踪文件卡的是**补丁字节**(取补丁时带 `maxStdoutBytes`),不是文件字节——按文件字节判会让 6MB 数据文件改一行也看不了,而未跟踪那侧整份文件就是补丁,仍按文件体积
 - diff 按文件懒加载,禁止一次性取全仓 diff
 - 空树哈希硬编码(禁 `hash-object /dev/null`、禁 `mktree`);`--show-object-format` 非零退出即按 SHA-1
 - 未跟踪文件手工构造 unified diff,禁 `--no-index`

@@ -15,7 +15,7 @@ const MIN_GIT = { major: 2, minor: 11 };
  */
 const EMPTY_TREE = {
   sha1: '4b825dc642cb6eb9a060e54bf8d69288fbee4904',
-  // TODO(S4):用 `git init --object-format=sha256` 的测试仓库实测取值后回填。
+  // TODO(S4b):用 `git init --object-format=sha256` 的测试仓库实测取值后回填。
   // **不得凭记忆写死** —— 写错的后果是空仓库下 diff 基准无效,且症状与
   // 「空仓库不支持」难以区分(spec §5.3)。在此之前宁可显式失败。
   sha256: null as string | null,

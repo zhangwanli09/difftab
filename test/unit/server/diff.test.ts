@@ -1,10 +1,15 @@
-// 未跟踪文件的手工 unified diff 构造与路径边界(spec §5.2)。
+// 未跟踪文件的手工 unified diff 构造、`--numstat` 解析与路径边界(spec §5.2)。
 
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { DiffRequestError, resolveInRepo, untrackedDiff } from '../../../src/server/git/diff.ts';
+import {
+  DiffRequestError,
+  parseNumstat,
+  resolveInRepo,
+  untrackedDiff,
+} from '../../../src/server/git/diff.ts';
 
 let root: string;
 
@@ -31,6 +36,54 @@ describe('resolveInRepo', () => {
 
   test('路径里的 `..` 只要没走出仓库就放行', () => {
     expect(resolveInRepo('/repo', 'src/../src/a.ts')).toBe(resolve('/repo', 'src/a.ts'));
+  });
+});
+
+describe('parseNumstat(§5.2:已跟踪那一侧的二进制与行数判定)', () => {
+  test('普通记录:一条占一个 NUL 段,行数是加 + 减', () => {
+    expect(parseNumstat('1\t2\ta.txt\0')).toEqual([
+      { binary: false, lines: 3, path: 'a.txt', oldPath: null },
+    ]);
+  });
+
+  test('二进制记录是 `-\\t-`,两个计数都取不到', () => {
+    expect(parseNumstat('-\t-\tassets/icon.bin\0')).toEqual([
+      { binary: true, lines: 0, path: 'assets/icon.bin', oldPath: null },
+    ]);
+  });
+
+  test('重命名记录占**三**段:后两段是新旧路径,不能再被当成记录去解析', () => {
+    // 实测形态(spec §10):`1\t0\t\0<旧>\0<新>`,路径字段是空的,且顺序与
+    // porcelain 的 `2 ` 记录**相反**(那边新在前)。读反了不报错,只是标注里的
+    // 「重命名自」指着新名字。
+    //
+    // 「后两段必须整段吞掉」这件事,只有当路径**自己长得像一条记录**时才看得出来 ——
+    // 而那正是 `-z` 存在的理由:路径里除了 NUL 什么字节都可能有,包括制表符。
+    // 少吞两段时,下面这个旧路径会被解析成一条 `2+3` 行的记录凭空多出来
+    const renamedWithTabs = ['1\t0\t', '2\t3\tweird name.txt', 'tidy name.txt', ''].join('\0');
+    expect(parseNumstat(renamedWithTabs)).toEqual([
+      { binary: false, lines: 1, path: 'tidy name.txt', oldPath: '2\t3\tweird name.txt' },
+    ]);
+  });
+
+  test('多条记录各自带着自己的路径 —— 调用方靠它挑,不靠下标', () => {
+    // 下标是掷硬币:git 按路径排序,而「哪条属于我」与排序无关(见 readNumstat)
+    const output = ['1\t2\ta.txt', '-\t-\tb.bin', '7\t7\tc.txt', ''].join('\0');
+    expect(parseNumstat(output)).toEqual([
+      { binary: false, lines: 3, path: 'a.txt', oldPath: null },
+      { binary: true, lines: 0, path: 'b.bin', oldPath: null },
+      { binary: false, lines: 14, path: 'c.txt', oldPath: null },
+    ]);
+  });
+
+  test('路径里带换行也不影响 —— `-z` 之下换行只是普通字节', () => {
+    expect(parseNumstat('3\t0\tweird\nname.txt\0')).toEqual([
+      { binary: false, lines: 3, path: 'weird\nname.txt', oldPath: null },
+    ]);
+  });
+
+  test('空输出即「不在这次差异里」,不是零改动', () => {
+    expect(parseNumstat('')).toEqual([]);
   });
 });
 

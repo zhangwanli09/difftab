@@ -7,7 +7,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { readDiff } from '../../../src/server/git/diff.ts';
+import { DiffRequestError, readDiff } from '../../../src/server/git/diff.ts';
 import { locateRepo, resolveDiffBase } from '../../../src/server/git/repo.ts';
 import { readStatus } from '../../../src/server/git/status.ts';
 import type { DiffPayload } from '../../../src/server/shared/protocol.ts';
@@ -21,9 +21,9 @@ import {
 /**
  * 断言这是一份带补丁的 payload,并把补丁正文取出来。
  *
- * `(payload as { patch: string }).patch` 是**转型不是收窄**:`DiffPayload` 的形状将来
- * 变了(S4a 要填 binary / too-large 两个分支),那个写法会安静地给出 undefined,后面
- * 的 `toContain` 断言随之报一句与真正原因无关的话。这里先按判别式收窄,再取字段。
+ * `(payload as { patch: string }).patch` 是**转型不是收窄**:S4a 之后 binary /
+ * too-large 两个分支都真的会回来,那个写法会安静地给出 undefined,后面的 `toContain`
+ * 断言随之报一句与真正原因无关的话。这里先按判别式收窄,再取字段。
  */
 function patchOf(payload: DiffPayload): string {
   if (payload.kind !== 'text' && payload.kind !== 'untracked-text') {
@@ -73,6 +73,31 @@ describe('路径转义(§6:不出现 \\351\\234\\200 这类残留)', () => {
   });
 });
 
+describe('路径是字面量而不是通配模式(§5.2 的 GIT_LITERAL_PATHSPECS)', () => {
+  // Windows 上文件名不许带 `*`,fixture 因此只在 POSIX 上放这两个样本
+  const posixOnly = process.platform === 'win32' ? test.skip : test;
+
+  posixOnly('名字里带 `*` 的文件只回它自己的补丁,不捎带邻居', async () => {
+    // `--` 后面的路径默认按 wildmatch 解释(已实测),于是 `docs/star*.md` 会连
+    // `docs/starlight.md` 一起匹配。症状不是报错:页面在 A 的标题下多出 B 的补丁
+    const payload = await readDiff(repos.unicodePaths, { path: 'docs/star*.md' });
+    const patch = patchOf(payload);
+    expect(patch).toContain('docs/star*.md');
+    expect(patch).not.toContain('MATCHED-BY-WILDCARD-NOT-BY-NAME');
+    expect(patch.match(/^diff --git /gm)).toHaveLength(1);
+  });
+
+  posixOnly('纯模式取不到任何东西 —— `*` 不该变成一份整仓 diff', async () => {
+    // 路径来自 URL query,是外部输入。`path=*` 在通配语义下会让 `git diff -- '*'`
+    // 回一份整仓 diff,直接撞上「禁止一次性获取全仓 diff」那条(§5.2):
+    // 300+ 文件的补丁一次性发给浏览器,主线程冻上数秒到数十秒
+    await expect(readDiff(repos.unicodePaths, { path: '*' })).rejects.toThrow(DiffRequestError);
+    await expect(readDiff(repos.unicodePaths, { path: 'docs/*' })).rejects.toThrow(
+      DiffRequestError,
+    );
+  });
+});
+
 describe('未跟踪(§6:展开到文件粒度,不折叠成 `dir/`)', () => {
   test('整个目录未跟踪时,列表里是里面的每个文件', async () => {
     // 这条钉的是 `-uall`。少了它,git 只报一行 `? 未跟踪目录/`,列表里就是一个
@@ -112,6 +137,24 @@ describe('重命名', () => {
     const onlyNew = await readDiff(repos.renames, { path: 'src/kept-renamed.txt' });
     expect(onlyNew).toHaveProperty('patch', expect.stringContaining('new file mode'));
     expect(onlyNew).toHaveProperty('patch', expect.not.stringContaining('rename from'));
+  });
+
+  test('status 说是重命名、diff 配不上对时,行数按两条记录**合计**算', async () => {
+    // `git mv` 之后把内容全部重写、留在工作区不 add:index 里仍是纯改名,status 照报
+    // `R100`(§10),所以条目带着 oldPath;而 `diff -M` 比的是 HEAD → 工作区,配不上,
+    // 于是 numstat 拆成「删旧 20 行」+「增新 60,000 行」两条,**按路径排序**。
+    //
+    // 取 `[0]` 的写法在这里拿到的是那条 20 行的删除 —— 行数闸放行,一份 6 万行的
+    // 补丁照旧发给浏览器,而这正是本阶段存在的理由。判据只能压在合计上
+    const { files } = await readStatus(repos.renames);
+    const entry = files.find((f) => f.path === 'src/unpaired-z.txt');
+    expect(entry?.oldPath).toBe('src/unpaired-a.txt');
+
+    const payload = await readDiff(repos.renames, {
+      path: 'src/unpaired-z.txt',
+      oldPath: 'src/unpaired-a.txt',
+    });
+    expect(payload).toMatchObject({ kind: 'too-large', reason: 'lines' });
   });
 
   test('相似度阈值之下的改名被 git 拆成删除 + 新增,不带 oldPath', async () => {
@@ -239,6 +282,77 @@ describe('仓库定位', () => {
     } finally {
       rmSync(outside, { recursive: true, force: true });
     }
+  });
+});
+
+describe('diff 边界(§6:二进制只提示、超大不预览、新文件展示为全新增)', () => {
+  test('已跟踪的二进制变更只回 binary —— 判定来自 git 自己而不是我们探 NUL', async () => {
+    // 与未跟踪那条路的分工:已跟踪一律以 `--numstat` 的 `-\t-` 为准(git 自身含
+    // .gitattributes 的判定),NUL 探测只用于未跟踪(§5.2)
+    const payload = await readDiff(repos.diffEdges, { path: 'assets/icon.bin' });
+    expect(payload).toEqual({ kind: 'binary' });
+  });
+
+  test('未跟踪的二进制走 NUL 探测,同样只回 binary', async () => {
+    const payload = await readDiff(repos.diffEdges, { path: 'untracked.bin' });
+    expect(payload).toEqual({ kind: 'binary' });
+  });
+
+  test('补丁超过 5MB 时按体积拒绝,补丁一个字节都不发出去', async () => {
+    // huge.txt 是「一行 6MB」:numstat 只报 1/1 行,行数阈值对它毫无作用;
+    // 而它的补丁有 12MB 上下 —— 拦住它的只能是取补丁那次调用自己带的字节上限
+    const payload = await readDiff(repos.diffEdges, { path: 'huge.txt' });
+    expect(payload).toMatchObject({ kind: 'too-large', reason: 'size' });
+    if (payload.kind === 'too-large') expect(payload.size).toBeGreaterThan(5 * 1024 * 1024);
+  });
+
+  test('6MB 的文件只改一行照样看得见 —— 卡的是补丁不是文件', async () => {
+    // 这条与上一条是同一道闸的两面:按「文件多大」拒绝的写法在这里会把一份几 KB 的
+    // 补丁挡掉,而 agent 改一行数据文件是常事(S4a 的代码评审提出)
+    const payload = await readDiff(repos.diffEdges, { path: 'bulky.txt' });
+    expect(payload.kind).toBe('text');
+    const patch = patchOf(payload);
+    expect(patch).toContain('+3000: after');
+    expect(patch).toContain('-3000: before');
+    // 补丁本身必须是小的,否则这条只是「碰巧没超」
+    expect(patch.length).toBeLessThan(64 * 1024);
+  });
+
+  test('已跟踪的超多行文件按行数拒绝 —— 它的体积远不到 5MB', async () => {
+    // wide.txt 约 700KB:体积那道闸放它过去,只有行数拦得住。两个 reason 因此
+    // 必须都能被单独触发,否则前端拿到的 size 解释不了拒绝的原因(§5.12)
+    const payload = await readDiff(repos.diffEdges, { path: 'wide.txt' });
+    expect(payload).toMatchObject({ kind: 'too-large', reason: 'lines' });
+    if (payload.kind === 'too-large') expect(payload.size).toBeLessThan(5 * 1024 * 1024);
+  });
+
+  test('未跟踪的超大文件同样按体积拒绝,而不是读进内存', async () => {
+    const payload = await readDiff(repos.diffEdges, { path: 'untracked-huge.txt' });
+    expect(payload).toMatchObject({ kind: 'too-large', reason: 'size' });
+  });
+
+  test('已暂存的新文件是一份完整的新增补丁(走 git diff,不是手工构造)', async () => {
+    const payload = await readDiff(repos.diffEdges, { path: 'added-staged.txt' });
+    expect(payload.kind).toBe('text');
+    const patch = patchOf(payload);
+    expect(patch).toContain('new file mode');
+    expect(patch).toContain('+brand new line one');
+    expect(patch).toContain('+brand new line two');
+  });
+
+  test('二进制与超大都不该在列表里消失 —— 点不开与看不见是两回事', async () => {
+    const { files } = await readStatus(repos.diffEdges);
+    const paths = files.map((f) => f.path);
+    expect(paths).toEqual(
+      expect.arrayContaining([
+        'assets/icon.bin',
+        'huge.txt',
+        'wide.txt',
+        'untracked.bin',
+        'untracked-huge.txt',
+        'added-staged.txt',
+      ]),
+    );
   });
 });
 

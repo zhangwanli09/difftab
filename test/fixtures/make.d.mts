@@ -27,6 +27,12 @@ export interface FixtureRepos {
   empty: string;
   /** 320 个文件同时变更。 */
   manyFiles: string;
+  /**
+   * diff 边界(S4a):已跟踪/未跟踪各一个二进制、一行 6MB 的 `huge.txt`、
+   * 60,000 行的 `wide.txt`(两个阈值各触发一个)、6MB 但只改一行的 `bulky.txt`
+   * (补丁字节闸与文件字节闸的分水岭)、一个已暂存的新增文件。
+   */
+  diffEdges: string;
 }
 
 export type FixtureName = keyof FixtureRepos;

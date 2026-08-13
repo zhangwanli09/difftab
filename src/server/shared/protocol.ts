@@ -74,7 +74,7 @@ export interface BranchState {
    * 而不是 0/0。把它编码进类型而非留作约定,前端就不可能漏掉这条分支。
    */
   upstream: null | { ahead: number; behind: number };
-  /** 仓库正处于的多步操作。TODO(S4):当前恒不填充。 */
+  /** 仓库正处于的多步操作。TODO(S4b):当前恒不填充。 */
   operation?: 'rebase' | 'merge' | 'cherry-pick' | 'revert' | 'bisect';
 }
 

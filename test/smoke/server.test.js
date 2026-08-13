@@ -12,8 +12,8 @@ import { test } from 'node:test';
 import { makeFixtures } from '../fixtures/make.mjs';
 import { authedGet, BIN, cleanupOnExit, httpGet, once, startGitglance } from './helpers.js';
 
-/** 本文件用得到的 fixture。生成全部 8 个要 600ms 上下,其中一半这里根本不打开。 */
-const NEEDED = ['unicodePaths', 'staged', 'empty'];
+/** 本文件用得到的 fixture。生成全部 9 个要 600ms 上下,其中一半这里根本不打开。 */
+const NEEDED = ['unicodePaths', 'staged', 'empty', 'diffEdges'];
 
 let workdir;
 let repos;
@@ -179,6 +179,22 @@ test('路径含非 ASCII / 空格 / 引号的文件,在产物上也不出现转�
   assert.doesNotMatch(diff.patch, /\\[0-7]{3}/);
 });
 
+test('query 里的路径是字面量:`path=*` 取不到东西,更不是一份整仓 diff', async () => {
+  await setup();
+  // 路径来自 URL query,是外部输入;而 `git diff -- <路径>` 默认按 wildmatch 解释。
+  // 少了 GIT_LITERAL_PATHSPECS 与「按路径挑记录」这两道,`*` 会变成一份整仓补丁 ——
+  // 既撞上 §5.2「禁止一次性获取全仓 diff」,也让浏览器主线程冻上数秒
+  for (const path of ['*', 'docs/*', '?ocs/**']) {
+    const res = await authedGet(
+      server.port,
+      server.token,
+      `/api/diff?path=${encodeURIComponent(path)}`,
+    );
+    assert.notEqual(res.status, 200, `path=${path} 竟然取到了 diff:${res.body.slice(0, 200)}`);
+    assert.ok(!res.body.includes('diff --git'), `path=${path} 回了补丁正文`);
+  }
+});
+
 test('注册表落在 os.tmpdir(),权限 0600,仓库目录内无任何新增文件', async () => {
   await setup();
   const before = listFiles(repos.staged);
@@ -230,6 +246,54 @@ test('空仓库(尚无提交)下不崩溃:列表与分支状态正常,diff 走�
     assert.match(diff.patch, /\+no commits yet/);
   } finally {
     await empty.stop();
+  }
+});
+
+test('diff 边界在产物上也各回各的 kind,且超大文件不会把正文整个吐回来', async () => {
+  await setup();
+  const edges = await startGitglance({ cwd: repos.diffEdges });
+  try {
+    const get = async (path) => {
+      const res = await authedGet(
+        edges.port,
+        edges.token,
+        `/api/diff?path=${encodeURIComponent(path)}`,
+      );
+      assert.equal(res.status, 200, `${path} 返回了 ${res.status}:${res.body}`);
+      return { payload: JSON.parse(res.body), bytes: Buffer.byteLength(res.body) };
+    };
+
+    // 已跟踪(numstat 的 `-\t-`)与未跟踪(NUL 探测)两条判定路径各走一遍
+    assert.equal((await get('assets/icon.bin')).payload.kind, 'binary');
+    assert.equal((await get('untracked.bin')).payload.kind, 'binary');
+
+    // §6 的「超大文件提示不支持预览而非卡死」在这一层的判据是**正文有多大**:
+    // 判定漏掉时接口会照常回 200、kind 也还是 'text',只是正文里躺着 6MB 补丁 ——
+    // 断言 kind 的写法看不出区别,而浏览器那头是几秒到几十秒的主线程冻结
+    for (const path of ['huge.txt', 'untracked-huge.txt']) {
+      const { payload, bytes } = await get(path);
+      assert.equal(payload.kind, 'too-large', `${path} 没被拦住`);
+      assert.equal(payload.reason, 'size');
+      assert.ok(bytes < 1024, `${path} 的响应有 ${bytes} 字节 —— 补丁正文被一并回来了`);
+    }
+
+    // 同一道闸的另一面:6MB 的文件只改一行,补丁只有几 KB,必须照常给
+    const bulky = await get('bulky.txt');
+    assert.equal(bulky.payload.kind, 'text', '大文件的小改动被误拦了');
+    assert.match(bulky.payload.patch, /\+3000: after/);
+
+    // 行数那一路:体积只有几百 KB,拦住它的是另一道闸
+    const wide = await get('wide.txt');
+    assert.equal(wide.payload.kind, 'too-large');
+    assert.equal(wide.payload.reason, 'lines');
+    assert.ok(wide.bytes < 1024, `wide.txt 的响应有 ${wide.bytes} 字节`);
+
+    // 对照面:同一个仓库里正常的新增文件照常给补丁,否则上面几条可能只是「全都拦住了」
+    const added = await get('added-staged.txt');
+    assert.equal(added.payload.kind, 'text');
+    assert.match(added.payload.patch, /\+brand new line one/);
+  } finally {
+    await edges.stop();
   }
 });
 

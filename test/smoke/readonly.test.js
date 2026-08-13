@@ -29,8 +29,8 @@ import { cleanupOnExit, once, parseTrace, REPO_ROOT, runFullFlow } from './helpe
  */
 const READ_ONLY = new Set(['version', 'rev-parse', 'status', 'diff', 'ls-files']);
 
-/** 本文件用得到的 fixture。生成全部 8 个要 600ms 上下,其中一半这里根本不打开。 */
-const NEEDED = ['unicodePaths', 'renames', 'deletions', 'empty'];
+/** 本文件用得到的 fixture。生成全部 9 个要 600ms 上下,其中一半这里根本不打开。 */
+const NEEDED = ['unicodePaths', 'renames', 'deletions', 'empty', 'diffEdges'];
 
 let workdir;
 let tracePath;
@@ -47,9 +47,10 @@ const trace = once(async () => {
   const repos = makeFixtures(join(workdir, 'repos'), NEEDED);
   tracePath = join(workdir, 'git-trace.log');
 
-  // 四个仓库覆盖的是**四段不同的代码**,不是四份同样的流程:
-  // 已跟踪 / 未跟踪 diff、重命名的双路径调用、已暂存删除那条 `--name-only` 兜底、
-  // 以及空仓库的空树基准。少跑一个,白名单就有一段 git 调用没被看过。
+  // 五个仓库覆盖的是**五段不同的代码**,不是五份同样的流程:
+  // 已跟踪 / 未跟踪 diff、重命名的双路径调用、已暂存删除那条 `--numstat` 兜底、
+  // 空仓库的空树基准,以及二进制 / 超大那两条**不取补丁就返回**的路径。
+  // 少跑一个,白名单就有一段 git 调用没被看过。
   // 每个仓库单独起一次进程:仓库路径是启动参数,不能中途换
   for (const name of NEEDED) {
     // GIT_TRACE 只接受**绝对路径**;给相对路径 git 会警告并退回 stderr

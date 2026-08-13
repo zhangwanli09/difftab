@@ -31,17 +31,39 @@ const GLOBAL_CONFIG = ['-c', 'core.quotePath=false'];
  * 该变量在 git < 2.15 上不存在,设了也无害 —— 那个区间的 git 只是照旧写 index。
  *
  * `GIT_TERMINAL_PROMPT=0` 防止任何意外的凭据交互把无人值守的进程挂住。
+ *
+ * **`GIT_LITERAL_PATHSPECS=1` 是安全项而不是洁癖**:`--` 后面的路径默认是 **wildmatch
+ * 模式**,不是字面路径。我们的路径全部来自 URL query,于是 `path=*` 会让
+ * `git diff HEAD -- '*'` 回一份**整仓 diff**(已实测)——正是 §5.2 明令禁止、
+ * 会把浏览器主线程冻上数十秒的那件事;而一个真实存在、名字里带 `*` 的文件同样会
+ * 匹配到别人身上,页面在 A 的标题下显示 B 的补丁。设了它,`*` / `?` / `[…]` 一律
+ * 按字面比较。本项目的路径无一例外来自 git 自己的输出,不需要任何通配语义。
  */
-const GIT_ENV = { GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' } as const;
+const GIT_ENV = {
+  GIT_OPTIONAL_LOCKS: '0',
+  GIT_TERMINAL_PROMPT: '0',
+  GIT_LITERAL_PATHSPECS: '1',
+} as const;
 
 /**
- * 单次调用的 stdout 上限。
+ * stdout 的**兜底**上限。没有它,一个几百 MB 的文件的 diff 会被整个读进内存,
+ * 而这条路径上没有任何东西会先失败。
  *
- * 没有它,一个几百 MB 的文件的 diff 会被整个读进内存,而这条路径上没有任何东西
- * 会先失败。TODO(S4):真正的 5MB / 50,000 行门槛属于 §5.2 的边界情况处理,
- * 应当在**取 diff 之前**判定;本处只是最后一道防线,不承担产品语义。
+ * 产品语义那道 5MB 闸不在这里,而是由调用方按次传 `maxStdoutBytes`(§5.2 的
+ * 「卡补丁字节数」——见 git/diff.ts):**能不能渲染取决于补丁多大,而不是文件多大**,
+ * 一个 6MB 的数据文件改一行照样该看得见。本常量只管「别把进程撑爆」。
  */
 const MAX_STDOUT_BYTES = 64 * 1024 * 1024;
+
+export interface RunOptions {
+  /**
+   * 这一次调用的 stdout 上限,超过即以 `overflow` 失败(仍受上面的兜底约束)。
+   *
+   * **超限是调用方要的答案,不是意外**:取补丁那一路正是靠它把「补丁太大」与
+   * 「补丁正常」分开,而这件事在读完之前无从判断 —— numstat 给得出行数,给不出字节。
+   */
+  maxStdoutBytes?: number;
+}
 
 export interface GitResult {
   stdout: string;
@@ -73,7 +95,12 @@ export class GitError extends Error {
  * (空仓库下的 `rev-parse --verify HEAD`、下限之下的 `--show-object-format`)
  * 正是靠非零退出来给出答案的。
  */
-export function runGit(args: readonly string[], cwd: string): Promise<GitResult> {
+export function runGit(
+  args: readonly string[],
+  cwd: string,
+  options: RunOptions = {},
+): Promise<GitResult> {
+  const limit = Math.min(options.maxStdoutBytes ?? MAX_STDOUT_BYTES, MAX_STDOUT_BYTES);
   return new Promise((resolvePromise, rejectPromise) => {
     const argv = [...GLOBAL_CONFIG, ...args];
     const child = spawn('git', argv, {
@@ -90,7 +117,7 @@ export function runGit(args: readonly string[], cwd: string): Promise<GitResult>
 
     child.stdout.on('data', (chunk: Buffer) => {
       outBytes += chunk.length;
-      if (outBytes > MAX_STDOUT_BYTES) {
+      if (outBytes > limit) {
         overflowed = true;
         child.kill();
         return;

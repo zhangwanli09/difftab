@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 测试仓库生成脚本 —— **第一批(S1)**(spec §7 末段)。
+// 测试仓库生成脚本 —— **第一批(S1)+ 第二批的 diff 部分(S4a)**(spec §7 末段)。
 //
 // 零依赖纯 JS,可由 `node test/fixtures/make.mjs [目标目录]` 直接执行:它要在没有
 // pnpm、没有 node_modules 的 CI matrix 机器上跑,`pnpm fixtures` 只是别名(§5.11)。
@@ -12,7 +12,8 @@
 // `# branch.ab` 缺失的降级路径、以及 §5.3 的 diff 基准该做成怎样的接口形状。
 // 删除与未跟踪符号链接按同一判据从第二批上调进来 —— 它们决定的是「已跟踪走
 // git diff / 未跟踪读磁盘」那次分流本身(spec §7 末段有修订记录)。
-// 第二批(S4)是新增/二进制/超大文件/detached HEAD/rebase/worktree/bare。
+// 第二批分两次就位:**S4a 的 diff 边界(新增/二进制/超大,即下面的 diffEdges)已在**,
+// S4b 的异常状态(detached HEAD/rebase/worktree/bare/SHA-256)待建。
 
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
@@ -53,13 +54,19 @@ const WINDOWS = process.platform === 'win32';
  */
 export const OUTSIDE_SECRET = 'SHOULD-NEVER-APPEAR-IN-ANY-DIFF';
 
-/** 路径转义那条验收项的样本:非 ASCII、空格、引号各来一个(§6)。 */
+/**
+ * 路径转义那条验收项的样本:非 ASCII、空格、引号各来一个(§6)。
+ *
+ * 最后那个**通配符文件名**不是凑数:`git diff -- <路径>` 的路径默认按 wildmatch
+ * 解释,于是它会匹配到 `docs/starlight.md` 上 —— 页面在 A 的标题下显示 B 的补丁。
+ * 与双引号一样,`*` 在 Windows 上是非法文件名字符,只在 POSIX 上放。
+ */
 export const TRICKY_PATHS = [
   'docs/需求 文档.md',
   'docs/ドキュメント.md',
   'docs/🚀 rocket.md',
   "docs/it's fine.md",
-  ...(WINDOWS ? [] : ['docs/she "said".md']),
+  ...(WINDOWS ? [] : ['docs/she "said".md', 'docs/star*.md']),
 ];
 
 /**
@@ -74,7 +81,32 @@ export const ALL_REPOS = [
   'upstreamTracking',
   'empty',
   'manyFiles',
+  'diffEdges',
 ];
+
+/**
+ * 二进制内容。**判据是 NUL 字节**:已跟踪那一侧由 git 自己认(numstat 输出
+ * `-\t-\t<path>`),未跟踪那一侧由我们自己探(§5.2),两条路都靠它。
+ * 前面那八个字节是 PNG 的魔数,只为让 fixture 一眼看得出想扮演什么。
+ */
+function binaryBytes(seed) {
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    Buffer.from([0x00, 0x01, 0x02, 0x00]),
+    Buffer.from(seed, 'utf8'),
+    Buffer.from([0x00]),
+  ]);
+}
+
+/**
+ * 两个阈值各自的超标量。
+ *
+ * **唯一事实来源是 `src/server/git/diff.ts`(5MB / 50,000 行),这里只是「远超」**——
+ * 断言压在 `kind` / `reason` 上,不压在数字上。阈值将来调大到超过这两个值时,
+ * 集成用例会**变红**而不是静默变绿,那正是该有的反应。
+ */
+const OVER_SIZE_BYTES = 6 * 1024 * 1024;
+const OVER_LINE_COUNT = 60_000;
 
 /**
  * 生成测试仓库。`only` 给出需要哪几个(省略即全部)。
@@ -126,8 +158,14 @@ export function makeFixtures(destDir, only) {
   if (wanted('unicodePaths')) {
     const cwd = init('unicode-paths');
     for (const path of TRICKY_PATHS) write(cwd, path, 'one\ntwo\nthree\n');
+    // `docs/star*.md` 的**陪衬**:通配符要能匹配到别人身上,得先有个别人,而且它
+    // 必须**同样已跟踪且已改动** —— 未跟踪的文件压根不进 `git diff`,那样这条就
+    // 证伪不了任何东西。内容里那句话是判据:它出现在 `star*.md` 的补丁里,
+    // 就说明路径被当成了模式(§5.2 的 `GIT_LITERAL_PATHSPECS`)
+    if (!WINDOWS) write(cwd, 'docs/starlight.md', 'plain\n');
     commit(cwd, 'add files with tricky paths');
     for (const path of TRICKY_PATHS) write(cwd, path, 'one\ntwo modified\nthree\n');
+    if (!WINDOWS) write(cwd, 'docs/starlight.md', 'MATCHED-BY-WILDCARD-NOT-BY-NAME\n');
     write(cwd, 'docs/未跟踪 文件.md', 'brand new\n');
     // 整个目录都未跟踪 —— 这是 `-uall` 唯一能被证伪的形态:少了它,git 把它折叠成
     // 一行 `? 未跟踪目录/`,列表里只剩一个点不开的目录条目(§5.2 / §6)。
@@ -148,6 +186,11 @@ export function makeFixtures(destDir, only) {
       cwd,
       'src/rewritten.txt',
       Array.from({ length: 20 }, (_, i) => `old ${i}`).join('\n') + '\n',
+    );
+    write(
+      cwd,
+      'src/unpaired-a.txt',
+      Array.from({ length: 20 }, (_, i) => `keep ${i}`).join('\n') + '\n',
     );
     commit(cwd, 'add files to rename');
 
@@ -171,6 +214,19 @@ export function makeFixtures(destDir, only) {
       Array.from({ length: 20 }, (_, i) => `completely different content ${i}`).join('\n') + '\n',
     );
     git(cwd, 'add', '-A', 'src/rewritten-renamed.txt');
+
+    // **status 说是重命名、`git diff -M` 却配不上对**的那一档:`git mv` 之后把内容
+    // 全部重写、**留在工作区不 add**。index 里躺着的仍是一次纯改名,所以 status 照报
+    // `2 ... R100`(§10),条目因此带着 oldPath;而 `diff -M` 比的是 HEAD → 工作区,
+    // 相似度为零,于是它把这一条拆成「删旧」+「增新」**两条** numstat 记录。
+    // 行数刻意超过 50,000:按下标取记录的写法会拿到旧文件那条几十行的删除,
+    // 于是行数闸放行,一份 6 万行的补丁照旧发给浏览器(S4a 的代码评审抓到的第二条)
+    git(cwd, 'mv', 'src/unpaired-a.txt', 'src/unpaired-z.txt');
+    write(
+      cwd,
+      'src/unpaired-z.txt',
+      `${Array.from({ length: OVER_LINE_COUNT }, (_, i) => `nothing alike ${i}`).join('\n')}\n`,
+    );
     repos.renames = cwd;
   }
 
@@ -278,6 +334,58 @@ export function makeFixtures(destDir, only) {
       write(cwd, `pkg/mod${String(i).padStart(3, '0')}.ts`, `export const value${i} = ${i + 1};\n`);
     }
     repos.manyFiles = cwd;
+  }
+
+  // 7. diff 边界(**第二批的 diff 部分,S4a**):新增 / 二进制 / 超大 / 超多行。
+  //    第一批全是「决定解析器结构」的样本,这一批决定的是**取 diff 之前那道判定**:
+  //    哪些文件根本不该走到 `git diff` 的输出上(§5.2 的二进制与两个阈值)
+  if (wanted('diffEdges')) {
+    const cwd = init('diff-edges');
+    // 二进制、超大、超多行三者都要有「改前」的一面,否则它们只是新增文件,
+    // 已跟踪那条判定路径(numstat)一次都走不到
+    write(cwd, 'assets/icon.bin', binaryBytes('v1'));
+    write(cwd, 'huge.txt', 'small for now\n');
+    write(cwd, 'wide.txt', 'small for now\n');
+    // **大文件 + 小改动**:6MB 出头,但只改一行。按「文件多大」拒绝的写法会把它
+    // 一并挡掉(agent 改一行数据文件是常事),而它的补丁只有几 KB —— 这是
+    // 「卡补丁字节数而不是文件字节数」唯一能被证伪的形态(S4a 的代码评审提出)
+    const bulkyLine = 'x'.repeat(1023);
+    write(
+      cwd,
+      'bulky.txt',
+      `${Array.from({ length: 6 * 1024 }, (_, i) => (i === 3000 ? `${i}: before` : bulkyLine)).join('\n')}\n`,
+    );
+    commit(cwd, 'add a binary, two small files and one bulky file');
+
+    write(
+      cwd,
+      'bulky.txt',
+      `${Array.from({ length: 6 * 1024 }, (_, i) => (i === 3000 ? `${i}: after` : bulkyLine)).join('\n')}\n`,
+    );
+
+    // 已跟踪的二进制变更 —— git 自己(含 .gitattributes)的判定,numstat 输出 `-\t-`
+    write(cwd, 'assets/icon.bin', binaryBytes('v2 with different length'));
+
+    // **两个阈值刻意各自只被一个文件触发,互为对照**:
+    //   huge.txt 是「一行 6MB」—— 体积超标而行数只有 1,行数阈值挡不住它;
+    //   wide.txt 是「60,000 行短文本」约 700KB —— 行数超标而体积远不到 5MB,
+    //     体积阈值挡不住它,而前端只拿到体积时会显示「文件过大(0 MB)」(§5.12)
+    write(cwd, 'huge.txt', `${'x'.repeat(OVER_SIZE_BYTES)}\n`);
+    write(
+      cwd,
+      'wide.txt',
+      `${Array.from({ length: OVER_LINE_COUNT }, (_, i) => `line ${i}`).join('\n')}\n`,
+    );
+
+    // 未跟踪的对照面:同样两类,走的却是另一条判定路径(NUL 探测 + lstat 体积)
+    write(cwd, 'untracked.bin', binaryBytes('never committed'));
+    write(cwd, 'untracked-huge.txt', `${'y'.repeat(OVER_SIZE_BYTES)}\n`);
+
+    // 已暂存的新增文件(X=A):§6 的「新文件正确展示」要的是**已跟踪**那一侧的新增,
+    // 与未跟踪的新文件是两条不同的代码路径 —— 前者走 git diff,后者手工构造
+    write(cwd, 'added-staged.txt', 'brand new line one\nbrand new line two\n');
+    git(cwd, 'add', 'added-staged.txt');
+    repos.diffEdges = cwd;
   }
 
   // 没生成的仓库不能是 undefined:调用方会拿着它去 spawn,cwd 变成进程当前目录,
