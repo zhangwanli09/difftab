@@ -13,6 +13,7 @@ import type { ErrorPayload, RepoState, WatchState } from '../shared/protocol.ts'
 import { forcedTierWarning, initialMode, resolveTier } from '../watch/tier.ts';
 import { createWatcher, type WatchHandle } from '../watch/watcher.ts';
 import { ASSETS, readAsset } from './assets.ts';
+import { createIdleWatchdog, resolveIdleMs } from './idle.ts';
 import {
   BIND_HOST,
   composeToken,
@@ -21,6 +22,7 @@ import {
   isOriginAllowed,
   readCookieToken,
   SECURITY_HEADERS,
+  sessionUrl,
   tokenCookie,
   tokensMatch,
 } from './security.ts';
@@ -32,6 +34,31 @@ export interface GlanceServer {
   token: string;
   url: string;
   close(): Promise<void>;
+}
+
+export interface ServerOptions {
+  /**
+   * 宽限期走满且仍无客户端时调用一次(spec §5.8)。
+   *
+   * **进程怎么退是 cli 的事,不是 http 的事**:这里只知道「没人了」,而「退不退、
+   * 用什么码退、退之前打什么」归启动流程(server/cli),否则这一层就得 import
+   * process.exit 那套东西,单测里每跑一次空闲用例都要防着它把 runner 带走。
+   */
+  onIdle?: () => void;
+}
+
+/**
+ * `GET /api/instance` 的响应体(spec §5.12)。
+ *
+ * **不放 `shared/`**:那个目录是「前端唯一允许 import 的后端目录」(§5.0 不变式 4),
+ * 里面每一项都真的被 `src/web` 消费,而这一项的唯一消费者是**下一个 CLI 进程**。
+ * 放进去等于把 shared/ 从「前端的契约面」变成「任何线上类型」,而「前端到底依赖什么」
+ * 也就不再有一个按目录回答的办法。`cli → http` 是允许的依赖方向,probe 直接
+ * `import type` 即可,连运行时的边都不会多一条。
+ */
+export interface InstanceInfo {
+  repoRoot: string;
+  pid: number;
 }
 
 /**
@@ -61,7 +88,10 @@ function sendJson(res: ServerResponse, status: number, body: unknown) {
   send(res, status, JSON.stringify(body), 'application/json; charset=utf-8');
 }
 
-export async function startServer(repo: RepoInfo): Promise<GlanceServer> {
+export async function startServer(
+  repo: RepoInfo,
+  options: ServerOptions = {},
+): Promise<GlanceServer> {
   /**
    * 出站错误一律经此发出,**sanitize 就做在这里**。
    *
@@ -92,7 +122,26 @@ export async function startServer(repo: RepoInfo): Promise<GlanceServer> {
   const tierWarning = forcedTierWarning();
   if (tierWarning) process.stderr.write(`gitglance: ${tierWarning}\n`);
 
-  const events = createSseChannel();
+  /**
+   * 通道与空闲计时器互相接线:连接数一变(add / remove)就 `touch` 一次。
+   * 端点那侧因此**不必记得**在断连时重新武装 —— 见 sse.ts 的 `onChange`。
+   */
+  const events = createSseChannel({ onChange: () => idle.touch() });
+
+  /**
+   * 空闲退出的计时器(spec §5.8)。**判据是 SSE 连接数,但任何通过校验的请求都重置
+   * 计时** —— 连接数是正面判据,而它在两种情形下同样是 0:刚被探活复用、浏览器
+   * 还在启动的那几秒,以及页面活着但 SSE 被中间层悄悄回收了。两者取并集,退出条件
+   * 因此严格弱于「连接数为 0 持续 45s」,只会晚退不会早退。
+   *
+   * `resolveIdleMs()` 在这里(listen 之前)读环境变量:写错的取值要在启动那一刻
+   * 响亮地失败,而不是等到 45 秒后什么都没发生。
+   */
+  const idle = createIdleWatchdog({
+    idleMs: resolveIdleMs(),
+    hasClients: () => events.size > 0,
+    onIdle: () => options.onIdle?.(),
+  });
 
   /**
    * 监听**懒起**:第一个 SSE 订阅者到了才建,起了就一直留到关服务。
@@ -174,6 +223,7 @@ export async function startServer(repo: RepoInfo): Promise<GlanceServer> {
         sendError(res, 403, 'forbidden', 'forbidden');
         return;
       }
+      idle.touch();
       url.searchParams.delete('token');
       res.writeHead(302, {
         ...SECURITY_HEADERS,
@@ -189,6 +239,12 @@ export async function startServer(repo: RepoInfo): Promise<GlanceServer> {
       sendError(res, 403, 'forbidden', 'forbidden');
       return;
     }
+    /**
+     * 到这里才算「有人在」,**三道校验之前不算**(上面那个 302 分支同理:token 对了
+     * 才 touch)。放在函数开头看起来更省事,代价是本机任何一个端口扫描器都能无限期
+     * 续命一个该退的进程 —— 而 §5.8 的承诺是「不留后台常驻进程」。
+     */
+    idle.touch();
 
     const asset = ASSETS.get(url.pathname);
     if (asset) {
@@ -204,6 +260,21 @@ export async function startServer(repo: RepoInfo): Promise<GlanceServer> {
           files: status.files,
           watch: currentWatchState(),
         } satisfies RepoState);
+        return;
+      }
+
+      /**
+       * 探活复用的应答(spec §5.8 / §5.12)。**消费者是下一个 CLI 进程,不是前端。**
+       *
+       * 它答的是「这个端口现在还是**这个仓库**的实例吗」。光有三道校验答不了:
+       * token 不匹配只证明「不是我们这一份会话」,而端口被系统回收给另一个仓库的
+       * gitglance 时,那边同样有一份合法 token —— 只不过不是我们记在注册表里的那个,
+       * 于是它会 403、被判为陈旧,正确。真正需要这个正文的是相反的一侧:200 之后
+       * 还要确认路径确实是我们这个仓库,否则「复用」会把用户带到别人的页面(§5.8
+       * 排除 pid 判活也是同一条理由)。
+       */
+      case '/api/instance': {
+        sendJson(res, 200, { repoRoot: repo.root, pid: process.pid } satisfies InstanceInfo);
         return;
       }
 
@@ -250,6 +321,12 @@ export async function startServer(repo: RepoInfo): Promise<GlanceServer> {
          * 顺序则是因为 add 之后、挂上之前的那一小段里断开的话,就再没人把它摘出去:
          * 心跳会一直写向一条死响应,§5.8 的空闲退出也永远数不回 0。
          */
+        /**
+         * 断开之后**必须再 touch 一次**:计时只在 `touch()` 里起,而这是「最后一个
+         * 标签被关掉」在服务端的唯一形态。少了它,进程要等到下一个请求(而那正是
+         * 没有人再发的东西)才想起来自己已经空了 —— 症状是关完浏览器留一个永久
+         * 常驻进程,与 §6 那条验收项正相反。
+         */
         res.on('close', () => events.remove(res));
         res.on('error', () => events.remove(res));
 
@@ -288,7 +365,8 @@ export async function startServer(repo: RepoInfo): Promise<GlanceServer> {
   });
 
   // 空闲连接在关服务时不会自己走 —— 记下来,close() 时一并断掉。
-  // TODO(S3c):空闲 45 秒退出与多标签计数在这里长出来。
+  // 空闲退出**不看这个集合**:一条 keep-alive 的空闲 TCP 连接与「有人在看页面」
+  // 是两回事(浏览器关掉标签后连接可能还挂着),判据见上面 idle 那段
   const sockets = new Set<Socket>();
   server.on('connection', (socket) => {
     sockets.add(socket);
@@ -323,14 +401,25 @@ export async function startServer(repo: RepoInfo): Promise<GlanceServer> {
   port = address.port;
   token = composeToken(port, secret);
 
+  /**
+   * **宽限期从这一刻就开始计,不等第一个客户端**(spec §5.8)。
+   *
+   * 等第一个客户端才起计时看着更稳妥,实则把「浏览器压根没拉起来」整类情形
+   * (headless、无 `xdg-open`、`--no-open` 之后用户改了主意)变成永久常驻的后台进程。
+   * 45 秒足够覆盖冷启动一个浏览器进程的 2-5s(§6)。
+   */
+  idle.touch();
+
   return {
     port,
     token,
-    url: `http://${BIND_HOST}:${port}/?token=${encodeURIComponent(token)}`,
+    url: sessionUrl(port, token),
     close: () =>
       new Promise<void>((resolvePromise) => {
-        // 顺序有讲究:先停监听与心跳,再断连接。反过来的话,断连引发的
-        // `.git` 事件(没有)与正在发的心跳会写向已经 destroy 的 socket
+        // 顺序有讲究:先停监听、心跳与空闲计时,再断连接。反过来的话,断连引发的
+        // `.git` 事件(没有)与正在发的心跳会写向已经 destroy 的 socket;而空闲计时
+        // 不先停,断连接触发的那一串 'close' 会把它重新武装起来
+        idle.stop();
         watcher?.close();
         events.close();
         for (const socket of sockets) socket.destroy();

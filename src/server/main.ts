@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { CliUsageError, HELP_TEXT, parseCliArgs } from './cli/args.ts';
 import { start } from './cli/start.ts';
 import { PreflightError } from './git/repo.ts';
+import { IdleConfigError } from './http/idle.ts';
 import { WatchTierError } from './watch/tier.ts';
 
 /**
@@ -57,10 +58,16 @@ export async function main(argv: string[]): Promise<void> {
   try {
     await start({ cwd: process.cwd(), noOpen: options.noOpen });
   } catch (cause) {
-    // 两者都是「还没开始干活就发现参数不对」,收成同一句话友好报错。
-    // WatchTierError 只可能来自内部环境变量写错,但它同样不该甩一屏 Node 栈 ——
-    // 而且那种场合下栈顶是 resolveTier,读起来像产品坏了
-    if (cause instanceof PreflightError || cause instanceof WatchTierError) fail(cause.message);
+    // 三者都是「还没开始干活就发现参数不对」,收成同一句话友好报错。
+    // 后两个只可能来自内部环境变量写错,但它们同样不该甩一屏 Node 栈 —— 而且那种
+    // 场合下栈顶是 resolveTier / resolveIdleMs,读起来像产品坏了
+    if (
+      cause instanceof PreflightError ||
+      cause instanceof WatchTierError ||
+      cause instanceof IdleConfigError
+    ) {
+      fail(cause.message);
+    }
     throw cause;
   }
 }

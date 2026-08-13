@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { makeFixtures } from '../fixtures/make.mjs';
-import { authedGet, cleanupOnExit, once, startGitglance } from './helpers.js';
+import { authedGet, cleanupOnExit, cookieHeader, once, startGitglance } from './helpers.js';
 
 /** 档位强制指定用的内部环境变量(spec §5.7)。 */
 const TIER_ENV = 'GITGLANCE_WATCH_TIER';
@@ -41,7 +41,7 @@ function openEvents(port, token, { onChunk, timeoutMs = 15_000 }) {
         host: '127.0.0.1',
         port,
         path: '/api/events',
-        headers: { Host: `127.0.0.1:${port}`, Cookie: `gitglance_token_${port}=${token}` },
+        headers: { Host: `127.0.0.1:${port}`, Cookie: cookieHeader(port, token) },
       },
       (res) => {
         let body = '';

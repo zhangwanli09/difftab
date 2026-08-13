@@ -1,9 +1,8 @@
 // 同仓库单实例的注册表文件(spec §5.8)。
 //
-// 本阶段只做**写入**。「启动时探活复用已有实例」与「空闲 45 秒退出」属 S3c ——
-// 但写入不能一起推到 S3c:S1–S3b 期间 dev proxy 没有 token 来源,而那段时间里
-// 「临时给后端加个放宽校验的环境变量」恰好是最短路径,正是 §10 明令禁止的做法
-// (spec §5.11 的「因此注册表文件的写入必须与 server 同期落地」)。
+// 写入在 S1 就落地(dev proxy 要从这里拿 token,否则那段时间里「临时给后端加个
+// 放宽校验的环境变量」就成了最短路径,而那是 §10 明令禁止的做法);**消费**它的
+// 那一半 —— 探活复用 —— 在 S3c,落在同目录的 probe.ts。
 
 import { createHash } from 'node:crypto';
 import {
@@ -46,8 +45,13 @@ function registryDir(): string {
  *   - Windows:git 给 `C:/Users/x/repo`,cwd 给 `C:\Users\x\repo`;
  *   - macOS:cwd 经符号链接进来时是 `/var/...`,git 给的是 `/private/var/...`。
  * 不归一的话 dev proxy 永远找不到正在运行的后端,症状是「后端明明起着却说没找到」。
+ *
+ * **探活比对仓库身份时用的也是这一份**(probe.ts):一侧是 `/api/instance` 返回的
+ * `git rev-parse --show-toplevel`、另一侧是本进程的同一条命令,看着不可能不等 ——
+ * 但 macOS 上 `/tmp` 与 `/private/tmp` 这类差异照样能让两个活着的实例互不相认,
+ * 于是同一个仓库开出第二个进程。两处各写一份归一化,漂移是静默的。
  */
-function registryKey(repoRoot: string): string {
+export function normalizeRepoKey(repoRoot: string): string {
   const abs = resolve(repoRoot);
   try {
     // native 版在 Windows 上还会一并归一化大小写与 8.3 短名
@@ -60,7 +64,7 @@ function registryKey(repoRoot: string): string {
 
 /** 文件名用仓库绝对路径的 hash,避免把路径本身暴露在一个全局可读的目录名里。 */
 export function registryPath(repoRoot: string): string {
-  const hash = createHash('sha256').update(registryKey(repoRoot)).digest('hex').slice(0, 32);
+  const hash = createHash('sha256').update(normalizeRepoKey(repoRoot)).digest('hex').slice(0, 32);
   return join(registryDir(), `${hash}.json`);
 }
 
@@ -88,22 +92,37 @@ export function writeRegistry(entry: RegistryEntry): string {
     writeExclusive(path, payload);
   } catch (cause) {
     if ((cause as NodeJS.ErrnoException).code !== 'EEXIST') throw cause;
-    // TODO(S3c):这里正是「探活复用」的落点 —— 对已记录的端口做 HTTP 探活并校验
-    // 返回的 repo 路径,命中则复用已有实例而不是起第二个进程。**不得改用 pid 存活
-    // 判断**:pid 会被系统复用,误判会把用户带到一个指向别人进程的页面(§5.8)。
-    // 在那之前一律按陈旧条目覆盖 —— 否则同一个仓库第二次启动直接失败。
+    /**
+     * 走到这里说明**探活已经判过它是陈旧的**(start.ts 命中就不会再启动,更不会
+     * 写注册表),所以覆盖是对的。
+     *
+     * 保留 `O_EXCL` + 显式 unlink 而不是改成 `'w'`:两者的区别只在这个分支要不要
+     * 显式承认「我在覆盖别人的条目」。而 §5.8 那条 `0o600` 必须在创建时给出的要求
+     * 也只有 `'wx'` 满足 —— `'w'` 对已存在的文件根本不套用 mode,一次遗留的
+     * 0644 条目会被原样沿用,里面躺着本次会话的 token。
+     */
     unlinkSync(path);
     writeExclusive(path, payload);
   }
   return path;
 }
 
-/** 读取注册表。给 dev proxy 用(见 vite.config.ts);读不到一律返回 null。 */
+/**
+ * 读取注册表。dev proxy(见 vite.config.ts)与探活(probe.ts)共用;读不到、或者
+ * 读到一条用不了的条目,一律返回 null。
+ *
+ * **「这条目还能用吗」只在这里判一次**:端口得是一个真能连的端口号、token 不能是
+ * 空串。放在消费侧各判各的话,两个消费者迟早对「可用」有两套定义,而分歧的表现是
+ * dev proxy 与探活对同一条陈旧条目给出不同结论。
+ */
 export function readRegistry(repoRoot: string): RegistryEntry | null {
   try {
     const raw = readFileSync(registryPath(repoRoot), 'utf8');
     const parsed = JSON.parse(raw) as Partial<RegistryEntry>;
-    if (typeof parsed.port !== 'number' || typeof parsed.token !== 'string') return null;
+    if (typeof parsed.token !== 'string' || parsed.token === '') return null;
+    if (!Number.isInteger(parsed.port) || (parsed.port ?? 0) <= 0 || (parsed.port ?? 0) > 65_535) {
+      return null;
+    }
     return parsed as RegistryEntry;
   } catch {
     return null;

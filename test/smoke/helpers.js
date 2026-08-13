@@ -229,13 +229,44 @@ export async function runFullFlow(cwd, { env } = {}) {
   }
 }
 
-/**
- * 带上会话 cookie 的请求。
- *
- * cookie 名的字面量只在这里出现一次。冒烟测试跑的是 `dist/` 产物、不能 import TS
- * 源码,所以这份重复是无法避免的边界;但它在整个 `test/smoke/` 里只该有一处 ——
- * 各用例自己拼 cookie 头的话,格式一改就要满文件找。
- */
+/** 带上会话 cookie 的请求。cookie 头的构造见 `cookieHeader`。 */
 export function authedGet(port, token, path, headers = {}, method = 'GET') {
-  return httpGet(port, path, { Cookie: `gitglance_token_${port}=${token}`, ...headers }, method);
+  return httpGet(port, path, { Cookie: cookieHeader(port, token), ...headers }, method);
+}
+
+/**
+ * 会话 cookie 的头部值。**cookie 名的字面量在整个 test/smoke/ 里只此一处**。
+ *
+ * 冒烟跑的是 `dist/` 产物、不能 import `src/server/http/security.ts` 的 `cookieName`,
+ * 所以这份重复是无法避免的边界;但边界应当只有一道 —— 各用例自己拼(SSE 那两处
+ * 尤其容易顺手拼一份),格式一改就要满文件找,而漏掉的那处只会以 403 出现。
+ */
+export function cookieHeader(port, token) {
+  return `gitglance_token_${port}=${token}`;
+}
+
+/**
+ * 等被测进程自己退出,返回退出码。
+ *
+ * **`ref()` 是必需的,而这件事只有本文件知道**:上面 ready 之后把子进程与它的 stdio
+ * 都 unref 掉了(否则 `node --test` 跑完全部用例也不返回)。不 ref 回来的话,事件
+ * 循环会先空掉、runner 直接结束,而这条 await 永远没有结果 —— 一个没有错误消息的
+ * 失败。所以它跟 `stop()` 一样住在 unref 的旁边,而不是在用例文件里各写一份。
+ */
+export function waitForExit(server, timeoutMs = 30_000) {
+  return new Promise((resolvePromise, rejectPromise) => {
+    const { child } = server;
+    child.ref();
+    if (child.exitCode !== null || child.signalCode !== null) {
+      resolvePromise(child.exitCode);
+      return;
+    }
+    const timer = setTimeout(() => {
+      rejectPromise(new Error(`等自动退出超时(${timeoutMs}ms)。stdout: ${server.stdout}`));
+    }, timeoutMs);
+    child.once('close', (code) => {
+      clearTimeout(timer);
+      resolvePromise(code);
+    });
+  });
 }

@@ -265,20 +265,24 @@ test('未知参数给用法提示,而不是抛 parseArgs 的异常', () => {
   assert.ok(!r.stderr.includes('    at '));
 });
 
-test('后端零 dev 分支:产物里的自有环境变量只有这两个', () => {
+test('后端零 dev 分支:产物里的自有环境变量只有这三个', () => {
   // §5.9 / §10:dev server 的跨源问题一律在代理层解决(见 vite.config.ts),
   // **后端不得为此新增任何环境变量或分支** —— 那等于把正面防御做成一个可被误开的
   // 开关。这条把「不得」变成一个会红的断言:加一个 GITGLANCE_DEV_SKIP_AUTH 就炸。
   //
-  // 名单是**逐个具名**的,不是「以 GITGLANCE_ 开头就放行」:两个都由 spec 点名要求
-  // (拉起浏览器的开关见 §5.10,档位强制指定见 §7 的 S3b1 行),且两个都不碰三道校验。
-  // 想加第三个的人得先来改这一行,顺带读到上面这段话。
+  // 名单是**逐个具名**的,不是「以 GITGLANCE_ 开头就放行」:三个都由 spec 点名要求
+  // (拉起浏览器的开关见 §5.10,档位强制指定见 §5.7,空闲宽限期见 §5.8),
+  // 且三个都不碰三道校验。想加第四个的人得先来改这一行,顺带读到上面这段话。
   const bundle = readFileSync(
     join(import.meta.dirname, '..', '..', 'dist', 'server', 'main.js'),
     'utf8',
   );
   const names = [...new Set([...bundle.matchAll(/\bGITGLANCE_[A-Z0-9_]+/g)].map((m) => m[0]))];
-  assert.deepEqual(names.sort(), ['GITGLANCE_NO_OPEN', 'GITGLANCE_WATCH_TIER']);
+  assert.deepEqual(names.sort(), [
+    'GITGLANCE_IDLE_MS',
+    'GITGLANCE_NO_OPEN',
+    'GITGLANCE_WATCH_TIER',
+  ]);
 });
 
 test('dist/ 产物齐备 —— 静态托管的白名单指向的三个文件都在', () => {

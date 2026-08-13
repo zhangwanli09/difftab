@@ -41,6 +41,18 @@ export function composeToken(port: number, secret: string): string {
 }
 
 /**
+ * 打印给用户、也拿去拉起浏览器的那个 URL。
+ *
+ * **只此一处**:探活复用命中时,是**另一个进程**按注册表里的 port + token 重新拼出
+ * 同一个 URL 交给浏览器(§5.8)。两处各拼一遍的话,哪天 token 的落地方式变了
+ * (换 query 名、换编码),复用那条路会拼出一个 403 的链接 —— 而它平时不走,
+ * 谁也不会先注意到。
+ */
+export function sessionUrl(port: number, token: string): string {
+  return `http://${BIND_HOST}:${port}/?token=${encodeURIComponent(token)}`;
+}
+
+/**
  * 第 1 道:**校验 `Host` 头**。这才是 DNS rebinding 的正面防御 —— token 挡不住
  * 同源判定本身,rebinding 的攻击页面把自己的域名重绑到 127.0.0.1 后,浏览器
  * 认为它与本服务同源,而它发出的请求 `Host` 是攻击者的域名。

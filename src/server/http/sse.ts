@@ -35,13 +35,29 @@ export function formatEvent(name: string, data: unknown): string {
 export interface SseChannel {
   add(client: SseClient): void;
   remove(client: SseClient): void;
-  /** 当前连接数。§5.8 的空闲退出以它为判据(TODO(S3c))。 */
+  /** 当前连接数。§5.8 的空闲退出以它为判据。 */
   readonly size: number;
   send(name: string, data: unknown): void;
   close(): void;
 }
 
-export function createSseChannel({ heartbeatMs = HEARTBEAT_MS } = {}): SseChannel {
+export interface SseChannelOptions {
+  heartbeatMs?: number;
+  /**
+   * 连接数可能变了就叫一声(`add` / `remove` 之后各一次)。
+   *
+   * **§5.8 的空闲计时挂在这里,而不是挂在端点上**:`size` 是空闲退出唯一的正面判据,
+   * 而能改变它的只有这两个方法。让端点自己记得在断连那一侧重新武装计时器,等于把
+   * 「关掉最后一个标签之后进程要退」寄存在人的记忆里——漏掉不报错,只是进程从此不退。
+   * 挂在这里,将来任何一处 add / remove 都自动被覆盖。
+   */
+  onChange?: () => void;
+}
+
+export function createSseChannel({
+  heartbeatMs = HEARTBEAT_MS,
+  onChange,
+}: SseChannelOptions = {}): SseChannel {
   const clients = new Set<SseClient>();
 
   const send = (name: string, data: unknown) => {
@@ -69,9 +85,11 @@ export function createSseChannel({ heartbeatMs = HEARTBEAT_MS } = {}): SseChanne
   return {
     add(client) {
       clients.add(client);
+      onChange?.();
     },
     remove(client) {
       clients.delete(client);
+      onChange?.();
     },
     get size() {
       return clients.size;
