@@ -36,7 +36,7 @@
 | 格式化 + lint | `pnpm lint`(`biome check`)/ CI 用 `biome ci` |
 | 单元/集成测试(Vitest,直接跑 TS 源码) | `pnpm test`。用例按被测代码分 `test/unit/server/`(node 环境)与 `test/unit/web/`(happy-dom),分别归两份 tsconfig,靠 `vitest.config.ts` 的 `projects` 分环境——**放错目录会静默不跑,判据见第 5 节** |
 | 冒烟测试(纯 JS,跑构建产物,含只读性两层验证) | `pnpm test:smoke`(CI matrix 档不经 script,直接 `node --test "test/smoke/*.test.js"`) |
-| 测试仓库 fixture 生成 | `pnpm fixtures`(默认写 `test/fixtures/repos/`;测试自己调 `makeFixtures()` 写临时目录)。第一批已就位,第二批归 S4a / S4b |
+| 测试仓库 fixture 生成 | `pnpm fixtures`(默认写 `test/fixtures/repos/`;测试自己调 `makeFixtures()` 写临时目录)。第一批与第二批的 diff 部分已就位,异常状态那半归 S4b |
 | 冷启动耗时测量(对构建产物,≤300ms 门禁) | `pnpm bench:startup` |
 | 产物体积门禁 | `pnpm size` |
 | 样式层叠门禁(unlayered + hljs 在前 + 深色带媒体条件 + 四条 `--d2h-*` 覆写判据) | `pnpm check:css` |
@@ -71,7 +71,6 @@
 
 | 做这个阶段 | 本会话必读 | 明确不必读 |
 |---|---|---|
-| **S4a** diff 边界情况 | §5.2、§5.12 的 `DiffPayload`、§10「git 行为」、§7 的 fixture 第二批清单 | §5.6、§5.7、§5.11 |
 | **S4b** git 异常状态 | §5.3、§5.2 的仓库定位段、§5.12 的 `BranchState`、§10「git 行为」 | §5.5、§5.6、§5.7 |
 | **S5** 三端真机 + 安全自查 | §5.9、§5.1 的拉起浏览器段、§6 全表复核 | — |
 | **S6** 开源准备 | §8 | — |
@@ -172,11 +171,11 @@
 
 S0 工具链脚手架 → S1 CLI + HTTP server(**含 §5.9 三道校验的最终形态**)+ **注册表文件写入(port + token)** + git 封装 + 只读主门禁 + fixture 第一批 → **S2a** 变更列表 + 只读 `.git` 第二层 → **S2b** diff2html 渲染 + 懒加载 → **S2c** 主题样式 + 体积收口 → **S3a** 分支状态 → **S3b1** SSE 通道 + 档位骨架 → **S3b2** 三档监听 + 轮询兜底 → **S3c** 进程生命周期(注册表**探活复用** + 空闲退出)→ **S4a** diff 边界情况 → **S4b** git 异常状态(两者各配一半 fixture 第二批)→ **S5** Windows/Linux 真机验证 + 安全加固自查(**CI 跑通不等于可用**)→ **S6** 开源准备。各阶段展开见 spec §7,**已收口阶段的实测数字与踩坑记录见 `docs/journal.md`**(本节不留副本)。
 
-**当前:S3c 已收口(CI 全绿),下一步 S4a。** 实测数字与勾选明细见 `docs/journal.md`。
+**当前:S4a 已收口(CI 全绿),下一步 S4b。** 实测数字与勾选明细见 `docs/journal.md`。
 
 **未消费的跨阶段交接**——消费掉即从本节删除,连同该阶段的收口记录一起落到 `docs/journal.md`。
 
-- **→ S4b(一条)**:header 现在是**一个 guard 包住两项**(`BranchStatus` + `WatchBadge`),S4b 的 `operation` 标注直接加在同一个 guard 里,别再回到每项各写一次 `state !== null`
+- **→ S4b(两条)**:① header 现在是**一个 guard 包住两项**(`BranchStatus` + `WatchBadge`),`operation` 标注直接加在同一个 guard 里,别再回到每项各写一次 `state !== null`;② 合并冲突(XY 双 `U`)目前**同时进「已暂存」与「未暂存」两组**,判据只有一处,在 `shared/protocol.ts` 的 `hasStagedChange`,S4b 要给它单开一组时改那一处即可
 - **→ S5(两条,均待真机定夺)**:① Linux 上「启动时 inotify 配额已耗尽」这种 ENOSPC 检测不到,**两条候选补法择一的判据留给真机压低 `max_user_watches` 实测**,现在不猜(机理见 spec §5.7,验收项 §6 `[S3b2/S5]`);② **系统休眠唤醒**的半开 TCP 只有真机验得了,前端 `STALE_MS` 判定目前只有单测覆盖(验收项 §6 `[S3c/S5]`)
 
 **流程规则**
