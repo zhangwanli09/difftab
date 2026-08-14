@@ -104,6 +104,9 @@
 - **「已跟踪」的判据是 HEAD ∪ index,不是 index**——只查 `git ls-files` 会把已暂存的删除误判成未跟踪,进而去读一个不存在的文件
 - **未跟踪那条路读磁盘必须 `lstat` 不得 `stat`**——未跟踪符号链接会进列表、点得到,而 `stat` 跟随链接会让仓库边界校验形同虚设,一个指向仓库外的链接就能把外部文件内容当作新增文件返回
 - 降级轮询必须复用与主查询**逐字相同**的 `git status --porcelain=v2 --branch -uall -z`,禁裁剪参数——漏 `-uall` 会让已存在目录里的新增文件静默不刷新
+- **进行中的操作(rebase/merge/…)在 porcelain 里一行都没有**,判据是 git 目录下的状态文件、按序取第一个命中:rebase 停下时 `rebase-merge/` 与 merge 的痕迹**同时在**,先判 merge 会把用户在干什么说错;`rebase-apply/` 里有没有 `rebasing` 是 rebase 与 `git am` 唯一的区分
+- **状态文件一律按 `rev-parse --git-dir` 找,禁拼 `<root>/.git`**——linked worktree(`.git` 是文件)与 submodule 下那里什么都没有,于是操作标注永远不出现,而它不报错
+- **冲突的判据是「这条来自 `u` 记录」而不是状态位**——`DD`/`AA` 两位里一个 `U` 都没有,靠状态位认会让它们漏回「已暂存」+「未暂存」两组
 
 ### 文件监听
 
@@ -175,8 +178,7 @@ S0 工具链脚手架 → S1 CLI + HTTP server(**含 §5.9 三道校验的最终
 
 **未消费的跨阶段交接**——消费掉即从本节删除,连同该阶段的收口记录一起落到 `docs/journal.md`。
 
-- **→ S4b(两条)**:① header 现在是**一个 guard 包住两项**(`BranchStatus` + `WatchBadge`),`operation` 标注直接加在同一个 guard 里,别再回到每项各写一次 `state !== null`;② 合并冲突(XY 双 `U`)目前**同时进「已暂存」与「未暂存」两组**,判据只有一处,在 `shared/protocol.ts` 的 `hasStagedChange`,S4b 要给它单开一组时改那一处即可
-- **→ S5(两条,均待真机定夺)**:① Linux 上「启动时 inotify 配额已耗尽」这种 ENOSPC 检测不到,**两条候选补法择一的判据留给真机压低 `max_user_watches` 实测**,现在不猜(机理见 spec §5.7,验收项 §6 `[S3b2/S5]`);② **系统休眠唤醒**的半开 TCP 只有真机验得了,前端 `STALE_MS` 判定目前只有单测覆盖(验收项 §6 `[S3c/S5]`)
+- **→ S5(三条,均待真机定夺)**:⓪ linked worktree / submodule 只在 CI 的 **ubuntu 单测档**跑过(matrix 的冒烟不建这两个 fixture),而它们的判据是「`--git-dir` 回来的路径能拼出 `MERGE_HEAD` 等状态文件」——**Windows 上那个路径的分隔符形态没人验过**,漏了不报错、只是操作标注永远不出现;① Linux 上「启动时 inotify 配额已耗尽」这种 ENOSPC 检测不到,**两条候选补法择一的判据留给真机压低 `max_user_watches` 实测**,现在不猜(机理见 spec §5.7,验收项 §6 `[S3b2/S5]`);② **系统休眠唤醒**的半开 TCP 只有真机验得了,前端 `STALE_MS` 判定目前只有单测覆盖(验收项 §6 `[S3c/S5]`)
 
 **流程规则**
 

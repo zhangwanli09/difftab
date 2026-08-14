@@ -131,8 +131,15 @@ scripts/               bench:startup、size 门禁
 
 - **空仓库**(尚无任何提交)下 HEAD 不存在,`git diff HEAD` 会直接 fatal(已实测确认)。降级方式:改用**空树对象哈希**作为 diff 基准,`git diff <empty-tree>` 在空仓库下正常返回,无需为此写特殊分支逻辑。空树哈希按 `git rev-parse --show-object-format` 区分 SHA-1 / SHA-256 两个常量硬编码;**不要**用 `git hash-object -t tree /dev/null`(`/dev/null` 在 Windows 不可移植),也**不要**用 `git mktree`(会写对象库,违反只读承诺)
   - **`--show-object-format` 本身高于 5.2 的 git 下限**:该选项随 SHA-256 支持一同引入(git 2.29 前后),而启动前置检查只要求 ≥ 2.11,中间区间会直接报错。因此**非零退出即按 SHA-1 处理**——那个区间的 git 根本造不出 SHA-256 仓库,降级无歧义,不得让它成为空仓库路径上的崩溃点
-  - 常量取值:SHA-1 为 `4b825dc642cb6eb9a060e54bf8d69288fbee4904`(已实测)。**SHA-256 常量留待 S4b 用 `git init --object-format=sha256` 的测试仓库实测取值后回填本行,不得凭记忆写死**——写错的后果是空仓库下 diff 基准无效,且症状与"空仓库不支持"难以区分
-- detached HEAD、rebase/merge 进行中等状态需保证不崩溃,分支状态展示做相应降级并明确标注当前处于何种状态
+  - 常量取值:SHA-1 为 `4b825dc642cb6eb9a060e54bf8d69288fbee4904`、SHA-256 为 `6ef19b41225c5369f1c104d45d8d85efa9b057b53b14b4b9b939dd74decc5321`(**两者均已实测**,后者 2026-08-14 于 S4b 在 `git init --object-format=sha256` 的测试仓库上取值并验过它当 diff 基准确实出补丁,见第 10 节)。凭记忆写死的后果是空仓库下 diff 基准无效,且症状与"空仓库不支持"难以区分
+- **detached HEAD**:`# branch.head` 的值是字面量 `(detached)`(已实测),解析器据此给出 `detached: true`。**前端不得把这个字面量当分支名画出去**——那是 git 的内部表述,不是分支
+- **进行中的多步操作(rebase / merge / cherry-pick / revert / am / bisect)在 `--porcelain=v2` 的任何一行里都没有**,唯一判据是 git 目录下的状态文件(git 自身的 `wt-status.c` 也正是这么判的),这也是 `BranchState.operation` 的唯一来源。**用 `fs` 读、不新起 git**:多一次子进程既落在每次 `/api/state` 上,又要往 5.10 的只读白名单里添条目,而读文件存在性一个字节都不写
+  - 判据与优先级(**按序取第一个命中**):`rebase-merge/` 或 `rebase-apply/rebasing` → `rebase`;`rebase-apply/` 而无 `rebasing` → `am`(`git am` 与 rebase 共用这个目录,合并成一个标注等于对用户说假话);`MERGE_HEAD` → `merge`;`CHERRY_PICK_HEAD` → `cherry-pick`;`REVERT_HEAD` → `revert`;`BISECT_LOG` → `bisect`
+  - **顺序不是随手排的**:rebase 冲突停下时 git 目录里同时躺着 `rebase-merge/` 与 `MERGE_MSG` / `AUTO_MERGE`(已实测),而用户处在的是 rebase 不是 merge;先判 rebase 才不会把它标错
+  - **路径基准是 `rev-parse --git-dir` 的返回值,不是 `<root>/.git`**——linked worktree 与 submodule 下这些文件躺在各自的 git 目录里(`…/.git/worktrees/<名>` 与 `…/.git/modules/<路径>`,均已实测),按 `<root>/.git` 拼的写法在那两种仓库里**永远读不到**、于是永远标不出操作,而它不报错
+- **合并冲突自成一组**:porcelain 的 `u` 记录里 XY 两位可以是 `UU` / `AA` / `DD` / `AU` / `UD` 等组合,按 5.12 那两个谓词的字面判据(`!== '.'`)读会让同一个文件同时落进"已暂存"与"未暂存"两组,而两组都不是它的真实处境。**判据是"这条记录来自 `u` 段",不是状态位**——`DD` 两位都不是 `U`,靠状态位认会漏掉一半形态。编码为 `FileEntry.conflicted`(5.12)
+  - 冲突文件**自身的 diff 照常走 `git diff HEAD`**,不需要任何特殊分支:实测补丁正文就是带 `<<<<<<<` / `=======` / `>>>>>>>` 标记的工作区内容,而那正是用户此刻要看的东西
+- **bare 仓库**:`rev-parse --show-toplevel` 直接以 128 退出(已实测),5.2 的前置检查据此给一句话拒绝而不是崩溃。linked worktree 与 submodule 则照常启动——它们都有工作区,唯一的特殊之处是上面那条 git 目录不在 `<root>/.git`
 
 ### 5.4 前端
 
@@ -410,8 +417,9 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 
 **协议类型**:
 
-- `FileEntry { path; oldPath?; kind: 'tracked' | 'untracked'; staged; unstaged; renameScore? }`——`staged` / `unstaged` 承载 `porcelain=v2` 的双状态位,`oldPath` + `renameScore` 来自 5.2 的 `2 ` 记录
-- `BranchState { head; detached: boolean; upstream: null | { ahead; behind }; operation?: 'rebase' | 'merge' | … }`——**`upstream: null` 即"无上游"**。第 6 节要求无 `# branch.ab` 行时展示"无上游"而非 0/0,把它编码进类型而非留作约定,前端就不可能漏掉这条分支
+- `FileEntry { path; oldPath?; kind: 'tracked' | 'untracked'; staged; unstaged; renameScore?; conflicted? }`——`staged` / `unstaged` 承载 `porcelain=v2` 的双状态位,`oldPath` + `renameScore` 来自 5.2 的 `2 ` 记录
+  - **`conflicted` 是"这条来自 `u` 记录"这一事实本身**(2026-08-14 于 S4b 补),不是从状态位推出来的:`DD` / `AA` 两位都不是 `U`(5.3),而"未合并"恰恰是那三个分组谓词唯一无法从 XY 读出来的东西。归属留给前端等于让它自己重写一遍 porcelain 的记录类型,正是 5.0 不变式 4 禁止的
+- `BranchState { head; detached: boolean; upstream: null | { ahead; behind }; operation?: 'rebase' | 'am' | 'merge' | 'cherry-pick' | 'revert' | 'bisect' }`——**`upstream: null` 即"无上游"**。第 6 节要求无 `# branch.ab` 行时展示"无上游"而非 0/0,把它编码进类型而非留作约定,前端就不可能漏掉这条分支。`operation` 缺省即"没有进行中的多步操作",取值与判据见 5.3
 - `DiffPayload` 为判别联合:`{ kind: 'text', patch }` / `{ kind: 'binary' }` / `{ kind: 'too-large', size, reason: 'size' | 'lines' }` / `{ kind: 'untracked-text', patch }`
   - **`too-large` 必须带 `reason`**(2026-08-09 于 S2c 补,原因见本节末「字段定型时机」)。它有**两个**触发口:体积超 5MB 与行数超 50,000(5.2)。只带 `size` 时,行数那一路的文件可能只有几百 KB,前端手里唯一的数字既解释不了为什么不预览、按 MB 取整还会显示「文件过大(0 MB)」这种自相矛盾的话。判别原因属后端知识,前端不该也无法从 `size` 反推
   - **`size` 只用于展示,不是判定依据**(5.2:判定在补丁字节与行数上)。它**可以是 0**——已被删除的文件在工作区没有体积可取,两个 `reason` 都会遇上;前端据此不显示体积,而不是把 0 四舍五入成「1 KB」,编一个数出来比不说更糟
@@ -594,6 +602,11 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 
 - **空仓库下的 git 行为**:`git diff HEAD` → `fatal: ambiguous argument 'HEAD'`;`git rev-parse --verify HEAD` → exit 128;而 `git status --porcelain=v2 --branch` 正常返回(`# branch.oid (initial)`),`git diff <empty-tree>` 正常返回。这是 5.3 用空树哈希替代 HEAD 的直接依据
 - **空树 SHA-1 常量**:`git hash-object -t tree --stdin < /dev/null` → `4b825dc642cb6eb9a060e54bf8d69288fbee4904`。另注意 `git rev-parse --show-object-format` 随 SHA-256 支持(2.29 前后)才引入,高于 5.2 声明的 git 下限 2.11,这是 5.3 要求"非零退出即按 SHA-1 处理"的依据
+- **空树 SHA-256 常量**(2026-08-14 实测,git 2.50.1):`git init --object-format=sha256` 的仓库里 `git hash-object -t tree --stdin < /dev/null` → `6ef19b41225c5369f1c104d45d8d85efa9b057b53b14b4b9b939dd74decc5321`,`git rev-parse --show-object-format` → `sha256`;拿该常量作基准,`git diff <常量> --numstat -z` 与 `git diff <常量> -- a.txt` 在尚无提交的仓库里都正常出结果(后者给 `new file mode` 的完整新增补丁)。这是 5.3 那两个常量都标"已实测"的依据 —— 取值这一步本身用的是 `hash-object` 的**读**形态(不带 `-w`,不写对象库),且发生在 fixture 生成期而非产品代码里
+- **进行中的多步操作在 git 目录里留下的痕迹**(2026-08-14 实测,git 2.50.1):`git merge` 冲突 → `MERGE_HEAD` / `MERGE_MODE` / `MERGE_MSG` / `AUTO_MERGE`;`git rebase` 冲突 → `rebase-merge/`(内含 `git-rebase-todo` / `head-name` 等)**外加** `MERGE_MSG` 与 `AUTO_MERGE`;`git rebase --apply` 冲突 → `rebase-apply/`(内含 `rebasing`);`git cherry-pick` 冲突 → `CHERRY_PICK_HEAD`;`git revert` 冲突 → `REVERT_HEAD`;`git bisect start` + 一次 good/bad → `BISECT_LOG` / `BISECT_NAMES` / `BISECT_START` / `BISECT_TERMS`。这是 5.3 那张判据表的依据,rebase 与 merge 的痕迹**同时存在**则是"按序取第一个命中、rebase 先判"那条的依据
+- **rebase 进行中时 status 报的是 detached**(同日实测):`# branch.head (detached)`,而冲突文件是一条 `u UU N... … f.txt`(10 个前导字段 + 路径,占一个 NUL 段)。也就是说 rebase 停下时"分支名"这一栏本身已经没有分支了,`operation` 与 `detached` 是同时出现的两件事,不是二选一
+- **冲突文件的 diff 不需要特殊分支**(同日实测):`git diff HEAD --numstat -z -- f.txt` → `4\t0\tf.txt`,`git ls-files -z -- f.txt` 对同一路径回**三**条(三个暂存位),`git diff HEAD -- f.txt` exit 0 且正文就是带 `<<<<<<< HEAD` / `=======` / `>>>>>>>` 的工作区内容。这是 5.3"照常走 `git diff HEAD`"的依据
+- **linked worktree / submodule / bare 的 `rev-parse` 形态**(同日实测):linked worktree 里 `.git` 是一个内容为 `gitdir: <主仓库>/.git/worktrees/<名>` 的**文件**,`rev-parse --show-toplevel --git-dir` 分别给出该工作区根与那个 worktree 专属 git 目录(绝对路径);submodule 同理,git 目录是 `<父仓库>/.git/modules/<路径>`,且它自己的 status 带 `# branch.upstream origin/main`。父仓库看这个 submodule 是一条 `1 .M S.MU 160000 …` 记录,`--numstat` 给 `0\t0\t<路径>`、补丁是一行 `-Subproject commit …` / `+Subproject commit …-dirty`,走的都是已有的已跟踪路径。bare 仓库下 `rev-parse --show-toplevel` 报 `fatal: this operation must be run in a work tree` 并以 **128** 退出,而 `--is-bare-repository` 正常回 `true`。这是 5.2"不得假设 `.git` 是目录"、5.3 bare 拒绝提示,以及 5.3"状态文件按 `--git-dir` 找"三条的依据
 - **porcelain 的路径转义**:不加 `-z` 时,`docs/需求文档.md` 会被输出成 `"docs/\351\234\200\346\261\202\346\226\207\346\241\243.md"`;加 `-z` 后原样输出。这是 5.2 强制要求 `-z` 的依据
 - **`git diff` 补丁正文的路径转义**:`-z` 只作用于 `status` / `numstat` 等列表输出,`git diff` 正文的 `diff --git` / `---` / `+++` / `rename from|to` 行仍会 C 风格转义(实测输出 `diff --git "a/docs/\351\234\200\346\261\202\346\226\207\346\241\243.md" ...`);加 `-c core.quotePath=false` 后原样输出。这是 5.2 强制该参数的依据
 - **重命名在按文件懒加载下的退化**:实测 `git diff HEAD -- <新路径>` 对重命名文件输出 `new file mode` + `--- /dev/null`(识别为全新增);`git diff HEAD -M -- <新路径> <旧路径>` 才输出 `similarity index` + `rename from/to`。这是 5.2 要求传两个路径的依据
