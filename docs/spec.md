@@ -442,8 +442,8 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 
 - [x] `[S1/S2b]` 在任意 git 仓库目录下执行 CLI 命令,能自动识别仓库并在浏览器打开对应变更视图(S1 验到启动与拉起浏览器,变更视图待 S2b)
 - [x] `[S1]` 空仓库(尚无提交)下工具不崩溃:diff 基准降级为空树哈希,列表与分支状态展示合理
-- [ ] `[S4b]` detached HEAD、rebase/merge 进行中等状态下工具不崩溃,分支状态降级并明确标注当前处于何种状态
-- [ ] `[S4b]` git worktree、submodule 目录下能正常启动;bare 仓库给出明确提示而非崩溃
+- [x] `[S4b]` detached HEAD、rebase/merge 进行中等状态下工具不崩溃,分支状态降级并明确标注当前处于何种状态
+- [x] `[S4b]` git worktree、submodule 目录下能正常启动;bare 仓库给出明确提示而非崩溃
 
 **变更列表与分支状态**
 

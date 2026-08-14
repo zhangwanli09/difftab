@@ -6,6 +6,20 @@
 
 ---
 
+## S4b git 异常状态
+
+S4b 已收口(CI 全绿,run `31808495613` 11 个作业,**且是首推即绿**——前三次收口都在下限档红过一轮)。分支状态那一栏补齐三件事:detached 画「游离 HEAD」而不是 git 的字面量 `(detached)`、进行中的多步操作出一个标签、冲突文件在列表里自成一组且印 XY 两位。仓库形态那一侧:linked worktree 与 submodule 正常启动(git 目录分别在主仓库的 `worktrees/` 与父仓库的 `modules/` 下),bare 仓库给一句话拒绝并以 1 退出。SHA-256 空树常量实测回填 `6ef19b41…c5321`,`resolveDiffBase` 里那条「暂不支持」的分支随之删掉。fixture 第二批余下 7 个就位(9 → 16 个,全量生成 804ms → 1.5s)。单测 251 / 冒烟 48;体积 JS 202.7 KB / gzip 68.1 / CSS 28.5 KB,冷启动中位 43.6ms(`readOperation` 只挂在 `/api/state` 上,不在启动路径)。产品链路实测:在停在冲突上的 rebase 仓库里,`/api/state` 回 `{"head":"(detached)","detached":true,"operation":"rebase"}` 与一条 `conflicted:true`。spec §6 的 2 个 `[S4b]` 已勾。
+
+**本阶段唯一的新机制:`operation` 在 `git status` 的输出里一行都没有。** 前面每个阶段的数据都来自那一条主查询,这次的判据只能是 git 目录下的状态文件(git 自己的 `wt-status.c` 也是这么判的),于是 `operation.ts` 成了 `server/git` 里**唯一不起子进程的模块**——为它多起一次 git,既落在每次 `/api/state` 上,又要往 §5.10 的只读白名单里添一条,而读文件存在性一个字节都不写。判据表按序取第一个命中,顺序有两处是实测定的:**rebase 停下时 git 目录里同时躺着 `rebase-merge/` 与 merge 留下的 `MERGE_MSG` / `AUTO_MERGE`**,先判 merge 会把用户正在做的事标错;`git am` 与 `git rebase --apply` **共用同一个 `rebase-apply/` 目录**,里面有没有 `rebasing` 是唯一的区分,合成一个标注等于对着一个正在 `git am` 的用户说他在变基。两条都不报错,只是说错话。
+
+**三条「按最省事的写法来就会静默出错」,都已进红线。** ① 状态文件必须按 `rev-parse --git-dir` 找:linked worktree 下 `.git` 是个**文件**,拼 `<root>/.git` 在那种仓库里永远读不到,于是操作标注永远不出现;`readStatus` 因此改收整个 `RepoInfo` 而不是两个同型字符串——并排放着的两个 path 调换顺序不会报错,只会让 `operation` 从此恒为空。② 冲突的判据是「这条来自 `u` 记录」而不是状态位:`DD`(双方都删)与 `AA`(双方都新增)两位里一个 `U` 都没有,靠状态位认会把它们漏回「已暂存」+「未暂存」两组,而**那两组都不是它的处境**。③ 冲突文件自身的 diff 不需要任何特殊分支——实测 `git diff HEAD` 正常出补丁,正文就是带 `<<<<<<<` 的工作区内容,而那正是用户此刻要看的东西。
+
+**代码评审抓到一条只有一个字面量之差的歧义:`detached` 是拿 `# branch.head` 与字面量 `(detached)` 比出来的,而 porcelain v2 给不出别的判据——git 的 refname 规则却允许真有一个分支叫这个名字。** 第一版按 `!branch.detached` 藏 ahead/behind,于是那个分支的计数会跟着名字一起消失。名字那一栏在那种仓库里没救,计数还救得回来,所以判据改成「有上游就画」。这条的形态值得记:**歧义在数据源里,能做的是别让它的影响面扩大**。
+
+**`/simplify` 那轮里,一条「按分组判」被换成了「按条目判」。** 冲突徽章原本靠 `group === 'conflicted'` 决定印一位还是两位——那让这一行画得对不对取决于 `groupFiles` 与组件是否一致,而那个一致性没有任何东西在管;`file.conflicted` 就在条目上,同样长。同轮还把两个 header 标签的外观合成一个 `Badge`(它们并排画,改一处只会让它们高矮不一,没有用例看得见)、把冒烟那条「一句话拒绝、不是 Node 栈」收进 helpers(它在两个文件里已经长出了强弱不同的两份断言)。
+
+**一个已知的覆盖边界,写在注入点的注释里而不是留着自己发现**:轮询探针是 `readStatusRaw`,看不见 `operation`。三档都在 `gitDir` 上建了非递归 watch,`MERGE_HEAD` / `rebase-merge/` 的增删就落在那儿,正常路径照样刷新;只有那条 watch 自己也失败、整体落到轮询之后,一次「只动 git 目录、不动 HEAD 也不动工作区」的操作(实际只有 `rebase --quit` 这一类)才会让标注停在旧值上。不为它把探针拆成两个来源——那会让「轮询与主查询是同一条命令」从构造事实降级成巧合。
+
 ## S4a diff 边界情况
 
 S4a 已收口(CI 全绿,run `31755831717` 11 个作业)—— 已跟踪那一侧的 `binary` / `too-large` 两个分支接上:`git diff --numstat -z` 取代原先那次 `--name-only`,**一次调用同时回答三个问题**(是不是已跟踪、是不是二进制、改了多少行),多付的那次 git 往返因此买到全部三样(19.3ms → 27.3ms/请求)。前端在打开的 diff 上标注「重命名自 <完整旧路径>(相似度 N%)」—— 与 diff2html 自己那个文件头不重复:它把两个名字压成 `src/{old.txt → new.txt}` 且**不含相似度**(实测),而 binary / too-large 那几路压根没有补丁头。fixture 第二批的 diff 部分就位(`diffEdges` 仓库 + `renames` / `unicodePaths` 各补一个样本),全量生成 804ms。本机浏览器实测:二进制 / 6MB / 6 万行 / 未跟踪四条各出各的话,`wide.txt` 显示「共 634 KB」而不是「0 MB」;`.ts` diff 上 431 个 hljs span、**属性逐字相同的嵌套 span 为 0**(S2b 那条重复高亮红线仍守着)。单测 217 / 冒烟 47;体积与冷启动均无变化(42.4ms,diff 不在启动路径上)。spec §6 的 3 个 `[S4a]` 已勾。
@@ -96,14 +110,15 @@ S0 工具链脚手架(含 `pnpm-lock.yaml`、`pnpm-workspace.yaml` 的 `allowBui
 | **S3b2** 三档监听 + 轮询兜底 | §5.7 全节、§10「Node 运行时与 `fs.watch`」、§6「自动刷新与三档监听」组 | §5.5、§5.6、§5.9 |
 | **S3c** 进程生命周期 | §5.8、§5.9 的 token 段、§6「进程生命周期与单实例」组 | §5.5、§5.6、§5.7 |
 | **S4a** diff 边界情况 | §5.2、§5.12 的 `DiffPayload`、§10「git 行为」、§7 的 fixture 第二批清单 | §5.6、§5.7、§5.11 |
+| **S4b** git 异常状态 | §5.3、§5.2 的仓库定位段、§5.12 的 `BranchState`、§10「git 行为」 | §5.5、§5.6、§5.7 |
 
 ## 附:门禁与测试是在哪个阶段建立的
 
 `CLAUDE.md` 第 3 节命令表的「状态」列只标是否可用,逐阶段的明细收在这里:
 
-- **单元/集成测试(`pnpm test`)**:S0(hljs 语言装配)+ S1(解析器、三道校验、未跟踪 diff 构造、对真实 fixture 的集成、dev proxy)+ S2c(happy-dom 下的 diff2html 渲染路径与 `DiffView` 四分支)+ S3b1(档位判定与合并窗口、假时钟下的 15s 心跳、`EventSource` 替身下的连接开关)+ S3b2(逐段忽略判据、三档各注册了什么、B 档回调过滤、轮询与降级)+ S4a(numstat 解析的三种记录形态、对 `diffEdges` / 通配符路径 / 配不上对的重命名的集成断言、封装层的 overflow 收尾、前端重命名标注与体积为 0 的文案)
-- **冒烟测试(`pnpm test:smoke`)**:S0(版本守卫、版本号一致性、产物只 import 标准库)+ S1 第一层(`GIT_TRACE` 白名单断言 + 子进程单点断言 + 三道校验)+ S2a 第二层(`readonly-git-dir.test.js`:A 只读 `.git` / B `.git` 逐字节比对)+ S3b1(`/api/events` 过三道校验、真实 `git checkout -b` 推出 `change`、三档环境变量各给一份不同的 `watch` 载荷)+ S3b2(C 档在**已存在的**未跟踪目录里新增文件,经轮询推出 `change`)+ S4a(四个 `kind` 在产物上各回各的、超大文件的响应正文必须是小的、`path=*` 取不到东西)
-- **fixture(`pnpm fixtures`)**:S1 第一批;S4a 补上第二批的 diff 部分(`diffEdges` 仓库,外加 `renames` 的「配不上对的重命名」与 `unicodePaths` 的通配符文件名各一个);异常状态那半留 S4b。清单见 spec §7 末段
+- **单元/集成测试(`pnpm test`)**:S0(hljs 语言装配)+ S1(解析器、三道校验、未跟踪 diff 构造、对真实 fixture 的集成、dev proxy)+ S2c(happy-dom 下的 diff2html 渲染路径与 `DiffView` 四分支)+ S3b1(档位判定与合并窗口、假时钟下的 15s 心跳、`EventSource` 替身下的连接开关)+ S3b2(逐段忽略判据、三档各注册了什么、B 档回调过滤、轮询与降级)+ S4a(numstat 解析的三种记录形态、对 `diffEdges` / 通配符路径 / 配不上对的重命名的集成断言、封装层的 overflow 收尾、前端重命名标注与体积为 0 的文案)+ S4b(判据表的优先级与 `am` / rebase 之分、`u` 记录一律带 `conflicted`、对 detached / merge / rebase / worktree / submodule / bare / SHA-256 七个仓库的集成断言、前端的降级标注与冲突分组)
+- **冒烟测试(`pnpm test:smoke`)**:S0(版本守卫、版本号一致性、产物只 import 标准库)+ S1 第一层(`GIT_TRACE` 白名单断言 + 子进程单点断言 + 三道校验)+ S2a 第二层(`readonly-git-dir.test.js`:A 只读 `.git` / B `.git` 逐字节比对)+ S3b1(`/api/events` 过三道校验、真实 `git checkout -b` 推出 `change`、三档环境变量各给一份不同的 `watch` 载荷)+ S3b2(C 档在**已存在的**未跟踪目录里新增文件,经轮询推出 `change`)+ S4a(四个 `kind` 在产物上各回各的、超大文件的响应正文必须是小的、`path=*` 取不到东西)+ S4b(bare 仓库在产物上给一句话拒绝、不带 Node 栈;停在冲突上的 rebase 仓库跑一遍只读白名单)
+- **fixture(`pnpm fixtures`)**:S1 第一批;S4a 补上第二批的 diff 部分(`diffEdges` 仓库,外加 `renames` 的「配不上对的重命名」与 `unicodePaths` 的通配符文件名各一个);S4b 补上异常状态那半(detached HEAD、merge / rebase 停在冲突上、linked worktree、submodule、bare、SHA-256 空仓库,共 7 个)。清单见 spec §7 末段
 - **冷启动(`pnpm bench:startup`)**:S0 建立,S1 接真实流程(本机中位数 ~40ms)
 - **体积(`pnpm size`)**:S0 建立,S2c 收口回填实测。注意 S2a 删掉 S0 spike 后产物一度不含 diff2html/hljs,门禁空转到 S2b 才恢复
 - **样式层叠(`pnpm check:css`)**:S0 建立三条(unlayered + hljs 在前 + 深色带媒体条件);S2c 加四条 —— 覆写 `--d2h-*` 的块也必须 unlayered、**且排在 d2h 默认值之后、且覆盖全部 23 个无前缀变量**、产物里没有无定义的 `var()` 引用、**深色 delta 里声明的每个 `--color-*` 在浅色侧都得有声明**
