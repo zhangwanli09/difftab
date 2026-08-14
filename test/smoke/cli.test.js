@@ -3,25 +3,28 @@
 // 由 CI 的 matrix 作业用 `node --test test/smoke/` 直接打到本文件 ——
 // 那一档完全不执行安装、也没有 pnpm,因此这里不得 import 任何依赖。
 //
-// S0 覆盖的是版本守卫与产物形态。TODO(S1/S2):CLI 启动、status、diff、
-// §5.10 的两层只读验证、冷启动 ≤300ms 测量。
+// 本文件管的是**进不去产品之前**的那几件事:版本守卫、产物形态,以及 bare 仓库
+// 那条拒绝(「不是仓库」那条在 server.test.js,两者共用 helpers 的
+// `expectStartupRefusal`)。起得来之后的行为归 server.test.js,只读性两层归
+// readonly*.test.js,生命周期归 lifecycle.test.js。
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
 import { pathToFileURL } from 'node:url';
+import { makeFixtures } from '../fixtures/make.mjs';
+import { BIN, cleanupOnExit, expectStartupRefusal, REPO_ROOT } from './helpers.js';
 
-const repoRoot = resolve(import.meta.dirname, '..', '..');
-const bin = join(repoRoot, 'bin', 'gitglance.js');
-const manifest = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8'));
+const manifest = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8'));
 
 /** 下限的唯一事实来源是 package.json 的 engines.node;守卫的文案必须与它一致。 */
 const MIN_VERSION = /(\d+\.\d+\.\d+)/.exec(manifest.engines.node)?.[1];
 
 test('CLI 在当前 Node 上正常启动并退出 0,且报的版本就是 package.json 的版本', () => {
-  const r = spawnSync(process.execPath, [bin, '--version'], { encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [BIN, '--version'], { encoding: 'utf8' });
   assert.equal(r.status, 0, `stderr: ${r.stderr}`);
 
   // 只断言形状的话,版本号漂移(改了 package.json 忘了改代码)照样能过 ——
@@ -40,7 +43,7 @@ test('版本守卫:低于下限时打印友好提示并以非 0 退出,而不是
 
   const spoof = [
     `Object.defineProperty(process.versions, 'node', { value: ${JSON.stringify(belowFloor)} });`,
-    `await import(${JSON.stringify(pathToFileURL(bin).href)});`,
+    `await import(${JSON.stringify(pathToFileURL(BIN).href)});`,
   ].join('\n');
 
   const r = spawnSync(process.execPath, ['--input-type=module', '-e', spoof], {
@@ -62,7 +65,7 @@ test('版本守卫:低于下限时打印友好提示并以非 0 退出,而不是
 test('后端产物只 import 标准库 —— dependencies 为空这条在产物侧的对应断言', () => {
   // package.json 侧由 scripts/check-pack.mjs 查(那个要 pnpm、只在 build 作业跑);
   // 这里查真正发给用户的那个文件,不依赖 manifest 是否诚实。
-  const source = readFileSync(join(repoRoot, 'dist', 'server', 'main.js'), 'utf8');
+  const source = readFileSync(join(REPO_ROOT, 'dist', 'server', 'main.js'), 'utf8');
 
   const specifiers = [
     ...source.matchAll(/\bfrom\s*["']([^"']+)["']/g),
@@ -80,8 +83,23 @@ test('后端产物只 import 标准库 —— dependencies 为空这条在产物
   );
 });
 
+let workdir;
+cleanupOnExit(() => workdir);
+
+test('bare 仓库:一句话说清没有工作区,而不是 Node 异常栈', () => {
+  // §6 的 `[S4b]`。**必须在产物上端到端验**:`rev-parse --show-toplevel` 在 bare 下
+  // 以 128 退出(已实测),而「128 退出」既可能被收成这句话,也可能一路冒成一屏栈 ——
+  // 单测里那条 `rejects.toMatchObject({ code: 'bare-repo' })` 证到的是前一半
+  workdir = mkdtempSync(join(tmpdir(), 'gitglance-bare-'));
+  const repos = makeFixtures(join(workdir, 'repos'), ['bare']);
+
+  // 「退出码 / 空 stdout / 不带栈」三条归 helpers(不是仓库那条用的是同一份),
+  // 这里只断言 bare 自己那句话 —— 两者的提示完全不同,合并成一句会误导用户
+  assert.match(expectStartupRefusal(assert, repos.bare), /bare repository/);
+});
+
 test('bin/gitglance.js 保持保守语法:不含守卫之后才安全的语法', () => {
-  const source = readFileSync(bin, 'utf8');
+  const source = readFileSync(BIN, 'utf8');
   // 逐条对应 spec §5.1:守卫与新语法同处一个模块时,低于下限的用户拿到的是
   // 解析期 SyntaxError,守卫根本来不及执行
   const forbidden = [

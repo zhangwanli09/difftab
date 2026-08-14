@@ -167,6 +167,14 @@ export async function startServer(
        * 与主查询逐字相同」这条红线在这里是**一处赋值**而不是两处各自维护的巧合。
        * 拦住它的不是类型(签名只是 `() => Promise<string>`),是这个唯一的注入点
        * 加上冒烟里那条「C 档在已存在的未跟踪目录里新增文件要推出 change」。
+       *
+       * **已知的覆盖边界**:`/api/state` 里的 `operation`(§5.3)不来自 status 输出,
+       * 所以这条探针看不见它。三档都在 `gitDir` 上建了非递归 watch,`MERGE_HEAD` /
+       * `rebase-merge/` 的增删就落在那儿,正常情况下照样推得出 change;只有**那条
+       * watch 自己也失败、整体落到轮询**之后,一次「只动 git 目录、不动 HEAD 也不动
+       * 工作区」的操作(实际上只有 `rebase --quit` 这一类)才会让标注停在旧值上。
+       * 不为它把探针拆成两个来源:那会让「轮询与主查询是同一条命令」不再是构造上的
+       * 事实,而换来的是一个交集极窄的窗口。
        */
       pollStatus: () => readStatusRaw(repo.root),
       /**
@@ -254,7 +262,9 @@ export async function startServer(
 
     switch (url.pathname) {
       case '/api/state': {
-        const status = await readStatus(repo.root);
+        // 整个 `RepoInfo` 传下去:进行中的多步操作要从 **git 目录**读(§5.3),
+        // 而它与工作区根在 linked worktree / submodule 下是两条完全不同的路径
+        const status = await readStatus(repo);
         sendJson(res, 200, {
           branch: status.branch,
           files: status.files,

@@ -3,7 +3,7 @@
 // 文件名不以 `.test.js` 结尾:`node --test "test/smoke/*.test.js"` 不会把它当用例,
 // CI 里那条「数一遍冒烟文件」的检查也不会把它算进去。
 
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { rmSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
 import { resolve } from 'node:path';
@@ -150,6 +150,32 @@ export function startGitglance({ cwd, env = {}, timeoutMs = 20_000 } = {}) {
     });
     child.on('error', rejectPromise);
   });
+}
+
+/**
+ * 在 `cwd` 里拉起 CLI 并**期待它拒绝启动**(前置检查失败:不是仓库、bare、git 太老)。
+ *
+ * 「一句话友好报错、不是 Node 异常栈」这条契约有两个断言点(不是仓库、bare 仓库),
+ * 两处各写一遍的结果已经出现过:一处用 `includes('    at ')`、另一处用正则,弱的
+ * 那一份不会有任何东西提醒你它弱。放这里之后,加第三种拒绝形态只写一行调用。
+ *
+ * 只回 stderr:调用方要断言的只有那句话,而「退出码 1 / stdout 为空 / 不带栈」三条
+ * 对每种拒绝形态都一样,在这里一次断完。
+ */
+export function expectStartupRefusal(assert, cwd) {
+  const r = spawnSync(process.execPath, [BIN], {
+    cwd,
+    encoding: 'utf8',
+    env: { ...process.env, GITGLANCE_NO_OPEN: '1' },
+  });
+
+  assert.equal(r.status, 1, `期望以 1 退出;stdout: ${r.stdout} stderr: ${r.stderr}`);
+  // 拒绝了就不该打出 URL 把用户往浏览器里带
+  assert.equal(r.stdout, '');
+  // 「不崩溃」这条只有反面断言看得住:一屏 Node 栈同样含着那句 message
+  assert.doesNotMatch(r.stderr, /^\s+at /m, `报错里带了栈:\n${r.stderr}`);
+  assert.doesNotMatch(r.stderr, /Error:/, `报错里带了异常类名:\n${r.stderr}`);
+  return r.stderr;
 }
 
 /**

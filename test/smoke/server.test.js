@@ -10,9 +10,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { makeFixtures } from '../fixtures/make.mjs';
-import { authedGet, BIN, cleanupOnExit, httpGet, once, startGitglance } from './helpers.js';
+import {
+  authedGet,
+  BIN,
+  cleanupOnExit,
+  expectStartupRefusal,
+  httpGet,
+  once,
+  startGitglance,
+} from './helpers.js';
 
-/** 本文件用得到的 fixture。生成全部 9 个要 600ms 上下,其中一半这里根本不打开。 */
+/** 本文件用得到的 fixture。生成全部 16 个要 1.5s 上下,其中一半这里根本不打开。 */
 const NEEDED = ['unicodePaths', 'staged', 'empty', 'diffEdges'];
 
 let workdir;
@@ -300,16 +308,9 @@ test('diff 边界在产物上也各回各的 kind,且超大文件不会把正文
 test('不是 git 仓库时给一句话友好报错,而不是 Node 异常栈', () => {
   const outside = mkdtempSync(join(tmpdir(), 'gitglance-outside-'));
   try {
-    const r = spawnSync(process.execPath, [BIN], {
-      cwd: outside,
-      encoding: 'utf8',
-      env: { ...process.env, GITGLANCE_NO_OPEN: '1' },
-    });
-    assert.equal(r.status, 1);
-    assert.equal(r.stdout, '');
-    assert.match(r.stderr, /not inside a git repository/);
-    // 一句话,不是栈
-    assert.ok(!r.stderr.includes('    at '), `报错里带了栈:\n${r.stderr}`);
+    // 「退出码 / 空 stdout / 不带栈」三条归 helpers(bare 仓库那条用的是同一份),
+    // 这里只断言这种拒绝形态自己那句话
+    assert.match(expectStartupRefusal(assert, outside), /not inside a git repository/);
   } finally {
     rmSync(outside, { recursive: true, force: true });
   }

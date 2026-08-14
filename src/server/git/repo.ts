@@ -15,10 +15,10 @@ const MIN_GIT = { major: 2, minor: 11 };
  */
 const EMPTY_TREE = {
   sha1: '4b825dc642cb6eb9a060e54bf8d69288fbee4904',
-  // TODO(S4b):用 `git init --object-format=sha256` 的测试仓库实测取值后回填。
-  // **不得凭记忆写死** —— 写错的后果是空仓库下 diff 基准无效,且症状与
-  // 「空仓库不支持」难以区分(spec §5.3)。在此之前宁可显式失败。
-  sha256: null as string | null,
+  // 两个常量**都是实测取来的**,不是凭记忆写的(§5.3):写错的后果是空仓库下
+  // diff 基准无效,而症状与「空仓库不支持」难以区分。SHA-256 这个于 S4b 在
+  // `git init --object-format=sha256` 的仓库上取值,并验过它当基准确实出补丁(§10)
+  sha256: '6ef19b41225c5369f1c104d45d8d85efa9b057b53b14b4b9b939dd74decc5321',
 };
 
 export type PreflightCode = 'git-missing' | 'git-too-old' | 'not-a-repo' | 'bare-repo';
@@ -61,7 +61,10 @@ function tooOld(v: { major: number; minor: number }): boolean {
 export async function locateRepo(cwd: string): Promise<RepoInfo> {
   const [version, located] = await Promise.all([
     runGit(['--version'], cwd),
-    runGit(['rev-parse', '--show-toplevel', '--git-dir', '--is-bare-repository'], cwd),
+    // **不问 `--is-bare-repository`**:成功那条路上它的答案必然是 false(bare 仓库
+    // 根本走不到这里),而失败那条路要靠它区分 bare 与「不是仓库」—— 那时再单独问
+    // 一次。跟着问一句从不读的输出,只会让下一个人以为这里读了它
+    runGit(['rev-parse', '--show-toplevel', '--git-dir'], cwd),
   ]).catch((cause: unknown) => {
     if (cause instanceof GitError && cause.kind === 'missing') {
       throw new PreflightError(
@@ -128,15 +131,5 @@ export async function resolveDiffBase(root: string): Promise<string> {
   // 下限 2.11。**非零退出即按 SHA-1 处理** —— 那个区间的 git 根本造不出 SHA-256
   // 仓库,降级无歧义,不得让它成为空仓库路径上的崩溃点(spec §5.3)。
   const name = format.code === 0 ? format.stdout.trim() : 'sha1';
-  if (name === 'sha256') {
-    const sha256 = EMPTY_TREE.sha256;
-    if (!sha256) {
-      throw new PreflightError(
-        'not-a-repo',
-        'SHA-256 repositories without any commit are not supported yet.',
-      );
-    }
-    return sha256;
-  }
-  return EMPTY_TREE.sha1;
+  return name === 'sha256' ? EMPTY_TREE.sha256 : EMPTY_TREE.sha1;
 }

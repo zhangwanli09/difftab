@@ -8,10 +8,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { DiffRequestError, readDiff } from '../../../src/server/git/diff.ts';
-import { locateRepo, resolveDiffBase } from '../../../src/server/git/repo.ts';
+import { locateRepo, type RepoInfo, resolveDiffBase } from '../../../src/server/git/repo.ts';
 import { GitError, runGit } from '../../../src/server/git/run.ts';
 import { readStatus } from '../../../src/server/git/status.ts';
-import type { DiffPayload } from '../../../src/server/shared/protocol.ts';
+import {
+  type DiffPayload,
+  type FileEntry,
+  hasStagedChange,
+  hasUnstagedChange,
+  isConflicted,
+} from '../../../src/server/shared/protocol.ts';
 import {
   type FixtureRepos,
   makeFixtures,
@@ -33,6 +39,25 @@ function patchOf(payload: DiffPayload): string {
   return payload.patch;
 }
 
+/**
+ * fixture 目录 → 一份状态。
+ *
+ * `readStatus` 收的是整个 `RepoInfo` 而不是一个路径:进行中的多步操作只能从
+ * **git 目录**读(§5.3),而它与工作区根在 linked worktree / submodule 下差得很远。
+ * 于是每条用例走的都是「定位 → 读状态」这条完整的链,与产品里的顺序一致。
+ *
+ * 定位结果按目录记一次:`locateRepo` 每次要起两个 git 进程,而 fixture 建好之后就
+ * 不动了 —— 十几个调用点各定位一遍等于白付三十来次进程启动。**产品里也正是定位一次
+ * 之后一直用**(`start()` → `startServer(repo)`),所以这不是为了测试省事而偏离真实
+ * 用法。直接断言 `locateRepo` 本身的那几条不走这里,它们要的就是新鲜的一次调用。
+ */
+const located = new Map<string, Promise<RepoInfo>>();
+const statusOf = (dir: string) => {
+  const info = located.get(dir) ?? locateRepo(dir);
+  located.set(dir, info);
+  return info.then(readStatus);
+};
+
 let dest: string;
 let repos: FixtureRepos;
 
@@ -47,7 +72,7 @@ afterAll(() => {
 
 describe('路径转义(§6:不出现 \\351\\234\\200 这类残留)', () => {
   test('列表里的非 ASCII / 空格 / 引号路径原样出现', async () => {
-    const { files } = await readStatus(repos.unicodePaths);
+    const { files } = await statusOf(repos.unicodePaths);
     const paths = files.map((f) => f.path);
     for (const tricky of TRICKY_PATHS) expect(paths).toContain(tricky);
     // C 风格转义的残留长这样:"docs/\351\234\200..."
@@ -103,7 +128,7 @@ describe('未跟踪(§6:展开到文件粒度,不折叠成 `dir/`)', () => {
   test('整个目录未跟踪时,列表里是里面的每个文件', async () => {
     // 这条钉的是 `-uall`。少了它,git 只报一行 `? 未跟踪目录/`,列表里就是一个
     // 点不开的目录条目 —— 而 agent 新建一整个目录是最常见的形态之一
-    const { files } = await readStatus(repos.unicodePaths);
+    const { files } = await statusOf(repos.unicodePaths);
     const paths = files.map((f) => f.path);
     expect(paths).toContain('未跟踪目录/a.md');
     expect(paths).toContain('未跟踪目录/sub/b.md');
@@ -119,7 +144,7 @@ describe('未跟踪(§6:展开到文件粒度,不折叠成 `dir/`)', () => {
 
 describe('重命名', () => {
   test('status 给出新旧两个路径与相似度', async () => {
-    const { files } = await readStatus(repos.renames);
+    const { files } = await statusOf(repos.renames);
     const renamed = files.find((f) => f.path === 'src/kept-renamed.txt');
     expect(renamed?.oldPath).toBe('src/kept.txt');
     expect(renamed?.renameScore).toBe(100);
@@ -147,7 +172,7 @@ describe('重命名', () => {
     //
     // 取 `[0]` 的写法在这里拿到的是那条 20 行的删除 —— 行数闸放行,一份 6 万行的
     // 补丁照旧发给浏览器,而这正是本阶段存在的理由。判据只能压在合计上
-    const { files } = await readStatus(repos.renames);
+    const { files } = await statusOf(repos.renames);
     const entry = files.find((f) => f.path === 'src/unpaired-z.txt');
     expect(entry?.oldPath).toBe('src/unpaired-a.txt');
 
@@ -159,7 +184,7 @@ describe('重命名', () => {
   });
 
   test('相似度阈值之下的改名被 git 拆成删除 + 新增,不带 oldPath', async () => {
-    const { files } = await readStatus(repos.renames);
+    const { files } = await statusOf(repos.renames);
     const added = files.find((f) => f.path === 'src/rewritten-renamed.txt');
     const deleted = files.find((f) => f.path === 'src/rewritten.txt');
     expect(added?.staged).toBe('A');
@@ -170,7 +195,7 @@ describe('重命名', () => {
 
 describe('已暂存改动', () => {
   test('双状态位与 git status 一致', async () => {
-    const { files } = await readStatus(repos.staged);
+    const { files } = await statusOf(repos.staged);
     const byPath = Object.fromEntries(files.map((f) => [f.path, [f.staged, f.unstaged]]));
     expect(byPath).toEqual({
       'a.txt': ['M', '.'],
@@ -188,7 +213,7 @@ describe('已暂存改动', () => {
 
 describe('删除与符号链接 —— 决定「已跟踪 / 未跟踪」的分流判据(§7 末段)', () => {
   test('两种删除都进变更列表,状态位一暂存一未暂存', async () => {
-    const { files } = await readStatus(repos.deletions);
+    const { files } = await statusOf(repos.deletions);
     const byPath = Object.fromEntries(files.map((f) => [f.path, [f.staged, f.unstaged]]));
     expect(byPath['staged-deleted.txt']).toEqual(['D', '.']);
     expect(byPath['worktree-deleted.txt']).toEqual(['.', 'D']);
@@ -213,7 +238,7 @@ describe('删除与符号链接 —— 决定「已跟踪 / 未跟踪」的分�
   test.skipIf(process.platform === 'win32')(
     '未跟踪的符号链接按 mode 120000 + 链接目标展示,绝不吐出目标文件的内容',
     async () => {
-      const { files } = await readStatus(repos.deletions);
+      const { files } = await statusOf(repos.deletions);
       // 前提:git 确实把它报成未跟踪,所以它进列表、用户点得到
       expect(files.find((f) => f.path === 'link-to-outside')?.unstaged).toBe('?');
 
@@ -230,21 +255,21 @@ describe('删除与符号链接 —— 决定「已跟踪 / 未跟踪」的分�
 
 describe('分支状态', () => {
   test('无上游 → upstream 为 null', async () => {
-    const { branch } = await readStatus(repos.noUpstream);
+    const { branch } = await statusOf(repos.noUpstream);
     expect(branch.head).toBe('feature/no-upstream');
     expect(branch.detached).toBe(false);
     expect(branch.upstream).toBe(null);
   });
 
   test('有上游 → ahead / behind 与 git 一致', async () => {
-    const { branch } = await readStatus(repos.upstreamTracking);
+    const { branch } = await statusOf(repos.upstreamTracking);
     expect(branch.upstream).toEqual({ ahead: 2, behind: 1 });
   });
 });
 
 describe('空仓库(§5.3)', () => {
   test('列表与分支状态正常,不崩溃', async () => {
-    const { branch, files } = await readStatus(repos.empty);
+    const { branch, files } = await statusOf(repos.empty);
     expect(branch.head).toBe('main');
     expect(branch.upstream).toBe(null);
     expect(files.map((f) => f.path).sort()).toEqual([
@@ -257,6 +282,17 @@ describe('空仓库(§5.3)', () => {
     expect(await resolveDiffBase(repos.empty)).toBe('4b825dc642cb6eb9a060e54bf8d69288fbee4904');
     // 有提交的仓库照旧用 HEAD
     expect(await resolveDiffBase(repos.staged)).toBe('HEAD');
+  });
+
+  test('SHA-256 仓库取的是另一个常量,而且它真的当得了基准', async () => {
+    // 两个常量都只能实测取(§5.3)。**光比对常量不够**:写错一位时这条照样绿,
+    // 而症状是空仓库下 diff 全部 fatal —— 所以下面那半必须真的拿它取一次补丁
+    const base = await resolveDiffBase(repos.sha256Empty);
+    expect(base).toBe('6ef19b41225c5369f1c104d45d8d85efa9b057b53b14b4b9b939dd74decc5321');
+
+    const payload = await readDiff(repos.sha256Empty, { path: 'staged-before-first-commit.txt' });
+    expect(payload.kind).toBe('text');
+    expect(payload).toHaveProperty('patch', expect.stringContaining('+no commits yet'));
   });
 
   test('空仓库里已 add 的文件能取到 diff', async () => {
@@ -359,7 +395,7 @@ describe('diff 边界(§6:二进制只提示、超大不预览、新文件展示
   });
 
   test('二进制与超大都不该在列表里消失 —— 点不开与看不见是两回事', async () => {
-    const { files } = await readStatus(repos.diffEdges);
+    const { files } = await statusOf(repos.diffEdges);
     const paths = files.map((f) => f.path);
     expect(paths).toEqual(
       expect.arrayContaining([
@@ -376,7 +412,7 @@ describe('diff 边界(§6:二进制只提示、超大不预览、新文件展示
 
 describe('300+ 文件变更(§6:列表列全,单个文件的 diff 及时)', () => {
   test('列表一次列全', async () => {
-    const { files } = await readStatus(repos.manyFiles);
+    const { files } = await statusOf(repos.manyFiles);
     expect(files.length).toBeGreaterThanOrEqual(300);
   });
 
@@ -389,5 +425,99 @@ describe('300+ 文件变更(§6:列表列全,单个文件的 diff 及时)', () =
     const patch = patchOf(payload);
     expect(patch.match(/^diff --git /gm)).toHaveLength(1);
     expect(patch).toContain('pkg/mod001.ts');
+  });
+});
+
+describe('git 异常状态(§5.3 / §6 的两条 `[S4b]`)', () => {
+  test('detached HEAD:标成 detached,而分支名那一栏是 git 的字面量', async () => {
+    const { branch, files } = await statusOf(repos.detachedHead);
+    // git 在 `# branch.head` 里给的就是这个字面量(已实测)。**解析器不替它编一个
+    // 名字出来**(§5.12 的 `BranchState.head`):那是在事实来源这一层说假话,
+    // 「取不到分支名时画什么」是展示决定,归前端
+    expect(branch.detached).toBe(true);
+    expect(branch.head).toBe('(detached)');
+    expect(branch.upstream).toBe(null);
+    // 另一半:除了分支那一栏,别的照常 —— 验收项要的是「不崩溃 + 降级标注」,
+    // 而一个空列表同样满足「不崩溃」
+    expect(files.map((f) => f.path).sort()).toEqual(['a.txt', 'untracked-while-detached.txt']);
+  });
+
+  test('没有进行中的操作时,`operation` 这个字段压根不出现', async () => {
+    // 反面证据。少了它,一个恒返回 `'merge'` 的实现会让下面几条全绿 ——
+    // 而页面上是每个仓库都挂着「合并中」
+    const { branch } = await statusOf(repos.staged);
+    expect('operation' in branch).toBe(false);
+  });
+
+  test('merge 冲突:标成 merge,冲突条目自成一类而不是同时进两组', async () => {
+    const { branch, files } = await statusOf(repos.mergeConflict);
+    expect(branch.operation).toBe('merge');
+
+    const entry = files.find((f) => f.path === 'conflict.txt') as FileEntry;
+    expect(entry?.conflicted).toBe(true);
+    expect(entry.staged).toBe('U');
+    expect(entry.unstaged).toBe('U');
+    // 判据压在**谓词**上而不是状态位上:XY 两位都不是 `.`,按字面读的实现会让
+    // 这个文件同时出现在「已暂存」与「未暂存」里,而它哪一组都不属于(§5.3)
+    expect(hasStagedChange(entry)).toBe(false);
+    expect(hasUnstagedChange(entry)).toBe(false);
+    expect(isConflicted(entry)).toBe(true);
+    // 没冲突的那个文件不受牵连:merge 停下时它已经干干净净地在 index 里
+    expect(files.some((f) => f.path === 'kept.txt')).toBe(false);
+  });
+
+  test('冲突文件照常出补丁,正文里就是冲突标记 —— 不需要特殊分支', async () => {
+    const payload = await readDiff(repos.mergeConflict, { path: 'conflict.txt' });
+    expect(payload.kind).toBe('text');
+    const patch = patchOf(payload);
+    expect(patch).toContain('<<<<<<<');
+    expect(patch).toContain('>>>>>>>');
+  });
+
+  test('rebase 进行中:标成 rebase 而不是 merge,且此时同时是 detached', async () => {
+    // 这条钉的是判据表的**顺序**:rebase 停下时 git 目录里同时躺着 `rebase-merge/`
+    // 与 `MERGE_MSG` / `AUTO_MERGE`(已实测,§10),先判 merge 的写法在这里会把
+    // 用户正在做的事说错 —— 而它不报错,只是标了个错的词
+    const { branch, files } = await statusOf(repos.rebaseInProgress);
+    expect(branch.operation).toBe('rebase');
+    // 两件事同时成立,不是二选一:rebase 期间 status 报的就是 `(detached)`
+    expect(branch.detached).toBe(true);
+    expect(files.find((f) => f.path === 'conflict.txt')?.conflicted).toBe(true);
+  });
+
+  test('linked worktree:gitDir 落在主仓库的 worktrees/ 下,列表照常', async () => {
+    const repo = await locateRepo(repos.linkedWorktree);
+    // 判据是**末段**而不是与 fixture 路径逐字相等:macOS 的 `/var` 是指向
+    // `/private/var` 的符号链接,而 git 回的是解析后的那一份(注册表那条红线说的
+    // 「同一目录字面量未必相同」正是这件事)
+    expect(repo.root.endsWith('worktree-linked')).toBe(true);
+    // `.git` 在这里是**文件**不是目录,所以 gitDir 不可能是 `<root>/.git`(§5.2)
+    expect(repo.gitDir).toContain(join('.git', 'worktrees'));
+    expect(repo.gitDir.startsWith(repo.root)).toBe(false);
+
+    const { branch, files } = await readStatus(repo);
+    expect(branch.head).toBe('wt');
+    expect('operation' in branch).toBe(false);
+    expect(files.map((f) => f.path).sort()).toEqual(['only-here.txt', 'shared.txt']);
+  });
+
+  test('submodule:gitDir 落在父仓库的 modules/ 下,列表照常', async () => {
+    const repo = await locateRepo(repos.submodule);
+    expect(repo.gitDir).toContain(join('.git', 'modules'));
+    expect(repo.gitDir.startsWith(repo.root)).toBe(false);
+
+    const { files } = await readStatus(repo);
+    expect(files.map((f) => f.path).sort()).toEqual(['child.txt', 'untracked-in-submodule.txt']);
+    const payload = await readDiff(repo.root, { path: 'child.txt' });
+    expect(payload).toHaveProperty(
+      'patch',
+      expect.stringContaining('+changed inside the submodule'),
+    );
+  });
+
+  test('bare 仓库给的是「没有工作区」这句话,不是「不是仓库」', async () => {
+    // 两者的提示完全不同,合并成一句会把用户指向错误的方向 —— 而 `--show-toplevel`
+    // 在 bare 下就是以 128 退出(已实测),分不开的实现看起来一样「不崩溃」
+    await expect(locateRepo(repos.bare)).rejects.toMatchObject({ code: 'bare-repo' });
   });
 });

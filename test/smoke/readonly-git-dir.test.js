@@ -50,7 +50,7 @@ const WINDOWS = process.platform === 'win32';
 /** Everyone。用 SID 而不是名字 —— 本地化的 Windows 上「Everyone」是另一个词。 */
 const EVERYONE = '*S-1-1-0';
 
-/** 本文件用得到的 fixture。生成全部 8 个要 600ms 上下,其中一半这里根本不打开。 */
+/** 本文件用得到的 fixture。生成全部 16 个要 1.5s 上下,其中一半这里根本不打开。 */
 const NEEDED = ['unicodePaths', 'empty', 'staged'];
 
 /** 已经锁过的 `.git`,退出前必须逐个解锁,否则临时目录删不掉。 */

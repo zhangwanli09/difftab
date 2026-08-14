@@ -1,6 +1,8 @@
 // `git status --porcelain=v2 --branch -uall -z` 的调用与解析(spec §5.2)。
 
 import type { BranchState, FileEntry, StatusCode } from '../shared/protocol.ts';
+import { readOperation } from './operation.ts';
+import type { RepoInfo } from './repo.ts';
 import { runGitStrict } from './run.ts';
 
 /**
@@ -135,6 +137,9 @@ export function parseStatus(raw: string): StatusResult {
           kind: 'tracked',
           staged: asStatusCode(fields[1]?.[0]),
           unstaged: asStatusCode(fields[1]?.[1]),
+          // **「是 `u` 记录」这件事只有这里知道**:XY 可以是 `DD` / `AA`,两位都不是
+          // `U`,下游再想从状态位认回来就已经晚了(§5.3 / §5.12 的 `conflicted`)
+          conflicted: true,
         });
         break;
       }
@@ -173,6 +178,24 @@ export async function readStatusRaw(root: string): Promise<string> {
   return runGitStrict(STATUS_ARGS, root);
 }
 
-export async function readStatus(root: string): Promise<StatusResult> {
-  return parseStatus(await readStatusRaw(root));
+/**
+ * 变更列表 + 分支状态。
+ *
+ * 取 `RepoInfo` 而不是两个字符串:进行中的多步操作只能从 **git 目录**下的状态文件读
+ * (§5.3),而它和工作区根是两条不同的路径 —— linked worktree 与 submodule 下差得很远。
+ * 两个同类型参数并排放着,调换顺序不会报错,只会让 `operation` 从此恒为空。
+ *
+ * 两件事并发:`git status` 是一次子进程,`readOperation` 是七个 `access`,互不依赖。
+ */
+export async function readStatus(repo: RepoInfo): Promise<StatusResult> {
+  const [raw, operation] = await Promise.all([
+    readStatusRaw(repo.root),
+    readOperation(repo.gitDir),
+  ]);
+  const status = parseStatus(raw);
+  // 没有进行中的操作时**不写这个字段**(而不是写 undefined):`/api/state` 的响应体
+  // 因此干净,前端的判据也就只有「有没有」这一种形态。
+  // 就地写:`parseStatus` 每次都新造一份,这里是它唯一的持有者
+  if (operation !== undefined) status.branch.operation = operation;
+  return status;
 }

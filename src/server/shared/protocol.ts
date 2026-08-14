@@ -30,6 +30,16 @@ export interface FileEntry {
   unstaged: StatusCode;
   /** 重命名/复制的相似度(`R100` → 100)。 */
   renameScore?: number;
+  /**
+   * 未合并(冲突)条目 —— **「这条来自 porcelain 的 `u` 记录」这一事实本身**,
+   * 不是从状态位推出来的(§5.3)。
+   *
+   * `u` 记录的 XY 可以是 `UU` / `AA` / `DD` / `AU` / `UD` 等组合,`DD` 两位都不是 `U`,
+   * 所以靠状态位认会漏掉一半形态;而「未合并」恰恰是下面三个分组谓词唯一无法从
+   * XY 读出来的东西。判据留在解析器那一侧,前端就不必重写一遍 porcelain 的记录类型
+   * (§5.0 不变式 4)。
+   */
+  conflicted?: true;
 }
 
 /**
@@ -39,22 +49,34 @@ export interface FileEntry {
  * 只有一份实现(§5.0 不变式 4):
  * - `?` 是本协议对未跟踪的编码、**不是** porcelain 的状态位,只出现在 `unstaged` 上;
  *   未跟踪自成一类,靠 `kind` 判定,不能靠状态位;
- * - `U`(未合并)两侧同时为 `U`,按字面读会让一个冲突文件同时进「已暂存」和
- *   「未暂存」两组。**TODO(S4b)**:合并冲突应当单独成组 —— §5.3 的 git 异常状态归
- *   那一阶段,在此之前维持现状(进两组)而不是让它从列表里消失,后者更糟。
+ * - **未合并(冲突)条目两侧同样都不是 `.`**,按字面读会让一个冲突文件同时进
+ *   「已暂存」和「未暂存」两组 —— 而它哪一组都不属于:那两组说的是「已经 add 了」
+ *   与「改了还没 add」,冲突文件正等着用户决定内容。它由 `isConflicted` 单独成组
+ *   (§5.3),所以这里与下面都要把它排除掉。
  */
 export function hasStagedChange(entry: FileEntry): boolean {
-  return entry.kind === 'tracked' && entry.staged !== '.';
+  return entry.kind === 'tracked' && !entry.conflicted && entry.staged !== '.';
 }
 
 /** 同上,工作区侧(porcelain 的 Y 位)。未跟踪不算在内 —— 它由 `isUntracked` 承担。 */
 export function hasUnstagedChange(entry: FileEntry): boolean {
-  return entry.kind === 'tracked' && entry.unstaged !== '.';
+  return entry.kind === 'tracked' && !entry.conflicted && entry.unstaged !== '.';
 }
 
 /** 未跟踪。判据是 `kind`,不是 `unstaged === '?'`(理由见 `hasStagedChange`)。 */
 export function isUntracked(entry: FileEntry): boolean {
   return entry.kind === 'untracked';
+}
+
+/**
+ * 未合并(冲突)。判据是 `conflicted` 而不是 `staged === 'U'`(理由见该字段)。
+ *
+ * 与上面三个谓词一样只有一份实现:少了它,冲突文件要么同时出现在两组里、要么
+ * 被两组同时排除掉从列表里消失,而后者比前者更糟 —— 用户正在解冲突,而页面告诉他
+ * 工作区是干净的。
+ */
+export function isConflicted(entry: FileEntry): boolean {
+  return entry.conflicted === true;
 }
 
 export interface BranchState {
@@ -74,8 +96,17 @@ export interface BranchState {
    * 而不是 0/0。把它编码进类型而非留作约定,前端就不可能漏掉这条分支。
    */
   upstream: null | { ahead: number; behind: number };
-  /** 仓库正处于的多步操作。TODO(S4b):当前恒不填充。 */
-  operation?: 'rebase' | 'merge' | 'cherry-pick' | 'revert' | 'bisect';
+  /**
+   * 仓库正处于的多步操作;缺省即「没有」(§5.3)。
+   *
+   * 它**不来自 status 输出**——porcelain 里一行都没有,判据是 git 目录下的状态文件
+   * (`server/git/operation.ts`)。`am` 与 `rebase` 分开列是因为两者共用同一个
+   * `rebase-apply/` 目录,合并成一个标注等于对用户说假话(§10 的实测)。
+   *
+   * **与 `detached` 是同时出现的两件事,不是二选一**:rebase 停下时 status 报的
+   * `# branch.head` 就是 `(detached)`(已实测)。
+   */
+  operation?: 'rebase' | 'am' | 'merge' | 'cherry-pick' | 'revert' | 'bisect';
 }
 
 /**

@@ -106,6 +106,24 @@ describe('parseStatus', () => {
     expect(conflict?.unstaged).toBe('U');
   });
 
+  test('`u` 记录一律带 conflicted,`DD` 这种两位都不是 U 的也不例外', () => {
+    // **判据是「这条来自 `u` 段」,不是状态位**(§5.3):`DD`(双方都删)与
+    // `AA`(双方都新增)两位里一个 `U` 都没有,靠状态位认的实现会把它们漏掉,
+    // 于是它们同时落进「已暂存」与「未暂存」两组 —— 而两组都不是它们的处境
+    const raw = z(
+      '# branch.head main',
+      'u DD N... 100644 100644 100644 100644 aaaa bbbb cccc both-deleted.txt',
+      'u AA N... 100644 100644 100644 100644 aaaa bbbb cccc both-added.txt',
+      '1 .M N... 100644 100644 100644 c9c6af7f c9c6af7f plain.txt',
+    );
+    const { files } = parseStatus(raw);
+    const conflicted = files.filter((f) => f.conflicted);
+    expect(conflicted.map((f) => f.path)).toEqual(['both-deleted.txt', 'both-added.txt']);
+    // 反面:普通记录**不带**这个字段(而不是带一个 false)—— 判据只有「有没有」
+    // 一种形态,响应体里也就不会多出一堆 `conflicted: false`
+    expect(files.find((f) => f.path === 'plain.txt')).not.toHaveProperty('conflicted');
+  });
+
   test('空输出不崩溃,分支退化为「无上游」', () => {
     expect(parseStatus('')).toEqual({
       branch: { head: '', detached: false, upstream: null },
