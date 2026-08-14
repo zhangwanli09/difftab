@@ -72,7 +72,12 @@ describe('groupFiles', () => {
         file({ path: 'b.txt', unstaged: 'M' }),
         file({ path: 'new.txt', kind: 'untracked', unstaged: '?' }),
       ]),
-    ).toEqual({ staged: ['a.txt'], unstaged: ['b.txt'], untracked: ['new.txt'] });
+    ).toEqual({
+      conflicted: [],
+      staged: ['a.txt'],
+      unstaged: ['b.txt'],
+      untracked: ['new.txt'],
+    });
   });
 
   test('X=M Y=M 的文件同时出现在已暂存与未暂存里', () => {
@@ -87,10 +92,34 @@ describe('groupFiles', () => {
     // 协议把未跟踪编码成 unstaged: '?'(§5.12)。若按「unstaged !== '.'」分组,
     // 每个未跟踪文件都会在未暂存组里再出现一次
     expect(byId([file({ path: 'new.txt', kind: 'untracked', unstaged: '?' })])).toEqual({
+      conflicted: [],
       staged: [],
       unstaged: [],
       untracked: ['new.txt'],
     });
+  });
+
+  test('冲突条目自成一组,不同时进已暂存与未暂存', () => {
+    // `u` 记录的 XY 两位都不是 `.`,按字面判的实现会让它同时进两组 —— 而它哪一组
+    // 都不属于:那两组说的是「已经 add 了」与「改了还没 add」,冲突文件正等着
+    // 用户决定内容(§5.3)。`DD` 那条同时钉住「判据不是状态位」:两位里一个 `U`
+    // 都没有,靠 `staged === 'U'` 认的实现会把它漏回那两组里去
+    expect(
+      byId([
+        file({ path: 'both-modified.txt', staged: 'U', unstaged: 'U', conflicted: true }),
+        file({ path: 'both-deleted.txt', staged: 'D', unstaged: 'D', conflicted: true }),
+      ]),
+    ).toEqual({
+      conflicted: ['both-modified.txt', 'both-deleted.txt'],
+      staged: [],
+      unstaged: [],
+      untracked: [],
+    });
+  });
+
+  test('冲突组排在最前面 —— rebase 停在半路时它就是唯一要处理的东西', () => {
+    const ids = groupFiles([]).map((g) => g.id);
+    expect(ids[0]).toBe('conflicted');
   });
 
   test('重命名条目按新路径进已暂存组,oldPath 原样带着', () => {
@@ -100,7 +129,8 @@ describe('groupFiles', () => {
       staged: 'R',
       renameScore: 96,
     });
-    const [staged] = groupFiles([entry]);
+    // 按 id 找而不是按下标取:分组一多一少,按下标的写法会安静地断言到另一组上
+    const staged = groupFiles([entry]).find((g) => g.id === 'staged');
     expect(staged?.files[0]?.oldPath).toBe('src/old.ts');
     expect(staged?.files[0]?.renameScore).toBe(96);
   });
@@ -112,8 +142,13 @@ describe('groupFiles', () => {
     expect(byId(paths.map((path) => file({ path, unstaged: 'M' }))).unstaged).toEqual(paths);
   });
 
-  test('工作区干净时三组都是空的,而不是缺组', () => {
-    expect(groupFiles([]).map((g) => g.id)).toEqual(['staged', 'unstaged', 'untracked']);
+  test('工作区干净时四组都是空的,而不是缺组', () => {
+    expect(groupFiles([]).map((g) => g.id)).toEqual([
+      'conflicted',
+      'staged',
+      'unstaged',
+      'untracked',
+    ]);
   });
 });
 

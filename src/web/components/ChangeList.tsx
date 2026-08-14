@@ -66,6 +66,31 @@ function StatusBadge({ code }: { code: StatusCode }) {
   );
 }
 
+/**
+ * 冲突条目的徽章:**XY 两位一起印**。
+ *
+ * 一位不够:`DD`(双方都删)与 `UU`(双方都改)只印一位时长得一模一样,而它们是
+ * 用户要采取的两种完全不同的动作。这里刻意**不**把七种组合各翻一句话 —— 那是
+ * porcelain 的记录语义,前端一旦写下来就成了第二份 git 知识(§5.0 不变式 4);
+ * 字母是 git 自己的表述,原样印出来既不会说错,也与 `git status` 一致。
+ *
+ * 颜色取 `CODE_COLORS.U` 而不是再写一遍那个 token:两处各写一份时,调冲突色只改
+ * 一处的话,同一个页面上冲突组与别处的 `U` 会是两个颜色。宽度与居中沿用
+ * `StatusBadge` 的 `w-5 text-center`(两个等宽小字正好放得下),否则冲突组的文件名
+ * 会比别的组横着挪一截。
+ */
+function ConflictBadge({ staged, unstaged }: Pick<FileEntry, 'staged' | 'unstaged'>) {
+  return (
+    <span
+      title="未合并(冲突)"
+      class={`w-5 shrink-0 text-center font-mono text-xs ${CODE_COLORS.U}`}
+    >
+      {staged}
+      {unstaged}
+    </span>
+  );
+}
+
 // focus-visible 那两个类是键盘可达性的最低档:列表项是 <button>,而 preflight 清掉了
 // UA 默认焦点环。用 focus-border token 画,深浅都跟着翻
 const ROW_CLASS =
@@ -103,8 +128,16 @@ function FileRow({ file, group }: { file: FileEntry; group: ChangeGroup['id'] })
         onClick={() => selectFile(file)}
         class={rowClass}
       >
-        {/* 每个分组只展示它自己那一侧的状态位 —— 「已暂存」看 X,其余看 Y */}
-        <StatusBadge code={group === 'staged' ? file.staged : file.unstaged} />
+        {/* 每个分组只展示它自己那一侧的状态位 —— 「已暂存」看 X,其余看 Y;
+            冲突条目两侧都不是 `.`,挑哪一位都会丢掉另一半(§5.3)。
+            **「印两位」的判据是条目自己的 `conflicted`,不是它落在哪一组**:
+            按分组判的话,这一行画得对不对就取决于 `groupFiles` 与这里是否一致,
+            而那个一致性没有任何东西在管 */}
+        {file.conflicted ? (
+          <ConflictBadge staged={file.staged} unstaged={file.unstaged} />
+        ) : (
+          <StatusBadge code={group === 'staged' ? file.staged : file.unstaged} />
+        )}
         <span class="truncate">
           {dir && <span class="text-description-foreground">{dir}</span>}
           <span>{name}</span>

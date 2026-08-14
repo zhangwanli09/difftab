@@ -13,6 +13,7 @@ import {
   type FileEntry,
   hasStagedChange,
   hasUnstagedChange,
+  isConflicted,
   isUntracked,
   type RepoState,
 } from '../../server/shared/protocol';
@@ -77,7 +78,7 @@ export const diffState = signal<DiffRequestState | null>(null);
  */
 export const selectedPath = computed(() => diffState.value?.path ?? null);
 
-export type ChangeGroupId = 'staged' | 'unstaged' | 'untracked';
+export type ChangeGroupId = 'conflicted' | 'staged' | 'unstaged' | 'untracked';
 
 export interface ChangeGroup {
   id: ChangeGroupId;
@@ -86,18 +87,25 @@ export interface ChangeGroup {
 }
 
 /**
- * 三个分组(spec §6「变更文件列表……已暂存、未暂存、未跟踪三类文件均正确展示」)。
+ * 四个分组(spec §6「变更文件列表……已暂存、未暂存、未跟踪三类文件均正确展示」,
+ * 外加 §5.3 的冲突一组)。
  *
  * **同一个文件可以同时出现在「已暂存」和「未暂存」里**,这不是 bug:porcelain 的
  * XY 是两位独立状态位,`git add` 之后再改一次就是 `X=M Y=M`(fixture 里的 c.txt)。
  * 强行归一到一个桶,等于在前端替用户丢掉一半信息 —— 而「agent 执行过 git add 后
  * 已暂存的改动仍能展示不遗漏」正是 §6 点名的验收项。
  *
- * 顺序沿用后端给的顺序(git 自己按路径排好的),不在前端再排一次:多一份排序意见
- * 就多一处与 `git status` 不一致的可能,而验收标准是「与 git status 结果一致」。
+ * **冲突是唯一的例外,而且排在最前面**:它两侧状态位都不是 `.`,不单独成组就会
+ * 同时落进上面两组,而它哪一组都不属于 —— 那两组说的是「已经 add 了」与「改了
+ * 还没 add」,冲突文件正等着用户决定内容。排最前是因为 rebase / merge 停在半路时,
+ * 它就是用户此刻唯一要处理的东西(§5.3;判据在 `isConflicted`,不在这里)。
+ *
+ * 组内顺序沿用后端给的顺序(git 自己按路径排好的),不在前端再排一次:多一份排序
+ * 意见就多一处与 `git status` 不一致的可能,而验收标准是「与 git status 结果一致」。
  */
 export function groupFiles(files: readonly FileEntry[]): ChangeGroup[] {
   return [
+    { id: 'conflicted', title: '冲突', files: files.filter(isConflicted) },
     { id: 'staged', title: '已暂存', files: files.filter(hasStagedChange) },
     { id: 'unstaged', title: '未暂存', files: files.filter(hasUnstagedChange) },
     // -uall 保证这里是文件粒度,不会是折叠后的 `dir/`(§5.2)

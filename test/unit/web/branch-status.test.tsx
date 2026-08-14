@@ -95,6 +95,72 @@ describe('BranchStatus', () => {
   });
 });
 
+describe('BranchStatus 的降级标注(§5.3 / §6 的 `[S4b]`)', () => {
+  it('detached 时不把 git 的字面量 `(detached)` 当分支名画出去', () => {
+    // 后端**不替它编一个名字**(那是在事实来源那一层说假话,见 `BranchState.head`),
+    // 所以「画什么」这件事就落在这里。原样画出去的症状是页面上凭空多出一个
+    // 叫「(detached)」的分支 —— 不报错,只是没有这样一个分支
+    render(<BranchStatus branch={branch({ head: '(detached)', detached: true })} />, container);
+    const text = textOf(container);
+
+    expect(text).not.toContain('(detached)');
+    expect(text).toContain('游离 HEAD');
+    // 也不该退回「无上游」:detached 时根本谈不上上游,而那句话是留给
+    // 「有分支但没设上游」的(S3a 那条验收项要区分的正是它)
+    expect(text).not.toContain('无上游');
+    expect(text).not.toMatch(/[↑↓]/);
+  });
+
+  it('detached 但确实有 ahead/behind 时照样画出来', () => {
+    // `detached` 是拿 `# branch.head` 与字面量 `(detached)` 比出来的 —— porcelain v2
+    // 给不出别的判据,而 git 允许真有一个分支叫这个名字。只按 `detached` 藏计数的
+    // 写法会让那个分支的 ahead/behind 静默消失,所以判据连 upstream 一起看
+    render(
+      <BranchStatus
+        branch={branch({ head: '(detached)', detached: true, upstream: { ahead: 1, behind: 2 } })}
+      />,
+      container,
+    );
+    const text = textOf(container);
+    expect(text).toContain('↑1');
+    expect(text).toContain('↓2');
+  });
+
+  it.each([
+    ['rebase', '变基中'],
+    ['merge', '合并中'],
+    ['am', '打补丁中'],
+    ['cherry-pick', '拣选中'],
+    ['revert', '回滚中'],
+    ['bisect', '二分查找中'],
+  ] as const)('operation=%s 标成「%s」', (operation, label) => {
+    render(<BranchStatus branch={branch({ operation })} />, container);
+    expect(textOf(container)).toContain(label);
+  });
+
+  it('没有进行中的操作时一个标签都不画', () => {
+    // 反面证据。与 `WatchBadge` 同一条理由:常驻一个「正常」标签会让唯一要紧的
+    // 那一次淹在一片永远正确的字里
+    render(<BranchStatus branch={branch()} />, container);
+    const text = textOf(container);
+    for (const label of ['变基中', '合并中', '打补丁中', '拣选中', '回滚中', '二分查找中']) {
+      expect(text).not.toContain(label);
+    }
+  });
+
+  it('rebase 停在半路时,detached 与「变基中」同时画出来', () => {
+    // 两者是同时出现的两件事,不是二选一:rebase 期间 status 报的就是 `(detached)`
+    // (已实测)。少画哪一个,用户都看不全自己的处境
+    render(
+      <BranchStatus branch={branch({ head: '(detached)', detached: true, operation: 'rebase' })} />,
+      container,
+    );
+    const text = textOf(container);
+    expect(text).toContain('游离 HEAD');
+    expect(text).toContain('变基中');
+  });
+});
+
 describe('App 的 header', () => {
   it('拿到 state 之后才画分支,且画的是 state 里的那一份', async () => {
     // 组件本身全绿、却压根没被挂进 App —— 这是上面四条一条都盖不到的失效方式。

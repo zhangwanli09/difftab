@@ -10,6 +10,7 @@
 // 用户唯一需要据以调整预期的事实。
 
 import type { WatchState } from '../../server/shared/protocol';
+import { Badge } from './Badge';
 
 export function WatchBadge({ watch }: { watch: WatchState }) {
   /**
@@ -20,11 +21,11 @@ export function WatchBadge({ watch }: { watch: WatchState }) {
    */
   if (watch.mode !== 'polling') return null;
   return (
-    <span
-      class="shrink-0 rounded-sm bg-warning-background px-1.5 py-0.5 text-xs text-description-foreground"
+    <Badge
+      tone="text-description-foreground"
       title="未使用原生文件监听,工作区改动靠定时轮询发现,可能慢一两秒"
     >
       轮询刷新
-    </span>
+    </Badge>
   );
 }
