@@ -9,5 +9,6 @@
 两批(spec §7 末段):
 - **第一批(S1)决定解析器结构**:非 ASCII / 空格 / 引号路径、重命名(含相似度阈值边界)、
   已暂存改动、无上游的新建分支、空仓库;另需一个 300+ 文件变更的仓库供 S2 验收懒加载
-- **第二批(S4)边界与异常**:新增 / 删除 / 二进制 / >5MB 大文件、detached HEAD、
-  rebase 进行中、linked worktree、bare 仓库
+- **第二批(S4)边界与异常**,分两次就位:**S4a** 的新增 / 删除 / 二进制 / >5MB 大文件;
+  **S4b** 的 detached HEAD、merge 与 rebase 进行中(各留一个冲突条目)、linked worktree、
+  submodule、bare 仓库,以及 SHA-256 空树常量所需的 `--object-format=sha256` 空仓库

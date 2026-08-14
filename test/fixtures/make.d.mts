@@ -33,6 +33,20 @@ export interface FixtureRepos {
    * (补丁字节闸与文件字节闸的分水岭)、一个已暂存的新增文件。
    */
   diffEdges: string;
+  /** 游离 HEAD(`checkout --detach`),外加一处改动与一个未跟踪文件。 */
+  detachedHead: string;
+  /** `git merge` 冲突停下:`MERGE_HEAD` + 一条 `u UU` 记录。 */
+  mergeConflict: string;
+  /** `git rebase` 冲突停下:`rebase-merge/`,且 status 报 `(detached)`。 */
+  rebaseInProgress: string;
+  /** linked worktree 的工作区 —— `.git` 是文件,git 目录在主仓库的 `worktrees/` 下。 */
+  linkedWorktree: string;
+  /** 子模块自己的工作区 —— git 目录在父仓库的 `modules/` 下。 */
+  submodule: string;
+  /** bare 仓库(无工作区)。 */
+  bare: string;
+  /** `--object-format=sha256` 且无任何提交 —— SHA-256 空树常量的实测来源。 */
+  sha256Empty: string;
 }
 
 export type FixtureName = keyof FixtureRepos;

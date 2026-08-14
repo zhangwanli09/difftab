@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// 测试仓库生成脚本 —— **第一批(S1)+ 第二批的 diff 部分(S4a)**(spec §7 末段)。
+// 测试仓库生成脚本 —— **第一批(S1)+ 第二批全部(S4a 的 diff 边界 + S4b 的异常状态)**
+// (spec §7 末段)。
 //
 // 零依赖纯 JS,可由 `node test/fixtures/make.mjs [目标目录]` 直接执行:它要在没有
 // pnpm、没有 node_modules 的 CI matrix 机器上跑,`pnpm fixtures` 只是别名(§5.11)。
@@ -12,11 +13,12 @@
 // `# branch.ab` 缺失的降级路径、以及 §5.3 的 diff 基准该做成怎样的接口形状。
 // 删除与未跟踪符号链接按同一判据从第二批上调进来 —— 它们决定的是「已跟踪走
 // git diff / 未跟踪读磁盘」那次分流本身(spec §7 末段有修订记录)。
-// 第二批分两次就位:**S4a 的 diff 边界(新增/二进制/超大,即下面的 diffEdges)已在**,
-// S4b 的异常状态(detached HEAD/rebase/worktree/bare/SHA-256)待建。
+// 第二批分两次就位:**S4a 的 diff 边界**(新增/二进制/超大,即下面的 diffEdges)与
+// **S4b 的异常状态**(detached HEAD / merge / rebase 进行中 / linked worktree /
+// submodule / bare / SHA-256 空仓库)。
 
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -82,6 +84,13 @@ export const ALL_REPOS = [
   'empty',
   'manyFiles',
   'diffEdges',
+  'detachedHead',
+  'mergeConflict',
+  'rebaseInProgress',
+  'linkedWorktree',
+  'submodule',
+  'bare',
+  'sha256Empty',
 ];
 
 /**
@@ -111,10 +120,11 @@ const OVER_LINE_COUNT = 60_000;
 /**
  * 生成测试仓库。`only` 给出需要哪几个(省略即全部)。
  *
- * 加 `only` 是因为整套要跑 30 多次 git、约 600ms,其中 `manyFiles` 一个就占三分之一
- * (640 次写 + 对 320 个路径 `git add -A`),而**没有任何一个冒烟文件打开它**。
- * 三个冒烟文件各在自己的进程里建一次(`node --test` 一文件一进程,memo 共享不了),
- * 这笔开销在 CI 的 9 档矩阵上要付 27 次,Windows 上 git 起进程还要慢上数倍。
+ * 加 `only` 是因为整套 16 个仓库要跑 70 多次 git、约 1.5s(本机实测,S4b 那批
+ * 又添了 30 次),其中 `manyFiles` 一个就占五分之一(640 次写 + 对 320 个路径
+ * `git add -A`),而**没有任何一个冒烟文件打开它**。冒烟文件各在自己的进程里建一次
+ * (`node --test` 一文件一进程,memo 共享不了),这笔开销在 CI 的 9 档矩阵上要
+ * 逐档重付,Windows 上 git 起进程还要慢上数倍 —— 只要 `staged` 一个是 70ms。
  */
 export function makeFixtures(destDir, only) {
   const dest = resolve(destDir);
@@ -136,10 +146,11 @@ export function makeFixtures(destDir, only) {
     writeFileSync(file, content);
   };
 
-  const init = (name) => {
+  // `extra` 给 `--bare` / `--object-format=sha256` 这类只有个别仓库要的 init 参数
+  const init = (name, ...extra) => {
     const cwd = join(dest, name);
     mkdirSync(cwd, { recursive: true });
-    git(cwd, 'init', '--quiet', '--initial-branch=main');
+    git(cwd, 'init', '--quiet', '--initial-branch=main', ...extra);
     // 换行归一化关掉:开着的话 Windows 上 checkout 会把 LF 换成 CRLF,
     // 于是「刚 clone 出来就有一堆 M」,断言全部错位
     git(cwd, 'config', 'core.autocrlf', 'false');
@@ -149,6 +160,46 @@ export function makeFixtures(destDir, only) {
   const commit = (cwd, message) => {
     git(cwd, 'add', '-A');
     git(cwd, 'commit', '--quiet', '--allow-empty', '-m', message);
+  };
+
+  /**
+   * 制造冲突的那几条命令(`merge` / `rebase` / `cherry-pick`)**必然以 1 退出** ——
+   * 冲突就是我们要的结果,不是失败。
+   *
+   * 但「咽掉退出码」到此为止:每个用它的地方紧接着都要 `expectPath` 一条痕迹。
+   * 少了那一步,git 换个行为(或参数写错)时仓库会安静地停在**没有冲突**的状态上,
+   * 而依赖它的用例只会以一句与真正原因无关的话变红。
+   */
+  const gitMayFail = (cwd, ...args) => {
+    try {
+      git(cwd, ...args);
+    } catch {
+      // 见上
+    }
+  };
+
+  /** 上一条的正面断言:那个状态文件真的留下了。 */
+  const expectPath = (cwd, segments, why) => {
+    if (existsSync(join(cwd, ...segments))) return;
+    throw new Error(`fixture ${cwd} 缺少 ${segments.join('/')} —— ${why}`);
+  };
+
+  /**
+   * 一条会冲突的分叉:`base` → side 改成 `side`、main 改成 `main`,同一个文件同一行。
+   *
+   * merge 与 rebase 两个「进行中」的 fixture 都从这里长出来 —— 两处各写一遍的话,
+   * 改动其中一处会让两者停在不同的冲突形态上,而那与它们要证的东西无关。
+   */
+  const diverge = (cwd) => {
+    write(cwd, 'conflict.txt', 'base\n');
+    write(cwd, 'kept.txt', 'no conflict here\n');
+    commit(cwd, 'base');
+    git(cwd, 'checkout', '--quiet', '-b', 'side');
+    write(cwd, 'conflict.txt', 'side\n');
+    commit(cwd, 'side changes the line');
+    git(cwd, 'checkout', '--quiet', 'main');
+    write(cwd, 'conflict.txt', 'main\n');
+    commit(cwd, 'main changes the same line');
   };
 
   const repos = {};
@@ -386,6 +437,108 @@ export function makeFixtures(destDir, only) {
     write(cwd, 'added-staged.txt', 'brand new line one\nbrand new line two\n');
     git(cwd, 'add', 'added-staged.txt');
     repos.diffEdges = cwd;
+  }
+
+  // 8. git 异常状态(**第二批的余下部分,S4b**,spec §5.3)。
+  //    这一批与前两批的分别在于:它们要证的不是「解析对不对」也不是「拦不拦得住」,
+  //    而是**这些仓库形态下工具还能不能正常工作**,以及分支状态那一栏说的是不是实话
+
+  // 8a. detached HEAD —— status 的 `# branch.head` 给的是字面量 `(detached)`,
+  //     原样画出去等于页面上凭空多出一个叫「(detached)」的分支
+  if (wanted('detachedHead')) {
+    const cwd = init('detached-head');
+    write(cwd, 'a.txt', 'one\n');
+    commit(cwd, 'first');
+    write(cwd, 'a.txt', 'two\n');
+    commit(cwd, 'second');
+    git(cwd, 'checkout', '--quiet', '--detach', 'HEAD~1');
+    // 留下改动:没有它,这个仓库在列表那一侧是空的,而「分支状态之外一切照常」
+    // 正是本项要证的另一半
+    write(cwd, 'a.txt', 'edited while detached\n');
+    write(cwd, 'untracked-while-detached.txt', 'brand new\n');
+    repos.detachedHead = cwd;
+  }
+
+  // 8b. merge 进行中(冲突停下)—— `MERGE_HEAD` + 一条 `u UU` 记录。
+  //     冲突条目是**三个分组谓词唯一无法从 XY 读出来的东西**:两位都不是 `.`,
+  //     不单独成组就会同时落进「已暂存」与「未暂存」(§5.3)
+  if (wanted('mergeConflict')) {
+    const cwd = init('merge-conflict');
+    diverge(cwd);
+    gitMayFail(cwd, 'merge', 'side');
+    expectPath(cwd, ['.git', 'MERGE_HEAD'], 'git merge 没有停在冲突上,这个 fixture 就是空的');
+    repos.mergeConflict = cwd;
+  }
+
+  // 8c. rebase 进行中(冲突停下)—— `rebase-merge/`,**同时**还有 merge 留下的
+  //     `MERGE_MSG` / `AUTO_MERGE`(已实测),这正是判据表要「rebase 先判」的理由。
+  //     另外此时 status 报的是 `(detached)`:operation 与 detached 是同时出现的两件事
+  if (wanted('rebaseInProgress')) {
+    const cwd = init('rebase-in-progress');
+    diverge(cwd);
+    gitMayFail(cwd, 'rebase', 'side');
+    expectPath(cwd, ['.git', 'rebase-merge'], 'git rebase 没有停在冲突上,这个 fixture 就是空的');
+    repos.rebaseInProgress = cwd;
+  }
+
+  // 8d. linked worktree —— `.git` 是**文件**不是目录,真正的 git 目录在
+  //     `<主仓库>/.git/worktrees/<名>`。按 `<root>/.git` 拼路径的写法在这里永远
+  //     读不到状态文件,而它不报错(§5.3)
+  if (wanted('linkedWorktree')) {
+    const main = init('worktree-main');
+    write(main, 'shared.txt', 'v1\n');
+    commit(main, 'initial');
+    const cwd = join(dest, 'worktree-linked');
+    git(main, 'worktree', 'add', '--quiet', '-b', 'wt', cwd);
+    write(cwd, 'shared.txt', 'changed in the linked worktree\n');
+    write(cwd, 'only-here.txt', 'brand new\n');
+    repos.linkedWorktree = cwd;
+  }
+
+  // 8e. submodule —— 同上的另一种形态:git 目录在 `<父仓库>/.git/modules/<路径>`。
+  //     返回的是**子模块自己的工作区**(用户在里面敲命令的那个目录)
+  if (wanted('submodule')) {
+    const child = init('submodule-child');
+    write(child, 'child.txt', 'c1\n');
+    commit(child, 'child initial');
+
+    const parent = init('submodule-parent');
+    write(parent, 'parent.txt', 'p1\n');
+    commit(parent, 'parent initial');
+    // 本地路径的 submodule 自 git 2.38(CVE-2022-39253)起默认被拒,生成期显式放开
+    // 一次。这条属**开发流程的 git**,与产品运行时无关(CLAUDE.md 第 1 节)
+    const url = '../submodule-child';
+    git(
+      parent,
+      '-c',
+      'protocol.file.allow=always',
+      'submodule',
+      'add',
+      '--quiet',
+      url,
+      'vendor/child',
+    );
+    commit(parent, 'add the submodule');
+
+    const cwd = join(parent, 'vendor', 'child');
+    write(cwd, 'child.txt', 'changed inside the submodule\n');
+    write(cwd, 'untracked-in-submodule.txt', 'brand new\n');
+    repos.submodule = cwd;
+  }
+
+  // 8f. bare 仓库 —— 没有工作区,`rev-parse --show-toplevel` 直接以 128 退出(已实测)。
+  //     要的是一句话拒绝,不是崩溃(§5.2 / §5.3)
+  if (wanted('bare')) {
+    repos.bare = init('bare.git', '--bare');
+  }
+
+  // 8g. SHA-256 的空仓库 —— 空树哈希那个常量的实测来源(§5.3)。
+  //     与 `empty` 一样放一个已 add 的文件:否则空树基准那条路径一次都走不到
+  if (wanted('sha256Empty')) {
+    const cwd = init('sha256-empty', '--object-format=sha256');
+    write(cwd, 'staged-before-first-commit.txt', 'no commits yet, and sha-256 at that\n');
+    git(cwd, 'add', 'staged-before-first-commit.txt');
+    repos.sha256Empty = cwd;
   }
 
   // 没生成的仓库不能是 undefined:调用方会拿着它去 spawn,cwd 变成进程当前目录,
