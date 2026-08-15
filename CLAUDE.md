@@ -35,7 +35,7 @@
 | 类型检查 | `pnpm typecheck`(`tsc --noEmit`,前后端各一份 tsconfig,严格性开关共用 `tsconfig.base.json`) |
 | 格式化 + lint | `pnpm lint`(`biome check`)/ CI 用 `biome ci` |
 | 单元/集成测试(Vitest,直接跑 TS 源码) | `pnpm test`。用例按被测代码分 `test/unit/server/`(node 环境)与 `test/unit/web/`(happy-dom),分别归两份 tsconfig,靠 `vitest.config.ts` 的 `projects` 分环境——**放错目录会静默不跑,判据见第 5 节** |
-| 冒烟测试(纯 JS,跑构建产物,含只读性两层验证) | `pnpm test:smoke`(CI matrix 档不经 script,直接 `node --test "test/smoke/*.test.js"`) |
+| 冒烟测试(纯 JS,跑构建产物,含只读性两层验证) | **先 `pnpm build`**,它跑的是 `dist/` —— 改完源码(或撤销改动)不重建时,红的样子像「三道校验全坏了」,跟真实病因(产物比源码旧一轮)毫无相似之处;CI 每次从源码构建,这个坑只在本机。`pnpm test:smoke`(CI matrix 档不经 script,直接 `node --test "test/smoke/*.test.js"`) |
 | 测试仓库 fixture 生成 | `pnpm fixtures`(默认写 `test/fixtures/repos/`;测试自己调 `makeFixtures()` 写临时目录)。两批 16 个仓库全部就位(全量约 1.5s,测试按需只生成用得到的几个) |
 | 冷启动耗时测量(对构建产物,≤300ms 门禁) | `pnpm bench:startup` |
 | 产物体积门禁 | `pnpm size` |
@@ -173,10 +173,12 @@
 
 S0 工具链脚手架 → S1 CLI + HTTP server(**含 §5.9 三道校验的最终形态**)+ **注册表文件写入(port + token)** + git 封装 + 只读主门禁 + fixture 第一批 → **S2a** 变更列表 + 只读 `.git` 第二层 → **S2b** diff2html 渲染 + 懒加载 → **S2c** 主题样式 + 体积收口 → **S3a** 分支状态 → **S3b1** SSE 通道 + 档位骨架 → **S3b2** 三档监听 + 轮询兜底 → **S3c** 进程生命周期(注册表**探活复用** + 空闲退出)→ **S4a** diff 边界情况 → **S4b** git 异常状态(两者各配一半 fixture 第二批)→ **S5** Windows/Linux 真机验证 + 安全加固自查(**CI 跑通不等于可用**)→ **S6** 开源准备。各阶段展开见 spec §7,**已收口阶段的实测数字与踩坑记录见 `docs/journal.md`**(本节不留副本)。
 
-**当前:S4b 已收口(CI 全绿),下一步 S5。** 实测数字与勾选明细见 `docs/journal.md`。
+**当前:S4b 已收口(CI 全绿);S5 进行中,只做了 macOS 那半与安全自查,未收口、§6 一条未勾。** 已收口阶段的实测数字见 `docs/journal.md`,S5 已做部分的记录在下方交接项里。
 
 **未消费的跨阶段交接**——消费掉即从本节删除,连同该阶段的收口记录一起落到 `docs/journal.md`。
 
+- **S5 已做的那半(2026-08-14,macOS 26 / Node 24.14.1 与 22.0.0)**:安全自查三组(三道校验的渗透式复核、CSP 实测、token 经命令行那条已知边界)**证据已进 spec §10、结论已进 §5.9,本节不留副本**;此外 A/B 两档在 macOS 上各验(深层 `node_modules` 写 50 个文件 0 次 change、真改动 163-164ms 到)、`npm i -g` 零传递依赖装上跑通、Node 20 上守卫给一句话提示并以 1 退出且无栈。**自查改了一处代码**:方法判定挪到三道校验之后(§5.9 第 4 条,验收项 §6 `[S5]`)
+- **→ S5 尚未做的(优先级序)**:**Windows 3 条**(B 档过滤、`npm i -g` 与版本守卫、交接项 ⓪ 的 `--git-dir` 分隔符形态)、**Linux 5 条**(C 档轮询、A 档配额、ENOSPC 降级、以及交接项 ① 那个两条候选补法择一的决定)、**系统休眠唤醒 1 条**(交接项 ②);Linux 半另需复核 §5.9 那条已知边界在 `xdg-open` 下的窗口有多大——比 macOS 大得多的话,那条边界要重新权衡
 - **→ S5(三条,均待真机定夺)**:⓪ linked worktree / submodule 只在 CI 的 **ubuntu 单测档**跑过(matrix 的冒烟不建这两个 fixture),而它们的判据是「`--git-dir` 回来的路径能拼出 `MERGE_HEAD` 等状态文件」——**Windows 上那个路径的分隔符形态没人验过**,漏了不报错、只是操作标注永远不出现;① Linux 上「启动时 inotify 配额已耗尽」这种 ENOSPC 检测不到,**两条候选补法择一的判据留给真机压低 `max_user_watches` 实测**,现在不猜(机理见 spec §5.7,验收项 §6 `[S3b2/S5]`);② **系统休眠唤醒**的半开 TCP 只有真机验得了,前端 `STALE_MS` 判定目前只有单测覆盖(验收项 §6 `[S3c/S5]`)
 
 **流程规则**
