@@ -278,6 +278,12 @@ const isIgnored = (p: string) => p.split(/[\\/]/).some(seg => IGNORE_NAMES.has(c
   - **检测得到才降得了级,而 Linux 上有一种检测不到**(2026-08-12 核对 Node 24.14.1 源码,S3b2 收口时发现):`internal/fs/recursive_watch.js` 的 `kFSWatchStart` 把**根**那一次注册的失败整个吞掉——`catch (error) { if (error.code === 'ENOENT') throw; }`,ENOSPC / EACCES / EPERM 一律丢弃,`fs.watch()` 返回一个看着活着、却永远不 emit 的 watcher。于是"启动时配额已被别的工具耗尽"这一种 ENOSPC 既不抛也不 emit,兜底两条路(建流时的 try/catch、建好后的 `'error'` 监听)都碰不到它,`mode` 停在 `native` 而工作区改动从此静默不刷新。**遍历途中**耗尽配额则相反:`#watchFolder` 会 `emit('error')`,此刻还没有监听器,EventEmitter 因此抛出 `fs.watch()`,兜底照常生效。两条候选补法——低频安全轮询(需先改本节的"原生档不轮询")、或建流前先探一次非递归 watch——**择一的判据留给 S5 在 Linux 真机上压低 `fs.inotify.max_user_watches` 实测后再定,在此之前不猜**
   - **轮询必须复用 5.2 的同一条命令 `git status --porcelain=v2 --branch -uall -z`,不得为"轮询只要知道变没变"而裁剪参数**。漏掉 `-uall` 的后果是静默的:git 会把未跟踪目录折叠成一行 `dir/`,于是**在一个已存在的未跟踪目录里新增文件根本不改变输出**,轮询判定为"无变化"、页面不刷新,而这正是 agent 边跑边生成文件时最常见的形态。漏掉 `--branch` 则会丢掉提交与切分支的检测(C 档只有 `.git` 侧的非递归 watch 兜着)。两条命令保持逐字一致,也让 5.10 的只读白名单只需覆盖一种调用形态
 
+**已知边界:`IGNORE_NAMES` 只管监听、不管展示,且只在 A / B 档成立。** 变更列表的数据源是 5.2 那条 `git status`,它只认 `.gitignore`;而 `isIgnored` 那六个名字是写死的。两者对不齐时的形态是:**没有 `.gitignore` 的仓库里,`node_modules/` 或 `dist/` 下的文件在列表里看得见,改它却不触发刷新**。
+
+**这条边界与档位有关,而且方向反直觉:C 档(以及任何降级到轮询的情形)照常刷新。** 轮询比的是那条 status 命令的输出本身,`isIgnored` 在那条路上一次都不会被调用(它只出现在 A 档传给 `fs.watch` 的 `ignore` 与 B 档的回调过滤两处)。三档已逐一实测,见第 10 节。**因此"同一个仓库在不同机器上刷不刷新"是可能的**——Linux + Node 22 落 C 档会刷,换成 Node 24 落 A 档就不刷;排查时别把它当成机器坏了。
+
+不改成"按 git 的忽略规则建 watch":那要么在监听层引一次 `check-ignore`(把 watch/ 拖上 git 的依赖边,5.0 不允许),要么自己解析 `.gitignore`(重写一份 git 的匹配语义)——代价都远大于这个形态的实际影响。**A / B 档上影响面之所以窄,是因为它只在"这一整段时间里除了这些目录什么都没动"时才可见**:任何其他变更都会触发一次完整的 status 重取,把它们一并带出来。UI 不为此加标注——那要求 UI 说清"哪些文件不受监听",而那正是这条边界本身的复杂度。
+
 另有三条 Node 官方文档载明的行为约束,三档均适用:
 
 1. **绝不能对单个文件建 watch**。Linux/macOS 上 watch 绑定的是 inode,路径被删除后重建会分配新 inode,原 watch 从此静默失效——而编辑器和 agent 普遍用"写临时文件 + 原子 rename"保存文件。必须 watch 目录
@@ -312,6 +318,8 @@ const isIgnored = (p: string) => p.split(/[\\/]/).some(seg => IGNORE_NAMES.has(c
 4. 所有端点(含 SSE)统一校验,无例外;响应带 `Cache-Control: no-store`、`X-Content-Type-Options: nosniff`。**这三道也必须排在其余一切判定之前** —— 包括"只接受 GET / HEAD"这类看着无害、且天然想往函数开头放的廉价同步判定。排在前面时,一个 POST 会在 Host 那道开口之前就拿到 `method-not-allowed`,而 rebinding 的攻击页面此刻与本服务同源、读得到这句话:数据仍拿不到(还有 token),漏的是**服务本身的存在性**,而第 1 条正是为挡住这类页面而设。可检查的判据在第 6 节的验收项里
 5. **严格 CSP**:`default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`。后三个指令**不回退到 `default-src`**,不显式写就等于没设,`'none'` 一并挡掉被 iframe 嵌套、`<base>` 改写相对 URL 与表单外发。这条是 5.11 构建链路顺带解锁的——产物是独立的 `.js` / `.css` 文件、页面无内联脚本,才有条件不开 `'unsafe-inline'`。diff2html 的输出经 `innerHTML` 注入,其自身对内容做转义,CSP 在此作纵深防御
 6. **静态资源按内存清单白名单式映射**,不得用 `path.join(root, req.url)` 之类的路径拼接读文件,避免路径穿越。构建产物文件名因此固定、不加 hash——服务端本就对所有响应发 `Cache-Control: no-store`,内容哈希没有意义
+
+**已知边界:URL 里的 token 会经过命令行,而 argv 对同机其他用户可见。** 5.1 拉起浏览器的三条系统命令都只能从 argv 收 URL,没有别的传递面(`open` 不读 stdin),于是 token 在浏览器被拉起的那一瞬对本机其他用户是可读的(已实测,见第 10 节)。**不装作它不存在——它与 5.8 给注册表文件加 `0o600` 防的是同一件事**:那边挡住了同机其他用户读 token,这边又从命令行交了出去。接受它的依据是代价对比:窗口是几十毫秒量级、且要求攻击者已经在同一台机器上以另一个用户身份紧循环轮询;而**唯一能真正关掉它的改法是把 URL 里那份换成一次性交换码**(首访换成 cookie 后即作废——被抢跑时用户看到的是一个 403 页面,即由无声泄漏变成响亮失败),代价是 5.8 的探活复用要另想办法拿到 URL:那条路上重拼 URL 的是**另一个进程**,它手上只有注册表里那份长期有效的 token。首版按本条接受,不做交换码;**Linux 上的窗口尚未实测**(`xdg-open` 是脚本、`/proc/<pid>/cmdline` 默认全局可读,预计比 macOS 大),留 S5 的 Linux 半复核后再决定是否重新权衡。
 
 **开发期不得以放宽本节校验为代价换取便利。** Vite dev server 与后端不同源,会同时撞上 Host、Origin、token 三道门,解法一律放在 dev server 的代理层(改写 `Host` / `Origin`、注入 token cookie),**后端不得为此新增任何环境变量或分支**——那等于把本节的正面防御做成一个可被误开的开关(详见 5.11,并见第 10 节禁止项)。
 
@@ -480,6 +488,7 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 - [x] `[S1]` 5.10 的**主门禁**(`GIT_TRACE` 记录并断言 git 子命令只出现在只读白名单,外加一条「确实记到了东西」的正面断言)与浏览器拉起的单点断言均通过,并随 git 封装层一同纳入 CI 门禁
 - [x] `[S2a]` 5.10 的**第二层**(A 只读 `.git` 跑完整流程 + B `.git` 逐字节比对及其正面对照)通过并纳入 matrix 作业;Windows 上 A 半改用只读 ACL 或显式跳过,不得静默通过
 - [x] `[S1/S2b]` **dev 代理未以放宽后端校验实现**:后端代码中不存在任何绕过 Host / Origin / token 校验的环境变量或分支;`vite dev` 下经代理发出的请求能通过后端三道校验拿到 `/api/state`(S1 即可验到这一步——此时前端尚未建立,以请求本身通过为准;完整页面功能待 S2b)
+- [ ] `[S5]` **三道校验排在其余一切判定之前**(5.9 第 4 条):**任何未通过三道校验的请求,响应的状态码与响应体都与「Host 不合规的一次普通 GET」逐字节一致** —— 按具体方法逐个断言是不够的,那样下一个被顺手提到函数开头的廉价 guard(体积上限、限流)照样漏而门禁全绿;同时合规 `Host` 下非幂等方法仍是 405 —— 少了后一半,把方法判定整条删掉也能让门禁通过
 - [x] `[S0/S1]` **5.0 的架构边界可自动断言**:CI 中存在规则或脚本,能在「`src/web` 反向 import `src/server`(`shared/` 除外)」或「`server/git` 之外出现 git 子进程调用」时失败。import 方向部分由 Biome 的 `noRestrictedImports` 承担(S0 建立),子进程单点部分与 5.10 主门禁合并断言(S1 建立)
 
 **性能与资源**
@@ -488,7 +497,6 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 - [x] `[S2c]` **冷启动 · 浏览器侧**:浏览器进程已在运行的前提下,首屏渲染 ≤ 1s(人工验证)。冷启动浏览器进程本身的耗时(通常 2-5s)与 `npx` 首次下载解包耗时均不计入,后者在 README 中说明
 - [x] `[S3b2]` 资源占用:原生监听模式下空闲时内存/CPU 接近零;降级轮询模式下空闲 CPU < 1%
 
-- [ ] `[S5]` **三道校验排在其余一切判定之前**(5.9 第 4 条):**任何未通过三道校验的请求,响应的状态码与响应体都与「Host 不合规的一次普通 GET」逐字节一致** —— 按具体方法逐个断言是不够的,那样下一个被顺手提到函数开头的廉价 guard(体积上限、限流)照样漏而门禁全绿;同时合规 `Host` 下非幂等方法仍是 405 —— 少了后一半,把方法判定整条删掉也能让门禁通过
 **样式、主题与语法高亮**
 
 - [x] `[S0/S2c]` **样式层叠方案生效**:构建产物中 hljs 主题与 `diff2html.min.css` 均为 unlayered 且 hljs 在前;Tailwind preflight 未破坏 diff2html 渲染(行号列宽、边框、表格对齐正常),深浅两套主题下均验证(S0 的前提验证只证 unlayered 成立,渲染观感待 S2c)
@@ -640,6 +648,7 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 - **出错的用户态递归 watcher 不会自己关,原生的会**(2026-08-12 核对 Node 24.14.1 源码):`internal/fs/watchers.js` 的原生 `FSWatcher` 在 emit `'error'` 之前就关掉了 `_handle`,而 `internal/fs/recursive_watch.js` 的 `#watchFolder` 出错时**只有一句** `this.emit('error', error)`——已经注册的那一大批 inotify watch 全都还在,只有显式 `close()` 才放得掉。因此错误回调里丢掉引用是不够的,必须 `close()`:这条路径最典型的触发原因正是**配额耗尽**,此时还占着一堆配额不放,伤的是用户整机的其他工具,而且毫无报错。`FSWatcher.prototype.close` 对已关闭的 watcher 是 no-op(`_handle === null` 直接返回),用户态那份也用 `#closed` 挡着,所以"白关一次"没有代价
 - **Linux 上建递归 watch 会同步阻塞事件循环**(同上核对):`#watchFolder` 是 `readdirSync` + `statSync` 的递归,整趟遍历都在 `fs.watch()` 调用内部同步跑完。5.8 的监听懒起把它移出了冷启动预算,但它落进了 `/api/events` 的请求处理里——大仓库上,页面此刻并发发出的 `/api/state` 与静态资源会一起卡住,首屏因此变慢,而症状与"监听很慢"毫无相似之处。故懒起须推到下一拍(`setImmediate`)再执行
 - **逐段匹配函数在 macOS 上三档都真的拦住了 `node_modules`**(2026-08-12 实测,Node 24.14.1 / macOS,S3b2 收口):在本仓库根上强制指定 A / B 档各起一次,挂一条 SSE,往 `node_modules/.gitglance-probe/deep/` 批量写 50 个文件——两档都是 **0 个 `change` 事件**;紧接着往仓库里写一个真文件,两档都各推出 **1 个**(否则"0 个"只说明什么都没在听)。同一份判据换成 basename 比对后,单测里 A / B 两档的真实文件系统用例**双双变红**(已弄红验证),与 5.7 那条"basename 模式在 macOS / Windows 上形同虚设"的源码推断一致。Linux 侧的注册前跳过与 inotify 用量留 S5 真机
+- **忽略清单与变更列表对不齐的实测形态,以及它在 C 档不成立**(2026-08-14 / 15 实测,macOS 26,S5 自查):在一个**没有 `.gitignore`** 的仓库里放 `node_modules/deep/nested/dep.js`,`/api/state` 与页面列表里都有它(`git status -uall` 照报,与 `isIgnored` 无关);随后往 `node_modules/deep/nested/` 写入,A 档(Node 24.14.1)与 B 档(Node 22.0.0)**各 0 次 `change`**,而 **C 档(强制指定,`mode=polling`)1 次** —— 轮询比的是 status 输出本身,那条路上不调 `isIgnored`。三档各配一条对照(同一轮里再往仓库根下写一个新文件)均为 1 次,证明通路本身是活的。**这一组的测法有个坑值得记:写一个已存在且内容相同的文件不改变 status 输出,轮询那一档会因此判「无变化」** —— 第一版三档都量到 0,像是"C 档也不刷新",实为前一轮已经建过同名文件;每轮换新文件名后 C 档才现出 1 次。这是 5.7 那条已知边界及其档位限定的依据
 - **降级轮询的空闲开销**(2026-08-12 实测,同上机器,30s 采样、SSE 挂着不动):C 档 **+0.08s CPU(0.27%)**、A 档 0.03%、B 档 0.00%,RSS 三档均约 60 MB(Node 基线)。轮询周期实测为 1.53s 一拍(`GIT_TRACE` 记到的 `git status` 时间戳),命令与主查询逐字相同。这是 6 节"降级轮询模式下空闲 CPU < 1%"那条的依据。**测法上有个坑**:macOS 的 `ps -o time` 是 `MM:SS.ss` 而不是 `HH:MM:SS`,按三段解析会把秒当成分钟、读数虚高 60 倍(第一版量出 18%,复查才发现是解析错;git 子进程的 CPU 不计在父进程的 TIME 里,已另行核对)
 - **`server.requestTimeout` 掐不断已完成请求的长响应**(2026-08-11 实测,Node 24.14.1):把它压到 1s、服务端保持一条 200ms 一发的 `text/event-stream` 长响应,3s 后连接仍然活着、数据持续到达。这是 5.8 的 SSE 端点不需要为超时做任何特殊设置的依据(Node 18 早期曾有此问题,现已修复)
 
@@ -673,6 +682,9 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 - **TypeScript 7 的状态与二进制名**:Go 原生编译器于 **2026-07-08** 稳定发布(7.0.2 为 latest);已知 7.x 的命令行 declaration emit 仍在完善中,本项目只用 `--noEmit` 做类型检查、转译交给 Vite / tsdown,不触及该短板。`typescript@7.0.2` 的 `bin` 字段实测为 `{"tsc": "bin/tsc"}`——**命令是 `tsc` 不是 `tsgo`**;`tsgo` 是预览包 `@typescript/native-preview` 的二进制名(该包仍在发布,latest `7.0.0-dev.20260707.2`),稳定版并入 `typescript` 主包后二进制名回归 `tsc`
 - **`@types/node` 的 latest 是 26.1.2**,与产品运行时下限 22.0.0 相差四个大版本。锁 `^22` 是 5.1 API 上限守卫成立的前提,不锁则 TS 会放行 Node 24+ 才有的内置 API
 - **CSP 指令的回退规则**:`frame-ancestors` / `base-uri` / `form-action` 均**不回退到 `default-src`**,`default-src 'none'` 对它们无效,须显式声明。这是 5.9 补这三个指令的依据
+- **拉起浏览器时 token 经过命令行,且 argv 不因属主不同而被遮蔽**(2026-08-14 实测,macOS 26 / Node 24.14.1):以真流程启动并让它真的 `open` 那个 URL,同时用一个**紧循环**反复 `ps -Ao args=` 采样 —— token 的 secret 部分在 **t=31ms** 那一拍出现在 `open` 自己的 argv 里,命中 1 拍(一次 `ps` 的自身耗时即同一量级),此后不再出现:已在运行的浏览器是经 LaunchServices 收 URL 的,不进 argv。另实测本机 `ps -Ao user=,args=` 读得到 **root 进程的完整参数**(如 `/usr/libexec/UserEventAgent (System)`),即 argv 对非属主可见。**250ms 一拍的粗采样连打 24 次一无所获**——这条只有紧循环看得见,粗采样的"没抓到"不构成反证。这是 5.9 那条已知边界的依据;Linux 那侧留 S5 的 Linux 半实测
+- **三道校验的渗透式复核**(同日,对构建产物):15 种 Host 变体(攻击者域名、带/不带端口、后缀 `127.0.0.1:<port>.evil.com` 与前缀 `evil.com#127.0.0.1:<port>` 伪装、大写 `LOCALHOST`、尾点 `localhost.`、错端口、`[::1]`、十进制 `2130706433`、`0.0.0.0`、`127.0.0.2`、空值)逐一 403,合规两个 200;HTTP/1.1 缺 Host 头由 Node 的解析器直接 400;**双 Host 头 Node 只认第一条**(坏在前 → 403,好在前 → 200),故无法靠追加一条绕过。`Origin: null` 与攻击者 Origin 403,响应无任何 `Access-Control-*`。**`fetch` 测不了这一组**:undici 按 fetch 规范把 `Host` 列为禁止头并静默改写,拿它打整栏都是假 200,必须用裸 `node:http` / socket(冒烟里的 `authedGet` 已经是后者)。另实测 `//evil.com/…` 形态的请求行只影响 `url.pathname`,302 的 `Location` 仍是纯路径,不构成开放重定向
+- **CSP 的 `frame-ancestors` 是唯一挡住嵌套的那一道**(同日,真实 Chrome):从**同机另一个端口**的页面 iframe 嵌套本服务 —— iframe 导航不带 `Origin`、Host 又是合规的 `127.0.0.1:<port>`,而 cookie 的 site 是 `127.0.0.1`(端口不分 site),于是 `SameSite=Strict` **不阻止**它发出,三道校验全过、网络层实测拿到 **200**;浏览器仍拒绝渲染(画的是灰色占位,父页面 `contentDocument` 为 null),父页面的 `fetch('/api/state', {credentials:'include'})` 则被无 CORS 头挡掉。页面自身零内联脚本、script/style 各一份同源产物,console 无任何 CSP 违规 —— 即不开 `'unsafe-inline'` 确实跑得起来。这是 5.9 第 5 条那三个不回退指令"必须显式写"的正面验证
 - **冷启动实测**:node 启动 + `http.listen` + 一次 `git status --porcelain=v2 --branch -uall -z` 全程约 **30ms 墙钟**(裸 node 启动约 10-30ms),300ms 预算充裕。**浏览器侧**(2026-08-09 于 S2c,Chrome、已在运行的进程、本仓库 18 个变更文件):`app.js` / `app.css` 各 1ms 内取完,`/api/state` 在 **47ms** 返回,`first-contentful-paint` **56-72ms**(三次刷新),列表 18 行全部就位 —— 1s 预算的十几分之一。这是 6. 那条"首屏渲染 ≤ 1s"的实测依据
 - **npm 包名**:`gitglance` registry 返回 404,未被占用;`git-glance` 为他人 1.0.1,仅影响搜索时的混淆,不构成冲突
 - **pnpm 相关事实**(2026-08-06 就本机 pnpm 11.20.0 逐条实测 + 官方迁移文档复核;此前本组曾按 pnpm 10 撰写并标记"尚未实测",其中一条已证伪,见下):
