@@ -23,6 +23,15 @@ import {
 /** 本文件用得到的 fixture。生成全部 16 个要 1.5s 上下,其中一半这里根本不打开。 */
 const NEEDED = ['unicodePaths', 'staged', 'empty', 'diffEdges'];
 
+/**
+ * 只读工具不接受的方法。**两个用例共用一份**:各写一份的话,哪天添一个
+ * (`OPTIONS` 是最现实的候选)只加到其中一处,另一处就在更窄的方法集上悄悄变绿。
+ */
+const NON_IDEMPOTENT = ['POST', 'PUT', 'DELETE', 'PATCH'];
+
+/** rebinding 的攻击页面发出的请求长这样:Host 是攻击者自己的域名。 */
+const ATTACKER_HOST = { Host: 'evil.example' };
+
 let workdir;
 let repos;
 let server;
@@ -71,6 +80,32 @@ test('第 1 道:Host 不是 127.0.0.1/localhost 加本端口一律 403', async (
     Host: `localhost:${server.port}`,
   });
   assert.equal(viaLocalhost.status, 200);
+});
+
+test('三道校验排在其余一切判定之前 —— 没过的请求一律与那句 forbidden 逐字节一致', async () => {
+  await setup();
+  // 判据见 spec §6 的 `[S5]` 验收项;**钉的是那条类级规则,不是「方法判定」这一个实例** ——
+  // 按方法枚举的话,下一个被顺手提到函数开头的廉价 guard(体积上限、限流)照样漏,而套件全绿
+  const baseline = await authedGet(server.port, server.token, '/api/state', ATTACKER_HOST);
+  assert.equal(baseline.status, 403, '基准:攻击者 Host 下的普通 GET 应当是 403');
+
+  // 三道校验之前就可能被答复的请求形态,逐个比对
+  const shapes = [
+    ...NON_IDEMPOTENT.map((method) => [`${method} /api/state`, '/api/state', method]),
+    ['未知路径', '/nope', 'GET'],
+    ['缺参数的 /api/diff', '/api/diff', 'GET'],
+    ['SSE', '/api/events', 'GET'],
+    ['/api/instance', '/api/instance', 'GET'],
+  ];
+  for (const [name, path, method] of shapes) {
+    const res = await authedGet(server.port, server.token, path, ATTACKER_HOST, method);
+    assert.equal(res.status, baseline.status, `${name}:状态码与基准不同(${res.status})`);
+    assert.equal(res.body, baseline.body, `${name}:响应体把本服务认了出来 —— ${res.body}`);
+  }
+  // 连 token 都没有的那一档同样不许有区别
+  const noToken = await httpGet(server.port, '/api/state', ATTACKER_HOST, 'POST');
+  assert.equal(noToken.status, baseline.status);
+  assert.equal(noToken.body, baseline.body);
 });
 
 test('第 2 道:Origin 非空且不等于自身则 403,且响应不带任何 CORS 头', async () => {
@@ -158,7 +193,9 @@ test('静态资源按白名单映射,拼路径读文件的写法一个都不留'
 
 test('只有 GET —— 出现非幂等方法即 405', async () => {
   await setup();
-  for (const method of ['POST', 'PUT', 'DELETE', 'PATCH']) {
+  // 这条是上面那条「三道校验排在前面」的反向一半:少了它,把方法判定整条删掉,
+  // 上面那条(全都是 403)照样绿
+  for (const method of NON_IDEMPOTENT) {
     const res = await authedGet(server.port, server.token, '/api/state', {}, method);
     assert.equal(res.status, 405, `${method} 返回了 ${res.status}`);
   }

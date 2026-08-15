@@ -204,12 +204,6 @@ export async function startServer(
   });
 
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
-    // 只读工具不需要任何非幂等端点(spec §5.12)
-    if (req.method !== 'GET' && req.method !== 'HEAD') {
-      sendError(res, 405, 'method-not-allowed', 'only GET is supported');
-      return;
-    }
-
     // 第 1 道:Host。DNS rebinding 的正面防御
     if (!isHostAllowed(req.headers.host, port)) {
       sendError(res, 403, 'forbidden', 'forbidden');
@@ -253,6 +247,18 @@ export async function startServer(
      * 续命一个该退的进程 —— 而 §5.8 的承诺是「不留后台常驻进程」。
      */
     idle.touch();
+
+    /**
+     * 只读工具不需要任何非幂等端点(spec §5.12)。
+     *
+     * **必须留在三道校验之后,不得挪回函数开头** —— 理由(泄漏服务存在性)见 spec §5.9
+     * 第 4 条,验收项 §6 `[S5]`。副作用是上面那个 query token 分支也排在它前面:带合法
+     * token 的非幂等请求会先被 302 换成 cookie 而不是 405。它已经过了三道校验,是取舍。
+     */
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      sendError(res, 405, 'method-not-allowed', 'only GET is supported');
+      return;
+    }
 
     const asset = ASSETS.get(url.pathname);
     if (asset) {

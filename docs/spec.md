@@ -309,7 +309,7 @@ const isIgnored = (p: string) => p.split(/[\\/]/).some(seg => IGNORE_NAMES.has(c
 1. **校验 `Host` 请求头**必须是 `127.0.0.1:<port>` 或 `localhost:<port>`,其余一律 403 —— 这才是 rebinding 的正面防御
 2. **校验 `Origin`**:非空且不等于自身则 403;所有响应不带任何 CORS 头
 3. **token 落地方式**:URL 携带 token → 首次访问后置换为 `HttpOnly; SameSite=Strict` cookie 并 302 掉 query,避免 token 长期滞留在浏览器历史、地址栏和日志中。SSE 端点同样校验。**需知 cookie 的作用域是 host 而非 origin,不隔离端口**:同机另一个监听 `127.0.0.1:<其他端口>` 的服务同样会收到这个 cookie。这不影响第 1 条的 rebinding 防御(攻击者页面的 host 是自己的域名,cookie 根本不会发出),但意味着 token 会暴露给本机其他 localhost 服务,因此服务端校验 token 时需**一并绑定校验本次会话的端口**,使泄漏出去的 token 无法在别处复用
-4. 所有端点(含 SSE)统一校验,无例外;响应带 `Cache-Control: no-store`、`X-Content-Type-Options: nosniff`
+4. 所有端点(含 SSE)统一校验,无例外;响应带 `Cache-Control: no-store`、`X-Content-Type-Options: nosniff`。**这三道也必须排在其余一切判定之前** —— 包括"只接受 GET / HEAD"这类看着无害、且天然想往函数开头放的廉价同步判定。排在前面时,一个 POST 会在 Host 那道开口之前就拿到 `method-not-allowed`,而 rebinding 的攻击页面此刻与本服务同源、读得到这句话:数据仍拿不到(还有 token),漏的是**服务本身的存在性**,而第 1 条正是为挡住这类页面而设。可检查的判据在第 6 节的验收项里
 5. **严格 CSP**:`default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`。后三个指令**不回退到 `default-src`**,不显式写就等于没设,`'none'` 一并挡掉被 iframe 嵌套、`<base>` 改写相对 URL 与表单外发。这条是 5.11 构建链路顺带解锁的——产物是独立的 `.js` / `.css` 文件、页面无内联脚本,才有条件不开 `'unsafe-inline'`。diff2html 的输出经 `innerHTML` 注入,其自身对内容做转义,CSP 在此作纵深防御
 6. **静态资源按内存清单白名单式映射**,不得用 `path.join(root, req.url)` 之类的路径拼接读文件,避免路径穿越。构建产物文件名因此固定、不加 hash——服务端本就对所有响应发 `Cache-Control: no-store`,内容哈希没有意义
 
@@ -488,6 +488,7 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 - [x] `[S2c]` **冷启动 · 浏览器侧**:浏览器进程已在运行的前提下,首屏渲染 ≤ 1s(人工验证)。冷启动浏览器进程本身的耗时(通常 2-5s)与 `npx` 首次下载解包耗时均不计入,后者在 README 中说明
 - [x] `[S3b2]` 资源占用:原生监听模式下空闲时内存/CPU 接近零;降级轮询模式下空闲 CPU < 1%
 
+- [ ] `[S5]` **三道校验排在其余一切判定之前**(5.9 第 4 条):**任何未通过三道校验的请求,响应的状态码与响应体都与「Host 不合规的一次普通 GET」逐字节一致** —— 按具体方法逐个断言是不够的,那样下一个被顺手提到函数开头的廉价 guard(体积上限、限流)照样漏而门禁全绿;同时合规 `Host` 下非幂等方法仍是 405 —— 少了后一半,把方法判定整条删掉也能让门禁通过
 **样式、主题与语法高亮**
 
 - [x] `[S0/S2c]` **样式层叠方案生效**:构建产物中 hljs 主题与 `diff2html.min.css` 均为 unlayered 且 hljs 在前;Tailwind preflight 未破坏 diff2html 渲染(行号列宽、边框、表格对齐正常),深浅两套主题下均验证(S0 的前提验证只证 unlayered 成立,渲染观感待 S2c)
