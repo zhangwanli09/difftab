@@ -92,7 +92,7 @@
 
 - 基准是 `git diff HEAD` 不是 `git diff`;列表类调用一律 `-z`
 - 所有 diff 在封装层统一注入 `-c core.quotePath=false`(与 `-z` 互补,不可替代)
-- 封装层统一设 `GIT_OPTIONAL_LOCKS=0`——否则 `git status` 会把 stat 缓存写回 `.git/index`;它不改变 status 输出,只读 `.git` 下也只是静默跳过、exit 0、stderr 全空,**只有 §5.10 第二层 B 半的逐字节快照比对看得见**
+- 封装层统一设 `GIT_OPTIONAL_LOCKS=0`——否则 `git status` 会把 stat 缓存写回 `.git/index`;它不改变 status 输出,只读 `.git` 下也只是静默跳过、exit 0、stderr 全空,**两处看得见:§5.10 第二层 B 半的逐字节快照比对,以及冒烟里那条「读 `/api/state` 不引出刷新事件」(它同时是自激循环的判据 —— 写 `.git` → 推 `change` → 前端再读一次)**
 - `porcelain=v2 -z` 的重命名记录占**两个** NUL 段;无上游时不输出 `# branch.ab` 行
 - 重命名取 diff 必须传新旧两个路径(`-M -- <新> <旧>`)
 - 封装层统一设 `GIT_LITERAL_PATHSPECS=1`——pathspec 默认是通配模式,`path=*` 会回一份整仓 diff,名字带 `*` 的文件会捎带上邻居的补丁

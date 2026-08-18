@@ -116,6 +116,20 @@ test('自动判定的那一档:node_modules 深层批量写入不刷新,同一�
     assert.equal(tier, expectedTier(), '判到的档位与 §5.7 的三档表对不上');
 
     /**
+     * **判据是「这批写入之后多出了几个」,不是「一共有几个」**(2026-08-18 实测,CI 的
+     * windows 三档):起监听那一下,Windows 会先冒出一个事件 —— `ReadDirectoryChangesW`
+     * 建流时会把建流前一刻的写入补报进来,而 `filename` 为 null 的事件按 §5.7 是**放行**
+     * 的(漏刷一次比多刷一次糟)。它与 `node_modules` 那批写入毫无关系,却把绝对计数
+     * 顶成 1,读起来像"过滤没生效"。**这不是把标准放宽**:下面量的仍然是那 50 次写入
+     * 引出了几次刷新,只是把量程的零点挪到了它们开始之前。
+     *
+     * 「起监听本身之外还有谁在推事件」由下一条用例单独盯,那才是它该待的地方。
+     */
+    await sleep(QUIET_MS);
+    const baseline = sse.count;
+    if (baseline > 0) t.diagnostic(`起监听阶段先来了 ${baseline} 个事件,已作为零点扣除`);
+
+    /**
      * **C 档跳过,这是已知边界而不是漏测**(§5.7):C 档的工作区通路是轮询,比的是
      * `git status` 的输出本身,那条路上根本不调 `isIgnored` —— 没有 `.gitignore` 的
      * 仓库里,`node_modules` 下的新文件照样进列表、照样触发一次刷新。它的验收项是
@@ -137,8 +151,8 @@ test('自动判定的那一档:node_modules 深层批量写入不刷新,同一�
     await sleep(QUIET_MS);
     assert.equal(
       sse.count,
-      0,
-      `${tier} 档:往 ${DEEP.join('/')} 写 50 个文件触发了 ${sse.count} 次刷新`,
+      baseline,
+      `${tier} 档:往 ${DEEP.join('/')} 写 50 个文件触发了 ${sse.count - baseline} 次刷新`,
     );
 
     /**
@@ -146,7 +160,44 @@ test('自动判定的那一档:node_modules 深层批量写入不刷新,同一�
      * 或者过滤把整棵树都吞了,三种都会给出同样漂亮的 0。
      */
     writeFileSync(join(repos.staged, `probe-${stamp}.md`), 'a real change\n');
-    await waitUntil(() => sse.count > 0, 10_000, `${tier} 档对仓库内新文件的刷新`);
+    await waitUntil(() => sse.count > baseline, 10_000, `${tier} 档对仓库内新文件的刷新`);
+    sse.close();
+  } finally {
+    await server.stop();
+  }
+});
+
+test('读 /api/state 不会引出刷新事件 —— 自激循环的判据', async (t) => {
+  await setup();
+  /**
+   * 每读一次状态就跑一次 `git status`,而**只要它往 `.git` 里写一个字节,`.git` 侧的
+   * watch 就会推一个 `change`,前端收到就再读一次状态** —— 一个不报错、只是 CPU 常年
+   * 挂着 1% 的自激循环,而 status 的输出从头到尾都是对的。挡住它的是封装层那句
+   * `GIT_OPTIONAL_LOCKS=0`(§5.2 红线:不设它 git 会把 stat 缓存写回 `.git/index`)。
+   *
+   * 那条红线原本只有 §5.10 第二层 B 半的逐字节快照盯着,而**那是在单进程里比对文件,
+   * 不经过监听**。这里从另一头断:连着 SSE 的时候连读几次状态,一个事件都不该冒出来。
+   * 三个平台各跑一次 —— git 在哪个平台上多写一次都算数。
+   */
+  const server = await startGitglance({ cwd: repos.staged });
+  try {
+    const sse = openEvents(server.port, server.token);
+    await sse.connected;
+    // 起监听阶段自己会带出事件(见上一条用例),等它过去再取零点
+    await sleep(QUIET_MS);
+    const baseline = sse.count;
+
+    for (let i = 0; i < 3; i += 1) {
+      await authedGet(server.port, server.token, '/api/state');
+      await sleep(200);
+    }
+    await sleep(QUIET_MS);
+    t.diagnostic(`读 3 次 /api/state:事件数 ${baseline} → ${sse.count}`);
+    assert.equal(
+      sse.count,
+      baseline,
+      `读状态引出了 ${sse.count - baseline} 次刷新 —— git status 多半在往 .git 里写东西`,
+    );
     sse.close();
   } finally {
     await server.stop();

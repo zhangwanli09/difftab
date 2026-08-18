@@ -30,8 +30,24 @@ const PACKAGES = 600;
 /** 断言用的那一档配额。远小于目录数,ENOSPC 必然落在**遍历途中**。 */
 const ASSERT_QUOTA = 128;
 
-/** 探索用的几档:小到连根那一次注册都做不成,正是"检测不到"的那一种。 */
-const EXPLORE_QUOTAS = [1, 4, 16];
+/**
+ * 探索用的几轮。前三档小到连根那一次注册都做不成,正是"检测不到"的那一种。
+ *
+ * 最后一轮是**残留缺口**的探针:改一个启动前就存在、且深到多半没轮上注册的文件。
+ * 新建文件会引出一次注册尝试从而把 ENOSPC 暴露出来,改已有文件不会 —— 若那个目录
+ * 没被注册,事件就是静默丢失。这一轮回 `refreshed=false` 就说明缺口真的存在。
+ */
+const EXPLORE_CASES = (repo) => [
+  [1, '新建文件'],
+  [4, '新建文件'],
+  [16, '新建文件'],
+  [
+    ASSERT_QUOTA,
+    '改已有的深层文件',
+    () =>
+      writeFileSync(join(repo, 'src', `pkg-${PACKAGES - 1}`, 'lib', 'deep.txt'), `${Date.now()}\n`),
+  ],
+];
 
 function sysctl(value) {
   const r = spawnSync('sudo', ['-n', 'sysctl', '-w', `fs.inotify.max_user_watches=${value}`], {
@@ -44,42 +60,49 @@ const readState = async (server) =>
   JSON.parse((await authedGet(server.port, server.token, '/api/state')).body).watch;
 
 /**
- * 在给定配额下跑一轮:起进程 → 连 SSE → 等 `mode` 落定 → 写一个新文件 → 看刷不刷新。
+ * 在给定配额下跑一轮:起进程 → 连 SSE → 记下此刻的 `mode` → 动一下工作区 → 看刷不刷新
+ * → **再读一次 `mode`**。
  *
- * `refreshed` 才是用户视角的判据。`mode` 只说服务自己**以为**在干什么 —— 两者分开
- * 记,正是因为"检测不到"的那一种里它俩会打架:`mode` 说 `native`,而什么都不刷新。
+ * **`mode` 必须在动过之后再读**(2026-08-18 实测,见下):配额在遍历途中耗尽时,Node
+ * 并不立刻 emit —— 它是在**下一次要注册 watch 的时候**才失败的,而那一刻正是工作区
+ * 出现新条目的时候。于是"降级"这件事发生在用户第一次改动之后而不是启动那一刻,
+ * 提前读到的 `native` 说明不了任何问题。两个时刻都记下来,差别本身就是数据。
  *
- * `refreshMs` 分档给:断言那一轮要证的是"刷得出来",等不够就是假红,给足;探索那几轮
- * 记的是"往哪边倒",没有任何东西需要被证明**不**发生,给一个短的就行 —— 而它们的预期
- * 结果恰恰是 `false`,也就是每轮都会把预算耗满。
+ * `refreshed` 才是用户视角的判据:`mode` 只说服务自己**以为**在干什么。
+ *
+ * `change` 可换,默认是"新建一个文件"。**新建与改已有文件不是一回事**:前者会引出
+ * 一次注册尝试(于是 ENOSPC 浮出水面、降级、推事件),后者不会 —— 那条路上如果这个
+ * 文件所在的目录压根没轮上注册,事件就是**静默丢失**,没有任何东西会响。探索区里
+ * 两种各来一次。
  */
-async function probe(repo, quota, { refreshMs = 8_000 } = {}) {
+async function probe(repo, quota, { refreshMs = 8_000, change } = {}) {
   if (!sysctl(quota)) throw new Error(`压低配额到 ${quota} 失败(需要免密 sudo)`);
   const server = await startGitglance({ cwd: repo });
   try {
     const sse = openEvents(server.port, server.token);
     await sse.connected;
+    // 递归 watch 是懒起的,给它一点走完遍历的时间
+    await sleep(1_000);
 
-    /**
-     * 递归 watch 是懒起的,还要走完一遍遍历才谈得上耗尽配额 —— 但**等的是一个可观测
-     * 的条件而不是一个固定的毫秒数**:`mode` 翻成 `polling` 就是遍历撞上 ENOSPC 的
-     * 那一刻。翻不了的那几轮(正是"检测不到"的那一种)才付满这 1.5 秒。
-     */
-    let watch = await readState(server);
-    for (let waited = 0; waited < 1_500 && watch.mode === 'native'; waited += 100) {
-      await sleep(100);
-      watch = await readState(server);
-    }
-
+    const modeBefore = (await readState(server)).mode;
     const before = sse.count;
-    writeFileSync(join(repo, `probe-${Date.now()}.md`), 'a real change\n');
+    (change ?? (() => writeFileSync(join(repo, `probe-${Date.now()}.md`), 'a real change\n')))();
+
     let refreshed = false;
     for (let waited = 0; waited < refreshMs && !refreshed; waited += 200) {
       await sleep(200);
       refreshed = sse.count > before;
     }
+    const watch = await readState(server);
     sse.close();
-    return { quota, mode: watch.mode, tier: watch.tier, refreshed, stderr: server.stderr };
+    return {
+      quota,
+      tier: watch.tier,
+      modeBefore,
+      mode: watch.mode,
+      refreshed,
+      stderr: server.stderr,
+    };
   } finally {
     await server.stop();
   }
@@ -110,12 +133,16 @@ try {
   for (let i = 0; i < PACKAGES; i += 1) {
     mkdirSync(join(repo, 'src', `pkg-${i}`, 'lib'), { recursive: true });
   }
+  // 最后一个包里放一个**启动前就存在**的文件,给探索区那条残留缺口探针用
+  writeFileSync(join(repo, 'src', `pkg-${PACKAGES - 1}`, 'lib', 'deep.txt'), 'v1\n');
   const dirCount = PACKAGES * 2;
   console.log(`# 仓库里 ${dirCount} 个目录(空目录,git status 看不见)`);
 
-  console.log(`\n# 断言:配额 ${ASSERT_QUOTA} ≪ ${dirCount},ENOSPC 落在遍历途中`);
+  console.log(`\n# 断言:配额 ${ASSERT_QUOTA} ≪ ${dirCount},ENOSPC 必然落在遍历途中`);
   const main = await probe(repo, ASSERT_QUOTA);
-  console.log(`  档位 ${main.tier} · mode=${main.mode} · 改动刷新=${main.refreshed}`);
+  console.log(
+    `  档位 ${main.tier} · mode ${main.modeBefore} → ${main.mode} · 改动刷新=${main.refreshed}`,
+  );
   if (main.stderr.trim()) console.log(`  stderr: ${main.stderr.trim().split('\n').join(' / ')}`);
 
   if (main.tier !== 'A') {
@@ -123,8 +150,10 @@ try {
     console.log(`SKIP 这个 Node 判到 ${main.tier} 档,没有递归 watch 可耗尽`);
     asserted = false;
   } else {
+    // 判据取的是**改动之后**那一次读数(理由见 `probe` 的注释):降级发生在第一次
+    // 注册失败的那一刻,而不是启动那一刻
     if (main.mode !== 'polling') {
-      console.error(`FAIL 期望降级为 polling,实际 mode=${main.mode}`);
+      console.error(`FAIL 改动之后仍未降级为 polling,实际 mode=${main.mode}`);
       failures += 1;
     }
     if (!main.refreshed) {
@@ -138,9 +167,9 @@ try {
    * ENOSPC 被 Node 整个吞掉,`fs.watch()` 返回一个看着活着却永不 emit 的 watcher),
    * 而"补法二选一"的判据正是它在真机上到底长什么样。断言一个已知缺陷等于把它钉死。
    */
-  console.log('\n# 探索:配额小到连根那一次注册都做不成时(§5.7 的已知缺口)');
-  console.log('  配额 | 档位 | mode | 改动刷新');
-  for (const quota of EXPLORE_QUOTAS) {
+  console.log('\n# 探索:§5.7 的已知缺口 —— 配额小到连根那一次注册都做不成');
+  console.log('  配额 | 档位 | mode(改动前→后) | 改动刷新 | 改动形态');
+  for (const [quota, label, change] of EXPLORE_CASES(repo)) {
     /**
      * **每行自己兜住异常,且不计入 `failures`**。配额压到个位数时 `probe()` 本来就
      * 可能抛(启动超时、SSE 连不上),而那恰恰是这一档要观察的现象之一 —— 让它把
@@ -149,11 +178,11 @@ try {
      */
     let row;
     try {
-      const r = await probe(repo, quota, { refreshMs: 2_000 });
-      row = `${r.tier}    | ${r.mode.padEnd(7)} | ${r.refreshed}`;
+      const r = await probe(repo, quota, { refreshMs: 2_000, change });
+      row = `${r.tier}    | ${`${r.modeBefore} → ${r.mode}`.padEnd(19)} | ${String(r.refreshed).padEnd(8)} | ${label}`;
       if (r.stderr.trim()) row += `\n       stderr: ${r.stderr.trim().split('\n').join(' / ')}`;
     } catch (cause) {
-      row = `—    | (抛了)  | ${cause.message.split('\n')[0]}`;
+      row = `—    | (抛了)             |          | ${cause.message.split('\n')[0]}`;
     }
     console.log(`  ${String(quota).padStart(4)} | ${row}`);
   }

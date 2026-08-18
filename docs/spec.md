@@ -472,7 +472,7 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 **自动刷新与三档监听**
 
 - [x] `[S3b1]` 三档均可通过内部环境变量强制指定,在单一 Node 版本的机器上逐档验证(**本组其余各项的自查前提**)
-- [ ] `[S3b2/S5]` 文件变更后,浏览器展示内容能自动刷新,延迟感知不明显;macOS / Windows / Linux 三端监听行为均验证正常(**三端 × 三个 Node 全由 matrix 断言**:`events.test.js` 压 `.git` 侧——一次 `git checkout -b` 变成一个 `change` 事件;`watch-tiers.test.js` 压工作区侧——在**自动判定**出的档位下写一个新文件同样推出 `change`。"延迟感知不明显"属肉眼项,S3b2 在 macOS 上确认过,CI 侧压的只是"在超时窗口内到达")
+- [ ] `[S3b2/S5]` 文件变更后,浏览器展示内容能自动刷新,延迟感知不明显;macOS / Windows / Linux 三端监听行为均验证正常;**且读一次 `/api/state` 不引出任何刷新事件**——那是 5.2 那句 `GIT_OPTIONAL_LOCKS=0` 在监听侧的判据,少了它「写 `.git` → 推 `change` → 前端再读一次」的自激循环只有 5.10 第二层 B 半看得见,而那一层不经过监听(**三端 × 三个 Node 全由 matrix 断言**:`events.test.js` 压 `.git` 侧——一次 `git checkout -b` 变成一个 `change` 事件;`watch-tiers.test.js` 压工作区侧——在**自动判定**出的档位下写一个新文件同样推出 `change`。"延迟感知不明显"属肉眼项,S3b2 在 macOS 上确认过,CI 侧压的只是"在超时窗口内到达")
 - [ ] `[S3b2/S5]` **A 档**(Node ≥ 24.14.0):Linux 上在含 `node_modules` 的大仓库启动时,`ignore` 过滤生效、注册的 watch 数量维持在低位,不因遍历重目录而耗尽配额(**由 ubuntu × Node 24 / 26 档断言**:临时仓库里造几百个 `node_modules` 子目录,读 `/proc/<pid>/fdinfo/*` 数 inotify watch 数,断言它远低于目录数——`ignore` 一旦失效,这个数会跟着目录数一起涨,而**功能表现完全正常**,只有这个计数看得见)
 - [ ] `[S3b2/S5]` **A 档在 macOS / Windows 上同样验证过滤生效**:`ignore` 传的是逐段匹配函数而非字符串模式,`node_modules/**` 深层写入不触发刷新(**由 macOS / windows × Node 24 / 26 档断言**:`node_modules` 的嵌套子目录里批量写文件 0 个 `change`,**同一轮里**往仓库根写一个新文件必须有 1 个——少了后半条,"0 个"只说明什么都没在听)
 - [ ] `[S3b2/S5]` **B 档**(Node 22 × macOS / Windows):回调内 `isIgnored` 过滤生效,**在 `node_modules` 的嵌套子目录里**批量写文件不触发刷新(只测顶层目录本身无法证伪 basename 写法的缺陷),仓库内改文件正常触发刷新(**由 macOS / windows × Node 22.0.x 档断言**,与上一条是同一份用例:那两档**自动判定**出的就是 B,不必强制指定——用例断言它实际拿到的档位,判档一旦漂走会红在这里)

@@ -14,7 +14,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { removeDir, startGitglance } from '../test/smoke/helpers.js';
+import { removeDir, startGitglance, waitUntil } from '../test/smoke/helpers.js';
 
 const REPO_ROOT = resolve(import.meta.dirname, '..');
 const manifest = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8'));
@@ -134,8 +134,25 @@ try {
     args: [],
     // Windows 上 `gitglance` 是个 `.cmd` shim,不经 shell 起不来
     shell: true,
+    // 没有客户端来连,让它按空闲退出自己收场(spec §5.8)—— 见下面为什么不 kill
+    env: { GITGLANCE_IDLE_MS: '1000' },
   });
-  await server.stop();
+
+  /**
+   * **不用 `server.stop()`,也不等 `'close'`**(2026-08-18 实测,CI 的 ubuntu 与
+   * windows 两档):经 shell 起来时被 spawn 的是 shell,产品是它的**孙进程**,而
+   * `'close'` 要等所有 stdio 管道关闭 —— 孙进程还攥着管道,于是杀掉 shell 之后
+   * `'close'` 永远不来。症状是脚本停在这一行,Node 以「unsettled top-level await」
+   * 退出码 13 收场,与"全局安装坏了"毫无相似之处(macOS 上 shell 直接 exec 掉自己,
+   * 所以本机怎么跑都是绿的)。
+   *
+   * 改成等它自己按空闲退出、轮询 `exitCode`:`'exit'` 不依赖管道,而轮询的定时器
+   * 顺便把事件循环撑着(ready 之后 helpers 会 unref 掉子进程)。
+   */
+  await waitUntil(() => server.child.exitCode !== null, 30_000, '全局装的那个 gitglance 自行退出');
+  if (server.child.exitCode !== 0) {
+    fail(`空闲退出的退出码是 ${server.child.exitCode},期望 0。stderr=${server.stderr}`);
+  }
 
   console.log(`PASS 全局安装可用(${process.platform} · Node ${process.versions.node})`);
 } catch (cause) {
