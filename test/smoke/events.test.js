@@ -18,6 +18,7 @@ import {
   cleanupOnExit,
   once,
   openEvents,
+  sleep,
   startGitglance,
   waitUntil,
 } from './helpers.js';
@@ -79,11 +80,20 @@ test('仓库里 git 写操作之后,SSE 推出一个 change 事件', async () =>
   await setup();
   const server = await startGitglance({ cwd: repos.staged });
   try {
-    // 等连接建立再动手:watcher 是在第一个订阅者到达时才起的(懒起,见 server.ts),
-    // 抢在它前面写的话事件根本没人在听 —— 而这条用例会以「超时」失败,读起来
-    // 像监听坏了
+    /**
+     * 等连接建立**再多等一下**才动手:watcher 是在第一个订阅者到达时才起的(懒起,
+     * 见 server.ts),抢在它前面写的话事件根本没人在听 —— 而这条用例会以「超时」
+     * 失败,读起来像监听坏了。
+     *
+     * **`await connected` 单独不够**:它只说握手那一行到了,而 watcher 是在那之后的
+     * `setImmediate` 里才建起来的。C 档尤其躲不过去 —— 它那条 1.5s 轮询的**首拍只
+     * 建立基线**,抢在首拍之前切的分支会被算进基线里,于是 `.git` 那条没听见、轮询
+     * 又认为「没变化」,两头都不响(2026-08-18 实测,CI 的 ubuntu × Node 22.0.x 档:
+     * 重构时把这个 sleep 去掉,那一档随即以 15s 超时变红,而产品代码一个字没动)。
+     */
     const sse = openEvents(server.port, server.token);
     await sse.connected;
+    await sleep(300);
     /**
      * **对 fixture 仓库的 git 写操作属「开发流程的 git」**(CLAUDE.md 第 1 节):
      * 受「零写操作」约束的是产品代码,不是测试。这里要的就是一次真实的 `.git` 写入,
