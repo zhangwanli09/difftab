@@ -177,10 +177,19 @@ test('自动判定的那一档:node_modules 深层批量写入不刷新,同一�
     t.diagnostic(
       `往 ${DEEP.join('/')} 写入引出的刷新:慢写 ${SLOW_WRITES} 次 → ${slowDelta} 个;快写 50 次 → ${burstDelta} 个`,
     );
+    /**
+     * **慢写那一路是判据,三端一律 0**;快写那一路在 Windows 上放宽到最多 1 次 ——
+     * `ReadDirectoryChangesW` 的通知缓冲区被突发写满时报的是"丢了一批"而不是路径,
+     * Node 由此 emit 一个没有 `filename` 的事件,而那种事件按 §5.7 是**刻意放行**的
+     * (漏刷一次比多刷一次糟)。这不是把标准放宽:合并窗口本来就把 50 次写入压成
+     * 1 个,单看快写那一路时"过滤失效"与"缓冲区溢出"给出的数一模一样,**能分辨的
+     * 只有慢写那一路** —— 过滤失效时它会逐个漏出来。
+     */
+    const burstCeiling = process.platform === 'win32' ? 1 : 0;
     assert.deepEqual(
-      { 慢写: slowDelta, 快写: burstDelta },
-      { 慢写: 0, 快写: 0 },
-      `${tier} 档:node_modules 深层写入引出了刷新`,
+      { 慢写: slowDelta, 快写: burstDelta > burstCeiling },
+      { 慢写: 0, 快写: false },
+      `${tier} 档:node_modules 深层写入引出了刷新(快写上限 ${burstCeiling})`,
     );
 
     /**
