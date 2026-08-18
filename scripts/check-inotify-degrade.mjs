@@ -141,10 +141,13 @@ try {
   writeFileSync(join(repo, deepFile), 'v1\n');
   for (const args of [
     ['add', deepFile],
-    ['commit', '--quiet', '-m', 'track the deep file'],
+    // **身份要在命令行上给**:CI 的 runner 没有全局 `user.name` / `user.email`,
+    // 提交会以 `empty ident name not allowed` 失败。`makeFixtures` 是靠它自己那份
+    // env 提交的,这条命令不在它的管辖内
+    ['-c', 'user.email=ci@example.com', '-c', 'user.name=ci', 'commit', '-q', '-m', 'deep'],
   ]) {
     const r = spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
-    if (r.status !== 0) throw new Error(`git ${args[0]} 失败:${r.stderr}`);
+    if (r.status !== 0) throw new Error(`git ${args[0]} 失败:${r.stderr}${r.stdout}`);
   }
   const dirCount = PACKAGES * 2;
   console.log(`# 仓库里 ${dirCount} 个目录(空目录,git status 看不见)`);
