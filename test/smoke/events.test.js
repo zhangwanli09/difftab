@@ -13,7 +13,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { makeFixtures } from '../fixtures/make.mjs';
-import { authedGet, cleanupOnExit, cookieHeader, once, startGitglance } from './helpers.js';
+import {
+  authedGet,
+  cleanupOnExit,
+  once,
+  openEvents,
+  startGitglance,
+  waitUntil,
+} from './helpers.js';
 
 /** 档位强制指定用的内部环境变量(spec §5.7)。 */
 const TIER_ENV = 'GITGLANCE_WATCH_TIER';
@@ -28,50 +35,6 @@ const setup = once(async () => {
   // unicodePaths 是唯一带**整个未跟踪目录**的 fixture —— 轮询那条用例要的就是它
   repos = makeFixtures(join(workdir, 'repos'), ['staged', 'unicodePaths']);
 });
-
-/**
- * 开一条 SSE 连接,把收到的字节喂给 `onChunk`,直到它返回 true 或超时。
- *
- * 不用 fetch:三道校验里有两道是请求头,而 undici 不让改 `Host`(同 helpers.js)。
- */
-function openEvents(port, token, { onChunk, timeoutMs = 15_000 }) {
-  return new Promise((resolvePromise, rejectPromise) => {
-    const req = request(
-      {
-        host: '127.0.0.1',
-        port,
-        path: '/api/events',
-        headers: { Host: `127.0.0.1:${port}`, Cookie: cookieHeader(port, token) },
-      },
-      (res) => {
-        let body = '';
-        const timer = setTimeout(() => {
-          req.destroy();
-          rejectPromise(new Error(`等 SSE 超时。已收到:${JSON.stringify(body)}`));
-        }, timeoutMs);
-        const settle = () => {
-          clearTimeout(timer);
-          req.destroy();
-          resolvePromise({ status: res.statusCode, headers: res.headers, body });
-        };
-        if (res.statusCode !== 200) {
-          res.on('data', (c) => {
-            body += c;
-          });
-          res.on('end', settle);
-          return;
-        }
-        res.setEncoding('utf8');
-        res.on('data', (chunk) => {
-          body += chunk;
-          if (onChunk(body)) settle();
-        });
-      },
-    );
-    req.on('error', rejectPromise);
-    req.end();
-  });
-}
 
 test('SSE 端点同样过三道校验 —— 没有例外', async () => {
   await setup();
@@ -95,10 +58,8 @@ test('连上就拿到 text/event-stream,且响应头与别的端点一样严', a
   await setup();
   const server = await startGitglance({ cwd: repos.staged });
   try {
-    const res = await openEvents(server.port, server.token, {
-      // 服务端一连上就写一行注释顶出响应头,不必等第一个事件
-      onChunk: (body) => body.includes(': connected'),
-    });
+    const sse = openEvents(server.port, server.token);
+    const res = await sse.connected;
     assert.equal(res.status, 200);
     assert.match(res.headers['content-type'], /^text\/event-stream/);
     assert.equal(res.headers['cache-control'], 'no-store');
@@ -108,6 +69,7 @@ test('连上就拿到 text/event-stream,且响应头与别的端点一样严', a
     for (const header of Object.keys(res.headers)) {
       assert.ok(!header.toLowerCase().startsWith('access-control-'), `出现了 CORS 头 ${header}`);
     }
+    sse.close();
   } finally {
     await server.stop();
   }
@@ -117,14 +79,11 @@ test('仓库里 git 写操作之后,SSE 推出一个 change 事件', async () =>
   await setup();
   const server = await startGitglance({ cwd: repos.staged });
   try {
-    const received = openEvents(server.port, server.token, {
-      onChunk: (body) => body.includes('event: change'),
-    });
-
     // 等连接建立再动手:watcher 是在第一个订阅者到达时才起的(懒起,见 server.ts),
     // 抢在它前面写的话事件根本没人在听 —— 而这条用例会以「超时」失败,读起来
     // 像监听坏了
-    await new Promise((done) => setTimeout(done, 300));
+    const sse = openEvents(server.port, server.token);
+    await sse.connected;
     /**
      * **对 fixture 仓库的 git 写操作属「开发流程的 git」**(CLAUDE.md 第 1 节):
      * 受「零写操作」约束的是产品代码,不是测试。这里要的就是一次真实的 `.git` 写入,
@@ -136,10 +95,10 @@ test('仓库里 git 写操作之后,SSE 推出一个 change 事件', async () =>
     });
     assert.equal(branch.status, 0, `fixture 上切分支失败:${branch.stderr}`);
 
-    const res = await received;
-    assert.match(res.body, /event: change/);
+    await waitUntil(() => sse.count > 0, 15_000, '一个 change 事件');
     // 事件正文是一行 JSON:多行正文会被 SSE 劈成两条消息
-    assert.match(res.body, /event: change\ndata: \{.*\}\n/);
+    assert.match(sse.body, /event: change\ndata: \{.*\}\n/);
+    sse.close();
   } finally {
     await server.stop();
   }
@@ -183,9 +142,8 @@ test(`${TIER_ENV}=C:工作区改动经轮询推出 change,且已存在的未跟�
   const server = await startGitglance({ cwd: repos.unicodePaths, env: { [TIER_ENV]: 'C' } });
   let probe;
   try {
-    const received = openEvents(server.port, server.token, {
-      onChunk: (body) => body.includes('event: change'),
-    });
+    const sse = openEvents(server.port, server.token);
+    await sse.connected;
 
     /**
      * 反复写,而不是写一次然后等。
@@ -201,8 +159,8 @@ test(`${TIER_ENV}=C:工作区改动经轮询推出 change,且已存在的未跟�
       writeFileSync(join(repos.unicodePaths, '未跟踪目录', `poll-probe-${n}.md`), `probe ${n}\n`);
     }, 400);
 
-    const res = await received;
-    assert.match(res.body, /event: change/);
+    await waitUntil(() => sse.count > 0, 15_000, 'C 档经轮询推出的 change');
+    sse.close();
   } finally {
     clearInterval(probe);
     await server.stop();

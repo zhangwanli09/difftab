@@ -12,7 +12,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readdirSync, readFileSync } from 'node:fs';
-import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -21,8 +20,9 @@ import {
   authedGet,
   BIN,
   cleanupOnExit,
-  cookieHeader,
   once,
+  openEvents,
+  sleep,
   startGitglance,
   waitForExit,
 } from './helpers.js';
@@ -39,45 +39,6 @@ const setup = once(async () => {
   workdir = mkdtempSync(join(tmpdir(), 'gitglance-lifecycle-'));
   repos = makeFixtures(join(workdir, 'repos'), ['staged']);
 });
-
-/**
- * 开一条 SSE 连接并等它真的连上(服务端一连上就写一行 `: connected`)。
- *
- * 返回 `close()`。**必须等「连上」而不是等「请求发出去」**:空闲计时是在服务端
- * 收到连接时才解除的,抢在那之前开始数秒,数的是一段连接还不存在的时间。
- */
-function openEvents(port, token) {
-  return new Promise((resolvePromise, rejectPromise) => {
-    const req = request(
-      {
-        host: '127.0.0.1',
-        port,
-        path: '/api/events',
-        headers: { Host: `127.0.0.1:${port}`, Cookie: cookieHeader(port, token) },
-      },
-      (res) => {
-        if (res.statusCode !== 200) {
-          req.destroy();
-          rejectPromise(new Error(`SSE 返回 ${res.statusCode}`));
-          return;
-        }
-        const timer = setTimeout(() => {
-          req.destroy();
-          rejectPromise(new Error('等 SSE 连上超时'));
-        }, 15_000);
-        res.setEncoding('utf8');
-        res.once('data', () => {
-          clearTimeout(timer);
-          resolvePromise({ close: () => req.destroy() });
-        });
-      },
-    );
-    req.on('error', rejectPromise);
-    req.end();
-  });
-}
-
-const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
 /** `os.tmpdir()` 下记着这个端口的注册表条目(spec §5.8 要求写在这里,不在仓库里)。 */
 function registryEntriesFor(port) {
@@ -157,7 +118,8 @@ test('stdout 的读端先走了(`| head -1`),空闲退出仍是干净的 0', asy
 test('有一条 SSE 连着就不退,断开之后才开始数宽限期', async () => {
   await setup();
   const server = await startGitglance({ cwd: repos.staged, env: { [IDLE_ENV]: '1500' } });
-  const events = await openEvents(server.port, server.token);
+  const events = openEvents(server.port, server.token);
+  await events.connected;
 
   // 跨过不止一个宽限期。退早了的症状是「用户开着页面,进程自己没了」
   await sleep(3000);
@@ -172,8 +134,10 @@ test('有一条 SSE 连着就不退,断开之后才开始数宽限期', async ()
 test('多标签:关掉其中一个不退出,全部关掉后才在宽限期内退出', async () => {
   await setup();
   const server = await startGitglance({ cwd: repos.staged, env: { [IDLE_ENV]: '1500' } });
-  const first = await openEvents(server.port, server.token);
-  const second = await openEvents(server.port, server.token);
+  const first = openEvents(server.port, server.token);
+  const second = openEvents(server.port, server.token);
+  await first.connected;
+  await second.connected;
 
   first.close();
   await sleep(3000);

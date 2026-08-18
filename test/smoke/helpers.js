@@ -30,29 +30,13 @@ export function once(factory) {
 /**
  * 进程真正退出时清理临时目录。
  *
- * 同样是绕开 `after()`:`process.on('exit')` 由 Node 自己保证时机,且必须是同步
- * 操作 —— rmSync 正合适。
- *
- * **`maxRetries` 不是保险起见,是 Windows 上的必需品**(2026-08-09 实测,CI 的
- * windows × Node 22.0.x 档):Windows 不允许删除一个仍是某进程当前工作目录的
- * 文件夹,而被测进程正是以 fixture 仓库为 cwd 起来的。上面那个处理器的
- * `child.kill()` 只是发出终止请求,返回时系统尚未回收进程,紧接着的 rmSync 就撞上
- * `EBUSY: resource busy or locked, rmdir …\repos\unicode-paths`。
- * rimraf 的重试是同步的(`Atomics.wait`),在退出钩子里可用。
- *
- * 重试用尽后**只警告不抛**:此时全部断言都已跑完,删不掉一个临时目录是收尾的
- * 事故而不是产品缺陷,让它把一整档 CI 变红只会淹掉真正的失败。目录在 `os.tmpdir()`
- * 下,系统自己会回收。
+ * 同样是绕开 `after()`:`process.on('exit')` 由 Node 自己保证时机,且必须是**同步**
+ * 操作 —— `removeDir` 里那个 rmSync 正合适。
  */
 export function cleanupOnExit(getDir) {
   process.on('exit', () => {
     const dir = getDir();
-    if (!dir) return;
-    try {
-      rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
-    } catch (cause) {
-      process.stderr.write(`# 清理临时目录失败(不影响断言结果):${cause.message}\n`);
-    }
+    if (dir) removeDir(dir);
   });
 }
 
@@ -73,11 +57,25 @@ process.on('exit', () => {
  * 拉起 CLI 并等到它打印出 URL。
  *
  * ready 的判据与 scripts/bench-startup.mjs 一致:**stdout 的第一行是且只是 URL**。
+ *
+ * `command` / `shell` 可覆盖,默认是 `node bin/gitglance.js`。**加这两个参数是为了让
+ * 全局安装那条门禁也走同一份 ready 判据** —— 它要起的是 PATH 上那个名字(Windows 上
+ * 隔着一个 `.cmd` shim,只能经 shell 起),除此之外它需要的东西(超时、stdout/stderr
+ * 累积、`stop()`、unref)与这里逐字相同。各写一份的结果是「第一行是 URL」这个判据
+ * 有了第三个定义,而三处失败起来长得完全不一样。
  */
-export function startGitglance({ cwd, env = {}, timeoutMs = 20_000 } = {}) {
+export function startGitglance({
+  cwd,
+  env = {},
+  timeoutMs = 20_000,
+  command = process.execPath,
+  args = [BIN],
+  shell = false,
+} = {}) {
   return new Promise((resolvePromise, rejectPromise) => {
-    const child = spawn(process.execPath, [BIN], {
+    const child = spawn(command, args, {
       cwd,
+      shell,
       env: {
         ...process.env,
         // 拉起浏览器在测试里必须可关,否则每跑一次就弹一次(spec §5.10)
@@ -176,6 +174,109 @@ export function expectStartupRefusal(assert, cwd) {
   assert.doesNotMatch(r.stderr, /^\s+at /m, `报错里带了栈:\n${r.stderr}`);
   assert.doesNotMatch(r.stderr, /Error:/, `报错里带了异常类名:\n${r.stderr}`);
   return r.stderr;
+}
+
+/** 睡一会儿。三个冒烟文件与一个门禁脚本都要它,别再各写一份。 */
+export const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
+
+/**
+ * 轮询等到 `predicate()` 为真;超时即抛。
+ *
+ * 判据压在**墙钟**上而不是「累加睡了多少毫秒」:后者在负载高的 runner 上会连本带利
+ * 地欠着走(每拍实际睡的比要求的久),于是名义 10 秒的等待可能只等了 6 秒 —— 而那
+ * 台机器恰恰是最需要多等一会儿的那台。
+ */
+export async function waitUntil(predicate, timeoutMs, what) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await sleep(50);
+  }
+  throw new Error(`等 ${what} 超时(${timeoutMs}ms)`);
+}
+
+/**
+ * 尽力删掉临时目录,删不掉只警告。
+ *
+ * **`maxRetries` 不是保险起见,是 Windows 上的必需品**(2026-08-09 实测,CI 的
+ * windows × Node 22.0.x 档):Windows 不允许删除一个仍是某进程当前工作目录的
+ * 文件夹,而被测进程正是以 fixture 仓库为 cwd 起来的。`child.kill()` 只是发出终止
+ * 请求,返回时系统尚未回收进程,紧接着的 rmSync 就撞上
+ * `EBUSY: resource busy or locked, rmdir …\repos\unicode-paths`。
+ * rimraf 的重试是同步的(`Atomics.wait`),在退出钩子里也可用。
+ *
+ * 重试用尽后**只警告不抛**,两个调用场景都需要这条:退出钩子里此时断言都跑完了,
+ * 删不掉一个临时目录是收尾的事故而不是产品缺陷,让它把一整档 CI 变红只会淹掉真正的
+ * 失败;门禁脚本则是在 `finally` 里删,从那儿抛出去会**顶掉正在报的那条真失败**。
+ * 目录都在 `os.tmpdir()` 下,系统自己会回收。
+ */
+export function removeDir(dir) {
+  try {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
+  } catch (cause) {
+    process.stderr.write(`# 清理临时目录失败(不影响断言结果):${cause.message}\n`);
+  }
+}
+
+/**
+ * 开一条 SSE 连接。**整个 test/smoke/ 里只此一处**,理由与下面 `cookieHeader` 那条
+ * 完全相同:请求字面量(`Host` 头、cookie、`/api/events` 路径)与流的两个判据
+ * (`: connected` 这行握手、`event: change` 这个事件名)都是与服务端的契约,各写一份
+ * 的结果是改了服务端之后**只有一份变红**,另几份安静地数出 0 个事件 —— 而 0 在调用方
+ * 那里往往读作「过滤生效了」,是假绿不是假红。
+ *
+ * 一个原语覆盖此前四种用法:`connected` 等握手(拿响应头)、`count` 数事件、
+ * `body` 看原文、`close()` 收工。
+ */
+export function openEvents(port, token, { timeoutMs = 15_000 } = {}) {
+  let body = '';
+  let req;
+  const connected = new Promise((resolvePromise, rejectPromise) => {
+    req = httpRequest(
+      {
+        host: '127.0.0.1',
+        port,
+        path: '/api/events',
+        headers: { Host: `127.0.0.1:${port}`, Cookie: cookieHeader(port, token) },
+      },
+      (res) => {
+        if (res.statusCode !== 200) {
+          req.destroy();
+          rejectPromise(new Error(`SSE 返回 ${res.statusCode}`));
+          return;
+        }
+        const timer = setTimeout(() => {
+          req.destroy();
+          rejectPromise(new Error('等 SSE 连上超时'));
+        }, timeoutMs);
+        res.setEncoding('utf8');
+        res.on('data', (chunk) => {
+          body += chunk;
+          // 服务端一连上就写一行 `: connected` 注释顶出响应头,不必等第一个事件。
+          // **必须等「连上」而不是等「请求发出去」**:空闲计时是服务端收到连接时才
+          // 解除的,抢在那之前开始数秒,数的是一段连接还不存在的时间
+          if (body.includes(': connected')) {
+            clearTimeout(timer);
+            resolvePromise({ status: res.statusCode, headers: res.headers });
+          }
+        });
+      },
+    );
+    req.on('error', rejectPromise);
+    req.end();
+  });
+  return {
+    connected,
+    get body() {
+      return body;
+    },
+    get count() {
+      return (body.match(/^event: change$/gm) ?? []).length;
+    },
+    close() {
+      req.destroy();
+    },
+  };
 }
 
 /**
