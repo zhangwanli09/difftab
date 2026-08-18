@@ -2,13 +2,15 @@
 
 一眼看懂 AI 编码 Agent 改了哪些代码。CLI 在仓库目录启动 → 拉起本地网页 → 只读展示当前工作区的 diff 与分支状态 → 关掉标签页后进程自动退出。
 
-**需求唯一事实来源:`docs/spec.md`。需求要变,先改 spec 再改代码**,不要在实现里就地"顺手扩展"。本文件只承载摘要与路由(预算 ≤ 200 行,且**一条规则占一行**,理由见 spec §9):论证与实测证据在 spec,已收口阶段的记录在 `docs/journal.md`。
+**需求唯一事实来源:`docs/`,索引见 [`docs/README.md`](docs/README.md)。需求要变,先改 docs 再改代码**,不要在实现里就地"顺手扩展"。本文件只承载摘要与路由(预算 ≤ 200 行,且**一条规则占一行**,理由见 `docs/workflow.md` §9):论证与实测证据在 `docs/decisions.md` §10,已收口阶段的记录在 `docs/journal.md`。
+
+**§ 号是稳定地址:搬文件可以,重新编号不行**——配置与测试里约 30 处 `spec §5.x` 注释不会因此报错,只会静默指错(理由见 `docs/workflow.md` §9)。
 
 ## 1. 两个 git 作用域(别搞混)
 
 | | 受"零写操作"约束 | |
 |---|---|---|
-| **产品运行时的 git**:gitglance 的代码在**用户仓库**里执行的 git 命令 | ✅ | 只允许只读白名单,由 spec §5.10 两层验证 + CI 门禁保证 |
+| **产品运行时的 git**:gitglance 的代码在**用户仓库**里执行的 git 命令 | ✅ | 只允许只读白名单,由 `design.md` §5.10 两层验证 + CI 门禁保证 |
 | **开发流程的 git**:在 **gitglance 仓库自身**上的版本控制动作 | ❌ | `add` / `commit` / `branch` / `checkout` / `rebase` / `push` / 建 PR 全部正常允许 |
 
 判据一句话:**约束的是"代码里写了什么 git 命令",不是"开发时执行了什么 git 命令"。不得以"本项目承诺只读"为由拒绝、劝阻或加额外确认本仓库的版本控制操作。** 正常礼节照旧:除非用户要求,不主动 commit / push。
@@ -25,59 +27,51 @@
 
 **每新增一个 `package.json` script,立即回来补全本节**——过期比缺失更糟。
 
-全部已可用;哪个门禁是在哪个阶段建立的,见 `docs/journal.md`「附:门禁与测试是在哪个阶段建立的」。
+哪个门禁是在哪个阶段建立的,见 `docs/journal.md`「附:门禁与测试是在哪个阶段建立的」。
 
 | 用途 | 命令 |
 |---|---|
 | 本地启动(构建产物) | `node bin/gitglance.js`(在任意 git 仓库目录下;`--no-open` 只打印 URL) |
-| 开发模式(Vite dev server + 后端) | 先在另一个终端 `node bin/gitglance.js --no-open`,再 `pnpm dev` —— dev proxy 在**加载时**从 `os.tmpdir()` 的注册表读 port + token,后端重启后 dev server 也要重启;后端**空闲 45 秒无客户端就自己退**(§5.8),来不及打开页面时用 `GITGLANCE_IDLE_MS` 顶大 |
+| 开发模式(Vite dev server + 后端) | 先在另一个终端 `node bin/gitglance.js --no-open`,再 `pnpm dev`;**后端重启后 dev server 也要跟着重启**(机制见 `design.md` §5.11)。后端**空闲 45 秒无客户端就自己退**(§5.8),来不及打开页面时用 `GITGLANCE_IDLE_MS` 顶大 |
 | 构建(前端 Vite + 后端 tsdown) | `pnpm build`(= `build:web` + `build:server`) |
 | 类型检查 | `pnpm typecheck`(`tsc --noEmit`,前后端各一份 tsconfig,严格性开关共用 `tsconfig.base.json`) |
 | 格式化 + lint | `pnpm lint`(`biome check`)/ CI 用 `biome ci` |
-| 单元/集成测试(Vitest,直接跑 TS 源码) | `pnpm test`。用例按被测代码分 `test/unit/server/`(node 环境)与 `test/unit/web/`(happy-dom),分别归两份 tsconfig,靠 `vitest.config.ts` 的 `projects` 分环境——**放错目录会静默不跑,判据见第 5 节** |
-| 冒烟测试(纯 JS,跑构建产物,含只读性两层验证) | **先 `pnpm build`**,它跑的是 `dist/` —— 改完源码(或撤销改动)不重建时,红的样子像「三道校验全坏了」,跟真实病因(产物比源码旧一轮)毫无相似之处;CI 每次从源码构建,这个坑只在本机。`pnpm test:smoke`(CI matrix 档不经 script,直接 `node --test "test/smoke/*.test.js"`) |
-| 测试仓库 fixture 生成 | `pnpm fixtures`(默认写 `test/fixtures/repos/`;测试自己调 `makeFixtures()` 写临时目录)。两批 16 个仓库全部就位(全量约 1.5s,测试按需只生成用得到的几个) |
+| 单元/集成测试(Vitest,直接跑 TS 源码) | `pnpm test`。用例按被测代码分 `test/unit/server/` 与 `test/unit/web/`——**放错目录会静默不跑,判据见第 5 节「测试布局」** |
+| 冒烟测试(纯 JS,跑构建产物,含只读性两层验证) | **先 `pnpm build`**——它跑 `dist/`,产物比源码旧一轮时红的样子像「三道校验全坏了」,与真实病因毫无相似之处(只在本机踩,CI 每次从源码构建)。`pnpm test:smoke`(CI matrix 档不经 script,直接 `node --test "test/smoke/*.test.js"`) |
+| 测试仓库 fixture 生成 | `pnpm fixtures`(默认写 `test/fixtures/repos/`;测试自己调 `makeFixtures()` 写临时目录,按需只生成用得到的几个) |
 | 冷启动耗时测量(对构建产物,≤300ms 门禁) | `pnpm bench:startup` |
 | 产物体积门禁 | `pnpm size` |
-| 样式层叠门禁(unlayered + hljs 在前 + 深色带媒体条件 + 四条 `--d2h-*` 覆写判据) | `pnpm check:css` |
+| 样式层叠门禁(判据见第 5 节「前端与样式」) | `pnpm check:css` |
 | 发布产物内容门禁(`pnpm pack --dry-run --json`) | `pnpm check:pack` |
 | `bin/gitglance.js` 未被构建管线触碰 | `pnpm check:bin`(内部跑一次完整构建) |
-| 全局安装验收(打包 → `npm i -g` → 用 PATH 上那个名字跑通 → 卸掉) | **先 `pnpm build`**,再 `pnpm check:global`;要求全局**尚未**装着 gitglance,否则「多出了什么」无从判断,脚本会直接拒跑 |
+| 全局安装验收(打包 → `npm i -g` → 用 PATH 上那个名字跑通 → 卸掉) | **先 `pnpm build`**,再 `pnpm check:global`;要求全局**尚未**装着 gitglance,否则脚本直接拒跑 |
 | inotify 配额耗尽时降级为轮询(Linux + 免密 sudo) | **先 `pnpm build`**,再 `pnpm check:inotify`;**不进冒烟套件**(理由在脚本头部),非 Linux 直接 SKIP |
 
-`fixtures` / `bench:startup` / `size` / `check:css` / `check:global` / `check:inotify` **只是别名**——脚本本体必须是零依赖纯 JS、可由 `node <路径>` 直接执行,因为它们要在没有 pnpm、没有 `node_modules` 的 CI matrix 机器上跑(见 spec §5.11)。`check:pack` / `check:bin` 需要 pnpm,只在 CI 的 build 作业跑。
+`fixtures` / `bench:startup` / `size` / `check:css` / `check:global` / `check:inotify` **只是别名**——脚本本体必须是零依赖纯 JS、可由 `node <路径>` 直接执行,因为它们要在没有 pnpm、没有 `node_modules` 的 CI matrix 机器上跑(见 `design.md` §5.11)。`check:pack` / `check:bin` 需要 pnpm,只在 CI 的 build 作业跑。
 
 架构边界由 `biome.json` 的 `noRestrictedImports` overrides 承担,随 `pnpm lint` / `biome ci` 一起跑,不另设命令;判据见第 5 节「架构边界」。
 
-## 4. 动手前先读 spec 的哪节
+## 4. 动手前先读 docs 的哪节
 
-**改这块 → 读哪节**
+**改这块 → 读哪份的哪节**(文件都在 `docs/`)。**只读用得着的那节是省上下文的手段,不是豁免**——第 5 节红线全程有效,与本会话读没读对应小节无关。
 
 | 改这块 | 动手前读 |
 |---|---|
-| 新增模块/文件、目录归属、依赖方向 | spec §5.0 |
-| HTTP/SSE 接口、前后端协议类型 | spec §5.12 |
-| git 封装层、status/diff 解析、git 异常状态 | spec §5.2、§5.3 |
-| 文件监听、自动刷新、进程生命周期 | spec §5.7、§5.8 |
-| 前端组件、状态管理(signals)、框架选型 | spec §5.4 |
-| diff 渲染、hljs 语言清单、产物体积 | spec §5.5 |
-| 样式、主题与层叠 | spec §5.6 |
-| HTTP server、token、CSP | spec §5.9 |
-| CLI 入口、Node 版本下限、后端产物形态 | spec §5.1 |
-| 构建配置、CI 分层、tsconfig、dev proxy | spec §5.11 |
-| 只读性验证、冷启动与体积门禁 | spec §5.10、§6 |
-
-**做哪个阶段 → 本会话必读哪几节**(切口的划分依据见 spec §7)。**"明确不必读"是省上下文的手段,不是豁免**——第 5 节红线全程有效,与本会话读没读对应小节无关。
-
-**只列尚未收口的阶段**;已收口阶段当时的切口见 `docs/journal.md`「附:已收口阶段的 spec 阅读切口」。
-
-| 做这个阶段 | 本会话必读 | 明确不必读 |
-|---|---|---|
-| **S6** 开源准备 | §8 | — |
+| 新增模块/文件、目录归属、依赖方向 | `design.md` §5.0 |
+| HTTP/SSE 接口、前后端协议类型 | `design.md` §5.12 |
+| git 封装层、status/diff 解析、git 异常状态 | `design.md` §5.2、§5.3 |
+| 文件监听、自动刷新、进程生命周期 | `design.md` §5.7、§5.8 |
+| 前端组件、状态管理(signals)、框架选型 | `design.md` §5.4 |
+| diff 渲染、hljs 语言清单、产物体积 | `design.md` §5.5 |
+| 样式、主题与层叠 | `design.md` §5.6 |
+| HTTP server、token、CSP | `design.md` §5.9 |
+| CLI 入口、Node 版本下限、后端产物形态 | `design.md` §5.1 |
+| 构建配置、CI 分层、tsconfig、dev proxy | `design.md` §5.11 |
+| 只读性验证、冷启动与体积门禁 | `design.md` §5.10、`acceptance.md` §6 |
 
 ## 5. 红线
 
-违反后**不报错、只是静默出错**的条目,一条规则一行。**这里只写规则与后果,实测证据与推导一律在 spec §10「被排除的做法」**(架构边界一条见 spec §5.0)。
+违反后**不报错、只是静默出错**的条目,一条规则一行。**这里只写规则与后果,实测证据与推导一律在 `docs/decisions.md` §10「被排除的做法」**(架构边界一条见 `design.md` §5.0)。
 
 ### 架构边界
 
@@ -113,7 +107,7 @@
 - 档位按 `process.versions.node` 做 semver 比对,禁用特性探测
 - `ignore` 传逐段匹配函数,禁字符串模式(含斜杠与不含斜杠的都禁)
 - Linux 低版本不建递归 watch;B 档过滤必须在 debounce 之前
-- **原生档(A/B)必须同时跑 30s 的低频安全轮询**——遍历途中耗尽 inotify 配额时 Node **一次都不 emit**(实测,推翻了原先的源码推断),没轮上注册的目录里改一个**已有**文件从此静默丢失、`mode` 还一直说 `native`;它**不翻 `mode`、不上报降级**(原生监听确实还活着)
+- **原生档(A/B)必须同时跑 30s 的低频安全轮询**——遍历途中耗尽 inotify 配额时 Node **一次都不 emit**,没轮上注册的目录里改一个**已有**文件从此静默丢失、`mode` 还一直说 `native`;它**不翻 `mode`、不上报降级**(原生监听确实还活着)
 - 绝不对单个文件建 watch
 
 ### 前端与样式
@@ -173,18 +167,14 @@
 
 ## 7. 开发阶段
 
-S0 工具链脚手架 → S1 CLI + HTTP server(**含 §5.9 三道校验的最终形态**)+ **注册表文件写入(port + token)** + git 封装 + 只读主门禁 + fixture 第一批 → **S2a** 变更列表 + 只读 `.git` 第二层 → **S2b** diff2html 渲染 + 懒加载 → **S2c** 主题样式 + 体积收口 → **S3a** 分支状态 → **S3b1** SSE 通道 + 档位骨架 → **S3b2** 三档监听 + 轮询兜底 → **S3c** 进程生命周期(注册表**探活复用** + 空闲退出)→ **S4a** diff 边界情况 → **S4b** git 异常状态(两者各配一半 fixture 第二批)→ **S5** Windows/Linux 跨平台验证 + 安全加固自查(**能断言的进 CI 的 windows / ubuntu runner,口径见 spec §6 开头**)→ **S6** 开源准备。各阶段展开见 spec §7,**已收口阶段的实测数字与踩坑记录见 `docs/journal.md`**(本节不留副本)。
+**当前:S5 已收口(CI 全绿,17 个作业);`acceptance.md` §6 至此一条未勾的都没有。下一步是 S6 开源准备。** 阶段序列与各阶段展开见 `roadmap.md` §7,已收口阶段的实测数字与踩坑见 `docs/journal.md` —— 两处都不在本节留副本。版本从 **0.1.0** 起,License MIT。
 
-**当前:S5 已收口(CI 全绿,17 个作业);spec §6 至此一条未勾的都没有。下一步是 S6 开源准备。** 各阶段的实测数字与踩坑见 `docs/journal.md`。
+**未消费的跨阶段交接**——本节是它的唯一来源,消费掉即从这里删除,连同该阶段的收口记录一起落到 `docs/journal.md`。
 
-**未消费的跨阶段交接**——消费掉即从本节删除,连同该阶段的收口记录一起落到 `docs/journal.md`。
-
-- **→ S6 的两件事,都在 CI 之外**(理由见 spec §6 开头的「真机」口径):① **浏览器在 Windows / Linux 桌面上真的弹出来**——runner 没有桌面会话,命令选择与 argv 由 `browser.test.ts` 与 §5.10 的单点断言覆盖,弹窗与否只能靠首个真实用户;② §5.9 那条 token 经命令行的已知边界在 `xdg-open` 下有多宽仍未实测,**且不打算靠 CI 补**(headless 上 `xdg-open` 立刻失败,量出来是个会让人放心的假数)。两条都不阻塞发布,但 README / RELEASE 说明里该提一句
+- **→ S6 的两件事,都在 CI 之外**(理由见 `acceptance.md` §6 开头的「真机」口径):① **浏览器在 Windows / Linux 桌面上真的弹出来**——runner 没有桌面会话,命令选择与 argv 由 `browser.test.ts` 与 §5.10 的单点断言覆盖,弹窗与否只能靠首个真实用户;② §5.9 那条 token 经命令行的已知边界在 `xdg-open` 下有多宽仍未实测,**且不打算靠 CI 补**(headless 上 `xdg-open` 立刻失败,量出来是个会让人放心的假数)。两条都不阻塞发布,但 README / RELEASE 说明里该提一句
 
 **流程规则**
 
-- **全部子阶段按序逐个收口,不得并行推进**(S2a→S2b→S2c、S3a→S3b1→S3b2→S3c、S4a→S4b)。**开工第一件事是按第 4 节那张阶段表确定本会话该读 spec 哪几节**
-- **门禁不得晚于它所保护的代码**——**不得为让 dev 跑通而在后端放宽校验**(见第 5 节「运行时与安全」)
-- **每阶段完成即自查,不堆到后期**:对照 spec §6 本阶段的 `[Sx]` 验收项,并满足 spec §9 的四条收口判据
+- **每阶段完成即自查,不堆到后期**:对照 `acceptance.md` §6 本阶段的 `[Sx]` 验收项,并满足 `workflow.md` §9 的四条收口判据
 - **打勾以 CI 绿为准,不以本机绿为准**;`[Sx/Sy]` 做完前一半也不勾
-- 测试数据分两批(清单见 spec §7 末段);fixture 脚本对测试仓库的 git 写操作属"开发流程的 git",见第 1 节。版本从 **0.1.0** 起,License MIT
+- **S6 收口后本节整体退场**,换成发布与维护约定——阶段推进结束,留一句"S6 已收口"没有读者(判据见 `workflow.md` §9)
