@@ -78,6 +78,7 @@ async function probe(repo, quota, { refreshMs = 8_000, change } = {}) {
 
     const modeBefore = (await readState(server)).mode;
     const before = sse.count;
+    const startedAt = Date.now();
     (change ?? (() => writeFileSync(join(repo, `probe-${Date.now()}.md`), 'a real change\n')))();
 
     let refreshed = false;
@@ -85,6 +86,7 @@ async function probe(repo, quota, { refreshMs = 8_000, change } = {}) {
       await sleep(200);
       refreshed = sse.count > before;
     }
+    const elapsedMs = Date.now() - startedAt;
     const watch = await readState(server);
     sse.close();
     return {
@@ -93,6 +95,7 @@ async function probe(repo, quota, { refreshMs = 8_000, change } = {}) {
       modeBefore,
       mode: watch.mode,
       refreshed,
+      elapsedMs,
       stderr: server.stderr,
     };
   } finally {
@@ -125,8 +128,24 @@ try {
   for (let i = 0; i < PACKAGES; i += 1) {
     mkdirSync(join(repo, 'src', `pkg-${i}`, 'lib'), { recursive: true });
   }
-  // 最后一个包里放一个**启动前就存在**的文件,给探索区那条残留缺口探针用
-  writeFileSync(join(repo, 'src', `pkg-${PACKAGES - 1}`, 'lib', 'deep.txt'), 'v1\n');
+  /**
+   * 最后一个包里放一个**启动前就存在、而且已被 git 跟踪**的文件,给下面那条残留缺口
+   * 的断言用。
+   *
+   * **「已跟踪」这三个字是判据的一半**(2026-08-18 实测,第一版就栽在这里):轮询比的是
+   * `git status` 的输出,而未跟踪文件在那份输出里只有一行 `? <路径>` —— **改它的内容
+   * 一个字节都不会变**,于是轮询(降级的那条与安全的那条都一样)天生看不见。已跟踪
+   * 文件才会从「没这一行」变成「` M <路径>`」。这条边界本身已记进 spec §5.7。
+   */
+  const deepFile = join('src', `pkg-${PACKAGES - 1}`, 'lib', 'deep.txt');
+  writeFileSync(join(repo, deepFile), 'v1\n');
+  for (const args of [
+    ['add', deepFile],
+    ['commit', '--quiet', '-m', 'track the deep file'],
+  ]) {
+    const r = spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
+    if (r.status !== 0) throw new Error(`git ${args[0]} 失败:${r.stderr}`);
+  }
   const dirCount = PACKAGES * 2;
   console.log(`# 仓库里 ${dirCount} 个目录(空目录,git status 看不见)`);
 
@@ -169,11 +188,16 @@ try {
   console.log(`\n# 断言:改一个已有的深层文件(不引出注册尝试),靠安全轮询兜住`);
   const deep = await probe(repo, ASSERT_QUOTA, {
     refreshMs: SAFETY_WAIT_MS,
-    change: () =>
-      writeFileSync(join(repo, 'src', `pkg-${PACKAGES - 1}`, 'lib', 'deep.txt'), `${Date.now()}\n`),
+    change: () => writeFileSync(join(repo, deepFile), `${Date.now()}\n`),
   });
+  /**
+   * `elapsedMs` 不是凑数:它说明这次刷新来自哪条路。安全轮询是 30s 一拍,所以接近
+   * 30s 才是"缺口被兜住了";如果只花了几百毫秒,说明这个目录**恰好**排在配额耗尽
+   * 之前、原生监听本来就看得见它 —— 断言照样绿,但它这一轮什么都没证明。目录的注册
+   * 顺序是 readdir 顺序,压不住,所以把这个数打出来让人看得见,而不是假装它不存在。
+   */
   console.log(
-    `  档位 ${deep.tier} · mode ${deep.modeBefore} → ${deep.mode} · 改动刷新=${deep.refreshed}`,
+    `  档位 ${deep.tier} · mode ${deep.modeBefore} → ${deep.mode} · 改动刷新=${deep.refreshed} · 耗时 ${deep.elapsedMs}ms`,
   );
   if (deep.tier === 'A' && !deep.refreshed) {
     console.error('FAIL 改已有深层文件刷不出来 —— §5.7 的低频安全轮询没接上');
