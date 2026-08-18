@@ -81,6 +81,7 @@ interface StartOptions {
   pollStatus?: () => Promise<string>;
   onDegrade?: (cause: Error) => void;
   pollMs?: number;
+  safetyPollMs?: number;
   debounceMs?: number;
 }
 
@@ -94,6 +95,8 @@ function start(options: StartOptions): WatchHandle {
     pollStatus: options.pollStatus ?? (async () => 'unchanged'),
     onDegrade: options.onDegrade ?? (() => {}),
     pollMs: options.pollMs ?? 60_000,
+    // 默认也把安全轮询顶到一分钟 = 关掉它;要测它的用例自己传一个小的
+    safetyPollMs: options.safetyPollMs ?? 60_000,
     debounceMs: options.debounceMs ?? 20,
   });
   handles.push(handle);
@@ -255,6 +258,86 @@ describe('轮询(§5.7 的 1.5s 兜底)', () => {
     snapshot = 'B';
     await new Promise((r) => setTimeout(r, 200));
     expect(changes).toHaveLength(0);
+  });
+});
+
+describe('原生档的低频安全轮询(§5.7)', () => {
+  /**
+   * 补的是一个**没有任何信号**的缺口:Linux 上 inotify 配额在遍历途中耗尽时 Node
+   * 一次都不 emit(实测,见 §10),没轮上注册的目录里改一个已有文件从此静默丢失。
+   * 判据只能是"拿 status 输出本身去比",所以这几条全用假探针驱动 —— 真去耗配额
+   * 是 `scripts/check-inotify-degrade.mjs` 在 CI 上干的事。
+   */
+  test('A 档:原生监听一个事件都没报,快照变了照样刷新', async () => {
+    const changes: number[] = [];
+    let snapshot = 'v1';
+    start({
+      tier: 'A',
+      safetyPollMs: 20,
+      pollStatus: async () => snapshot,
+      onChange: () => changes.push(Date.now()),
+    });
+    // 首拍只建立基线
+    await new Promise((r) => setTimeout(r, 60));
+    expect(changes).toHaveLength(0);
+
+    snapshot = 'v2';
+    await vi.waitFor(() => expect(changes.length).toBeGreaterThan(0), { timeout: 2000 });
+  });
+
+  test('安全轮询不翻 mode —— 原生监听还活着,只是不完整', async () => {
+    let snapshot = 'v1';
+    const degrades: Error[] = [];
+    const handle = start({
+      tier: 'A',
+      safetyPollMs: 20,
+      pollStatus: async () => snapshot,
+      onDegrade: (cause) => degrades.push(cause),
+    });
+    snapshot = 'v2';
+    await new Promise((r) => setTimeout(r, 120));
+    // 页面上标的是「原生监听」,而它确实还在原生监听 —— 翻成 polling 会把一次
+    // 完全正常的运行说成降级,而那句话是给用户看的
+    expect(handle.mode).toBe('native');
+    expect(degrades).toHaveLength(0);
+  });
+
+  test('B 档同样跑安全轮询 —— 它与「有没有 ignore」无关', async () => {
+    const changes: number[] = [];
+    let snapshot = 'v1';
+    start({
+      tier: 'B',
+      safetyPollMs: 20,
+      pollStatus: async () => snapshot,
+      onChange: () => changes.push(Date.now()),
+    });
+    await new Promise((r) => setTimeout(r, 60));
+    snapshot = 'v2';
+    await vi.waitFor(() => expect(changes.length).toBeGreaterThan(0), { timeout: 2000 });
+  });
+
+  test('降级之后周期收到 1.5s 那一档,而不是继续等 30s', async () => {
+    /**
+     * **这条钉的是「在等的那一拍要按新周期重排」**:安全轮询正睡着 30s 时降级,
+     * 不把它提前的话,页面上已经标着「轮询刷新」而第一次轮询还在半分钟之外 ——
+     * 不报错,只是看起来像轮询也坏了。
+     */
+    const changes: number[] = [];
+    let snapshot = 'v1';
+    const handle = start({
+      tier: 'A',
+      safetyPollMs: 10_000,
+      pollMs: 20,
+      pollStatus: async () => snapshot,
+      onChange: () => changes.push(Date.now()),
+    });
+    await new Promise((r) => setTimeout(r, 60));
+
+    (recursiveCalls()[0] as WatchCall).watcher.emit('error', new Error('ENOSPC'));
+    expect(handle.mode).toBe('polling');
+    snapshot = 'v2';
+    // 10 秒的安全周期还没到期;能在两秒内刷出来,只可能是那一拍被按 20ms 重排了
+    await vi.waitFor(() => expect(changes.length).toBeGreaterThan(0), { timeout: 2000 });
   });
 });
 

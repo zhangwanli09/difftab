@@ -30,24 +30,16 @@ const PACKAGES = 600;
 /** 断言用的那一档配额。远小于目录数,ENOSPC 必然落在**遍历途中**。 */
 const ASSERT_QUOTA = 128;
 
+/** 探索用的三档:小到连根那一次注册都做不成,正是"检测不到"的那一种。 */
+const EXPLORE_QUOTAS = [1, 4, 16];
+
 /**
- * 探索用的几轮。前三档小到连根那一次注册都做不成,正是"检测不到"的那一种。
+ * 安全轮询兜住那个缺口要等多久(§5.7 的 `SAFETY_POLL_MS` 是 30s)。
  *
- * 最后一轮是**残留缺口**的探针:改一个启动前就存在、且深到多半没轮上注册的文件。
- * 新建文件会引出一次注册尝试从而把 ENOSPC 暴露出来,改已有文件不会 —— 若那个目录
- * 没被注册,事件就是静默丢失。这一轮回 `refreshed=false` 就说明缺口真的存在。
+ * 给到 45s 而不是贴着 30s:贴着写的话,一次慢一点的 status 就能让这条在负载高的
+ * runner 上假红,而假红比不测更糟 —— 它会把人引去查一个没坏的东西。
  */
-const EXPLORE_CASES = (repo) => [
-  [1, '新建文件'],
-  [4, '新建文件'],
-  [16, '新建文件'],
-  [
-    ASSERT_QUOTA,
-    '改已有的深层文件',
-    () =>
-      writeFileSync(join(repo, 'src', `pkg-${PACKAGES - 1}`, 'lib', 'deep.txt'), `${Date.now()}\n`),
-  ],
-];
+const SAFETY_WAIT_MS = 45_000;
 
 function sysctl(value) {
   const r = spawnSync('sudo', ['-n', 'sysctl', '-w', `fs.inotify.max_user_watches=${value}`], {
@@ -167,9 +159,30 @@ try {
    * ENOSPC 被 Node 整个吞掉,`fs.watch()` 返回一个看着活着却永不 emit 的 watcher),
    * 而"补法二选一"的判据正是它在真机上到底长什么样。断言一个已知缺陷等于把它钉死。
    */
+  /**
+   * **第二条断言:改一个启动前就存在、且没轮上注册的深层文件,照样刷得出来。**
+   *
+   * 这正是 §5.7 那个残留缺口的形态 —— 它不引出任何注册尝试,于是 ENOSPC 永远不浮出
+   * 水面,原生监听那侧一声不响。兜住它的是 30s 的低频安全轮询,所以这一轮的预算按
+   * 秒计而不是毫秒计;它一旦回 false,说明安全轮询没接上,而页面上什么都不会显示。
+   */
+  console.log(`\n# 断言:改一个已有的深层文件(不引出注册尝试),靠安全轮询兜住`);
+  const deep = await probe(repo, ASSERT_QUOTA, {
+    refreshMs: SAFETY_WAIT_MS,
+    change: () =>
+      writeFileSync(join(repo, 'src', `pkg-${PACKAGES - 1}`, 'lib', 'deep.txt'), `${Date.now()}\n`),
+  });
+  console.log(
+    `  档位 ${deep.tier} · mode ${deep.modeBefore} → ${deep.mode} · 改动刷新=${deep.refreshed}`,
+  );
+  if (deep.tier === 'A' && !deep.refreshed) {
+    console.error('FAIL 改已有深层文件刷不出来 —— §5.7 的低频安全轮询没接上');
+    failures += 1;
+  }
+
   console.log('\n# 探索:§5.7 的已知缺口 —— 配额小到连根那一次注册都做不成');
   console.log('  配额 | 档位 | mode(改动前→后) | 改动刷新 | 改动形态');
-  for (const [quota, label, change] of EXPLORE_CASES(repo)) {
+  for (const quota of EXPLORE_QUOTAS) {
     /**
      * **每行自己兜住异常,且不计入 `failures`**。配额压到个位数时 `probe()` 本来就
      * 可能抛(启动超时、SSE 连不上),而那恰恰是这一档要观察的现象之一 —— 让它把
@@ -178,8 +191,8 @@ try {
      */
     let row;
     try {
-      const r = await probe(repo, quota, { refreshMs: 2_000, change });
-      row = `${r.tier}    | ${`${r.modeBefore} → ${r.mode}`.padEnd(19)} | ${String(r.refreshed).padEnd(8)} | ${label}`;
+      const r = await probe(repo, quota, { refreshMs: 2_000 });
+      row = `${r.tier}    | ${`${r.modeBefore} → ${r.mode}`.padEnd(19)} | ${String(r.refreshed).padEnd(8)} | 新建文件`;
       if (r.stderr.trim()) row += `\n       stderr: ${r.stderr.trim().split('\n').join(' / ')}`;
     } catch (cause) {
       row = `—    | (抛了)             |          | ${cause.message.split('\n')[0]}`;

@@ -141,8 +141,8 @@ describe('watch:`.git` 侧与工作区侧(§5.7,跑真实文件系统)', () => {
    * `.git` 侧那几个非递归 watch。换成 A / B 的话「objects 里的写入不触发」那条会红,
    * 而红的原因是工作区那条递归 watch 也看得见它,与被测的东西无关。
    *
-   * 轮询一律给恒定快照 + 一分钟周期 = 关掉它:本文件测的是 `fs.watch` 那条路,
-   * 轮询由 watch-tiers.test.ts 用假探针单独钉。
+   * 两个轮询周期(降级的与原生档的安全轮询)一律给恒定快照 + 一分钟 = 关掉它们:
+   * 本文件测的是 `fs.watch` 那条路,轮询由 watch-tiers.test.ts 用假探针单独钉。
    */
   const watchFor = (
     gitDir: string,
@@ -159,6 +159,7 @@ describe('watch:`.git` 侧与工作区侧(§5.7,跑真实文件系统)', () => {
       tier,
       pollStatus: async () => 'unchanged',
       pollMs: 60_000,
+      safetyPollMs: 60_000,
       debounceMs,
       onChange: () => calls.push(Date.now()),
       onDegrade: () => {},

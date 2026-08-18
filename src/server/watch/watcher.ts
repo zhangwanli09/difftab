@@ -27,6 +27,19 @@ export const DEBOUNCE_MS = 150;
 /** 降级轮询的周期(spec §5.7「1.5s 轮询」)。C 档的工作区通路也是它。 */
 export const POLL_MS = 1500;
 
+/**
+ * **原生档(A / B)的低频安全轮询周期**(spec §5.7)。
+ *
+ * 它补的是一个没有任何信号的缺口:Linux 上 inotify 配额在**遍历途中**耗尽时,Node
+ * 一次都不 emit(2026-08-18 实测,推翻了此前的源码推断,见 §10)—— 没轮上注册的那些
+ * 目录里,改一个**启动前就存在**的文件从此静默丢失,`mode` 还一直说 `native`。
+ * 原生监听少报了什么是没法从监听那一侧知道的,只有拿 status 输出本身去比才看得见。
+ *
+ * **取 30s 而不是 1.5s**:§6 要求「原生监听模式下空闲 CPU 接近零」,一次 status 几十
+ * 毫秒,30s 一拍的占空比是千分之几;代价是那个病态场景下最坏 30s 的滞后。
+ */
+export const SAFETY_POLL_MS = 30_000;
+
 export interface WatcherOptions {
   /** `.git` 目录绝对路径。**不得假设是 `<root>/.git`** —— linked worktree 下它是文件(§5.2)。 */
   gitDir: string;
@@ -63,6 +76,7 @@ export interface WatcherOptions {
   onDegrade: (cause: Error) => void;
   debounceMs?: number;
   pollMs?: number;
+  safetyPollMs?: number;
 }
 
 export interface WatchHandle {
@@ -140,6 +154,7 @@ export function createWatcher(options: WatcherOptions): WatchHandle {
     onDegrade,
     debounceMs = DEBOUNCE_MS,
     pollMs = POLL_MS,
+    safetyPollMs = SAFETY_POLL_MS,
   } = options;
 
   const gitWatchers: FSWatcher[] = [];
@@ -148,6 +163,8 @@ export function createWatcher(options: WatcherOptions): WatchHandle {
   let pollTimer: NodeJS.Timeout | null = null;
   let lastSnapshot: string | null = null;
   let polling = false;
+  let pollLoopStarted = false;
+  let pollInFlight = false;
   let closed = false;
 
   /**
@@ -180,17 +197,43 @@ export function createWatcher(options: WatcherOptions): WatchHandle {
    * 也不终止轮询 —— 那是暂态,停下来就再也起不来了。
    */
   const pollOnce = async () => {
+    pollInFlight = true;
     try {
       const snapshot = await pollStatus();
-      if (closed) return;
+      if (closed) {
+        pollInFlight = false;
+        return;
+      }
       if (lastSnapshot !== null && snapshot !== lastSnapshot) schedule();
       lastSnapshot = snapshot;
     } catch {
       // 保持上一份快照:失败不该被当成「变了」,也不该被当成「没变」
     }
+    pollInFlight = false;
     if (closed) return;
-    pollTimer = setTimeout(() => void pollOnce(), pollMs);
+    armPoll();
+  };
+
+  /**
+   * 排下一拍。**同一个循环的两个周期,不是两套机制**:原生档跑 `safetyPollMs`(30s)
+   * 的安全轮询,降级之后自动收到 `pollMs`(1.5s)。两个定时器各排各的话,降级那一刻
+   * 要记得把前一个停掉 —— 忘了不报错,只是从此每 30s 白跑一次 git。
+   *
+   * 每次都先清掉在等的那一拍:降级时正是靠这一下把 30s 的等待按新周期提前,否则
+   * 「已降级」之后最长还要再等 30s 才有第一次轮询,而页面上标的已经是轮询了。
+   */
+  const armPoll = () => {
+    if (closed) return;
+    if (pollTimer !== null) clearTimeout(pollTimer);
+    pollTimer = setTimeout(() => void pollOnce(), polling ? pollMs : safetyPollMs);
     pollTimer.unref();
+  };
+
+  /** 起轮询循环。**只起一次** —— 起两次就是两条链各自排各自的定时器。 */
+  const startPolling = () => {
+    if (pollLoopStarted) return;
+    pollLoopStarted = true;
+    void pollOnce();
   };
 
   /**
@@ -209,7 +252,10 @@ export function createWatcher(options: WatcherOptions): WatchHandle {
   const usePolling = (cause: Error | null) => {
     if (closed || polling) return;
     polling = true;
-    void pollOnce();
+    // 原生档的安全轮询多半已经在跑了(见下面起循环那处):此时要做的不是再起一条,
+    // 而是把在等的那一拍按新周期提前。有一拍正在飞行中时它自己会在收尾时重排
+    if (!pollLoopStarted) startPolling();
+    else if (!pollInFlight) armPoll();
     if (cause) onDegrade(cause);
   };
 
@@ -224,7 +270,16 @@ export function createWatcher(options: WatcherOptions): WatchHandle {
    * 「哪档以轮询为既定形态」只此一份判据(`initialMode`)—— server 那侧在监听还没
    * 懒起时也读它来答 `/api/state`,各写各的话两边会在加档位时静默分家。
    */
-  if (initialMode(tier) === 'polling') usePolling(null);
+  if (initialMode(tier) === 'polling') {
+    usePolling(null);
+  } else {
+    /**
+     * 原生档的低频安全轮询(§5.7)。**直接起循环而不经 `usePolling`**:那个闩一合上
+     * 就意味着「已降级」,而这里没有任何东西坏掉 —— `mode` 必须还是 `native`,
+     * 否则页面会把一次完全正常的运行标成降级。首拍照例只建立基线。
+     */
+    startPolling();
+  }
 
   for (const dir of gitWatchDirs(gitDir)) {
     /**
