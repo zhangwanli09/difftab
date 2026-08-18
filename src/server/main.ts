@@ -33,7 +33,16 @@ function fail(message: string): never {
   // 是异步的,紧跟着 `process.exit()` 会把还在缓冲区里的内容整条丢掉 —— 而冒烟测试
   // 正是用管道 spawn 去断言这句提示的。丢了之后的症状是 stderr 全空,跟真正的病因
   // (退出太快)毫无相似之处。
-  writeSync(2, `gitglance: ${message}\n`);
+  //
+  // **裹 try/catch**:读端可能先走(`gitglance 2>&1 | head -0`),那时 `writeSync`
+  // **同步抛** EPIPE —— 下面那两个 `ignoreBrokenPipe` 监听的是流上的 `'error'` 事件,
+  // 接不住这一种。抛出去的结果是「一句话友好报错」变成一屏 Node 栈,恰好推翻本函数
+  // 存在的理由。cli/start.ts 里那次 `writeSync(1, …)` 同理,两处写法必须一致。
+  try {
+    writeSync(2, `gitglance: ${message}\n`);
+  } catch {
+    // 没人在听就算了 —— 退出码仍然是对的
+  }
   process.exit(1);
 }
 

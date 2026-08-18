@@ -98,8 +98,44 @@ test('bare 仓库:一句话说清没有工作区,而不是 Node 异常栈', () =
   assert.match(expectStartupRefusal(assert, repos.bare), /bare repository/);
 });
 
+/**
+ * 只留下**代码行**:整行的 `//`、`/*`、`*`(JSDoc 续行)一律剔掉。
+ *
+ * 下面两条都是对源码做正则扫描,而本文件的注释里**恰好写满了它要禁的东西** ——
+ * 「为什么不用 `process.stderr.write`」那段说明就含着那个字面量。不剔注释的话,
+ * 越是把理由写清楚的文件越容易假红。
+ *
+ * 不用"砍掉行内 `//` 之后的部分"那种写法:`https://nodejs.org/` 就在一个字符串里,
+ * 那样会把半行代码一起砍掉,而砍掉的部分正是可能藏着违规写法的地方 —— 假绿比假红糟。
+ */
+function codeLines(source) {
+  return source
+    .split('\n')
+    .filter((line) => {
+      const trimmed = line.trim();
+      return !(trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*'));
+    })
+    .join('\n');
+}
+
+test('bin/gitglance.js 退出前的报错一律 writeSync(2, …)', () => {
+  /**
+   * spec §5.8 的红线:`process.stderr.write` + `process.exit()` 在 Windows 上写**管道**
+   * 时是异步的,整条消息会被丢掉,症状是 stderr 全空。
+   *
+   * **静态扫描而不是跑一遍**:本文件里两个出口(版本守卫、动态 import 失败)只有前者
+   * 在 CI 上被真的执行过(`old-node-guard` 那一档),后者要构造一个坏掉的 `dist/` 才
+   * 走得到 —— 而红线对两者一视同仁。一条正则同时罩住它们,以及将来添的第三个。
+   */
+  assert.doesNotMatch(
+    codeLines(readFileSync(BIN, 'utf8')),
+    /process\.stderr\.write|console\.error/,
+    'bin/gitglance.js 出现了 process.stderr.write / console.error —— 退出前的报错必须走 writeSync(2, …)',
+  );
+});
+
 test('bin/gitglance.js 保持保守语法:不含守卫之后才安全的语法', () => {
-  const source = readFileSync(BIN, 'utf8');
+  const source = codeLines(readFileSync(BIN, 'utf8'));
   // 逐条对应 spec §5.1:守卫与新语法同处一个模块时,低于下限的用户拿到的是
   // 解析期 SyntaxError,守卫根本来不及执行
   const forbidden = [
