@@ -372,7 +372,7 @@ const isIgnored = (p: string) => p.split(/[\\/]/).some(seg => IGNORE_NAMES.has(c
 - **严格 node_modules 是资产不是障碍**:禁 `shamefullyHoist` / `nodeLinker: hoisted`(pnpm 11 的键名,写在 `pnpm-workspace.yaml`;理由见第 10 节)。任何被 import 的包必须由我们自己声明——5.5 提到的 diff2html 两个传递依赖(`diff`、`@profoundlogic/hogan`)由打包器经 diff2html 自身的依赖树解析,**我们的代码与配置不得直接引用它们**
 - **依赖的生命周期脚本默认不执行**:需要执行的包必须显式列进 **`allowBuilds`** 白名单(pnpm 11 把 `onlyBuiltDependencies` / `neverBuiltDependencies` / `ignoredBuiltDependencies` / `onlyBuiltDependenciesFile` / `ignoreDepScripts` 合并成的这一个 map 设置,形如 `allowBuilds: { lefthook: true }`)。**已知 `lefthook` 需要**——它靠安装后脚本把 git hooks 写进 `.git/hooks`,漏列不报错、安装照常成功,只是 hooks 静默没装、提交前检查全线失效。S0 建立时逐个确认该清单
 - **S0 的三项前提验证一律在 pnpm 的 node_modules 布局下跑**(见第 7 节),尤其第 2 项深导入 `diff2html/lib-esm/ui/js/diff2html-ui-base.js` 与第 3 项体积 spike:在 npm 扁平布局下通过、换到严格布局才 resolve 失败,是这类 spike 最典型的假绿
-- **`test/fixtures/` 的生成脚本与 `scripts/` 下的 bench / size 门禁脚本必须是零依赖纯 JS,可由 `node <路径>` 直接执行**,`package.json` 里的 `fixtures` / `bench:startup` / `size` 只是别名。理由与下方 matrix 档"完全不装依赖"同源:这些脚本要在没有 pnpm、没有 `node_modules` 的 matrix 机器上跑,一旦写成 TS 或引入 devDependency,matrix 档就只能退回"装一点点",而那是第 10 节明令禁止的
+- **`test/fixtures/` 的生成脚本与 `scripts/` 下的 bench / size 门禁脚本必须是零依赖纯 JS,可由 `node <路径>` 直接执行**,`package.json` 里的 `fixtures` / `bench:startup` / `size` / `check:css` / `check:global` / `check:inotify` 只是别名。理由与下方 matrix 档"完全不装依赖"同源:这些脚本要在没有 pnpm、没有 `node_modules` 的 matrix 机器上跑,一旦写成 TS 或引入 devDependency,matrix 档就只能退回"装一点点",而那是第 10 节明令禁止的
 
 **产物结构**:
 
@@ -446,6 +446,8 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 
 **打勾的口径:门禁在 CI 上真的跑绿过,而不是在本机跑通过。** 本机绿而 CI 红是常态(实测:lefthook 的 postinstall 在 `CI` 置位时跳过写钩子,本机永远看不到这个),`[Sx/Sy]` 的前一半做完也不勾——整条满足才勾。S0 的 6 项由 CI run `31229259473` 收口(11 个作业全绿,含三平台 × Node 22.0.x/24/26 九档)。
 
+**「真机」的口径:CI 的 `windows-latest` / `ubuntu-latest` runner 本身就是真机,断言得了的一律交给它们。** 标 `/S5` 的跨平台项原先默认要在开发者自备的 Windows / Linux 机器上人工过一遍,而那既拖住收口、又是一次性的——人工确认不留回归,下一次改动把它弄坏时没有任何东西会响。判据因此收敛为:**凡能写成断言的**(三档的监听与过滤行为、inotify 用量、压低配额后的降级、全局安装、版本守卫、`--git-dir` 在各平台回来的分隔符形态)**一律进 matrix 或专用作业,以 CI 绿为准**;只有两类留在 CI 之外——(a) **浏览器真的弹出来**:runner 没有桌面会话,`open` / `start` / `xdg-open` 的**选择与 argv** 由 `browser.test.ts` 与 5.10 的单点断言覆盖,弹窗与否只能靠首个真实用户;(b) 肉眼观感类(渲染、配色、"延迟感知不明显")。**这不是把标准放宽**:一条每次推送都重跑的断言强于一次人工确认,而上面那两类恰恰是断言写不出来的部分。改动这一口径的来龙去脉见第 10 节。
+
 **启动与仓库识别**
 
 - [x] `[S1/S2b]` 在任意 git 仓库目录下执行 CLI 命令,能自动识别仓库并在浏览器打开对应变更视图(S1 验到启动与拉起浏览器,变更视图待 S2b)
@@ -470,12 +472,12 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 **自动刷新与三档监听**
 
 - [x] `[S3b1]` 三档均可通过内部环境变量强制指定,在单一 Node 版本的机器上逐档验证(**本组其余各项的自查前提**)
-- [ ] `[S3b2/S5]` 文件变更后,浏览器展示内容能自动刷新,延迟感知不明显;macOS / Windows / Linux 三端监听行为均验证正常
-- [ ] `[S3b2/S5]` **A 档**(Node ≥ 24.14.0):Linux 上在含 `node_modules` 的大仓库启动时,`ignore` 过滤生效、注册的 watch 数量维持在低位,不因遍历重目录而耗尽配额
-- [ ] `[S3b2/S5]` **A 档在 macOS / Windows 上同样验证过滤生效**:`ignore` 传的是逐段匹配函数而非字符串模式,`node_modules/**` 深层写入不触发刷新
-- [ ] `[S3b2/S5]` **B 档**(Node 22 × macOS / Windows):回调内 `isIgnored` 过滤生效,**在 `node_modules` 的嵌套子目录里**批量写文件不触发刷新(只测顶层目录本身无法证伪 basename 写法的缺陷),仓库内改文件正常触发刷新
-- [ ] `[S3b2/S5]` **C 档**(Node 22 × Linux):启动后**不注册任何递归 watch**,inotify 用量维持在个位数,工作区改动经轮询在 1.5s 内反映到页面,UI 明确标注降级模式
-- [ ] `[S3b2/S5]` Linux 上人为压低 `fs.inotify.max_user_watches` 直至触发 ENOSPC 时,能正确降级为轮询并在 UI 提示,功能不受影响
+- [ ] `[S3b2/S5]` 文件变更后,浏览器展示内容能自动刷新,延迟感知不明显;macOS / Windows / Linux 三端监听行为均验证正常(**三端 × 三个 Node 全由 matrix 断言**:`events.test.js` 压 `.git` 侧——一次 `git checkout -b` 变成一个 `change` 事件;`watch-tiers.test.js` 压工作区侧——在**自动判定**出的档位下写一个新文件同样推出 `change`。"延迟感知不明显"属肉眼项,S3b2 在 macOS 上确认过,CI 侧压的只是"在超时窗口内到达")
+- [ ] `[S3b2/S5]` **A 档**(Node ≥ 24.14.0):Linux 上在含 `node_modules` 的大仓库启动时,`ignore` 过滤生效、注册的 watch 数量维持在低位,不因遍历重目录而耗尽配额(**由 ubuntu × Node 24 / 26 档断言**:临时仓库里造几百个 `node_modules` 子目录,读 `/proc/<pid>/fdinfo/*` 数 inotify watch 数,断言它远低于目录数——`ignore` 一旦失效,这个数会跟着目录数一起涨,而**功能表现完全正常**,只有这个计数看得见)
+- [ ] `[S3b2/S5]` **A 档在 macOS / Windows 上同样验证过滤生效**:`ignore` 传的是逐段匹配函数而非字符串模式,`node_modules/**` 深层写入不触发刷新(**由 macOS / windows × Node 24 / 26 档断言**:`node_modules` 的嵌套子目录里批量写文件 0 个 `change`,**同一轮里**往仓库根写一个新文件必须有 1 个——少了后半条,"0 个"只说明什么都没在听)
+- [ ] `[S3b2/S5]` **B 档**(Node 22 × macOS / Windows):回调内 `isIgnored` 过滤生效,**在 `node_modules` 的嵌套子目录里**批量写文件不触发刷新(只测顶层目录本身无法证伪 basename 写法的缺陷),仓库内改文件正常触发刷新(**由 macOS / windows × Node 22.0.x 档断言**,与上一条是同一份用例:那两档**自动判定**出的就是 B,不必强制指定——用例断言它实际拿到的档位,判档一旦漂走会红在这里)
+- [ ] `[S3b2/S5]` **C 档**(Node 22 × Linux):启动后**不注册任何递归 watch**,inotify 用量维持在个位数,工作区改动经轮询在 1.5s 内反映到页面,UI 明确标注降级模式(**由 ubuntu × Node 22.0.x 档断言**:`/api/state` 的 `mode` 为 `polling`、inotify watch 数为个位数——那几条只可能来自 `.git` 侧的非递归 watch;"经轮询推出 `change`"已由 `events.test.js` 的强制 C 档用例在三端断言;UI 的降级标注由 `test/unit/web/watch-badge.test.tsx` 覆盖)
+- [ ] `[S3b2/S5]` Linux 上人为压低 `fs.inotify.max_user_watches` 直至触发 ENOSPC 时,能正确降级为轮询并在 UI 提示,功能不受影响(**由专用作业 `inotify-quota` 断言**:GitHub 的 ubuntu runner 有免密 sudo,可以真的把配额压下去。它同时是 5.7 那条"启动时配额已耗尽检测不到"的两条候选补法**择一的判据**——作业里带一步探索性测量把两种耗尽形态的实际表现打出来,先有数再定,见第 10 节)
 
 **进程生命周期与单实例**
 
@@ -513,7 +515,7 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 - [x] `[S0]` **`allowBuilds` 白名单生效**:两条一起看——(a) `pnpm ignored-builds` 报告 `None`;(b) 安装后 `.git/hooks` 下确有 lefthook 写入的钩子文件且能触发。**不以安装日志无报错为准**,漏列白名单时安装本身是成功的、构建脚本只是被静默跳过(见 5.11)。(a) 直接问 pnpm 自己忽略了谁,(b) 证明脚本不仅跑了还真干了活;两条互补,少任何一条都有一整类漏网
   - CI 上跑 (b) 必须给安装步骤设 `LEFTHOOK=1`:lefthook 的 postinstall 检测到 `CI` 就**跳过** `lefthook install`,生命周期脚本照跑却不写钩子。不设的话该项恒为假,且失败原因与 `allowBuilds` 无关,是假红(已实测)
 - [x] `[S0]` **pnpm 设置写在正确的文件里**:`allowBuilds` 等设置位于 `pnpm-workspace.yaml`;`package.json` 无 `pnpm` 字段、`.npmrc` 无非 auth 设置——**pnpm 11 对写错位置的设置是静默忽略**,故此项须逐个设置确认实际生效(如上一条以钩子文件为准),不能只看文件里写了什么(见 5.11)
-- [ ] `[S1/S5]` `npm i -g gitglance` 后在 Node 22+ 环境下能正常运行,macOS / Windows / Linux 三端均验证通过;低于 22 时打印明确的版本要求提示并以非 0 退出,**不得是 SyntaxError 或 Node 异常栈**——版本守卫必须先于任何可能超出该语法/API 范围的模块加载执行
+- [ ] `[S1/S5]` `npm i -g gitglance` 后在 Node 22+ 环境下能正常运行,macOS / Windows / Linux 三端均验证通过;低于 22 时打印明确的版本要求提示并以非 0 退出,**不得是 SyntaxError 或 Node 异常栈**——版本守卫必须先于任何可能超出该语法/API 范围的模块加载执行(前半由三平台的 `global-install` 作业断言:`npm pack` 打出 tarball → `npm i -g` → 用**装到 PATH 上的那个可执行文件**在 fixture 仓库里跑通,顺带断言全局目录下没有任何传递依赖;后半由 `old-node-guard` 的三平台 matrix 断言 —— **那一档取 stderr 必须经管道**,文件重定向在 Windows 上是同步写、恒绿,守卫里那句话即便还是 5.8 明令禁止的 `process.stderr.write` + `process.exit()` 也照样通过(S5 期间实测发现 `bin/gitglance.js` 正是如此,已改为 `writeSync(2, …)`)。**两个作业都不在 matrix 冒烟档里做**——那一档"完全不装依赖"是 5.11 的红线,而全局装产品自己是另一回事,分开跑才说得清哪条绿的是什么)
 - [x] `[S0]` **`bin/gitglance.js` 未被构建管线触碰**:跑完完整构建后,该文件与仓库源文件逐字节一致,且不出现在任何打包入口中(该文件在 S0 即须定稿——它是手写保守语法 JS、不参与构建,内容不依赖后续阶段;真机上"低于下限的 Node 打印友好提示"部分见上方版本守卫项,标 `[S1/S5]`)
 
 ## 7. 实施阶段
@@ -535,7 +537,7 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 | **S3c** | 进程生命周期:启动时读注册表并对已记录端口做 **HTTP 探活**、命中则复用已有实例;空闲 45 秒退出 + 退出时清理注册表(5.8) | 注册表文件的**写入**已在 S1(见该行);本阶段补的是**消费**它的那一半 |
 | **S4a** | Diff 边界情况:未跟踪文件/新文件/删除/重命名标注/二进制/超大文件 + `DiffPayload` 的 `binary` / `too-large` 分支填充与前端渲染 + **测试数据第二批中 diff 相关的部分** | 重命名标注要靠 5.2 的双路径调用;未跟踪那条路的 `lstat` 与仓库边界校验在 S1 已落地,本阶段是把它接到前端 |
 | **S4b** | git 异常状态:空仓库、detached HEAD、rebase 进行中、linked worktree、bare + `BranchState.operation` 填充与前端降级标注 + **测试数据第二批余下部分** | 5.3 的 SHA-256 空树常量在本阶段实测回填 |
-| **S5** | Windows / Linux 真机验证 + 安全**加固自查**(端口选择、token 熵、CSP 实测生效、错误信息不泄漏绝对路径) | 安全**实现**已在 S1,本阶段只做真机与渗透式复核。Windows 路径与浏览器拉起、Linux 降级路径必须在真机上触发验证,CI 跑通不等于可用 |
+| **S5** | Windows / Linux 跨平台验证 + 安全**加固自查**(端口选择、token 熵、CSP 实测生效、错误信息不泄漏绝对路径) | 安全**实现**已在 S1,本阶段只做渗透式复核(已完成,见第 10 节)。跨平台那半按第 6 节开头的**「真机」口径**做:能写成断言的进 CI 的 windows / ubuntu runner,剩下的只有"浏览器真的弹出来"与肉眼观感两类。原先那句"CI 跑通不等于可用"针对的是**当时的** CI 覆盖面(只跑冒烟,监听、配额、全局安装一条都没断言),不是"CI 的机器不算真机" |
 | **S6** | 开源准备(见第 8 节) | — |
 
 **全部子阶段(S2a → S2b → S2c、S3a → S3b1 → S3b2 → S3c、S4a → S4b)按序逐个收口,不得并行推进**。S3 那三件事的理由是互相独立、合并推进时任一处的故障会被另外两处的噪声掩盖;其余子阶段的理由见下条。
@@ -687,6 +689,7 @@ src/web/**.tsx    →   vite   → dist/web/{index.html, app.js, app.css}   固�
 - **三道校验的渗透式复核**(同日,对构建产物):15 种 Host 变体(攻击者域名、带/不带端口、后缀 `127.0.0.1:<port>.evil.com` 与前缀 `evil.com#127.0.0.1:<port>` 伪装、大写 `LOCALHOST`、尾点 `localhost.`、错端口、`[::1]`、十进制 `2130706433`、`0.0.0.0`、`127.0.0.2`、空值)逐一 403,合规两个 200;HTTP/1.1 缺 Host 头由 Node 的解析器直接 400;**双 Host 头 Node 只认第一条**(坏在前 → 403,好在前 → 200),故无法靠追加一条绕过。`Origin: null` 与攻击者 Origin 403,响应无任何 `Access-Control-*`。**`fetch` 测不了这一组**:undici 按 fetch 规范把 `Host` 列为禁止头并静默改写,拿它打整栏都是假 200,必须用裸 `node:http` / socket(冒烟里的 `authedGet` 已经是后者)。另实测 `//evil.com/…` 形态的请求行只影响 `url.pathname`,302 的 `Location` 仍是纯路径,不构成开放重定向
 - **CSP 的 `frame-ancestors` 是唯一挡住嵌套的那一道**(同日,真实 Chrome):从**同机另一个端口**的页面 iframe 嵌套本服务 —— iframe 导航不带 `Origin`、Host 又是合规的 `127.0.0.1:<port>`,而 cookie 的 site 是 `127.0.0.1`(端口不分 site),于是 `SameSite=Strict` **不阻止**它发出,三道校验全过、网络层实测拿到 **200**;浏览器仍拒绝渲染(画的是灰色占位,父页面 `contentDocument` 为 null),父页面的 `fetch('/api/state', {credentials:'include'})` 则被无 CORS 头挡掉。页面自身零内联脚本、script/style 各一份同源产物,console 无任何 CSP 违规 —— 即不开 `'unsafe-inline'` 确实跑得起来。这是 5.9 第 5 条那三个不回退指令"必须显式写"的正面验证
 - **冷启动实测**:node 启动 + `http.listen` + 一次 `git status --porcelain=v2 --branch -uall -z` 全程约 **30ms 墙钟**(裸 node 启动约 10-30ms),300ms 预算充裕。**浏览器侧**(2026-08-09 于 S2c,Chrome、已在运行的进程、本仓库 18 个变更文件):`app.js` / `app.css` 各 1ms 内取完,`/api/state` 在 **47ms** 返回,`first-contentful-paint` **56-72ms**(三次刷新),列表 18 行全部就位 —— 1s 预算的十几分之一。这是 6. 那条"首屏渲染 ≤ 1s"的实测依据
+- **"跨平台验收项留给开发者自备真机人工过一遍"这条路在 S5 期间被放弃**(2026-08-15 决定,第 6 节开头那段口径的依据):S5 开工时本机只有 macOS,而第 6 节挂着 7 条 `/S5` 的 Windows / Linux 项。逐条核过之后,其中 6 条**本来就是可断言的**——监听与过滤行为只需要一条 SSE 加几次写文件;inotify 用量在 `/proc/<pid>/fdinfo/*` 里逐行数得到;压低 `fs.inotify.max_user_watches` 需要 root,而 **GitHub 的 ubuntu runner 本就有免密 sudo**;全局安装与版本守卫只是多一步 `npm i -g`。而 `windows-latest` / `ubuntu-latest` 跑在真实内核的真实机器上,与"自备真机"的差别不在于是不是真机,**在于有没有桌面会话**——于是落在 CI 之外的只剩"浏览器真的弹出来"与肉眼观感两类。**放弃人工路线的理由不是省事,是人工确认不留回归**:一次性的目视结果不会在下一次改动把它弄坏时响,而这几条恰恰属于本文档反复强调的"坏了也不报错、只是静默失效"那一类——`ignore` 一旦失效,功能表现完全正常,只有 watch 计数看得见。另一条候选是在本机装 Linux 容器与 Windows ARM 虚拟机后由人驱动,同样被放弃:它拿到的仍是没有桌面会话的内核(容器)或一次性的目视结果(虚拟机),补不上真正缺的那一块,却要为每次回归重付一遍
 - **npm 包名**:`gitglance` registry 返回 404,未被占用;`git-glance` 为他人 1.0.1,仅影响搜索时的混淆,不构成冲突
 - **pnpm 相关事实**(2026-08-06 就本机 pnpm 11.20.0 逐条实测 + 官方迁移文档复核;此前本组曾按 pnpm 10 撰写并标记"尚未实测",其中一条已证伪,见下):
   - **版本**:latest 为 **11.20.0**,`packageManager` 即钉此版本。**pnpm 11 相对 10 有三处破坏性变更,恰好全部打在 5.11 的配置面上**,因此本项目按 11 而非 10 落地

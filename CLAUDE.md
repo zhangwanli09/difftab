@@ -42,8 +42,10 @@
 | 样式层叠门禁(unlayered + hljs 在前 + 深色带媒体条件 + 四条 `--d2h-*` 覆写判据) | `pnpm check:css` |
 | 发布产物内容门禁(`pnpm pack --dry-run --json`) | `pnpm check:pack` |
 | `bin/gitglance.js` 未被构建管线触碰 | `pnpm check:bin`(内部跑一次完整构建) |
+| 全局安装验收(打包 → `npm i -g` → 用 PATH 上那个名字跑通 → 卸掉) | **先 `pnpm build`**,再 `pnpm check:global`;要求全局**尚未**装着 gitglance,否则「多出了什么」无从判断,脚本会直接拒跑 |
+| inotify 配额耗尽时降级为轮询(Linux + 免密 sudo) | **先 `pnpm build`**,再 `pnpm check:inotify`;**不进冒烟套件**(理由在脚本头部),非 Linux 直接 SKIP |
 
-`fixtures` / `bench:startup` / `size` / `check:css` **只是别名**——脚本本体必须是零依赖纯 JS、可由 `node <路径>` 直接执行,因为它们要在没有 pnpm、没有 `node_modules` 的 CI matrix 机器上跑(见 spec §5.11)。`check:pack` / `check:bin` 需要 pnpm,只在 CI 的 build 作业跑。
+`fixtures` / `bench:startup` / `size` / `check:css` / `check:global` / `check:inotify` **只是别名**——脚本本体必须是零依赖纯 JS、可由 `node <路径>` 直接执行,因为它们要在没有 pnpm、没有 `node_modules` 的 CI matrix 机器上跑(见 spec §5.11)。`check:pack` / `check:bin` 需要 pnpm,只在 CI 的 build 作业跑。
 
 架构边界由 `biome.json` 的 `noRestrictedImports` overrides 承担,随 `pnpm lint` / `biome ci` 一起跑,不另设命令;判据见第 5 节「架构边界」。
 
@@ -171,15 +173,16 @@
 
 ## 7. 开发阶段
 
-S0 工具链脚手架 → S1 CLI + HTTP server(**含 §5.9 三道校验的最终形态**)+ **注册表文件写入(port + token)** + git 封装 + 只读主门禁 + fixture 第一批 → **S2a** 变更列表 + 只读 `.git` 第二层 → **S2b** diff2html 渲染 + 懒加载 → **S2c** 主题样式 + 体积收口 → **S3a** 分支状态 → **S3b1** SSE 通道 + 档位骨架 → **S3b2** 三档监听 + 轮询兜底 → **S3c** 进程生命周期(注册表**探活复用** + 空闲退出)→ **S4a** diff 边界情况 → **S4b** git 异常状态(两者各配一半 fixture 第二批)→ **S5** Windows/Linux 真机验证 + 安全加固自查(**CI 跑通不等于可用**)→ **S6** 开源准备。各阶段展开见 spec §7,**已收口阶段的实测数字与踩坑记录见 `docs/journal.md`**(本节不留副本)。
+S0 工具链脚手架 → S1 CLI + HTTP server(**含 §5.9 三道校验的最终形态**)+ **注册表文件写入(port + token)** + git 封装 + 只读主门禁 + fixture 第一批 → **S2a** 变更列表 + 只读 `.git` 第二层 → **S2b** diff2html 渲染 + 懒加载 → **S2c** 主题样式 + 体积收口 → **S3a** 分支状态 → **S3b1** SSE 通道 + 档位骨架 → **S3b2** 三档监听 + 轮询兜底 → **S3c** 进程生命周期(注册表**探活复用** + 空闲退出)→ **S4a** diff 边界情况 → **S4b** git 异常状态(两者各配一半 fixture 第二批)→ **S5** Windows/Linux 跨平台验证 + 安全加固自查(**能断言的进 CI 的 windows / ubuntu runner,口径见 spec §6 开头**)→ **S6** 开源准备。各阶段展开见 spec §7,**已收口阶段的实测数字与踩坑记录见 `docs/journal.md`**(本节不留副本)。
 
-**当前:S4b 已收口(CI 全绿);S5 进行中,只做了 macOS 那半与安全自查,未收口、§6 一条未勾。** 已收口阶段的实测数字见 `docs/journal.md`,S5 已做部分的记录在下方交接项里。
+**当前:S4b 已收口(CI 全绿);S5 进行中——macOS 那半与安全自查已完成,跨平台那 7 条已按新口径写成 CI 断言但尚未跑绿,§6 一条未勾。** 已收口阶段的实测数字见 `docs/journal.md`,S5 已做部分的记录在下方交接项里。
 
 **未消费的跨阶段交接**——消费掉即从本节删除,连同该阶段的收口记录一起落到 `docs/journal.md`。
 
 - **S5 已做的那半(2026-08-14/15,macOS 26 / Node 24.14.1 与 22.0.0)**:休眠唤醒那条已收(§6 已勾),**并推翻了它原先的理由**——回环上整机休眠不产生半开 TCP,`STALE_MS` 要靠「连接静默 + 标签切回」才走得到,机制与实测都在 spec §5.8 / §10;安全自查三组(三道校验的渗透式复核、CSP 实测、token 经命令行那条已知边界)**证据已进 spec §10、结论已进 §5.9,本节不留副本**;此外 A/B 两档在 macOS 上各验(深层 `node_modules` 写 50 个文件 0 次 change、真改动 163-164ms 到)、`npm i -g` 零传递依赖装上跑通、Node 20 上守卫给一句话提示并以 1 退出且无栈。**自查改了一处代码**:方法判定挪到三道校验之后(§5.9 第 4 条,验收项 §6 `[S5]`)
-- **→ S5 尚未做的(优先级序)**:**Windows 3 条**(B 档过滤、`npm i -g` 与版本守卫、交接项 ⓪ 的 `--git-dir` 分隔符形态)、**Linux 5 条**(C 档轮询、A 档配额、ENOSPC 降级、以及交接项 ① 那个两条候选补法择一的决定);Linux 半另需复核 §5.9 那条已知边界在 `xdg-open` 下的窗口有多大——比 macOS 大得多的话,那条边界要重新权衡
-- **→ S5(两条,均待真机定夺)**:⓪ linked worktree / submodule 只在 CI 的 **ubuntu 单测档**跑过(matrix 的冒烟不建这两个 fixture),而它们的判据是「`--git-dir` 回来的路径能拼出 `MERGE_HEAD` 等状态文件」——**Windows 上那个路径的分隔符形态没人验过**,漏了不报错、只是操作标注永远不出现;① Linux 上「启动时 inotify 配额已耗尽」这种 ENOSPC 检测不到,**两条候选补法择一的判据留给真机压低 `max_user_watches` 实测**,现在不猜(机理见 spec §5.7,验收项 §6 `[S3b2/S5]`)
+- **→ S5 剩下的 7 条改由 CI 断言**(口径与理由见 spec §6 开头与 §10;要点:runner 就是真机,差的只是桌面会话)。用例与作业**已就位、本机能跑的都绿了**,但**一条都还没勾**——按本节流程规则,打勾以 CI 绿为准。落点:`test/smoke/watch-tiers.test.js`(三档过滤 + Linux 的 inotify 计数)、`test/smoke/git-dir.test.js`(交接项 ⓪,三端各断一次)、CI 的 `global-install` / `old-node-guard` / `inotify-quota` 三个作业
+- **→ S5 交接项 ①(唯一还悬着的决定)**:Linux 上「启动时 inotify 配额已耗尽」这种 ENOSPC 检测不到,两条候选补法择一。判据现在有了着落——`scripts/check-inotify-degrade.mjs` 的**探索区**会把几个配额档位下 `mode` 与「改动刷不刷得出来」打成一张表(**只打印不断言**:断言一个已知缺陷等于把它钉死)。**看到那张表再定,在此之前不猜**(机理见 spec §5.7,验收项 §6 `[S3b2/S5]`)
+- **→ S5 落在 CI 之外的两类**:①「浏览器在 Windows / Linux 桌面上真的弹出来」——runner 没有桌面会话,命令选择与 argv 由 `browser.test.ts` 与 §5.10 的单点断言覆盖,弹窗与否只能靠首个真实用户;②§5.9 那条已知边界在 `xdg-open` 下的窗口有多大仍未实测,比 macOS 大得多的话那条边界要重新权衡
 
 **流程规则**
 
