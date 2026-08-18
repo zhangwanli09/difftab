@@ -33,7 +33,9 @@
     "prepublishOnly": "pnpm run build",
     "check:pack": "node scripts/check-pack.mjs",
     "check:css": "node scripts/check-css-cascade.mjs",
-    "check:bin": "node scripts/check-bin-untouched.mjs"
+    "check:bin": "node scripts/check-bin-untouched.mjs",
+    "check:global": "node scripts/check-global-install.mjs",
+    "check:inotify": "node scripts/check-inotify-degrade.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.7",

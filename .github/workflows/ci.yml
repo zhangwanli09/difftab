@@ -145,6 +145,63 @@ jobs:
       - name: 冷启动测量(spec §6,≤300ms)
         run: node scripts/bench-startup.mjs
 
+  # 压低 inotify 配额验降级(spec §6 的那条 Linux 验收项)。
+  #
+  # **另起一档的理由是它动的是全机器共享的 sysctl**:`node --test` 按文件并行跑,
+  # 混进冒烟套件等于在别的监听用例跑到一半时把配额抽掉。GitHub 的 ubuntu runner
+  # 自带免密 sudo,这正是"CI runner 就是真机"那条口径里最实在的一条(§6 开头)。
+  #
+  # Node 24 一档:配额耗尽这件事只对**建递归 watch 的档位**(A)有意义,Node 22 在
+  # Linux 上判到 C 档、一个递归 watch 都不建。
+  inotify-quota:
+    name: inotify 配额耗尽时降级为轮询
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      - run: node scripts/check-inotify-degrade.mjs
+
+  # `npm i -g` 三端验收(spec §6)。
+  #
+  # **另起一档而不是塞进 matrix**:那一档"完全不装依赖"是 §5.11 的红线,而这里要做的
+  # 恰好是装东西 —— 装的是产品自己(零依赖,所以"装了什么"本身就是一条断言)。混在
+  # 一起跑的话,冒烟绿的时候没人说得清测的是哪个 gitglance。
+  #
+  # 只跑 Node 22.0.x 一档:这条验收项要证的是**打包 → 全局装 → PATH 上跑得起来**,
+  # 那是 npm 与平台的事,不是 Node 版本的事;而下限档自带的 npm 最老,兼容性风险
+  # 也压在这一档上。
+  global-install:
+    name: npm i -g · ${{ matrix.os }}
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22.0.x'
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      - run: node scripts/check-global-install.mjs
+
   # 版本守卫的**正面**验证:在一个真正低于下限的 Node 上跑 bin/gitglance.js。
   #
   # 为什么另起一档:matrix 与 build 都跑在 ≥22 上,而守卫要防的是**解析期**失败 ——
@@ -153,11 +210,22 @@ jobs:
   # 5 个具体语法逐条列举,而 catch {}、对象展开、class 静态块、** 等一律漏网,
   # 后果正是 §6 禁止的「用户看到 SyntaxError 而不是友好提示」。这一档直接断言那句话。
   #
+  # 三个平台各跑一次(S5):守卫里那句提示要经 `writeSync(2, …)` 出来,而 §5.8 那条
+  # 红线说的正是"`process.stderr.write` + `process.exit` 在 Windows 上写管道时是异步的、
+  # 整条消息会被丢掉"—— 那种失效只在 Windows 上看得见。**写法本身另有一条静态断言
+  # 罩着**(冒烟里的「退出前的报错一律 writeSync(2, …)」,连动态 import 失败那个出口
+  # 一起罩),这一档是它的行为侧背书:静态扫描证明源码没写错,这里证明真跑起来那句话
+  # 确实到得了管道对面。
+  #
   # 本档不需要 dist/:守卫在 import 主模块**之前**就退出了(冒烟里另有一条断言
   # stdout 为空,证的就是这个顺序)。
   old-node-guard:
-    name: 版本守卫 · Node 20(低于下限)
-    runs-on: ubuntu-latest
+    name: 版本守卫 · Node 20 · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v7
 
@@ -169,9 +237,19 @@ jobs:
         shell: bash
         run: |
           set +e
-          out=$(node bin/gitglance.js --version 2>err.txt)
+          # **stderr 必须经管道取回,不能重定向到文件**:这条断言同时守着 §5.8 那条
+          # 「退出前一律 writeSync(2, …)」—— `process.stderr.write` + `process.exit()`
+          # 只在写**管道**时才会在 Windows 上丢消息,写文件是同步的、照样能收到。
+          # 用文件的话这一档在 Windows 上恒绿,而真实用户(任何以 stdio: 'pipe' 起它的
+          # 父进程)看到的是空 stderr 加一个光秃秃的 1。
+          #
+          # **只跑一次**:重定向从左往右生效,`2>&1` 先把 fd2 指到命令替换的那根管道,
+          # 随后 `>out.txt` 才把 fd1 挪去文件 —— 于是 stderr 走管道、stdout 落文件,
+          # 退出码、空 stdout、stderr 三条断言描述的是**同一个进程**。跑两遍的话它们
+          # 分属两个进程,永远矛盾不起来,也就永远红不了。
+          err=$(node bin/gitglance.js --version 2>&1 >out.txt)
           status=$?
-          err=$(cat err.txt)
+          out=$(cat out.txt)
           echo "exit=$status"; echo "stdout=[$out]"; echo "stderr=$err"
           [ "$status" -eq 1 ]                        || { echo 'FAIL 期望以 1 退出'; exit 1; }
           [ -z "$out" ]                              || { echo 'FAIL 主模块被加载了 —— 守卫没有先于 import 执行'; exit 1; }
