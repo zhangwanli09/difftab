@@ -145,14 +145,42 @@ test('自动判定的那一档:node_modules 深层批量写入不刷新,同一�
 
     const stamp = Date.now();
     const deep = join(repos.staged, ...DEEP);
-    for (let i = 0; i < 50; i += 1) {
-      writeFileSync(join(deep, `dep-${stamp}-${i}.js`), `module.exports = ${i};\n`);
+    const write = (name) => writeFileSync(join(deep, name), `module.exports = '${name}';\n`);
+
+    /**
+     * **两种写法各量一次,两个数一起报出来再一起断言**。
+     *
+     * 快写一批在 Windows 上有第二种解释:`ReadDirectoryChangesW` 的通知缓冲区被一次
+     * 突发写满时,内核报的是"丢了一批",Node 由此 emit 一个**没有 filename** 的事件,
+     * 而按 §5.7 那种事件是**刻意放行**的(漏刷一次比多刷一次糟)。它与"逐段过滤没生效"
+     * 会给出一模一样的一个事件 —— 合并窗口把 50 次写入本来也压成 1 个。
+     *
+     * 慢写把两者分开:每次写入之间隔开一个合并窗口,过滤失效时应当逐个漏出来(数个
+     * 事件),缓冲区溢出则一个都没有。先各记一个数、都打进 diagnostic,再一起断言 ——
+     * 断言分两条写、遇到第一条就停的话,红的那次只能看到一半数据,而这两个数**只有
+     * 摆在一起才说明得了病因**。
+     */
+    const SLOW_WRITES = 6;
+    const slowStart = sse.count;
+    for (let i = 0; i < SLOW_WRITES; i += 1) {
+      write(`slow-${stamp}-${i}.js`);
+      await sleep(250); // > DEBOUNCE_MS(150),每次写入各占一个合并窗口
     }
     await sleep(QUIET_MS);
-    assert.equal(
-      sse.count,
-      baseline,
-      `${tier} 档:往 ${DEEP.join('/')} 写 50 个文件触发了 ${sse.count - baseline} 次刷新`,
+    const slowDelta = sse.count - slowStart;
+
+    const burstStart = sse.count;
+    for (let i = 0; i < 50; i += 1) write(`burst-${stamp}-${i}.js`);
+    await sleep(QUIET_MS);
+    const burstDelta = sse.count - burstStart;
+
+    t.diagnostic(
+      `往 ${DEEP.join('/')} 写入引出的刷新:慢写 ${SLOW_WRITES} 次 → ${slowDelta} 个;快写 50 次 → ${burstDelta} 个`,
+    );
+    assert.deepEqual(
+      { 慢写: slowDelta, 快写: burstDelta },
+      { 慢写: 0, 快写: 0 },
+      `${tier} 档:node_modules 深层写入引出了刷新`,
     );
 
     /**
