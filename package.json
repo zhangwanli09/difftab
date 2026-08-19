@@ -3,6 +3,27 @@
   "version": "0.1.0",
   "description": "Glance at what your AI coding agent changed — read-only local diff and branch viewer",
   "license": "MIT",
+  "author": "zhangwanli",
+  "homepage": "https://github.com/zhangwanli09/gitglance#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zhangwanli09/gitglance.git"
+  },
+  "bugs": {
+    "url": "https://github.com/zhangwanli09/gitglance/issues"
+  },
+  "keywords": [
+    "git",
+    "diff",
+    "git-diff",
+    "diff-viewer",
+    "working-tree",
+    "cli",
+    "read-only",
+    "ai-agent",
+    "coding-agent",
+    "code-review"
+  ],
   "type": "module",
   "bin": {
     "gitglance": "bin/gitglance.js"
@@ -11,12 +32,17 @@
     "bin",
     "dist",
     "README.md",
+    "README.zh-CN.md",
     "LICENSE"
   ],
   "engines": {
     "node": ">=22.0.0"
   },
   "packageManager": "pnpm@11.20.0",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
   "dependencies": {},
   "scripts": {
     "dev": "vite",

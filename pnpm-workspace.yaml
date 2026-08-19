@@ -10,3 +10,7 @@ allowBuilds:
 # 自己写进来的豁免,入库是为了让 CI 与他人机器上的 --frozen-lockfile 结果一致。
 minimumReleaseAgeExclude:
   - vite@8.2.1
+# 发布分支。CLI 的 --publish-branch 默认是 `master`,而本仓库的默认分支是 `main` ——
+# 不写这条时 `pnpm publish` 会因分支不符停下来问一句(交互式)或直接失败(CI),
+# 而那与 --no-git-checks 是两回事:git 检查本身有价值,要留(见 roadmap.md §8)。
+publishBranch: main

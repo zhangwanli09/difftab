@@ -3,8 +3,8 @@
 //
 // 用 `pnpm pack --dry-run --json` 核对将要发出去的**文件清单**与**运行时依赖**,
 // 不必实际落 tarball。
-//   · 文件白名单为 bin/、dist/、README、LICENSE、package.json;不得含 src/、
-//     配置文件与测试。
+//   · 文件白名单为 bin/、dist/、README(含 README.<lang>.md 译文)、LICENSE、
+//     package.json;不得含 src/、配置文件与测试。
 //   · dependencies / optionalDependencies / peerDependencies 必须为空 ——
 //     只查文件清单是查不出这条的:加一个运行时依赖不会改变文件清单,构建照样成功,
 //     用户却开始悄悄拿到一棵传递依赖树,而 §2 承诺没有这棵树。
@@ -30,7 +30,14 @@ const MUST_BE_EMPTY = ['dependencies', 'optionalDependencies', 'peerDependencies
 const ALLOWED = [
   { label: 'bin/', test: (p) => p.startsWith('bin/') },
   { label: 'dist/', test: (p) => p.startsWith('dist/') },
-  { label: 'README', test: (p) => /^README(\.md)?$/i.test(p) },
+  // npm / pnpm 无条件把根目录下的所有 README* 打进 tarball,与 files 白名单无关(已实测,
+  // 见 decisions.md §10)。译文 README 因此只有两条路:进白名单,或者根本别叫 README.*。
+  // 选前者 —— 5 KB 的译文进 tarball 无害,而改名会让它在 GitHub 上失去约定俗成的位置。
+  //
+  // `.md` **提在语言段外面**,于是"带语言段却不带 `.md`"在结构上就写不出来 —— 把它写成
+  // 并列的两支(`…\.md|\.md`)时,`README.sh` / `README.js` 会被当成译文放行,而本门禁
+  // 的全部职责就是"发出去的东西没有一件是意外进来的"。穷举 6859 个样本验过两式等价。
+  { label: 'README', test: (p) => /^README((\.[a-z]{2}(-[a-z]{2,4})?)?\.md)?$/i.test(p) },
   { label: 'LICENSE', test: (p) => /^LICEN[CS]E(\.md|\.txt)?$/i.test(p) },
   { label: 'package.json', test: (p) => p === 'package.json' },
 ];
