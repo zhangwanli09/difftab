@@ -18,7 +18,8 @@ same list is a second place to forget.
 ## Before releasing
 
 - [ ] The `ci` workflow is green on the release commit — **every job**, not just `build`.
-      `gh run view --commit "$(git rev-parse HEAD)"` reports them all. The long tail is
+      `gh run list --commit "$(git rev-parse HEAD)"` finds the run and
+      `gh run view <run-id>` lists every job in it. The long tail is
       what matters here: the three-platform × Node 22/24/26 smoke matrix, `inotify-quota`,
       `global-install`, and `old-node-guard` are where cross-platform regressions surface,
       and `build` going green says nothing about any of them.
