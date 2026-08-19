@@ -1,0 +1,73 @@
+name: Bug report
+description: Something is wrong with what GitGlance shows or how it behaves
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. GitGlance shows what `git status` and `git diff HEAD` say,
+        so the most useful bug reports compare the two.
+
+        **If you believe GitGlance wrote to your repository**, that is a critical bug —
+        please say so up front and include the output of `git status` and `git reflog`
+        from before and after, if you have it.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What did GitGlance show, and what did you expect instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: |
+        The repository state matters more than the steps. If you can, describe it as git
+        commands that build a repository where the problem shows up.
+      placeholder: |
+        git init repro && cd repro
+        …
+        gitglance
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: GitGlance version
+      description: "`gitglance --version`"
+    validations:
+      required: true
+
+  - type: input
+    id: env
+    attributes:
+      label: OS, Node and git versions
+      description: "`node --version` and `git --version`, plus your OS and version"
+      placeholder: macOS 15.3 · Node v22.14.0 · git 2.48.1
+    validations:
+      required: true
+
+  - type: dropdown
+    id: refresh
+    attributes:
+      label: Does it involve auto-refresh?
+      description: |
+        The file watcher runs in one of three tiers picked from your Node version and
+        platform, and they behave differently by design — so this changes where to look.
+      options:
+        - "No"
+        - "Yes — and the page showed the \"Polling\" badge"
+        - "Yes — and there was no \"Polling\" badge"
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Terminal output
+      description: Anything gitglance printed. Automatically formatted as code.
+      render: text

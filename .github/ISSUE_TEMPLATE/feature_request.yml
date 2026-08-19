@@ -1,0 +1,34 @@
+name: Feature request
+description: Suggest something GitGlance should do
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Any write to the repository is permanently out of scope** — staging,
+        committing, discarding, pulling, pushing, branching, stashing. That is the
+        product's core promise and two CI gates enforce it, so requests for write
+        features will be closed. Code editing, accounts and cloud sync, and multi-user
+        collaboration are out for the same reason: they would make this a different tool.
+
+        A second, shorter list holds things deliberately left out of the *first* version
+        and reconsidered based on real friction rather than up front. That list moves as
+        versions ship, so it is not copied here — see
+        [`docs/spec.md`](https://github.com/zhangwanli09/gitglance/blob/main/docs/spec.md)
+        §4.2 for what it currently holds.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: |
+        Describe the situation you are in, not the feature. "I glance at the diff after
+        my agent finishes and I cannot tell X" is much more useful than "add a X button".
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What did you have in mind?
+      description: Optional — a rough idea of how it might look or work.
