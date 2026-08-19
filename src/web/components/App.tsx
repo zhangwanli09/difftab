@@ -44,7 +44,9 @@ export function App() {
             // 第一次就失败时不能继续说「读取中」—— 那份加载态永远不会结束,
             // 页面看上去像卡住了,而错误条其实已经把原因写在上面了
             <p class="px-3 py-2 text-sm text-description-foreground">
-              {error === null ? '读取中…' : '取不到变更列表,刷新页面重试。'}
+              {error === null
+                ? 'Loading…'
+                : 'Could not load the change list. Reload the page to retry.'}
             </p>
           ) : (
             <ChangeList files={state.files} />

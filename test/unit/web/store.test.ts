@@ -190,7 +190,7 @@ describe('loadState', () => {
     );
 
     await loadState();
-    expect(loadError.value).toBe('请求失败(HTTP 500)');
+    expect(loadError.value).toBe('Request failed (HTTP 500).');
     expect(loadError.value).not.toContain('JSON');
   });
 
@@ -478,7 +478,7 @@ describe('refresh(一次 SSE change 之后要重取什么)', () => {
 
     await refresh();
     expect(calls).toEqual(['/api/state']);
-    expect(loadError.value).toBe('请求失败(HTTP 500)');
+    expect(loadError.value).toBe('Request failed (HTTP 500).');
     expect(diffState.value).toEqual({
       status: 'ready',
       path: 'a.txt',

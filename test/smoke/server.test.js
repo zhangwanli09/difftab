@@ -17,6 +17,7 @@ import {
   expectStartupRefusal,
   httpGet,
   once,
+  REPO_ROOT,
   startGitglance,
 } from './helpers.js';
 
@@ -28,6 +29,14 @@ const NEEDED = ['unicodePaths', 'staged', 'empty', 'diffEdges'];
  * (`OPTIONS` 是最现实的候选)只加到其中一处,另一处就在更窄的方法集上悄悄变绿。
  */
 const NON_IDEMPOTENT = ['POST', 'PUT', 'DELETE', 'PATCH'];
+
+/**
+ * 前端产物里被静态托管的那几个文件(与 `server/http/assets.ts` 的白名单一一对应)。
+ *
+ * 同样是**两个用例共用一份**(理由同上):添一个资源时只改其中一处,漏掉的那一处
+ * 不会红 —— 而下面那条 CJK 门禁漏掉一个文件,恰恰意味着那个文件里的中文没人看着。
+ */
+const WEB_ASSETS = ['index.html', 'app.js', 'app.css'];
 
 /** rebinding 的攻击页面发出的请求长这样:Host 是攻击者自己的域名。 */
 const ATTACKER_HOST = { Host: 'evil.example' };
@@ -388,7 +397,31 @@ test('后端零 dev 分支:产物里的自有环境变量只有这三个', () =>
 });
 
 test('dist/ 产物齐备 —— 静态托管的白名单指向的三个文件都在', () => {
-  for (const file of ['index.html', 'app.js', 'app.css']) {
-    assert.ok(existsSync(join(import.meta.dirname, '..', '..', 'dist', 'web', file)), file);
+  for (const file of WEB_ASSETS) {
+    assert.ok(existsSync(join(REPO_ROOT, 'dist', 'web', file)), file);
+  }
+});
+
+test('前端产物里一个中文字符都没有 —— 界面文案一律英文(spec §5.4)', () => {
+  // 判据落在**产物**上而不是逐个文件翻源码:漏网的那两条(`state/store.ts` 里的错误
+  // 文案)正是因为它们不长在 JSX 上,按组件翻就想不起来。产物里本来就不该有中文
+  // —— 注释在构建期已被去掉,diff2html / hljs 也不带。
+  //
+  // **后端那份不能这么查**:`dist/server/main.js` 按 §5.1 不压缩不混淆,注释原样留着
+  // 正是为了让用户自己核查跑了哪些 git 命令。那一侧的用户可见文案是 `sendError` 与
+  // 各个 `*Error` 的字面量,由 test/unit/server/ 那边压。
+  //
+  // 字符类要**连标点一起罩住**:只查汉字时,一条把词翻成英文、却把括号书名号留成全角的
+  // 文案(`Request failed(HTTP 500)`)照样过闸 —— 而那正是"翻了一半"最常见的形态。
+  // 于是四段一起:CJK 标点(U+3000–303F)、假名、汉字与扩展 A、全角/半角形式(U+FF00–FFEF)。
+  const CJK = /[\u3000-\u303f\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff00-\uffef]/gu;
+  for (const file of WEB_ASSETS) {
+    const text = readFileSync(join(REPO_ROOT, 'dist', 'web', file), 'utf8');
+    // 报出上下文而不是光报字符 —— 只说"第 N 个字符是「未」"没法定位到是哪条文案。
+    // 通过那条路上这个 map 一次都不跑(匹配为空),所以不必先 test() 再 matchAll()
+    const hits = [...text.matchAll(CJK)].map((m) =>
+      text.slice(Math.max(0, m.index - 40), m.index + 40).replace(/\s+/g, ' '),
+    );
+    assert.equal(hits.length, 0, `${file} 里有中文文案:\n  ${hits.slice(0, 5).join('\n  ')}`);
   }
 });

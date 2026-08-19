@@ -32,10 +32,17 @@ afterEach(() => {
   diffState.value = null;
 });
 
-/** 某个分组标题下那一段的可见文本(空白归一)。 */
+/**
+ * 某个分组标题下那一段的可见文本(空白归一)。
+ *
+ * 匹配用 `startsWith` 而不是 `includes`:标题是「Staged」「Unstaged」这样的英文
+ * (§5.4),而前者是后者的子串 —— 用 `includes` 时 `sectionTextOf('Staged')` 会挑到
+ * 哪一段取决于 DOM 顺序,而那个顺序归 `groupFiles`。h2 的文本是「标题 + 计数」,
+ * 从头比即可。
+ */
 function sectionTextOf(title: string): string {
   const section = [...container.querySelectorAll('section')].find((node) =>
-    node.querySelector('h2')?.textContent?.includes(title),
+    node.querySelector('h2')?.textContent?.trim().startsWith(title),
   );
   return (section?.textContent ?? '').replace(/\s+/g, ' ').trim();
 }
@@ -51,7 +58,7 @@ describe('ChangeList 的冲突组', () => {
       />,
       container,
     );
-    const text = sectionTextOf('冲突');
+    const text = sectionTextOf('Conflicted');
 
     expect(text).toContain('UU');
     expect(text).toContain('DD');
@@ -72,8 +79,8 @@ describe('ChangeList 的冲突组', () => {
       container,
     );
 
-    expect(sectionTextOf('已暂存')).not.toContain('conflict.txt');
-    expect(sectionTextOf('已暂存')).toContain('normal.txt');
-    expect(sectionTextOf('未暂存')).toBe('');
+    expect(sectionTextOf('Staged')).not.toContain('conflict.txt');
+    expect(sectionTextOf('Staged')).toContain('normal.txt');
+    expect(sectionTextOf('Unstaged')).toBe('');
   });
 });

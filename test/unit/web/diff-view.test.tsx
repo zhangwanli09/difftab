@@ -72,7 +72,7 @@ afterEach(() => {
 
 describe('DiffView', () => {
   it('没选文件时给一句提示,不渲染空的 diff 容器', async () => {
-    await waitFor(() => expect(container.textContent).toContain('从左侧选一个文件'));
+    await waitFor(() => expect(container.textContent).toContain('Select a file on the left'));
 
     expect(container.querySelector('.d2h-file-wrapper')).toBeNull();
   });
@@ -105,7 +105,7 @@ describe('DiffView', () => {
 
   it('binary 只提示,不画 diff', async () => {
     ready('logo.png', { kind: 'binary' });
-    await waitFor(() => expect(container.textContent).toContain('二进制文件'));
+    await waitFor(() => expect(container.textContent).toContain('Binary file'));
 
     expect(container.querySelector('.d2h-file-wrapper')).toBeNull();
   });
@@ -113,19 +113,20 @@ describe('DiffView', () => {
   it('too-large 的两个触发口给出不同的话,小文件不会被说成 MB', async () => {
     // 体积那一路:5MB 出头,按 MB 说得通
     ready('huge.log', { kind: 'too-large', size: 6 * 1024 * 1024, reason: 'size' });
-    await waitFor(() => expect(container.textContent).toContain('文件过大'));
+    await waitFor(() => expect(container.textContent).toContain('File too large'));
     const bySize = container.textContent ?? '';
 
     // 行数那一路:100 KB 的窄文件
     ready('many-lines.txt', { kind: 'too-large', size: 100 * 1024, reason: 'lines' });
-    await waitFor(() => expect(container.textContent).toContain('行数过多'));
+    await waitFor(() => expect(container.textContent).toContain('Too many lines'));
     const byLines = container.textContent ?? '';
 
     expect(bySize).toContain('6.0 MB');
     expect(byLines).toContain('100 KB');
-    // 少了 reason(或 formatSize 选错量级)时,100 KB 那条会被说成「文件过大(0 MB)」。
-    // 判据钉在"这条里根本不该出现 MB"上 —— 早先写的 `not.toContain('0 MB,')`
-    // **一次都不可能失败**:模板在尺寸与逗号之间还有个 `)`,那个逗号永远挨不上
+    // 少了 reason(或 formatSize 选错量级)时,100 KB 那条会被说成「File too large
+    // to preview (0 MB)」。判据钉在"这条里根本不该出现 MB"上 —— 早先那版把标点也抄进
+    // 断言里(`'0 MB,'`),**一次都不可能失败**:模板里那两个字符之间还隔着别的东西。
+    // 文案换成英文之后这条更要紧了:抄标点的写法会随每一次措辞微调静默失效
     expect(byLines).not.toContain('MB');
   });
 
@@ -135,35 +136,35 @@ describe('DiffView', () => {
       score: 95,
     } satisfies RenameInfo);
 
-    await waitFor(() => expect(container.textContent).toContain('重命名自'));
+    await waitFor(() => expect(container.textContent).toContain('Renamed from'));
     expect(container.textContent).toContain('src/old name.ts');
     expect(container.textContent).toContain('95%');
   });
 
   it('相似度取不到时只说旧路径,不编一个百分比出来', async () => {
     ready('b.ts', { kind: 'binary' }, { oldPath: 'a.ts', score: null });
-    await waitFor(() => expect(container.textContent).toContain('重命名自'));
+    await waitFor(() => expect(container.textContent).toContain('Renamed from'));
     // 「相似度 null%」「相似度 0%」都是在说一件 git 没说过的事;而 binary 这一路
     // 压根没有补丁头,标注要是也跟着丢,页面上就再没有任何地方提过它是重命名
-    expect(container.textContent).not.toContain('相似度');
-    expect(container.textContent).toContain('二进制文件');
+    expect(container.textContent).not.toContain('similar');
+    expect(container.textContent).toContain('Binary file');
   });
 
   it('普通文件不出现重命名标注 —— 判据是 rename 而不是路径长得像', async () => {
     ready('a.ts', { kind: 'text', patch: patchFor('const x = 1;') });
     await waitFor(() => expect(container.textContent).toContain('const x'));
-    expect(container.textContent).not.toContain('重命名');
+    expect(container.textContent).not.toContain('Renamed');
   });
 
   it('体积取不到时(已删除的文件)不把 0 说成 1 KB —— 两个 reason 都是', async () => {
     // 已被删除的文件在工作区没有体积可取,后端给的是 0(§5.12)。formatSize 的
     // `Math.max(1, …)` 会把它说成「1 KB」—— 一个编出来的数
     ready('gone.txt', { kind: 'too-large', size: 0, reason: 'lines' });
-    await waitFor(() => expect(container.textContent).toContain('行数过多'));
+    await waitFor(() => expect(container.textContent).toContain('Too many lines'));
     expect(container.textContent).not.toContain('KB');
 
     ready('also-gone.txt', { kind: 'too-large', size: 0, reason: 'size' });
-    await waitFor(() => expect(container.textContent).toContain('文件过大'));
+    await waitFor(() => expect(container.textContent).toContain('File too large'));
     expect(container.textContent).not.toContain('KB');
     expect(container.textContent).not.toContain('MB');
   });

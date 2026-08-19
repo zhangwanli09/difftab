@@ -36,7 +36,7 @@ const textOf = (node: Element | null): string =>
 describe('WatchBadge', () => {
   it('降级为轮询时标注出来', () => {
     render(<WatchBadge watch={{ mode: 'polling', tier: 'C' }} />, container);
-    expect(textOf(container)).toContain('轮询');
+    expect(textOf(container)).toContain('Polling');
   });
 
   it('原生监听时什么都不画', () => {
@@ -54,7 +54,7 @@ describe('WatchBadge', () => {
     expect(textOf(container)).toBe('');
 
     render(<WatchBadge watch={{ mode: 'polling', tier: 'A' }} />, container);
-    expect(textOf(container)).toContain('轮询');
+    expect(textOf(container)).toContain('Polling');
   });
 });
 
@@ -70,7 +70,7 @@ describe('App 的 header', () => {
       watch: { mode: 'native', tier: 'A' },
     };
     await vi.waitFor(() => expect(textOf(header)).toContain('main'), { interval: 5 });
-    expect(textOf(header)).not.toContain('轮询');
+    expect(textOf(header)).not.toContain('Polling');
 
     // 降级是**运行中**发生的:后端在降级时推一个 change,前端重取 /api/state 才
     // 看得见(§5.7)。这里模拟的就是那次重取的结果
@@ -79,6 +79,6 @@ describe('App 的 header', () => {
       files: [],
       watch: { mode: 'polling', tier: 'A' },
     };
-    await vi.waitFor(() => expect(textOf(header)).toContain('轮询'), { interval: 5 });
+    await vi.waitFor(() => expect(textOf(header)).toContain('Polling'), { interval: 5 });
   });
 });

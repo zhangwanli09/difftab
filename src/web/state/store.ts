@@ -105,17 +105,17 @@ export interface ChangeGroup {
  */
 export function groupFiles(files: readonly FileEntry[]): ChangeGroup[] {
   return [
-    { id: 'conflicted', title: '冲突', files: files.filter(isConflicted) },
-    { id: 'staged', title: '已暂存', files: files.filter(hasStagedChange) },
-    { id: 'unstaged', title: '未暂存', files: files.filter(hasUnstagedChange) },
+    { id: 'conflicted', title: 'Conflicted', files: files.filter(isConflicted) },
+    { id: 'staged', title: 'Staged', files: files.filter(hasStagedChange) },
+    { id: 'unstaged', title: 'Unstaged', files: files.filter(hasUnstagedChange) },
     // -uall 保证这里是文件粒度,不会是折叠后的 `dir/`(§5.2)
-    { id: 'untracked', title: '未跟踪', files: files.filter(isUntracked) },
+    { id: 'untracked', title: 'Untracked', files: files.filter(isUntracked) },
   ];
 }
 
 /** 从任意失败里取一句可展示的话。永远返回非空字符串,免得 UI 出现空白的错误条。 */
 function toMessage(cause: unknown): string {
-  return cause instanceof Error && cause.message ? cause.message : '未知错误';
+  return cause instanceof Error && cause.message ? cause.message : 'Unknown error';
 }
 
 /**
@@ -132,7 +132,7 @@ function messageFrom(text: string, status: number): string {
   } catch {
     // 不是 JSON —— 这条路径本身就是上面说的那种情况
   }
-  return `请求失败(HTTP ${status})`;
+  return `Request failed (HTTP ${status}).`;
 }
 
 /**

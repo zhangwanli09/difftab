@@ -113,6 +113,13 @@ scripts/               bench:startup、size 门禁
 
 **TypeScript 的收益不限于前端**:5.2 的 `porcelain=v2 -z` 有状态重命名解析、5.7 的三档监听策略、SSE 消息协议,都是类型能在编译期挡住真实 bug 的地方;`@types/node@^22` 同时承担了 5.1 的 API 上限守卫职责。
 
+**界面文案一律英文,`<html lang>` 为 `en`**(2026-08-19 于 S6 定,此前是中文)。判据是**产品表面与文档分属两个读者**:`docs/` 与本文件写给维护者,中文;而分发形态是 npm 全局包(§2),CLI 的 `--help`、退出提示、版本守卫的报错从 5.1 起就是英文,界面是同一个表面上唯一说中文的部分——它不是"还没翻",是**当中一处不一致**。中文读者由 `README.zh-CN.md` 承接。首版不做语言切换,理由见 `spec.md` §4.2。
+
+- 术语跟 git 自己的用词走(`Staged` / `Unstaged` / `Untracked` / `Conflicted` / `Detached HEAD` / `Rebasing`),不自造同义词——用户是拿它对照 `git status` 看的
+- **改文案要同步改 `test/unit/web/` 里的可见文本断言**,那几条压的正是用户看到的字。这一条**会报错**,不进红线
+- **判据是「`dist/web/` 三个产物里的 CJK 字符数为 0」**(冒烟,已弄红验过),不是逐个文件翻源码:漏网的最可能形态是**不长在 JSX 上的那几条**(`state/store.ts` 的错误文案就是这么漏的一次),而按文件翻依赖"想不想得起来"。前端产物里本来就不该有中文——注释在构建期已去掉,diff2html / hljs 也不带
+- **后端产物用不了这个判据**:`dist/server/main.js` 按 5.1 不压缩不混淆,中文注释原样留着正是为了可审计。那一侧的用户可见文案是 `sendError` 与各 `*Error` 的字面量,归 `test/unit/server/`
+
 ### 5.5 Diff 渲染与体积
 
 [diff2html](https://github.com/rtfpessoa/diff2html) 直接解析 `git diff` 的 unified diff 文本渲染为带高亮的 HTML,配合 [highlight.js](https://highlightjs.org/) 做语法高亮。直接复用 git 原始 diff 算法,不需要额外维护对比逻辑。

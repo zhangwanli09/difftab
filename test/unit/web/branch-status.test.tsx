@@ -60,7 +60,7 @@ describe('BranchStatus', () => {
 
     // 正面:分支名与「无上游」都真的画出来了(缺了这条,下面那条对空 DOM 也成立)
     expect(text).toContain('feature/no-upstream');
-    expect(text).toContain('无上游');
+    expect(text).toContain('no upstream');
     // 反面:一个箭头都不许出现 —— ahead/behind 在这里根本无从谈起。
     // 只钉箭头不钉数字:分支名本身可以含数字(`release/1.0`),把数字也禁掉等于给
     // fixture 加一条看不见的约束,改个名字就会以一个与验收项无关的理由变红
@@ -74,7 +74,7 @@ describe('BranchStatus', () => {
     expect(text).toContain('main');
     expect(text).toContain('↑2');
     expect(text).toContain('↓1');
-    expect(text).not.toContain('无上游');
+    expect(text).not.toContain('no upstream');
   });
 
   it('有上游且已同步时展示 ↑0 ↓0,两个 0 都不省', () => {
@@ -85,13 +85,13 @@ describe('BranchStatus', () => {
     // 都说「无上游」、或把 0 省掉变回一片空白)必然先让其中一条红
     expect(text).toContain('↑0');
     expect(text).toContain('↓0');
-    expect(text).not.toContain('无上游');
+    expect(text).not.toContain('no upstream');
   });
 
   it('取不到分支名时给一句话,不是一段空白', () => {
     // `head` 为空是解析器在没有 `# branch.head` 时的初值(见 `BranchState.head`)
     render(<BranchStatus branch={branch({ head: '' })} />, container);
-    expect(textOf(container)).toContain('未知分支');
+    expect(textOf(container)).toContain('Unknown branch');
   });
 });
 
@@ -104,10 +104,10 @@ describe('BranchStatus 的降级标注(§5.3 / §6 的 `[S4b]`)', () => {
     const text = textOf(container);
 
     expect(text).not.toContain('(detached)');
-    expect(text).toContain('游离 HEAD');
+    expect(text).toContain('Detached HEAD');
     // 也不该退回「无上游」:detached 时根本谈不上上游,而那句话是留给
     // 「有分支但没设上游」的(S3a 那条验收项要区分的正是它)
-    expect(text).not.toContain('无上游');
+    expect(text).not.toContain('no upstream');
     expect(text).not.toMatch(/[↑↓]/);
   });
 
@@ -127,12 +127,12 @@ describe('BranchStatus 的降级标注(§5.3 / §6 的 `[S4b]`)', () => {
   });
 
   it.each([
-    ['rebase', '变基中'],
-    ['merge', '合并中'],
-    ['am', '打补丁中'],
-    ['cherry-pick', '拣选中'],
-    ['revert', '回滚中'],
-    ['bisect', '二分查找中'],
+    ['rebase', 'Rebasing'],
+    ['merge', 'Merging'],
+    ['am', 'Applying patches'],
+    ['cherry-pick', 'Cherry-picking'],
+    ['revert', 'Reverting'],
+    ['bisect', 'Bisecting'],
   ] as const)('operation=%s 标成「%s」', (operation, label) => {
     render(<BranchStatus branch={branch({ operation })} />, container);
     expect(textOf(container)).toContain(label);
@@ -143,7 +143,14 @@ describe('BranchStatus 的降级标注(§5.3 / §6 的 `[S4b]`)', () => {
     // 那一次淹在一片永远正确的字里
     render(<BranchStatus branch={branch()} />, container);
     const text = textOf(container);
-    for (const label of ['变基中', '合并中', '打补丁中', '拣选中', '回滚中', '二分查找中']) {
+    for (const label of [
+      'Rebasing',
+      'Merging',
+      'Applying patches',
+      'Cherry-picking',
+      'Reverting',
+      'Bisecting',
+    ]) {
       expect(text).not.toContain(label);
     }
   });
@@ -156,8 +163,8 @@ describe('BranchStatus 的降级标注(§5.3 / §6 的 `[S4b]`)', () => {
       container,
     );
     const text = textOf(container);
-    expect(text).toContain('游离 HEAD');
-    expect(text).toContain('变基中');
+    expect(text).toContain('Detached HEAD');
+    expect(text).toContain('Rebasing');
   });
 });
 

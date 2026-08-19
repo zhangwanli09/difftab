@@ -23,9 +23,9 @@ export function WatchBadge({ watch }: { watch: WatchState }) {
   return (
     <Badge
       tone="text-description-foreground"
-      title="未使用原生文件监听,工作区改动靠定时轮询发现,可能慢一两秒"
+      title="Native file watching is not in use; working tree changes are picked up by polling and may take a second or two"
     >
-      轮询刷新
+      Polling
     </Badge>
   );
 }

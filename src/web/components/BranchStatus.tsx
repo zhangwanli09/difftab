@@ -16,6 +16,9 @@ import { Badge } from './Badge';
 /** 为 0 的那个减淡。模块作用域:S3b1 起每个 SSE 事件都会重画这里(同 `ChangeList` 的 `CODE_*`)。 */
 const dim = (n: number) => (n === 0 ? 'text-description-foreground' : '');
 
+/** tooltip 里的「N 个提交」。单复数分开是因为 `1 commits` 这种字读起来就是没做完。 */
+const commits = (n: number) => `${n} commit${n === 1 ? '' : 's'}`;
+
 /**
  * ahead / behind。
  *
@@ -27,8 +30,8 @@ const dim = (n: number) => (n === 0 ? 'text-description-foreground' : '');
 function Upstream({ upstream }: { upstream: BranchState['upstream'] }) {
   if (upstream === null) {
     return (
-      <span class="text-description-foreground" title="当前分支没有设置上游分支">
-        无上游
+      <span class="text-description-foreground" title="The current branch has no upstream">
+        no upstream
       </span>
     );
   }
@@ -37,12 +40,15 @@ function Upstream({ upstream }: { upstream: BranchState['upstream'] }) {
   // 「↑↔↓」两处间距会静默分家
   return (
     <>
-      <span class={`font-mono ${dim(upstream.ahead)}`} title={`领先上游 ${upstream.ahead} 个提交`}>
+      <span
+        class={`font-mono ${dim(upstream.ahead)}`}
+        title={`${commits(upstream.ahead)} ahead of upstream`}
+      >
         ↑{upstream.ahead}
       </span>
       <span
         class={`font-mono ${dim(upstream.behind)}`}
-        title={`落后上游 ${upstream.behind} 个提交`}
+        title={`${commits(upstream.behind)} behind upstream`}
       >
         ↓{upstream.behind}
       </span>
@@ -59,12 +65,12 @@ function Upstream({ upstream }: { upstream: BranchState['upstream'] }) {
  * 正在 `git am` 的用户说他在变基。
  */
 const OPERATION_LABELS: Record<NonNullable<BranchState['operation']>, string> = {
-  rebase: '变基中',
-  am: '打补丁中',
-  merge: '合并中',
-  'cherry-pick': '拣选中',
-  revert: '回滚中',
-  bisect: '二分查找中',
+  rebase: 'Rebasing',
+  am: 'Applying patches',
+  merge: 'Merging',
+  'cherry-pick': 'Cherry-picking',
+  revert: 'Reverting',
+  bisect: 'Bisecting',
 };
 
 /**
@@ -78,7 +84,7 @@ function Operation({ operation }: { operation: BranchState['operation'] }) {
   return (
     <Badge
       tone="text-git-conflicting"
-      title="仓库正处于一个尚未完成的多步 git 操作中;gitglance 只读,不会替你继续或中止它"
+      title="This repository is in the middle of an unfinished multi-step git operation. GitGlance is read-only and will neither continue nor abort it."
     >
       {OPERATION_LABELS[operation]}
     </Badge>
@@ -99,8 +105,8 @@ export function BranchStatus({ branch }: { branch: BranchState }) {
    *
    * 算一次给两处用:分开写时,前两路的 `title` 会退化成空属性、文本却已经换了。
    */
-  const label = branch.detached ? '游离 HEAD' : branch.head || '未知分支';
-  const title = branch.detached ? '当前不在任何分支上(detached HEAD)' : label;
+  const label = branch.detached ? 'Detached HEAD' : branch.head || 'Unknown branch';
+  const title = branch.detached ? 'Not on any branch (detached HEAD)' : label;
   /**
    * 「与上游差多少」这一栏**只在没什么可说的时候省掉**:detached 时既没有分支、
    * upstream 也必然是 null,画出来就是一句「无上游」的废话。

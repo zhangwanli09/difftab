@@ -68,24 +68,24 @@ function tooLargeNotice(payload: Extract<DiffPayload, { kind: 'too-large' }>): s
   // 两个 reason 都会遇上这件事,所以判据只写一次
   const size = payload.size > 0 ? formatSize(payload.size) : null;
   if (payload.reason === 'lines') {
-    return size ? `文件行数过多,不预览(共 ${size})。` : '文件行数过多,不预览。';
+    return size ? `Too many lines to preview (${size} in total).` : 'Too many lines to preview.';
   }
-  return size ? `文件过大(${size}),不预览。` : '文件过大,不预览。';
+  return size ? `File too large to preview (${size}).` : 'File too large to preview.';
 }
 
 /**
  * 重命名标注(§6:「点开后标注为重命名,展示 rename from/to 与相似度」)。
  *
  * 补丁正文里的 `rename from/to` 由 diff2html 画在文件头上(旧名 → 新名),但那是
- * 英文的 `RENAMED` 标签、且**不含相似度** —— 相似度来自 status 的 `R<score>`,
+ * `RENAMED` 标签、且**不含相似度** —— 相似度来自 status 的 `R<score>`,
  * 是我们自己带下来的。两者不重复:这一行说的是「这个条目是什么」,补丁头说的是
  * 「这份补丁是什么」,而 binary / too-large 那几路压根没有补丁头。
  */
 function RenameNotice({ rename }: { rename: RenameInfo }) {
   return (
     <p class="border-b border-panel-border px-4 py-1 text-xs text-description-foreground">
-      重命名自 <span class="font-mono break-all">{rename.oldPath}</span>
-      {rename.score !== null && `(相似度 ${rename.score}%)`}
+      Renamed from <span class="font-mono break-all">{rename.oldPath}</span>
+      {rename.score !== null && ` (${rename.score}% similar)`}
     </p>
   );
 }
@@ -96,7 +96,7 @@ function Payload({ payload }: { payload: DiffPayload }) {
     case 'untracked-text':
       return <Patch patch={payload.patch} />;
     case 'binary':
-      return <Notice>二进制文件,不做内容比对。</Notice>;
+      return <Notice>Binary file — contents are not compared.</Notice>;
     case 'too-large':
       return <Notice>{tooLargeNotice(payload)}</Notice>;
   }
@@ -106,7 +106,7 @@ export function DiffView() {
   // `diffState` 一个来源说清「选了谁」与「取到没有」:`selectedPath` 由它派生,
   // 两者不可能错位,组件因此不需要一条防错位的分支(见 store.ts)
   const state = diffState.value;
-  if (state === null) return <Notice>从左侧选一个文件。</Notice>;
+  if (state === null) return <Notice>Select a file on the left.</Notice>;
 
   return (
     <div>
@@ -115,8 +115,10 @@ export function DiffView() {
       </h2>
       {/* 三个状态下都标注:标注属于「选了哪个条目」,与补丁取到没有无关 */}
       {state.rename && <RenameNotice rename={state.rename} />}
-      {state.status === 'loading' && <Notice>读取中…</Notice>}
-      {state.status === 'error' && <Notice>取不到这个文件的 diff:{state.message}</Notice>}
+      {state.status === 'loading' && <Notice>Loading…</Notice>}
+      {state.status === 'error' && (
+        <Notice>Could not load the diff for this file: {state.message}</Notice>
+      )}
       {/* key 让换文件走卸载重挂,两次 draw() 因此不可能落在同一个元素上 */}
       {state.status === 'ready' && <Payload key={state.path} payload={state.payload} />}
     </div>

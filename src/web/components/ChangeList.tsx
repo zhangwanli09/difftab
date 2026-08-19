@@ -13,15 +13,15 @@ import { type ChangeGroup, groupFiles, selectedPath, selectFile } from '../state
  * 类型注释(§5.0 不变式 4:前端不得出现第二份状态位实现)。
  */
 const CODE_LABELS: Record<StatusCode, string> = {
-  '.': '未改动',
-  M: '修改',
-  T: '类型变更',
-  A: '新增',
-  D: '删除',
-  R: '重命名',
-  C: '复制',
-  U: '未合并',
-  '?': '未跟踪',
+  '.': 'Unmodified',
+  M: 'Modified',
+  T: 'Type changed',
+  A: 'Added',
+  D: 'Deleted',
+  R: 'Renamed',
+  C: 'Copied',
+  U: 'Unmerged',
+  '?': 'Untracked',
 };
 
 /**
@@ -82,7 +82,7 @@ function StatusBadge({ code }: { code: StatusCode }) {
 function ConflictBadge({ staged, unstaged }: Pick<FileEntry, 'staged' | 'unstaged'>) {
   return (
     <span
-      title="未合并(冲突)"
+      title="Unmerged (conflicted)"
       class={`w-5 shrink-0 text-center font-mono text-xs ${CODE_COLORS.U}`}
     >
       {staged}
@@ -174,7 +174,9 @@ function Group({ group }: { group: ChangeGroup }) {
 
 export function ChangeList({ files }: { files: readonly FileEntry[] }) {
   if (files.length === 0) {
-    return <p class="px-3 py-2 text-sm text-description-foreground">工作区干净,没有变更。</p>;
+    return (
+      <p class="px-3 py-2 text-sm text-description-foreground">Working tree clean — no changes.</p>
+    );
   }
   return (
     <div>
