@@ -2,7 +2,41 @@
 
 **本文件是已收口阶段的记录,不是约束。** 约束在 `CLAUDE.md` 第 5 节(红线)与 `docs/decisions.md` §10(被排除的做法);需求的唯一事实来源是 `docs/`(索引见 `docs/README.md`)。
 
-倒序排列,新阶段收口时在顶部追加一节。**当前进度与尚未消费的跨阶段交接留在 `CLAUDE.md` 第 7 节**,消费掉之后再落到本文件。
+倒序排列,新阶段收口时在顶部追加一节。**阶段推进已于 S6 结束**,`CLAUDE.md` 第 7 节随之从「开发阶段」换成「发布与维护约定」(见 `workflow.md` §9 末条),不再承载当前进度与跨阶段交接——那两样最后一次消费的记录就在下面的 S6 一节里。
+
+---
+
+## S6 开源准备
+
+S6 的产物已全部就位(**收口以 main 上 CI 全绿为准**,本机侧全绿:单测 255、冒烟 56、`check:pack` / `check:css` / `size` / `bench:startup` / `check:bin` / `check:global` 逐个跑过)。`roadmap.md` §8 那份清单逐条落地:两份互链的 README、`CONTRIBUTING.md`、`RELEASING.md`、`.github/ISSUE_TEMPLATE/` 两个表单 + PR 模板、`package.json` 的仓库元数据。体积 JS 202.9 KB / gzip 67.7 / CSS 28.5 KB,冷启动中位 42.0ms——与 S4b 相比只差英文文案那几个字节。
+
+**本阶段最大的一件事不在 §8 的清单上:界面文案原本全是中文,而 CLI 那一侧从 S1 起就是英文。** 写英文 README 写到"What you get"那一段才发现对不上——分发形态是 npm 全局包,`--help`、退出提示、版本守卫的报错都是英文,唯独网页界面说中文。它不是"还没翻",是同一个产品表面上的一处不一致,而没有任何门禁看得见。约 30 条文案改成英文(术语跟 git 自己的用词走:`Staged` / `Unstaged` / `Untracked` / `Conflicted` / `Detached HEAD` / `Rebasing`——用户是拿它对照 `git status` 看的),`<html lang>` 跟着改成 `en`,规则落 `design.md` §5.4、i18n 归 `spec.md` §4.2 首版不做。**改完顺手把两条断言弄红验了一次**(`Polling` → `Polled`、`Rebasing` → `Rebase`,5 条用例当场红),否则"用例跟着改绿了"证明不了它们还压在文案上。
+
+**漏了两条文案,而抓到它们的是"扫产物"不是"扫组件"。** 第一遍按组件文件逐个翻,`state/store.ts` 里那两条错误文案(`未知错误`、`请求失败(HTTP …)`)因此漏网——它们不长在 JSX 上,却会显示在错误条与 diff 的错误提示里。判据最后定成**「构建产物里的 CJK 字符数为 0」**:`grep -o '[一-龥]' dist/web/app.js | wc -l`。这条比按文件翻强的地方在于它不依赖"我想到了哪些文件",而前端产物里本来就不该有中文(注释在构建期已被去掉,diff2html / hljs 也不带)。**后端那份不适用**——`dist/server/main.js` 按 §5.1 不压缩不混淆,注释原样留着正是为了可审计;那一侧改为逐个查 `sendError` 与 `throw new …Error` 的字面量,全部是英文。补完这两条时 `store.test.ts` 有两条断言当场红,正是 §5.4 那条"改文案要同步改断言"预期的形态。**这条判据随后落成一道冒烟门禁**(弄红验过:把 `Polling` 改回「轮询刷新」当场红,并把上下文一起报出来)——不然"界面文案一律英文"就只是一条靠自觉的规则,而新写一条中文文案不会让任何东西响。冒烟 55 → 56。
+
+**`test/unit/web/` 那个取分组文本的 helper 在换成英文之后变脆了,顺手改掉。** 它用 `h2.textContent.includes(title)` 找分组,中文的「已暂存 / 未暂存」互不为子串,英文的 `Staged` 却是 `Unstaged` 的子串——于是 `sectionTextOf('Staged')` 挑到哪一段取决于 DOM 顺序,而那个顺序归 `groupFiles`。改成 `startsWith`(h2 的文本是「标题 + 计数」)。**这条当下并不红**:`groupFiles` 恰好把 staged 排在 unstaged 前面,所以它是一条"现在对、以后不一定"的耦合,记在这里是因为它正是那种改一处调用顺序就悄悄换了断言对象的形态。
+
+**三条与发布有关的事实,全是实测出来的,而且都属于"不实测就会在发布那一刻才发现"**(证据在 `decisions.md` §10):
+
+1. **npm / pnpm 无条件把根目录下所有 `README*` 打进 tarball,与 `files` 白名单无关。** 加了 `README.zh-CN.md` 之后 `check:pack` 当场红——`files` 里只列了 `README.md`。这条反过来说明 **`files` 不是一份完整的白名单**:真正决定发出去什么的是 npm 的固定规则叠加 `files`。门禁架在 `pnpm pack` 的**实际输出**上而不是架在 `files` 字段上,所以它抓得到——当初那个选择在这里兑现了。
+2. **`--publish-branch` 的默认值是 `master`,而本仓库是 `main`。** 写进 `pnpm-workspace.yaml` 的 `publishBranch`,并用一组对照确认这个 camelCase 键真的被读到了(故意写成 `release`,`pnpm publish` 就停在分支确认上)——按 §5.11 那条红线,写错位置或拼错键名都是**静默忽略**,而"没报错"与"设置生效了"在这里长得一模一样。
+3. **开发机的全局 `~/.npmrc` 指向 `registry.npmmirror.com`(只读镜像),而 `_authToken` 存的是 npmjs 那份。** 不管这件事,`pnpm publish` 会朝镜像源发。`package.json` 的 `publishConfig.registry` 钉住 `registry.npmjs.org`,dry run 确认打印的目标跟着变了。判据就是 pnpm 自己打印的那一行 `📦 name@version → <registry>`,`RELEASING.md` 因此把"看那一行"写成发布步骤的一部分,而不是写成一句叮嘱。
+
+**`RELEASING.md` 与 `CONTRIBUTING.md` 的写法都是"只写会咬人的那几条"。** 发布清单不复述 semver 是什么,只钉四件:镜像源、`publishBranch`、不要关 manifest obfuscation(打出来的 `package.json` 本就与仓库里的不同,别误判成产物不干净)、`prepublishOnly` 确实会跑(所以不必先手动 build,陈旧的 `dist/` 也发不出去)。贡献指南同理,四条"改了不报错"的:架构边界、测试布局(放错目录静默不跑)、CSS 层叠、git 调用参数——外部贡献者读不到 `decisions.md` §10 的全部推导,但这四条是他们最可能踩的。
+
+**不建 `CHANGELOG.md`**:GitHub Releases 的 notes 就是变更日志。两处写同一份清单等于多一个会忘的地方,而首版发布频率低,自动生成也不划算。
+
+**S5 交接的两条已消费**:浏览器在 Windows / Linux 桌面上真的弹出来、`xdg-open` 下 token 经命令行的窗口有多宽——两条都写进了两份 README 的「Platform support / 平台支持」里,标成"等首个真实用户",且明说第二条**刻意不在 CI 里量**(headless 上量出来是个会让人放心的假数)。`CLAUDE.md` 第 7 节因此按 `workflow.md` §9 的约定整体退场,换成发布与维护约定。
+
+**代码评审(`/code-review medium`)抓到四条,全是准确性而非正确性,已逐条修掉。** 值得记的是它们的共同形态:**都出在“改完之后没人再读一遍的地方”**。① 两份 README 把只读白名单写成四条,而门禁里实际是五条(`version` —— `git --version` 在 trace 里的形态);一个真去核对安全声明的读者会发现多出来一条。② `docs/journal.md` 与 `workflow.md` §9 仍把「当前进度与未消费的交接」路由到 `CLAUDE.md` 第 7 节,而那一节这一阶段刚被换掉——**退场时只改了被退场的那一端,没改指向它的两端**。③ `check:pack` 的 README 规则里 `.md` 是可选的,于是 `README.sh` / `README.js` 也会被当成译文放行——一道“发出去的东西没有一件是意外进来的”门禁,自己开了个口子。④ 新加的 CJK 字符类只罩汉字与假名,不罩全角标点(U+FF00–FFEF)与 CJK 标点(U+3000–303F):**一条把词翻成英文、括号却留成全角的文案照样过闸**,而那正是“翻了一半”最常见的形态。第 ④ 条按实际的全角括号弄红验过(第一次用 `sed` 插入时插成了 ASCII 括号,门禁没红——**差点把“验过了”记在一次根本没生效的注入上**,与 §5.7 那条“强制指定不合法即失败”防的是同一件事)。
+
+**`/simplify` 那轮的主线是「新加的文档把已有的表抄了第三第四份」。** 命令与门禁表原本只在 `CLAUDE.md` 第 3 节一处,而它带着一条"每新增一个 script 立即回来补全本节"的常驻规则;S6 一口气又抄进了 `README.md`、`README.zh-CN.md` 与 `CONTRIBUTING.md`,那条规则却只点名它当初看见的那一份。收法是**选一个对外的家**:两份 README 的开发段收成三行 + 一句指路(README 的读者是用户,不是贡献者),`CONTRIBUTING.md` 成为唯一对外的门禁表,同步义务扩写进 `CLAUDE.md` 第 3 节与 `workflow.md` §9 的收口判据 3。Non-goals 那份同理但只收一半:**长期不做留在原地**(它按定义不会变),**首版不做改成指路**——那半会随版本移动,而 issue 模板里的副本是最没人回头读的一份,过期时它变成一句给贡献者的错误理由。
+
+**两条小的**:`check:pack` 的 README 规则把 `.md` 提到语言段外面,于是"带语言段却不带 `.md`"在结构上就写不出来,不必再靠注释提醒(穷举 6859 个样本验过与原式等价);冒烟那两个用例改用 `helpers.js` 的 `REPO_ROOT` 并共用一份资源清单——清单写两份时,添一个资源漏掉的那一处不会红,而 CJK 那道门禁漏掉一个文件恰恰意味着那个文件里的中文没人看着。改完把它重新弄红验过一遍。
+
+**跳掉一条**:`tooLargeNotice` 的四个字面量翻译后形状变一致了,可以合成两个,但合并要丢掉 ` in total` —— 而正是那两个词在说"这个 KB 是文件体积,不是关于行数的什么东西",也正是这两条分支当初分开的理由。
+
+**没做的两件,都是有意的**:① **README 里没有截图** —— 现在放的话要么进 tarball(白名单不收)要么用 GitHub raw 绝对链接,而首个版本的界面还会动;② **仓库仍是 private、npm 未发布** —— 转公开与 `pnpm publish` 都是不可逆的对外动作,按 `RELEASING.md` 的清单由人来敲。
 
 ---
 
