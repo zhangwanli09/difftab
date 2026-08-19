@@ -9,33 +9,25 @@
 
 GitGlance 面向的是 agent 刚跑完(或者还在跑)的那一刻:你想「瞥一眼」改了什么,而不是
 开一场代码评审。它展示的就是 `git status` 与 `git diff HEAD` 的内容,以并排 diff 加语法
-高亮呈现,并在 agent 继续写的过程中自动刷新。
-
-## 全程零写操作
-
-这是产品的核心承诺,不是「尽量」。GitGlance 不 stage、不 commit、不 discard、不 pull /
-push、不建分支、不 stash——它只发只读的 git 命令。这条由两道互相独立的门禁在每次 CI、
-三个平台上守着:
-
-1. **命令白名单。** 整条流程跑在 `GIT_TRACE` 之下,产品发出的每一次 git 调用——包括 git
-   自己内部再起的子进程(比如一次意外触发的 `gc`)——都被断言只能是 `status` / `diff` /
-   `rev-parse` / `ls-files` / `version`。另配一条「确实记到了东西」的正面断言,白名单不会
-   对着一个空数组通过。
-2. **`.git` 逐字节不变。** 同一条流程跑两遍:一遍对着只读的 `.git`,一遍对着可写的
-   `.git` 并在前后各拍一次快照(每个文件的 size、mtime、内容摘要)比对。另有一组正面对照
-   证明这份快照真的抓得住变化。
-
-后端也支持手工审计:`dist/server/main.js` **不压缩不混淆**发布,就是为了让你自己读一遍它
-到底跑了哪些 git 命令。
+高亮呈现,并在 agent 继续写的过程中自动刷新。它对你的仓库**全程零写操作**——这是核心承诺,
+由两道 CI 门禁守着,详见[下文](#全程零写操作)。
 
 ## 安装
+
+不用装,在任意仓库目录里直接跑:
+
+```bash
+npx gitglance           # pnpm 用户:pnpm dlx gitglance
+```
+
+首次要下载解包,多花几秒,之后走缓存。
+
+如果你每次 agent 跑完都要看一眼,那就装一次——`npx` 光是决定该跑哪个版本,就比 GitGlance
+自己启动还花时间:
 
 ```bash
 npm i -g gitglance      # 或:pnpm add -g gitglance
 ```
-
-也可以不装直接试:`npx gitglance`(pnpm 用户为 `pnpm dlx gitglance`)。注意首次 `npx` 要
-下载解包,会多花几秒,之后走缓存。
 
 要求 **Node.js 22.0.0 或更高**。`dependencies` 为空:后端只用 Node 标准库,前端在构建期
 就打进产物,所以全局安装是零传递依赖的。
@@ -44,10 +36,10 @@ npm i -g gitglance      # 或:pnpm add -g gitglance
 
 ```bash
 cd /path/to/your/repo
-gitglance
+gitglance               # 或:npx gitglance
 ```
 
-| 参数 | |
+| 参数 | 作用 |
 |---|---|
 | `--no-open` | 只打印 URL,不拉起浏览器 |
 | `-v`, `--version` | 打印版本号并退出 |
@@ -64,15 +56,36 @@ gitglance
   外观。
 - **分支状态** —— 当前分支与 ahead/behind 计数,无上游时明说「无上游」;游离 HEAD 与进行
   中的 rebase / merge / cherry-pick / revert / bisect / `git am` 各出一个标注。
-- **自动刷新** —— 文件监听经 SSE 推到前端,agent 边改你边看。在递归监听会伤到邻居的场合
-  (Linux + Node < 24.14.0:Node 的递归 `fs.watch` 是用户态实现,对每个文件都注册一个
-  inotify watch,足以耗尽整机配额),GitGlance 改用轮询,并在界面上标注出来。
+- **自动刷新** —— 文件监听经 SSE 推到前端,agent 边改你边看。在递归监听会耗尽整机
+  inotify 配额的场合(Linux + Node < 24.14.0),改用轮询,并在界面上标注出来;轮询期间改
+  一个**未跟踪**文件的内容不会刷新页面(未跟踪条目在 `git status` 里只有一行,内容变了它
+  一个字节都不变)。
 - **自己退出** —— 最后一个标签页关掉 45 秒后自动退。多标签、刷新页面、系统休眠唤醒、浏览
   器丢弃后台标签都不会误触发。
 
 边界情况是被显式处理的,而不是留着崩:空仓库(还没有提交)、游离 HEAD、停在中途的 rebase、
 linked worktree、submodule、二进制文件、超过 5MB 的文件、重命名(标注完整旧路径与相似度)、
 删除的文件,以及路径里带空格、引号、中日韩文字或 emoji 的文件。
+
+GitGlance 刻意只是个查看器:不编辑代码、不看历史、不做 blame、不承载评审流程。完整的不做
+清单在 [CONTRIBUTING.md](CONTRIBUTING.md#the-read-only-promise-is-not-negotiable) 与
+[`docs/spec.md`](docs/spec.md) §4。
+
+## 全程零写操作
+
+不是「尽量」。GitGlance 不 stage、不 commit、不 discard、不 pull / push、不建分支、
+不 stash——它只发只读的 git 命令。这条由两道互相独立的门禁在每次 CI、三个平台上守着:
+
+1. **命令白名单。** 整条流程跑在 `GIT_TRACE` 之下,产品发出的每一次 git 调用——包括 git
+   自己内部再起的子进程(比如一次意外触发的 `gc`)——都被断言只能是 `status` / `diff` /
+   `rev-parse` / `ls-files` / `version`。另配一条「确实记到了东西」的正面断言,白名单不会
+   对着一个空数组通过。
+2. **`.git` 逐字节不变。** 同一条流程跑两遍:一遍对着只读的 `.git`,一遍对着可写的
+   `.git` 并在前后各拍一次快照(每个文件的 size、mtime、内容摘要)比对。另有一组正面对照
+   证明这份快照真的抓得住变化。
+
+后端也支持手工审计:`dist/server/main.js` **不压缩不混淆**发布,就是为了让你自己读一遍它
+到底跑了哪些 git 命令。
 
 ## 本地安全
 
@@ -86,30 +99,26 @@ linked worktree、submodule、二进制文件、超过 5MB 的文件、重命名
   端口后即使 token 漏给了同机另一个 localhost 服务,也没法在别处复用。
 
 token 只在 URL 里出现一次,首访即置换成 `HttpOnly; SameSite=Strict` cookie 并 302 掉
-query,不会长期滞留在浏览器历史里。响应带严格 CSP(`default-src 'none'`,并显式写死
-`frame-ancestors` / `base-uri` / `form-action` 为 `'none'`——这三个不回退到 `default-src`),
-以及 `Cache-Control: no-store` 与 `X-Content-Type-Options: nosniff`。静态资源按内存里的白
-名单映射,绝不用请求路径去拼目录。**后端不存在任何放宽上述校验的环境变量或分支。**
-
-**已知边界**:拉起浏览器意味着把 URL 交给命令行,而 argv 对同机其他用户可读。窗口是几十
-毫秒量级,且要求攻击者已经以另一个本机用户身份在紧循环轮询。真正关掉它要把 URL 里那份换
-成一次性交换码,而那与「再敲一次命令复用已有实例」相冲突;这个取舍留到 0.1.0 之后再看。
+query,不会长期滞留在浏览器历史里。响应带严格 CSP(`default-src 'none'`,外加不回退到它的
+`frame-ancestors` / `base-uri` / `form-action`),以及 `Cache-Control: no-store` 与
+`X-Content-Type-Options: nosniff`。静态资源按内存里的白名单映射,绝不用请求路径去拼目录。
+**后端不存在任何放宽上述校验的环境变量或分支。**
 
 ## 平台支持
 
 macOS / Windows / Linux 三端均支持、均有测试。CI 在三平台 × Node 22 / 24 / 26 上跑完整冒烟
-套件,另有全局安装、Node 版本守卫、inotify 配额耗尽降级三个专用作业。
+套件,另有全局安装、Node 版本守卫、inotify 配额耗尽降级三个专用作业。CI 覆盖不到的部分在
+下面的[已知边界](#已知边界)。
 
-有两件事 CI 覆盖不到,等首个真实用户:
+## 已知边界
 
-- **浏览器在 Windows / Linux 桌面上真的弹出来。** runner 没有桌面会话,所以
-  `open` / `cmd /c start ""` / `xdg-open` 的**选择与 argv** 有断言,窗口弹没弹出来没有。
-- **上面那条 argv 窗口在 `xdg-open` 下有多宽。** 在 headless 上量出来是个会让人放心的假数,
-  所以刻意不在 CI 里量。
-
-其余已知边界:浏览器对同源并发连接上限是 6 条,SSE 占掉其中一条,所以第 7 个标签页会挂起
-——本工具通常只开一两个标签,不受影响。以及降级到轮询之后,改一个**未跟踪**文件的内容不会
-刷新页面,因为未跟踪条目在 `git status` 里只有一行,内容变了它一个字节都不变。
+- **token 要经过一次命令行。** argv 对同机其他用户可读,所以拉起浏览器时有一个几十毫秒的
+  窗口——而它要求攻击者已经以另一个本机用户身份在紧循环轮询。真正关掉它与「再敲一次命令
+  复用已有实例」相冲突,留到 0.1.0 之后再看。这个窗口在 `xdg-open` 下有多宽**刻意不在 CI
+  里量**:headless 上量出来的数字会让人放心,但没有意义。
+- **浏览器在 Windows / Linux 桌面上真的弹出来,CI 覆盖不到。** runner 没有桌面会话,所以
+  `open` / `cmd /c start ""` / `xdg-open` 的**选择与 argv** 有断言,窗口本身没有。这两条
+  都等首个真实用户。
 
 ## 开发
 
@@ -125,4 +134,4 @@ node bin/gitglance.js            # 在任意 git 仓库目录下跑起来
 
 ## License
 
-MIT
+[MIT](LICENSE)
