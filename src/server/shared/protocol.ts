@@ -123,7 +123,7 @@ export const HEARTBEAT_MS = 15_000;
  * 监听档位与是否已降级(spec §5.7 / §5.12)。
  *
  * 降级既可能是 C 档的既定形态,也可能是 A/B 档运行中落到轮询兜底 —— 前端无从
- * 自己推断,必须由后端告知。TODO(S3b):当前返回占位值。
+ * 自己推断,必须由后端告知。
  */
 export interface WatchState {
   mode: 'native' | 'polling';
