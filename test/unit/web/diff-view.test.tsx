@@ -103,6 +103,21 @@ describe('DiffView', () => {
     }
   });
 
+  it('diff2html 的宿主容器带着 relative —— 行号列的包含块', async () => {
+    ready('a.ts', { kind: 'text', patch: patchFor('const x = 1;') });
+    await waitFor(() => expect(container.querySelector('.d2h-file-wrapper')).not.toBeNull());
+
+    // 少了这个包含块,右侧一滚整列行号就原地钉死、与代码行错开(§5.6)。
+    //
+    // **断言只能压在类名上**:happy-dom 没有排版引擎,"滚动后行号还对得上"在这里
+    // 不可判定,真布局由 §6 的人工那步验;这条钉的是"那个类名还在",防的是有人把它
+    // 当成多余的工具类顺手删掉。等 diff2html 画完再断言不是白等 —— `draw()` 是往这个
+    // 元素上赋 `innerHTML`,顺带钉住它没把我们的 class 冲掉。
+    // 类名换成拼出来的(`cx('relative')` 之类)这条照样绿,而 Tailwind 扫不到字面量、
+    // 产物里就没有那条规则 —— 那一半由 `pnpm check:css` 直接查产物。
+    expect(payloadNode()).toHaveProperty('className', 'relative');
+  });
+
   it('binary 只提示,不画 diff', async () => {
     ready('logo.png', { kind: 'binary' });
     await waitFor(() => expect(container.textContent).toContain('Binary file'));

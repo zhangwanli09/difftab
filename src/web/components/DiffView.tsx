@@ -40,8 +40,12 @@ function Patch({ patch }: { patch: string }) {
     if (host.current) renderDiff(host.current, patch);
   }, [patch]);
 
-  // 刻意没有子节点:里面的一切都归 diff2html(见文件头)
-  return <div ref={host} />;
+  // 刻意没有子节点:里面的一切都归 diff2html(见文件头)。
+  //
+  // **`relative` 不是排版需要,是 diff2html 行号列的包含块**:它把行号做成
+  // `position: absolute`,而包含块在滚动容器之外的绝对定位盒不随容器内容滚动 ——
+  // 少了这个类,右侧一滚整列行号就原地钉死、与代码行错开,页面不报任何错(§5.6)。
+  return <div ref={host} class="relative" />;
 }
 
 /**

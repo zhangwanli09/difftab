@@ -279,6 +279,20 @@ if (referenced.size === 0) {
   notes.push(`var() 引用:${referenced.size} 个不带 fallback 的自定义属性,全部有定义`);
 }
 
+// --- 5b. diff2html 行号列的包含块那条工具类确实在产物里 --------------------
+// `DiffView` 给 diff2html 的宿主 div 挂了 `relative`,补的是行号列(它们是
+// `position: absolute`)的包含块;没有它右侧一滚,整列行号原地钉死(spec §5.6)。
+// 这条查的是**产物**而不是源码:Tailwind 靠 @source 扫**字面量**生成工具类,类名一旦
+// 改成拼出来的(`cx('relative')`、模板串、别处 import 的常量),DOM 上的 className 还是
+// 'relative'、组件测试照常绿,而 CSS 里那条规则没了 —— 布局静默退回坏的样子。
+if (!/(^|[\s,}])\.relative\s*\{[^}]*position\s*:\s*relative/.test(css)) {
+  failures.push(
+    '产物里没有 `.relative{position:relative}` —— diff2html 行号列少了包含块,右侧一滚整列行号会原地钉死、与代码行错开(spec §5.6)',
+  );
+} else {
+  notes.push('包含块:`.relative{position:relative}` 在产物里');
+}
+
 // --- 6. 深色里声明的 --color-* 都得在浅色也有 -----------------------------
 // 第 5 条守引用侧,这条守声明侧。深色块是 delta,写错的名字是个"合法的新 token",
 // 第 5 条看不见(它甚至会被算进 defined),症状只是深色下那个颜色留在浅色取值上。

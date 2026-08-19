@@ -201,6 +201,12 @@ JS 两行比 S0 spike 各高约 1 KB —— 那是真实组件、store 与 signa
 
 **随之而来的一条硬约束**:diff2html 渲染出的内部元素**只能通过覆写 `--d2h-*` CSS 变量改配色,不得用 Tailwind 工具类去压**——无层的 diff2html CSS 同样会胜过 `@layer utilities`,写了也不生效(见 `decisions.md` §10 禁止项)。同理,hljs 主题与 diff2html 的 CSS **不得放进任何 `@layer`**,一旦放进去就把上面这层保障拆掉了。
 
+**diff2html 的行号列是 `position: absolute`,滚动容器内部必须有一个 positioned 祖先**(依据与实测见 `decisions.md` §10)。这与 5.4 的"两侧各自滚"是同一个决定的两半:diff2html 把行号做成绝对定位、偏移量全 auto,靠的是"包含块 = 初始包含块,而滚的就是整个文档"这个前提;我们为了让 SSE 刷新时留住列表侧的滚动位置,把滚动收进了内层的 `overflow-auto` 容器,那个前提就不再成立——**包含块在滚动容器之外的绝对定位盒不随该容器的内容滚动**,于是一滚代码行就跑了、整列行号原地不动,页面不报任何错。
+
+- 包含块由 `DiffView` 里交给 `Diff2HtmlUI` 的那个宿主 div 上的 `relative` 提供。**滚动容器 `<section>` 自己加 `position: relative` 同样修得好**(包含块就是滚动容器时,绝对定位盒属于它的可滚动溢出、随内容滚动),选宿主 div 只是因为它是**作用域最小**的那个:与 diff2html 子树同生共死,不给外壳上任何别的绝对定位埋一个意料之外的包含块
+- 它写成 Tailwind 工具类**不违反上面那条"只能改 `--d2h-*`"**:那条管的是 diff2html *渲染出来的*元素的配色,而宿主 div 是我们自己的元素,没有任何 d2h 规则命中它,不存在"被无层规则压过"的问题
+- `test/unit/web/diff-view.test.tsx` 有一条断言钉着这个类名。**它只能钉到"类名还在"**——happy-dom 没有排版引擎,滚动与错位在那里不可判定,真布局属 `acceptance.md` §6 的人工那档
+
 **S0 需验证**:`@import "tailwindcss"` 在 Tailwind v4 构建期展开后,后续 `@import` 的内容确实保持 unlayered。这是方案成立的前提,列为 S0 的前提验证项之一而非既定事实(三项前提验证见 `roadmap.md` §7)。
 
 ### 5.7 自动刷新:按 Node 能力分三档 + 轮询兜底
