@@ -2,8 +2,8 @@
 
 **See at a glance what your AI coding agent changed.**
 
-One command in your repo → a local web page opens → the working tree diff and branch
-status, read-only → close the tab and the process exits on its own.
+Run one command in your repo. A local page opens with your working-tree diff and
+branch status — read-only. Close the tab and the process exits on its own.
 
 [中文文档](README.zh-CN.md)
 
