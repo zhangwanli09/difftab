@@ -168,9 +168,7 @@
 
 ## 7. 发布与维护约定
 
-**阶段推进到此结束:S0–S5 已收口,S6 的产物已全部就位(`acceptance.md` §6 一条未勾的都没有;S6 自己的清单是 `roadmap.md` §8)。** 各阶段的实测数字与踩坑在 `docs/journal.md`,需求与设计仍以 `docs/` 为唯一事实来源(索引见 `docs/README.md`)。版本从 **0.1.0** 起,License MIT。
-
-- **S6 的收口口径与前面各阶段一样是「main 上 CI 全绿」**;本机全绿不算,改完这一句再删(判据见 `workflow.md` §9)
+**阶段推进到此结束:S0–S6 全部收口**(`acceptance.md` §6 一条未勾的都没有;S6 自己的清单是 `roadmap.md` §8)。各阶段的实测数字与踩坑在 `docs/journal.md`,需求与设计仍以 `docs/` 为唯一事实来源(索引见 `docs/README.md`)。版本从 **0.1.0** 起,License MIT,仓库已公开、npm 尚未发布。
 
 - **发布步骤照 `RELEASING.md` 走,不凭记忆敲**——里面钉着四件会咬人的事(镜像源、`publishBranch`、manifest obfuscation、`prepublishOnly`),依据在 `docs/decisions.md` §10
 - **semver:0.x 保留破坏性余地(尤其 CLI 参数与端口/token 行为),1.0.0 是结论不是起点**——等 §6 全通过且三端真机验过再发

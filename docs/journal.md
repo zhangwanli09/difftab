@@ -8,7 +8,7 @@
 
 ## S6 开源准备
 
-S6 的产物已全部就位(**收口以 main 上 CI 全绿为准**,本机侧全绿:单测 255、冒烟 56、`check:pack` / `check:css` / `size` / `bench:startup` / `check:bin` / `check:global` 逐个跑过)。`roadmap.md` §8 那份清单逐条落地:两份互链的 README、`CONTRIBUTING.md`、`RELEASING.md`、`.github/ISSUE_TEMPLATE/` 两个表单 + PR 模板、`package.json` 的仓库元数据。体积 JS 202.9 KB / gzip 67.7 / CSS 28.5 KB,冷启动中位 42.0ms——与 S4b 相比只差英文文案那几个字节。
+S6 已收口(CI 全绿,run `32265530593` **17 个作业**;单测 255、冒烟 56,`check:pack` / `check:css` / `size` / `bench:startup` / `check:bin` / `check:global` 本机逐个跑过)。仓库已转 public,npm 尚未发布。`roadmap.md` §8 那份清单逐条落地:两份互链的 README、`CONTRIBUTING.md`、`RELEASING.md`、`.github/ISSUE_TEMPLATE/` 两个表单 + PR 模板、`package.json` 的仓库元数据。体积 JS 202.9 KB / gzip 67.7 / CSS 28.5 KB,冷启动中位 42.0ms——与 S4b 相比只差英文文案那几个字节。
 
 **本阶段最大的一件事不在 §8 的清单上:界面文案原本全是中文,而 CLI 那一侧从 S1 起就是英文。** 写英文 README 写到"What you get"那一段才发现对不上——分发形态是 npm 全局包,`--help`、退出提示、版本守卫的报错都是英文,唯独网页界面说中文。它不是"还没翻",是同一个产品表面上的一处不一致,而没有任何门禁看得见。约 30 条文案改成英文(术语跟 git 自己的用词走:`Staged` / `Unstaged` / `Untracked` / `Conflicted` / `Detached HEAD` / `Rebasing`——用户是拿它对照 `git status` 看的),`<html lang>` 跟着改成 `en`,规则落 `design.md` §5.4、i18n 归 `spec.md` §4.2 首版不做。**改完顺手把两条断言弄红验了一次**(`Polling` → `Polled`、`Rebasing` → `Rebase`,5 条用例当场红),否则"用例跟着改绿了"证明不了它们还压在文案上。
 
@@ -36,7 +36,11 @@ S6 的产物已全部就位(**收口以 main 上 CI 全绿为准**,本机侧全�
 
 **跳掉一条**:`tooLargeNotice` 的四个字面量翻译后形状变一致了,可以合成两个,但合并要丢掉 ` in total` —— 而正是那两个词在说"这个 KB 是文件体积,不是关于行数的什么东西",也正是这两条分支当初分开的理由。
 
-**没做的两件,都是有意的**:① **README 里没有截图** —— 现在放的话要么进 tarball(白名单不收)要么用 GitHub raw 绝对链接,而首个版本的界面还会动;② **仓库仍是 private、npm 未发布** —— 转公开与 `pnpm publish` 都是不可逆的对外动作,按 `RELEASING.md` 的清单由人来敲。
+**第一次推上去 CI 全红,而病因不在仓库里。** 17 个作业无一执行、6 秒内全灭、`--log-failed` 取不到日志、每个 job 的 `steps` 都是空数组 —— 这个形态本身就是判据:**跑都没跑起来,不可能是代码**。答案在 check-run 的 annotation 里(`gh api …/check-runs/<id>/annotations`),一句话:账单失败或额度不足。私有仓库的 Actions 分钟数计费,而这个矩阵有 17 个作业、其中 6 个跑在 macOS(10×)与 Windows(2×)上。修法是把仓库转 public —— 本来就是 S6 要走的一步,公开仓库的 Actions 免费。**记这一条是因为下一次它长得会一模一样**:红得整整齐齐、没有任何日志,而第一反应会是去翻自己刚改的代码。
+
+转公开前扫过整个 git 历史(不只是工作树):无 `.env` / 密钥文件 / 凭据值 / 个人绝对路径;两处 `_authToken` 命中是文档在**叙述**「`~/.npmrc` 里存着一份 token」,没有值。
+
+**没做的两件,都是有意的**:① **README 里没有截图** —— 现在放的话要么进 tarball(白名单不收)要么用 GitHub raw 绝对链接,而首个版本的界面还会动;② **npm 未发布** —— `pnpm publish` 是不可逆的对外动作,按 `RELEASING.md` 的清单由人来敲。
 
 ---
 
