@@ -43,7 +43,7 @@
 | 产物体积门禁 | `pnpm size` |
 | 样式层叠门禁(判据见第 5 节「前端与样式」) | `pnpm check:css` |
 | 发布产物内容门禁(`pnpm pack --dry-run --json`) | `pnpm check:pack` |
-| `bin/difftab.js` 未被构建管线触碰 | `pnpm check:bin`(内部跑一次完整构建) |
+| `bin/difftab.js` 以 100755 入库、且未被构建管线触碰 | `pnpm check:bin`(mode 那条先跑,其后跑一次完整构建) |
 | 全局安装验收(打包 → `npm i -g` → 用 PATH 上那个名字跑通 → 卸掉) | **先 `pnpm build`**,再 `pnpm check:global`;要求全局**尚未**装着 difftab,否则脚本直接拒跑 |
 | inotify 配额耗尽时降级为轮询(Linux + 免密 sudo) | **先 `pnpm build`**,再 `pnpm check:inotify`;**不进冒烟套件**(理由在脚本头部),非 Linux 直接 SKIP |
 
@@ -139,6 +139,7 @@
 
 - `dependencies` 保持为空、后端只用标准库。两侧都有门禁:`check:pack` 查 manifest 的三个依赖字段,冒烟查 `dist/server/main.js` 的 import 说明符是否全部以 `node:` 开头——**只查发布文件清单是查不出加依赖的**
 - `bin/difftab.js` 手写、不参与 TS 编译、不作打包入口;禁止依赖 Node 原生 type stripping 直接跑 `.ts` 产品代码
+- **`bin/difftab.js` 必须以 `100755` 入库**(`check:bin` 查 HEAD 与 index 两侧)——`npx difftab` 在本仓库目录里会 chmod 它,冒出一个**内容零差异**的变更;discard 掉下一次执行就是 `Permission denied`,而内容字节比对与 tarball 两侧都看不见(机制见 `decisions.md` §10)
 - 校验 `Host` 头才是 DNS rebinding 的正面防御,禁止只靠 token
 - **后端零 dev 分支**:禁为本地开发加放宽 Host / Origin / token 校验的环境变量或分支
 - 单实例注册表写 `os.tmpdir()`(禁写 `.git/` 或工作区),`0o600` + `O_EXCL` 创建

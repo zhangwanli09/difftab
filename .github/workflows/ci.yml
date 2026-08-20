@@ -68,7 +68,8 @@ jobs:
       - run: pnpm run typecheck
       - run: pnpm run test
 
-      # 构建 + bin/difftab.js 未被构建管线触碰(该脚本内部会跑一次完整构建)
+      # bin/difftab.js 以 100755 入库(先跑,不用等构建)+ 未被构建管线触碰
+      # (该脚本内部会跑一次完整构建)
       - run: pnpm run check:bin
 
       # 体积门禁只在这里跑一次。matrix 档下载的是**同一份** dist/ 产物,字节完全相同,
