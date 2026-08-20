@@ -59,7 +59,7 @@ Then create the GitHub Release from the tag:
 gh release create v0.1.0 --title "v0.1.0" --notes "…"
 ```
 
-## Six things that will bite
+## Seven things that will bite
 
 - **`pnpm` needs its own login; `npm login` does not carry over.** Being logged in with
   the npm CLI (`npm whoami` answers, `~/.npmrc` holds a token) is not enough — the first
@@ -89,10 +89,23 @@ gh release create v0.1.0 --title "v0.1.0" --notes "…"
 - **`prepublishOnly` does run** under pnpm (its own `--ignore-scripts` help text names
   `prepublishOnly` as one of the things that flag would skip). So `pnpm publish` builds
   before it packs; you do not have to build first, and a stale `dist/` cannot ship.
+- **Never smoke-test the published package with `npx difftab` inside this repo.** npm exec
+  sees that the local `package.json` is itself `difftab` with a matching `bin`, so it never
+  reaches the registry: it installs a `file:` link back to your working tree under
+  `~/.npm/_npx/<hash>/` and runs *your* `dist/`. So a green run there proves nothing about
+  what you just published. It also mutates the repo — npm's `fixBin` chmods the link target,
+  which is the real file in your tree, to 0755. That is harmless now that `bin/difftab.js`
+  is committed as 100755 (`check:bin` pins it, see `docs/decisions.md` §10), but on 0.1.0 it
+  produced a content-free mode-only diff in `git status`; discarding that diff removed the
+  exec bit and the next run died with `sh: …/.bin/difftab: Permission denied`. Verify from a
+  directory that is not this repo — the same rule the `npm i -g` check below already follows.
 
 ## After publishing
 
 - [ ] `npm view difftab` shows the new version, and `dist.tarball` is on npmjs.org.
 - [ ] In a directory that is not this repo: `npm i -g difftab && difftab --version`,
       then check `npm ls -g --depth=0` shows no transitive dependencies under it.
+- [ ] In some other git repository (again: not this one) `npx difftab@<version> --no-open`
+      prints a URL and exits on its own once idle. Run from this repo it would silently
+      test your working tree instead — see the last of the seven above.
 - [ ] The GitHub Release exists and its notes match what actually changed.

@@ -172,7 +172,7 @@
 
 **阶段推进到此结束:S0–S6 全部收口**(`acceptance.md` §6 一条未勾的都没有;S6 自己的清单是 `roadmap.md` §8)。各阶段的实测数字与踩坑在 `docs/journal.md`,需求与设计仍以 `docs/` 为唯一事实来源(索引见 `docs/README.md`)。License MIT,仓库已公开,**0.1.0 已于 2026-08-20 发到 npm**(过程与踩坑见 `docs/journal.md` 顶部一节)。
 
-- **发布步骤照 `RELEASING.md` 走,不凭记忆敲**——里面钉着六件会咬人的事(pnpm 要单独登录、2FA 的 OTP 拿不到就发不了、镜像源、`publishBranch`、manifest obfuscation、`prepublishOnly`),依据在 `docs/decisions.md` §10
+- **发布步骤照 `RELEASING.md` 走,不凭记忆敲**——里面钉着七件会咬人的事(pnpm 要单独登录、2FA 的 OTP 拿不到就发不了、镜像源、`publishBranch`、manifest obfuscation、`prepublishOnly`、别在本仓库目录里用 `npx` 验收),依据在 `docs/decisions.md` §10
 - **semver:0.x 保留破坏性余地(尤其 CLI 参数与端口/token 行为),1.0.0 是结论不是起点**——等 §6 全通过且三端真机验过再发
 - **不建 `CHANGELOG.md`**:GitHub Releases 的 notes 就是变更日志(理由见 `roadmap.md` §8)
 - **改产品行为要同步改两份 README**:`README.zh-CN.md` **不是自动生成的**,只改英文那份不会有任何门禁变红
