@@ -1,5 +1,7 @@
 # difftab
 
+[![npm](https://img.shields.io/npm/v/difftab)](https://www.npmjs.com/package/difftab)
+
 **一个标签页,看懂 AI 编码 Agent 改了哪些代码。**
 
 在仓库目录敲一条命令。本地网页随即打开,只读展示当前工作区的 diff 与分支状态。

@@ -1,5 +1,7 @@
 # difftab
 
+[![npm](https://img.shields.io/npm/v/difftab)](https://www.npmjs.com/package/difftab)
+
 **See what your AI coding agent changed — in one tab.**
 
 Run one command in your repo. A local page opens with your working-tree diff and

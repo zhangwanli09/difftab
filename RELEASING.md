@@ -48,7 +48,8 @@ git push origin main
 git tag -a v0.1.0 -m "v0.1.0"
 git push origin v0.1.0
 
-# 4. Publish. prepublishOnly runs the full build first.
+# 4. Publish. prepublishOnly runs the full build first, and pnpm stops to ask for a
+#    2FA one-time password — so run this in a real terminal, or pass --otp=<code>.
 pnpm publish
 ```
 
@@ -58,21 +59,33 @@ Then create the GitHub Release from the tag:
 gh release create v0.1.0 --title "v0.1.0" --notes "…"
 ```
 
-## Four things that will bite
+## Six things that will bite
 
-- **Your global registry is probably not npmjs.** This machine's `~/.npmrc` points at
-  `registry.npmmirror.com`, a read-only mirror. `publishConfig.registry` in
-  `package.json` pins the publish target to `registry.npmjs.org` regardless — verified by
-  dry run. If you ever see any other host in the `📦 name@version → …` line that
-  `pnpm publish` prints, stop.
+- **`pnpm` needs its own login; `npm login` does not carry over.** Being logged in with
+  the npm CLI (`npm whoami` answers, `~/.npmrc` holds a token) is not enough — the first
+  publish attempt of 0.1.0 failed under exactly those conditions. **The symptom looks
+  nothing like an auth problem**: the registry answers `[E404] 404 Not Found - PUT
+  https://registry.npmjs.org/difftab`, because npm returns 404 rather than 403 for a write
+  it will not allow on a package that does not exist yet. Run `pnpm whoami`, and
+  `pnpm login` if it does not answer. Once pnpm is authenticated the error changes to
+  `ERR_PNPM_OTP_NON_INTERACTIVE`, which is the honest one.
+- **Publishing needs a 2FA one-time password, so it cannot run non-interactively.** The
+  account has two-factor auth set to `auth-and-writes` (`npm profile get` prints it), so
+  `pnpm publish` prompts for a six-digit code. Run it in a real terminal, or pass
+  `--otp=<code>`; a code lives about 30 seconds, and a retry after it expires is free.
+- **Your global registry may not be npmjs.** `publishConfig.registry` in `package.json`
+  pins the publish target to `registry.npmjs.org` regardless of what `~/.npmrc` says —
+  verified by dry run. If you ever see any other host in the
+  `📦 name@version → …` line that `pnpm publish` prints, stop.
 - **Do not pass `--no-git-checks`.** pnpm refuses to publish from a dirty tree, from the
   wrong branch, or when the branch is behind its remote. Those checks are the reason step
   2 comes before step 4. The publish branch is `main`, set as `publishBranch` in
   `pnpm-workspace.yaml` — pnpm's own default is still `master`.
 - **Do not pass `--skip-manifest-obfuscation`.** pnpm strips `packageManager` and the
-  publish lifecycle scripts from the manifest it uploads. That is wanted: users have no
-  business seeing our toolchain. It also means the published `package.json` legitimately
-  differs from the one in the repo — do not read that as a dirty artifact.
+  publish lifecycle scripts (`prepublishOnly`) from the manifest it uploads, and leaves
+  the rest of `scripts` alone. That is wanted: users have no business seeing our
+  toolchain. It also means the published `package.json` legitimately differs from the one
+  in the repo — do not read that as a dirty artifact.
 - **`prepublishOnly` does run** under pnpm (its own `--ignore-scripts` help text names
   `prepublishOnly` as one of the things that flag would skip). So `pnpm publish` builds
   before it packs; you do not have to build first, and a stale `dist/` cannot ship.
