@@ -6,6 +6,22 @@
 
 ---
 
+## 0.1.0 发布(2026-08-20)
+
+首个版本已发到 npm(`difftab@0.1.0`,`latest` 指向它,tarball 在 `registry.npmjs.org`),GitHub Release 建在 tag `v0.1.0` → `7e79211` 上。发布前 CI 在该提交上 **18 个作业**全绿(三平台 × Node 22/24/26 冒烟、`inotify-quota`、`global-install`、三档版本守卫都在里面),`acceptance.md` §6 一条未勾的都没有;本机复跑:单测 25 文件 / 256 例、冒烟 55 过 1 跳过(inotify 是 Linux 专有)、`check:pack` 9 个文件、体积 JS 202.9 KB / gzip 67.6 / CSS 28.6 KB、冷启动中位 41.8ms。
+
+**真正咬人的是 pnpm 的登录态,而它的报错完全不像认证问题。** 当时 `npm login` 已登录、`npm whoami` 有回应、`~/.npmrc` 里有 token,`pnpm publish` 仍然回 `[E404] 404 Not Found - PUT https://registry.npmjs.org/difftab`——**npm 对"不允许的写"在包还不存在时回 404 而不是 403**,于是错误长得像"包找不到",而包名确实还没被占,两件事叠在一起足以把人往"名字有问题"上带(刚从一次改名过来,这个方向尤其像真的)。判据是 `pnpm whoami`:pnpm 不认 npm CLI 的登录态,要单独 `pnpm login`。认证补上之后错误立刻换成 `ERR_PNPM_OTP_NON_INTERACTIVE`——那条才说实话,也反过来确认了 404 的病因。
+
+**2FA 决定了这一步没法非交互跑。** 账号的 `two-factor auth` 是 `auth-and-writes`(`npm profile get` 打得出来),每次发布都要一个六位 OTP,必须在真终端里跑或 `--otp=<code>` 传进去,码约 30 秒过期。这条与上一条一起补进了 `RELEASING.md`,「会咬人的事」从四条长到六条——**两条都属于只在 `publish` 那一刻才响的类型**,与改名那次踩的是同一类坑。
+
+**S6 记的第三条事实(开发机 `~/.npmrc` 指向 `registry.npmmirror.com`)已经不成立了,但它的判据一次都没有失效。** 现在那份 `~/.npmrc` 指的是 `registry.npmjs.org`。那条记录写的是一台机器当时的状态,而机器状态会变;S6 那一节按惯例不改,`RELEASING.md` 那侧删掉了这个前提、只留仍然成立的结论(`publishConfig.registry` 无论 `~/.npmrc` 怎么写都钉死目标)。**判据本身——pnpm 自己打印的那行 `📦 name@version → <registry>`——照旧管用**,这正是当初把"看那一行"写成发布步骤而不是写成一句叮嘱的价值:前提过期了,步骤还在。
+
+**装好之后读了一遍真正发布出去的 manifest,manifest obfuscation 的范围比"users have no business seeing our toolchain"窄。** pnpm 剥掉的只有 `packageManager` 与 `prepublishOnly`,其余 14 条 `scripts` 与 `devDependencies` 原样发布。`RELEASING.md` 原话("packageManager and the publish lifecycle scripts")字面准确,但容易被读成"所有脚本",已在那份文档里写明范围。发布产物 9 个文件,与 `check:pack` 的本机断言逐条对上;非本仓库目录里 `npm i -g difftab` 报 `added 1 package`(零传递依赖),registry 上那份在一个临时仓库里跑通、并按空闲退出。
+
+**另记两件流程上的小事。** 一是 `RELEASING.md` 第 1 步对首版是空转:`package.json` 早已是 `0.1.0` 且仓库无 tag,`npm version` 与 `chore(release): 0.1.0` 那个提交会是空提交,直接从打 tag 起步。二是 tag 在两次发布失败之前就推上去了,无害——tag 与 publish 相互独立,且 `prepublishOnly` 每次重新构建,陈旧 `dist/` 发不出去。
+
+---
+
 ## 改名 gitglance → difftab(2026-08-20)
 
 **不是重构,是一条被推翻的结论。** `roadmap.md` §8 与 `decisions.md` §10 从 2026-07-28 起记着"`gitglance` npm 未被占用",两次复核也确实都返回 404——但**查的是精确名**。npm 的重名校验先把包名小写化、去掉 `-` `_` `.` 再与已有包比对,`gitglance` 归一后与他人 2026-02 发布的 `git-glance` v1.0.1(描述 "Beautiful git repository summaries, statistics, and changelogs",同域)完全相同,发布时会被 registry 以 "too similar to existing package" 拒掉。**这个错误不会在任何门禁里响,只会在第一次 `npm publish` 那一刻响**,而那时改名的成本比现在高得多。新名 `difftab` 连同 `diff-tab` / `diff_tab` / `diff.tab` 四个归一变体逐个核过均为 404,全文搜索 0 结果;去掉 `git` 前缀同时避开了 Git 商标政策的建议与 npm 上极拥挤的 `git*` 命名空间。
