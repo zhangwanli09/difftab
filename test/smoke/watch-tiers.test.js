@@ -24,7 +24,7 @@ import {
   once,
   openEvents,
   sleep,
-  startGitglance,
+  startDifftab,
   waitUntil,
 } from './helpers.js';
 
@@ -45,7 +45,7 @@ cleanupOnExit(() => workdir);
 
 /** 见 helpers.js 的 `once()`:下限档 Node 22.0.0 不等顶层 `before()`。 */
 const setup = once(async () => {
-  workdir = mkdtempSync(join(tmpdir(), 'gitglance-tiers-'));
+  workdir = mkdtempSync(join(tmpdir(), 'difftab-tiers-'));
   repos = makeFixtures(join(workdir, 'repos'), ['staged']);
   mkdirSync(join(repos.staged, ...DEEP), { recursive: true });
 });
@@ -98,7 +98,7 @@ function countInotifyWatches(pid) {
 
 test('自动判定的那一档:node_modules 深层批量写入不刷新,同一轮里仓库内的新文件必须刷新', async (t) => {
   await setup();
-  const server = await startGitglance({ cwd: repos.staged });
+  const server = await startDifftab({ cwd: repos.staged });
   try {
     /**
      * **先连 SSE 再取 `/api/state`**:监听是懒起的(第一个订阅者到达时才建),连之前
@@ -216,7 +216,7 @@ test('读 /api/state 不会引出刷新事件 —— 自激循环的判据', asy
    * 不经过监听**。这里从另一头断:连着 SSE 的时候连读几次状态,一个事件都不该冒出来。
    * 三个平台各跑一次 —— git 在哪个平台上多写一次都算数。
    */
-  const server = await startGitglance({ cwd: repos.staged });
+  const server = await startDifftab({ cwd: repos.staged });
   try {
     const sse = openEvents(server.port, server.token);
     await sse.connected;
@@ -264,7 +264,7 @@ test('Linux · inotify 用量:A 档不随 node_modules 的目录数增长,C 档�
   }
   const dirCount = PACKAGES * 2; // pkg-<i> 与它下面的 lib/
 
-  const server = await startGitglance({ cwd: big });
+  const server = await startDifftab({ cwd: big });
   try {
     // 监听懒起:不连 SSE 的话工作区那条递归 watch 根本还没建,数出来的必然是低位
     const sse = openEvents(server.port, server.token);

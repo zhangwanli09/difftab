@@ -1,5 +1,5 @@
 name: Feature request
-description: Suggest something GitGlance should do
+description: Suggest something difftab should do
 labels: [enhancement]
 body:
   - type: markdown
@@ -14,7 +14,7 @@ body:
         A second, shorter list holds things deliberately left out of the *first* version
         and reconsidered based on real friction rather than up front. That list moves as
         versions ship, so it is not copied here — see
-        [`docs/spec.md`](https://github.com/zhangwanli09/gitglance/blob/main/docs/spec.md)
+        [`docs/spec.md`](https://github.com/zhangwanli09/difftab/blob/main/docs/spec.md)
         §4.2 for what it currently holds.
 
   - type: textarea

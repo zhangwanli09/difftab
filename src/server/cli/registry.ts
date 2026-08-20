@@ -34,7 +34,7 @@ export interface RegistryEntry {
  * 同机其他用户可读),所以这里再套一层每用户私有子目录,文件本身另有 0o600。
  */
 function registryDir(): string {
-  return join(tmpdir(), 'gitglance');
+  return join(tmpdir(), 'difftab');
 }
 
 /**

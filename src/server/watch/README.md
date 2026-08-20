@@ -11,7 +11,7 @@ git 子进程只许出现在 `server/git`(§5.0 不变式 1),而 §5.0 的依赖
 
 ## 三个文件的分工
 
-- `tier.ts`:档位判定 + `initialMode`。**内部环境变量 `GITGLANCE_WATCH_TIER=A|B|C`
+- `tier.ts`:档位判定 + `initialMode`。**内部环境变量 `DIFFTAB_WATCH_TIER=A|B|C`
   强制指定档位**——它是 §6 那六条档位验收项在单机上唯一的自查手段(一台机器只有
   一个 Node 版本、一个平台)。取值不合法即启动失败,不退回自动判定。
   **不是给用户的开关,README / `--help` 都不写它。**

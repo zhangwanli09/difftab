@@ -17,7 +17,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { makeFixtures } from '../test/fixtures/make.mjs';
-import { authedGet, openEvents, removeDir, sleep, startGitglance } from '../test/smoke/helpers.js';
+import { authedGet, openEvents, removeDir, sleep, startDifftab } from '../test/smoke/helpers.js';
 
 const QUOTA_PATH = '/proc/sys/fs/inotify/max_user_watches';
 
@@ -69,7 +69,7 @@ const readState = async (server) =>
  */
 async function probe(repo, quota, { refreshMs = 8_000, change } = {}) {
   if (!sysctl(quota)) throw new Error(`压低配额到 ${quota} 失败(需要免密 sudo)`);
-  const server = await startGitglance({ cwd: repo });
+  const server = await startDifftab({ cwd: repo });
   try {
     const sse = openEvents(server.port, server.token);
     await sse.connected;
@@ -115,7 +115,7 @@ if (!sysctl(original)) {
   process.exit(1);
 }
 
-const workdir = mkdtempSync(join(tmpdir(), 'gitglance-inotify-'));
+const workdir = mkdtempSync(join(tmpdir(), 'difftab-inotify-'));
 let failures = 0;
 /**
  * 断言那一轮到底跑没跑。**没跑就不许打 PASS** —— 一个什么都没断言的绿勾正是本仓库

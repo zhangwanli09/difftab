@@ -68,7 +68,7 @@ jobs:
       - run: pnpm run typecheck
       - run: pnpm run test
 
-      # 构建 + bin/gitglance.js 未被构建管线触碰(该脚本内部会跑一次完整构建)
+      # 构建 + bin/difftab.js 未被构建管线触碰(该脚本内部会跑一次完整构建)
       - run: pnpm run check:bin
 
       # 体积门禁只在这里跑一次。matrix 档下载的是**同一份** dist/ 产物,字节完全相同,
@@ -175,7 +175,7 @@ jobs:
   #
   # **另起一档而不是塞进 matrix**:那一档"完全不装依赖"是 §5.11 的红线,而这里要做的
   # 恰好是装东西 —— 装的是产品自己(零依赖,所以"装了什么"本身就是一条断言)。混在
-  # 一起跑的话,冒烟绿的时候没人说得清测的是哪个 gitglance。
+  # 一起跑的话,冒烟绿的时候没人说得清测的是哪个 difftab。
   #
   # 只跑 Node 22.0.x 一档:这条验收项要证的是**打包 → 全局装 → PATH 上跑得起来**,
   # 那是 npm 与平台的事,不是 Node 版本的事;而下限档自带的 npm 最老,兼容性风险
@@ -202,7 +202,7 @@ jobs:
 
       - run: node scripts/check-global-install.mjs
 
-  # 版本守卫的**正面**验证:在一个真正低于下限的 Node 上跑 bin/gitglance.js。
+  # 版本守卫的**正面**验证:在一个真正低于下限的 Node 上跑 bin/difftab.js。
   #
   # 为什么另起一档:matrix 与 build 都跑在 ≥22 上,而守卫要防的是**解析期**失败 ——
   # 在 22+ 上文件早已解析成功,守卫必然执行,那条路径永远测不到。冒烟里那条
@@ -247,7 +247,7 @@ jobs:
           # 随后 `>out.txt` 才把 fd1 挪去文件 —— 于是 stderr 走管道、stdout 落文件,
           # 退出码、空 stdout、stderr 三条断言描述的是**同一个进程**。跑两遍的话它们
           # 分属两个进程,永远矛盾不起来,也就永远红不了。
-          err=$(node bin/gitglance.js --version 2>&1 >out.txt)
+          err=$(node bin/difftab.js --version 2>&1 >out.txt)
           status=$?
           out=$(cat out.txt)
           echo "exit=$status"; echo "stdout=[$out]"; echo "stderr=$err"

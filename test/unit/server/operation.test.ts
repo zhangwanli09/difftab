@@ -17,7 +17,7 @@ import { readOperation } from '../../../src/server/git/operation.ts';
 let gitDir: string;
 
 beforeEach(() => {
-  gitDir = mkdtempSync(join(tmpdir(), 'gitglance-gitdir-'));
+  gitDir = mkdtempSync(join(tmpdir(), 'difftab-gitdir-'));
 });
 
 afterEach(() => {

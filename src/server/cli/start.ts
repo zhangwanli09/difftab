@@ -43,7 +43,7 @@ export async function start(options: StartOptions): Promise<void> {
   if (existing) {
     announce(
       existing.url,
-      `gitglance: reusing the instance already serving this repository (pid ${existing.pid}).`,
+      `difftab: reusing the instance already serving this repository (pid ${existing.pid}).`,
     );
     return;
   }
@@ -53,7 +53,7 @@ export async function start(options: StartOptions): Promise<void> {
      * 空闲宽限期走满(spec §5.8)。**「怎么退」归这一层**:http/ 那边只知道
      * 「没人了」,退出码、提示语、以及退出前要不要先 close 都是启动流程的事。
      */
-    onIdle: () => stop(0, 'gitglance: no tabs left — exiting.\n'),
+    onIdle: () => stop(0, 'difftab: no tabs left — exiting.\n'),
   });
 
   writeRegistry({
@@ -80,7 +80,7 @@ export async function start(options: StartOptions): Promise<void> {
      * kill 的」的判据,丢了之后症状是 stdout 里什么都没有。
      *
      * **而它得能失败**:`writeSync` 与 `process.stdout.write` 不同,读端已经走了
-     * (`gitglance --no-open | head -1`)时它**抛 EPIPE**。抛在这个定时器回调里,
+     * (`difftab --no-open | head -1`)时它**抛 EPIPE**。抛在这个定时器回调里,
      * `closing` 已经合上,于是 `server.close()` 不再执行,进程带着一屏 Node 栈以 1
      * 退出 —— 而这条路承诺的是干净的 0。提示没打出去不是错误,是没人在听。
      */
@@ -104,5 +104,5 @@ export async function start(options: StartOptions): Promise<void> {
   // 唯一的清理点,覆盖全部退出路径 —— 信号、空闲退出、未捕获异常、正常结束
   process.on('exit', () => removeRegistry(repo.root));
 
-  announce(server.url, 'gitglance: read-only view of this repository. Press Ctrl+C to stop.');
+  announce(server.url, 'difftab: read-only view of this repository. Press Ctrl+C to stop.');
 }

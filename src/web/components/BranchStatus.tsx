@@ -84,7 +84,7 @@ function Operation({ operation }: { operation: BranchState['operation'] }) {
   return (
     <Badge
       tone="text-git-conflicting"
-      title="This repository is in the middle of an unfinished multi-step git operation. GitGlance is read-only and will neither continue nor abort it."
+      title="This repository is in the middle of an unfinished multi-step git operation. difftab is read-only and will neither continue nor abort it."
     >
       {OPERATION_LABELS[operation]}
     </Badge>

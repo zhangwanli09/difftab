@@ -14,7 +14,7 @@ import {
 let root: string;
 
 beforeAll(() => {
-  root = mkdtempSync(join(tmpdir(), 'gitglance-diff-'));
+  root = mkdtempSync(join(tmpdir(), 'difftab-diff-'));
 });
 afterAll(() => {
   rmSync(root, { recursive: true, force: true });

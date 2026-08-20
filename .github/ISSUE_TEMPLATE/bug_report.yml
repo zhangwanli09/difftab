@@ -1,14 +1,14 @@
 name: Bug report
-description: Something is wrong with what GitGlance shows or how it behaves
+description: Something is wrong with what difftab shows or how it behaves
 labels: [bug]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for the report. GitGlance shows what `git status` and `git diff HEAD` say,
+        Thanks for the report. difftab shows what `git status` and `git diff HEAD` say,
         so the most useful bug reports compare the two.
 
-        **If you believe GitGlance wrote to your repository**, that is a critical bug —
+        **If you believe difftab wrote to your repository**, that is a critical bug —
         please say so up front and include the output of `git status` and `git reflog`
         from before and after, if you have it.
 
@@ -16,7 +16,7 @@ body:
     id: what
     attributes:
       label: What happened
-      description: What did GitGlance show, and what did you expect instead?
+      description: What did difftab show, and what did you expect instead?
     validations:
       required: true
 
@@ -30,15 +30,15 @@ body:
       placeholder: |
         git init repro && cd repro
         …
-        gitglance
+        difftab
     validations:
       required: true
 
   - type: input
     id: version
     attributes:
-      label: GitGlance version
-      description: "`gitglance --version`"
+      label: difftab version
+      description: "`difftab --version`"
     validations:
       required: true
 
@@ -69,5 +69,5 @@ body:
     id: output
     attributes:
       label: Terminal output
-      description: Anything gitglance printed. Automatically formatted as code.
+      description: Anything difftab printed. Automatically formatted as code.
       render: text

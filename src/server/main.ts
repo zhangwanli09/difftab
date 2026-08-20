@@ -1,4 +1,4 @@
-// 后端入口(spec §5.1)。由 bin/gitglance.js 在版本守卫通过后动态 import。
+// 后端入口(spec §5.1)。由 bin/difftab.js 在版本守卫通过后动态 import。
 //
 // 本文件只做「解析参数 → 分派」,启动流程本身在 cli/start.ts ——
 // 依赖方向是 bin → server/cli → server/http → {server/git, server/watch}(spec §5.0)。
@@ -34,12 +34,12 @@ function fail(message: string): never {
   // 正是用管道 spawn 去断言这句提示的。丢了之后的症状是 stderr 全空,跟真正的病因
   // (退出太快)毫无相似之处。
   //
-  // **裹 try/catch**:读端可能先走(`gitglance 2>&1 | head -0`),那时 `writeSync`
+  // **裹 try/catch**:读端可能先走(`difftab 2>&1 | head -0`),那时 `writeSync`
   // **同步抛** EPIPE —— 下面那两个 `ignoreBrokenPipe` 监听的是流上的 `'error'` 事件,
   // 接不住这一种。抛出去的结果是「一句话友好报错」变成一屏 Node 栈,恰好推翻本函数
   // 存在的理由。cli/start.ts 里那次 `writeSync(1, …)` 同理,两处写法必须一致。
   try {
-    writeSync(2, `gitglance: ${message}\n`);
+    writeSync(2, `difftab: ${message}\n`);
   } catch {
     // 没人在听就算了 —— 退出码仍然是对的
   }
@@ -47,7 +47,7 @@ function fail(message: string): never {
 }
 
 /**
- * 读端先走了不算错误(`gitglance --no-open | head -1`:用户只想要那行 URL)。
+ * 读端先走了不算错误(`difftab --no-open | head -1`:用户只想要那行 URL)。
  *
  * 之后每一次写都以 EPIPE 失败,而**在 Windows 上管道写是异步的**(POSIX 上同步),
  * 失败因此以一个 `'error'` 事件到达 —— 零监听器的流收到 `'error'` 就是整个进程带着
@@ -81,7 +81,7 @@ export async function main(argv: string[]): Promise<void> {
     return;
   }
   if (options.version) {
-    process.stdout.write(`gitglance ${readVersion()}\n`);
+    process.stdout.write(`difftab ${readVersion()}\n`);
     return;
   }
 

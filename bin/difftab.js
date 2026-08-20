@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// GitGlance CLI 入口 —— 版本守卫。
+// difftab CLI 入口 —— 版本守卫。
 //
 // 本文件手写维护,不参与 TypeScript 编译、不作为任何打包入口(spec §5.1 / §10)。
 // 一旦它进了构建管线,就可能被注入超出 Node 22 的语法或被合并进主模块,
@@ -23,7 +23,7 @@ import { writeSync } from 'node:fs';
  * 整条消息会被丢掉 —— 症状是 stderr 全空、只剩一个退出码。而**文件重定向看不出
  * 区别**(那条是同步写),所以门禁那侧必须经管道取回 stderr,见 CI 的 old-node-guard。
  *
- * try/catch 是因为读端可能先走(`gitglance | head -1`):此刻要报的是别的事,
+ * try/catch 是因为读端可能先走(`difftab | head -1`):此刻要报的是别的事,
  * 不该被一个 EPIPE 顶掉。
  */
 function writeStderr(message) {
@@ -48,7 +48,7 @@ const major = parseInt(raw.split('.')[0], 10);
 // 写成 !(major >= MIN_MAJOR) 而非 major < MIN_MAJOR:解析失败得到 NaN 时同样报错。
 if (!(major >= MIN_MAJOR)) {
   writeStderr(
-    'gitglance: requires Node.js ' +
+    'difftab: requires Node.js ' +
       MIN_VERSION +
       ' or newer, but this is v' +
       raw +
@@ -62,6 +62,6 @@ import('../dist/server/main.js')
   .then((mod) => mod.main(process.argv.slice(2)))
   .catch((err) => {
     const detail = err && err.stack ? err.stack : String(err);
-    writeStderr(`gitglance: failed to start.\n${detail}\n`);
+    writeStderr(`difftab: failed to start.\n${detail}\n`);
     process.exit(1);
   });

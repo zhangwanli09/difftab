@@ -9,7 +9,7 @@ import { request as httpRequest } from 'node:http';
 import { resolve } from 'node:path';
 
 export const REPO_ROOT = resolve(import.meta.dirname, '..', '..');
-export const BIN = resolve(REPO_ROOT, 'bin', 'gitglance.js');
+export const BIN = resolve(REPO_ROOT, 'bin', 'difftab.js');
 
 /**
  * 一次性的懒初始化,**替代 `node:test` 的顶层 `before()`**。
@@ -58,13 +58,13 @@ process.on('exit', () => {
  *
  * ready 的判据与 scripts/bench-startup.mjs 一致:**stdout 的第一行是且只是 URL**。
  *
- * `command` / `shell` 可覆盖,默认是 `node bin/gitglance.js`。**加这两个参数是为了让
+ * `command` / `shell` 可覆盖,默认是 `node bin/difftab.js`。**加这两个参数是为了让
  * 全局安装那条门禁也走同一份 ready 判据** —— 它要起的是 PATH 上那个名字(Windows 上
  * 隔着一个 `.cmd` shim,只能经 shell 起),除此之外它需要的东西(超时、stdout/stderr
  * 累积、`stop()`、unref)与这里逐字相同。各写一份的结果是「第一行是 URL」这个判据
  * 有了第三个定义,而三处失败起来长得完全不一样。
  */
-export function startGitglance({
+export function startDifftab({
   cwd,
   env = {},
   timeoutMs = 20_000,
@@ -79,7 +79,7 @@ export function startGitglance({
       env: {
         ...process.env,
         // 拉起浏览器在测试里必须可关,否则每跑一次就弹一次(spec §5.10)
-        GITGLANCE_NO_OPEN: '1',
+        DIFFTAB_NO_OPEN: '1',
         ...env,
       },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -164,7 +164,7 @@ export function expectStartupRefusal(assert, cwd) {
   const r = spawnSync(process.execPath, [BIN], {
     cwd,
     encoding: 'utf8',
-    env: { ...process.env, GITGLANCE_NO_OPEN: '1' },
+    env: { ...process.env, DIFFTAB_NO_OPEN: '1' },
   });
 
   assert.equal(r.status, 1, `期望以 1 退出;stdout: ${r.stdout} stderr: ${r.stderr}`);
@@ -340,7 +340,7 @@ export function parseTrace(log) {
  * 320 文件的仓库上。并发只会把它变成 320 个同时在跑的 git。
  */
 export async function runFullFlow(cwd, { env } = {}) {
-  const server = await startGitglance({ cwd, ...(env ? { env } : {}) });
+  const server = await startDifftab({ cwd, ...(env ? { env } : {}) });
   try {
     const state = await authedGet(server.port, server.token, '/api/state');
     const files = JSON.parse(state.body).files ?? [];
@@ -369,7 +369,7 @@ export function authedGet(port, token, path, headers = {}, method = 'GET') {
  * 尤其容易顺手拼一份),格式一改就要满文件找,而漏掉的那处只会以 403 出现。
  */
 export function cookieHeader(port, token) {
-  return `gitglance_token_${port}=${token}`;
+  return `difftab_token_${port}=${token}`;
 }
 
 /**

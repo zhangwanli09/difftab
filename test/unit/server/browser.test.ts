@@ -37,6 +37,6 @@ describe('browserCommand', () => {
 });
 
 test('CI 与冷启动测量里能关掉拉起浏览器', () => {
-  expect(browserDisabled({ GITGLANCE_NO_OPEN: '1' })).toBe(true);
+  expect(browserDisabled({ DIFFTAB_NO_OPEN: '1' })).toBe(true);
   expect(browserDisabled({})).toBe(false);
 });

@@ -37,7 +37,7 @@ vi.mock('node:fs', async (importOriginal) => {
 
 /** 造一个有 refs/heads 的 .git 骨架,好让 gitWatchDirs 返回不止一个目录。 */
 function fakeGitDir(): string {
-  const dir = join(mkdtempSync(join(tmpdir(), 'gitglance-watch-err-')), '.git');
+  const dir = join(mkdtempSync(join(tmpdir(), 'difftab-watch-err-')), '.git');
   mkdirSync(join(dir, 'refs', 'heads'), { recursive: true });
   return dir;
 }

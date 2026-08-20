@@ -11,7 +11,7 @@
 export const IDLE_EXIT_MS = 45_000;
 
 /** 内部环境变量,名字定在 spec §5.8。不是给用户的开关,不进 `--help` 与 README。 */
-export const IDLE_ENV = 'GITGLANCE_IDLE_MS';
+export const IDLE_ENV = 'DIFFTAB_IDLE_MS';
 
 export class IdleConfigError extends Error {
   constructor(message: string) {
@@ -25,7 +25,7 @@ export class IdleConfigError extends Error {
 /**
  * 读宽限期。
  *
- * **取值不合法即启动失败,不退回默认的 45s** —— 与 §5.7 的 `GITGLANCE_WATCH_TIER`
+ * **取值不合法即启动失败,不退回默认的 45s** —— 与 §5.7 的 `DIFFTAB_WATCH_TIER`
  * 同一条理由:退回时手滑写错的那次照样启动成功、照样跑出一个看着合理的行为,
  * 于是「我验过空闲退出了」建立在一次根本没生效的强制指定上(那条用例会等满 45s
  * 而不是它以为的 800ms,表现为超时,读起来像产品坏了)。

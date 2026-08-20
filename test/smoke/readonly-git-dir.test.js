@@ -108,7 +108,7 @@ function restoreWrites(gitDir) {
  * 而假绿的只读门禁比没有门禁更糟(spec §5.10)。
  */
 function writesAreBlocked(gitDir) {
-  const probe = join(gitDir, 'gitglance-write-probe');
+  const probe = join(gitDir, 'difftab-write-probe');
   try {
     writeFileSync(probe, 'x');
   } catch {
@@ -164,7 +164,7 @@ cleanupOnExit(() => workdir);
  * 不等它就开跑用例(理由与复现见 helpers.js 的 `once()`)。
  */
 const fixtures = once(async () => {
-  workdir = mkdtempSync(join(tmpdir(), 'gitglance-ro-gitdir-'));
+  workdir = mkdtempSync(join(tmpdir(), 'difftab-ro-gitdir-'));
   return makeFixtures(join(workdir, 'repos'), NEEDED);
 });
 

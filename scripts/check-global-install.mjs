@@ -1,20 +1,20 @@
-// `npm i -g gitglance` 三端验收(spec §6 的全局安装项)。
+// `npm i -g difftab` 三端验收(spec §6 的全局安装项)。
 //
 // 打包 → 全局装 → **用装到 PATH 上的那个可执行文件**在一个真仓库里跑通 → 卸掉。
 // 三件事一起证:产物清单齐全(缺文件时这里才炸,`check:pack` 只看清单)、Windows 的
-// `.cmd` shim 起得来、以及全局目录里除了 gitglance 自己什么都没多出来。
+// `.cmd` shim 起得来、以及全局目录里除了 difftab 自己什么都没多出来。
 //
 // **零依赖纯 JS,可由 `node scripts/check-global-install.mjs` 直接执行**(spec §5.11):
 // 它要跑在 CI 上不装任何依赖的机器上。起进程与清理复用 `test/smoke/helpers.js`
 // (同样零依赖)—— 尤其是"第一行是 URL"那个 ready 判据,不在这里再定义一遍。
 // 前置条件只有两个 —— `dist/` 已就位(CI 里是下载的 artifact,本机需先 `pnpm build`),
-// 以及全局尚未装着 gitglance。
+// 以及全局尚未装着 difftab。
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { removeDir, startGitglance, waitUntil } from '../test/smoke/helpers.js';
+import { removeDir, startDifftab, waitUntil } from '../test/smoke/helpers.js';
 
 const REPO_ROOT = resolve(import.meta.dirname, '..');
 const manifest = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8'));
@@ -56,7 +56,7 @@ function entriesOf(dir) {
   }
 }
 
-const workdir = mkdtempSync(join(tmpdir(), 'gitglance-globalinstall-'));
+const workdir = mkdtempSync(join(tmpdir(), 'difftab-globalinstall-'));
 let installed = false;
 
 try {
@@ -90,8 +90,8 @@ try {
 
   /**
    * **零传递依赖的正面判据,两条对应依赖的两种落法**:npm 默认把传递依赖**提升**到
-   * 全局根目录、与 gitglance 平级(目录 diff 抓这一种),版本冲突时则**嵌套**进
-   * `gitglance/node_modules`(第二条抓这一种)。只写目录 diff 会漏掉嵌套那种,
+   * 全局根目录、与 difftab 平级(目录 diff 抓这一种),版本冲突时则**嵌套**进
+   * `difftab/node_modules`(第二条抓这一种)。只写目录 diff 会漏掉嵌套那种,
    * 只看 `node_modules` 存不存在会漏掉提升那种 —— 而提升才是常态。
    *
    * manifest 那一侧另有 `check:pack` 盯着,与这里互补:manifest 干净而 `dist/` 里
@@ -105,7 +105,7 @@ try {
     fail(`${manifest.name}/node_modules 存在 —— 装进来了传递依赖`);
   }
 
-  console.log('# gitglance --version');
+  console.log('# difftab --version');
   const version = run(`${manifest.name} --version`);
   if (version.status !== 0) fail(`--version 以 ${version.status} 退出:${version.stderr}`);
   if (!version.stdout.includes(manifest.version)) {
@@ -113,7 +113,7 @@ try {
   }
 
   /**
-   * 真跑一次。**用的是 PATH 上那个名字**,不是 `node bin/gitglance.js` —— Windows 上
+   * 真跑一次。**用的是 PATH 上那个名字**,不是 `node bin/difftab.js` —— Windows 上
    * 两者差着一个 `.cmd` shim,而冒烟套件走的全是后者,shim 坏了没有任何东西会响。
    *
    * 起进程与"第一行是 URL"这个 ready 判据都来自 `test/smoke/helpers.js`:自己再写一遍
@@ -128,14 +128,14 @@ try {
   }
 
   console.log('# 在一个真仓库里跑起来');
-  const server = await startGitglance({
+  const server = await startDifftab({
     cwd: repo,
     command: manifest.name,
     args: [],
-    // Windows 上 `gitglance` 是个 `.cmd` shim,不经 shell 起不来
+    // Windows 上 `difftab` 是个 `.cmd` shim,不经 shell 起不来
     shell: true,
     // 没有客户端来连,让它按空闲退出自己收场(spec §5.8)—— 见下面为什么不 kill
-    env: { GITGLANCE_IDLE_MS: '1000' },
+    env: { DIFFTAB_IDLE_MS: '1000' },
   });
 
   /**
@@ -149,7 +149,7 @@ try {
    * 改成等它自己按空闲退出、轮询 `exitCode`:`'exit'` 不依赖管道,而轮询的定时器
    * 顺便把事件循环撑着(ready 之后 helpers 会 unref 掉子进程)。
    */
-  await waitUntil(() => server.child.exitCode !== null, 30_000, '全局装的那个 gitglance 自行退出');
+  await waitUntil(() => server.child.exitCode !== null, 30_000, '全局装的那个 difftab 自行退出');
   if (server.child.exitCode !== 0) {
     fail(`空闲退出的退出码是 ${server.child.exitCode},期望 0。stderr=${server.stderr}`);
   }

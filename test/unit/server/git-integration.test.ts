@@ -62,7 +62,7 @@ let dest: string;
 let repos: FixtureRepos;
 
 beforeAll(() => {
-  dest = mkdtempSync(join(tmpdir(), 'gitglance-fixtures-'));
+  dest = mkdtempSync(join(tmpdir(), 'difftab-fixtures-'));
   repos = makeFixtures(dest);
 }, 60_000);
 
@@ -313,7 +313,7 @@ describe('仓库定位', () => {
   });
 
   test('不是仓库的目录给出 PreflightError 而不是 Node 异常栈', async () => {
-    const outside = mkdtempSync(join(tmpdir(), 'gitglance-not-a-repo-'));
+    const outside = mkdtempSync(join(tmpdir(), 'difftab-not-a-repo-'));
     try {
       await expect(locateRepo(outside)).rejects.toMatchObject({ code: 'not-a-repo' });
     } finally {

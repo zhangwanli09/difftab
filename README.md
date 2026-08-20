@@ -1,14 +1,14 @@
-# GitGlance
+# difftab
 
-**See at a glance what your AI coding agent changed.**
+**See what your AI coding agent changed — in one tab.**
 
 Run one command in your repo. A local page opens with your working-tree diff and
 branch status — read-only. Close the tab and the process exits on its own.
 
 [中文文档](README.zh-CN.md)
 
-GitGlance is built for the moment right after an agent finishes (or while it is still
-running): you want to *glance* at the changes, not open a review session. It shows the
+difftab is built for the moment right after an agent finishes (or while it is still
+running): you want a quick look at the changes, not a review session. It shows the
 same thing `git status` and `git diff HEAD` would, rendered as side-by-side diffs with
 syntax highlighting, and it refreshes itself as the agent keeps writing. It never writes
 to your repository — the core promise, enforced by two CI gates and
@@ -19,17 +19,17 @@ to your repository — the core promise, enforced by two CI gates and
 Nothing to install — run it in any repository:
 
 ```bash
-npx gitglance           # pnpm users: pnpm dlx gitglance
+npx difftab        # pnpm users: pnpm dlx difftab
 ```
 
 The first run spends a few seconds downloading and unpacking the package; later runs come
 from the cache.
 
 If you reach for it after every agent run, install it once instead — an `npx` run spends
-more time resolving which version to fetch than GitGlance spends starting up:
+more time resolving which version to fetch than difftab spends starting up:
 
 ```bash
-npm i -g gitglance      # or: pnpm add -g gitglance
+npm i -g difftab   # or: pnpm add -g difftab
 ```
 
 Requires **Node.js 22.0.0 or newer**. `dependencies` is empty: the backend uses only the
@@ -40,7 +40,7 @@ pulls in zero transitive packages.
 
 ```bash
 cd /path/to/your/repo
-gitglance               # or: npx gitglance
+difftab            # or: npx difftab
 ```
 
 | Option | What it does |
@@ -76,14 +76,14 @@ commits yet), detached HEAD, an interrupted rebase, linked worktrees, submodules
 files, files over 5 MB, renames (annotated with the old path and similarity), deleted
 files, and paths containing spaces, quotes, CJK characters or emoji.
 
-GitGlance is deliberately a viewer: no editing, no history, no blame, no review workflow.
+difftab is deliberately a viewer: no editing, no history, no blame, no review workflow.
 The full out-of-scope list is in
 [CONTRIBUTING.md](CONTRIBUTING.md#the-read-only-promise-is-not-negotiable) and
 [`docs/spec.md`](docs/spec.md) §4.
 
 ## Never writes to your repository
 
-Not a best-effort claim. GitGlance never stages, commits, discards, pulls, pushes,
+Not a best-effort claim. difftab never stages, commits, discards, pulls, pushes,
 branches or stashes — it only ever runs read-only git commands. Two independent gates
 enforce that on every CI run, on all three platforms:
 
@@ -143,7 +143,7 @@ What CI cannot cover is in [Known limitations](#known-limitations), below.
 ```bash
 pnpm install --frozen-lockfile   # pnpm version is pinned by the packageManager field
 pnpm build                       # frontend (Vite) + backend (tsdown)
-node bin/gitglance.js            # run it against any repository
+node bin/difftab.js              # run it against any repository
 ```
 
 [CONTRIBUTING.md](CONTRIBUTING.md) has the rest: the dev-server setup, the full list of

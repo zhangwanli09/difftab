@@ -9,11 +9,11 @@ import { createServer as createViteServer, type ViteDevServer } from 'vite';
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { registryPath, removeRegistry, writeRegistry } from '../../../src/server/cli/registry.ts';
 import { locateRepo } from '../../../src/server/git/repo.ts';
-import { type GlanceServer, startServer } from '../../../src/server/http/server.ts';
+import { type DifftabServer, startServer } from '../../../src/server/http/server.ts';
 
 const repoRoot = process.cwd();
 
-let backend: GlanceServer;
+let backend: DifftabServer;
 let vite: ViteDevServer;
 let viteOrigin: string;
 /** 本仓库注册表项的原始内容(如果本来就有)。 */
@@ -21,7 +21,7 @@ let saved: string | null = null;
 
 beforeAll(async () => {
   // 本用例要往**本仓库**的注册表项里写自己的 port/token,而开发者很可能正好在
-  // 同一个仓库里跑着 `node bin/gitglance.js`。writeRegistry 的 EEXIST 分支会直接
+  // 同一个仓库里跑着 `node bin/difftab.js`。writeRegistry 的 EEXIST 分支会直接
   // 覆盖,afterAll 又会删掉 —— 那个实例从此没有记录,S3c 的探活复用会给同一个
   // 仓库起第二个进程。先存一份,退出时原样放回去
   try {

@@ -18,7 +18,7 @@ import {
   httpGet,
   once,
   REPO_ROOT,
-  startGitglance,
+  startDifftab,
 } from './helpers.js';
 
 /** 本文件用得到的 fixture。生成全部 16 个要 1.5s 上下,其中一半这里根本不打开。 */
@@ -63,9 +63,9 @@ function listFiles(dir, prefix = '') {
  * 一律以 `await setup()` 开头;自己起进程的用例不需要。
  */
 const setup = once(async () => {
-  workdir = mkdtempSync(join(tmpdir(), 'gitglance-server-'));
+  workdir = mkdtempSync(join(tmpdir(), 'difftab-server-'));
   repos = makeFixtures(join(workdir, 'repos'), NEEDED);
-  server = await startGitglance({ cwd: repos.unicodePaths });
+  server = await startDifftab({ cwd: repos.unicodePaths });
 });
 
 test('stdout 的第一行是且只是 URL —— 冷启动门禁以它为 ready 判据', async () => {
@@ -196,7 +196,7 @@ test('静态资源按白名单映射,拼路径读文件的写法一个都不留'
   ]) {
     const res = await authedGet(server.port, server.token, path);
     assert.ok(res.status === 404 || res.status === 400, `${path} 返回了 ${res.status}`);
-    assert.ok(!res.body.includes('"name": "gitglance"'), `${path} 把 package.json 读出来了`);
+    assert.ok(!res.body.includes('"name": "difftab"'), `${path} 把 package.json 读出来了`);
   }
 });
 
@@ -252,9 +252,9 @@ test('query 里的路径是字面量:`path=*` 取不到东西,更不是一份整
 test('注册表落在 os.tmpdir(),权限 0600,仓库目录内无任何新增文件', async () => {
   await setup();
   const before = listFiles(repos.staged);
-  const other = await startGitglance({ cwd: repos.staged });
+  const other = await startDifftab({ cwd: repos.staged });
   try {
-    const dir = join(tmpdir(), 'gitglance');
+    const dir = join(tmpdir(), 'difftab');
     const entries = readdirSync(dir).map((name) => join(dir, name));
     const mine = entries.find((path) => {
       try {
@@ -263,7 +263,7 @@ test('注册表落在 os.tmpdir(),权限 0600,仓库目录内无任何新增文�
         return false;
       }
     });
-    assert.ok(mine, `os.tmpdir()/gitglance 下找不到本次会话的注册表项`);
+    assert.ok(mine, `os.tmpdir()/difftab 下找不到本次会话的注册表项`);
 
     const entry = JSON.parse(readFileSync(mine, 'utf8'));
     // dev proxy 就靠这两个字段拿到 token 与端口(spec §5.11)
@@ -284,7 +284,7 @@ test('注册表落在 os.tmpdir(),权限 0600,仓库目录内无任何新增文�
 
 test('空仓库(尚无提交)下不崩溃:列表与分支状态正常,diff 走空树基准', async () => {
   await setup();
-  const empty = await startGitglance({ cwd: repos.empty });
+  const empty = await startDifftab({ cwd: repos.empty });
   try {
     const state = JSON.parse((await authedGet(empty.port, empty.token, '/api/state')).body);
     assert.equal(state.branch.head, 'main');
@@ -305,7 +305,7 @@ test('空仓库(尚无提交)下不崩溃:列表与分支状态正常,diff 走�
 
 test('diff 边界在产物上也各回各的 kind,且超大文件不会把正文整个吐回来', async () => {
   await setup();
-  const edges = await startGitglance({ cwd: repos.diffEdges });
+  const edges = await startDifftab({ cwd: repos.diffEdges });
   try {
     const get = async (path) => {
       const res = await authedGet(
@@ -352,7 +352,7 @@ test('diff 边界在产物上也各回各的 kind,且超大文件不会把正文
 });
 
 test('不是 git 仓库时给一句话友好报错,而不是 Node 异常栈', () => {
-  const outside = mkdtempSync(join(tmpdir(), 'gitglance-outside-'));
+  const outside = mkdtempSync(join(tmpdir(), 'difftab-outside-'));
   try {
     // 「退出码 / 空 stdout / 不带栈」三条归 helpers(bare 仓库那条用的是同一份),
     // 这里只断言这种拒绝形态自己那句话
@@ -379,21 +379,17 @@ test('未知参数给用法提示,而不是抛 parseArgs 的异常', () => {
 test('后端零 dev 分支:产物里的自有环境变量只有这三个', () => {
   // §5.9 / §10:dev server 的跨源问题一律在代理层解决(见 vite.config.ts),
   // **后端不得为此新增任何环境变量或分支** —— 那等于把正面防御做成一个可被误开的
-  // 开关。这条把「不得」变成一个会红的断言:加一个 GITGLANCE_DEV_SKIP_AUTH 就炸。
+  // 开关。这条把「不得」变成一个会红的断言:加一个 DIFFTAB_DEV_SKIP_AUTH 就炸。
   //
-  // 名单是**逐个具名**的,不是「以 GITGLANCE_ 开头就放行」:三个都由 spec 点名要求
+  // 名单是**逐个具名**的,不是「以 DIFFTAB_ 开头就放行」:三个都由 spec 点名要求
   // (拉起浏览器的开关见 §5.10,档位强制指定见 §5.7,空闲宽限期见 §5.8),
   // 且三个都不碰三道校验。想加第四个的人得先来改这一行,顺带读到上面这段话。
   const bundle = readFileSync(
     join(import.meta.dirname, '..', '..', 'dist', 'server', 'main.js'),
     'utf8',
   );
-  const names = [...new Set([...bundle.matchAll(/\bGITGLANCE_[A-Z0-9_]+/g)].map((m) => m[0]))];
-  assert.deepEqual(names.sort(), [
-    'GITGLANCE_IDLE_MS',
-    'GITGLANCE_NO_OPEN',
-    'GITGLANCE_WATCH_TIER',
-  ]);
+  const names = [...new Set([...bundle.matchAll(/\bDIFFTAB_[A-Z0-9_]+/g)].map((m) => m[0]))];
+  assert.deepEqual(names.sort(), ['DIFFTAB_IDLE_MS', 'DIFFTAB_NO_OPEN', 'DIFFTAB_WATCH_TIER']);
 });
 
 test('dist/ 产物齐备 —— 静态托管的白名单指向的三个文件都在', () => {

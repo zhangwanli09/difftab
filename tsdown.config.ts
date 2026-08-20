@@ -14,7 +14,7 @@ export default defineConfig({
   sourcemap: false,
   clean: true,
   // platform: 'node' 下 tsdown 默认输出 .mjs;这里固定为 dist/server/main.js
-  // ——package.json 已声明 type: module,.js 即 ESM,且 bin/gitglance.js 里那条
+  // ——package.json 已声明 type: module,.js 即 ESM,且 bin/difftab.js 里那条
   // 动态 import 的路径是手写的、不参与构建,产物名必须与它逐字对上(spec §5.1)
   fixedExtension: false,
   hash: false,

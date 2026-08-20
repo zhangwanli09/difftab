@@ -17,11 +17,11 @@ const ALLOWED_HOSTNAMES = ['127.0.0.1', 'localhost'];
  *
  * cookie 的作用域是 host 而非 origin,**不隔离端口**(spec §5.9):同机另一个监听
  * `127.0.0.1:<其他端口>` 的服务同样会收到我们的 cookie,反过来它设的同名 cookie
- * 也会盖掉我们的。名字里带端口,两个 gitglance 实例(不同仓库、不同端口)才能
+ * 也会盖掉我们的。名字里带端口,两个 difftab 实例(不同仓库、不同端口)才能
  * 在同一个浏览器里共存。
  */
 export function cookieName(port: number): string {
-  return `gitglance_token_${port}`;
+  return `difftab_token_${port}`;
 }
 
 /** 会话 token 的秘密部分。进程生命周期内持续有效,以支持页面刷新与多标签。 */

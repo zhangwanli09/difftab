@@ -81,7 +81,7 @@ export async function locateRepo(cwd: string): Promise<RepoInfo> {
   if (parsed && tooOld(parsed)) {
     throw new PreflightError(
       'git-too-old',
-      `gitglance needs git ${MIN_GIT.major}.${MIN_GIT.minor} or newer ` +
+      `difftab needs git ${MIN_GIT.major}.${MIN_GIT.minor} or newer ` +
         `(for --porcelain=v2), but found ${parsed.major}.${parsed.minor}.`,
     );
   }

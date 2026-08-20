@@ -40,7 +40,7 @@ export interface LiveInstance {
  * 向记录的端口要一份 `InstanceInfo`。任何不顺利一律返回 null(= 按陈旧处理)。
  *
  * **带上 token 与合规的 `Host`**:§5.9 的三道校验一视同仁,探活不是例外 ——
- * 那也正是「端口已经归了另一个仓库的 gitglance」这种情形的判据:它那份 token
+ * 那也正是「端口已经归了另一个仓库的 difftab」这种情形的判据:它那份 token
  * 不是我们记下的这个,于是 403、判陈旧,正确。
  */
 function requestInstance(entry: RegistryEntry, timeoutMs: number): Promise<InstanceInfo | null> {

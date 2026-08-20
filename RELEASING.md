@@ -1,4 +1,4 @@
-# Releasing GitGlance
+# Releasing difftab
 
 Maintainer checklist. Publishing is manual and deliberately so — the first versions are
 infrequent, and `pnpm publish`'s git checks are worth more than the automation would save.
@@ -28,7 +28,7 @@ same list is a second place to forget.
 - [ ] `pnpm check:pack` — the tarball is `bin/`, `dist/`, both READMEs, LICENSE and
       `package.json`, and the three dependency fields are empty.
 - [ ] `pnpm build && pnpm check:global` — packs, installs globally, runs the binary that
-      landed on `PATH`, then uninstalls. Requires gitglance **not** to be globally
+      landed on `PATH`, then uninstalls. Requires difftab **not** to be globally
       installed already; the script refuses to run otherwise.
 - [ ] Both READMEs describe what the version actually does. `README.zh-CN.md` is not
       auto-generated — it has to be updated by hand alongside `README.md`.
@@ -79,7 +79,7 @@ gh release create v0.1.0 --title "v0.1.0" --notes "…"
 
 ## After publishing
 
-- [ ] `npm view gitglance` shows the new version, and `dist.tarball` is on npmjs.org.
-- [ ] In a directory that is not this repo: `npm i -g gitglance && gitglance --version`,
+- [ ] `npm view difftab` shows the new version, and `dist.tarball` is on npmjs.org.
+- [ ] In a directory that is not this repo: `npm i -g difftab && difftab --version`,
       then check `npm ls -g --depth=0` shows no transitive dependencies under it.
 - [ ] The GitHub Release exists and its notes match what actually changed.

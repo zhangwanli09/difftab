@@ -28,7 +28,7 @@ import {
 } from './security.ts';
 import { createSseChannel } from './sse.ts';
 
-export interface GlanceServer {
+export interface DifftabServer {
   port: number;
   /** `<port>.<secret>`。写进注册表供 dev proxy 读取,也拼进打印出来的 URL。 */
   token: string;
@@ -91,7 +91,7 @@ function sendJson(res: ServerResponse, status: number, body: unknown) {
 export async function startServer(
   repo: RepoInfo,
   options: ServerOptions = {},
-): Promise<GlanceServer> {
+): Promise<DifftabServer> {
   /**
    * 出站错误一律经此发出,**sanitize 就做在这里**。
    *
@@ -113,14 +113,14 @@ export async function startServer(
    * 档位在**启动时**定,不等第一个订阅者。
    *
    * `/api/state` 里就带着它(§5.12),而那个请求先于任何 SSE 连接到达;更要紧的是
-   * `GITGLANCE_WATCH_TIER` 写错时要在启动那一刻响亮地失败,而不是等到某次订阅。
+   * `DIFFTAB_WATCH_TIER` 写错时要在启动那一刻响亮地失败,而不是等到某次订阅。
    * 判定本身是纯计算(读 `process.versions.node` 与 `process.platform`),不落在
    * §6 的 300ms 冷启动预算上。
    */
   const tier = resolveTier();
   // 强制指定的档位在这个 Node 上跑不出它该有的样子时提醒一句(不拦启动,理由见那边)
   const tierWarning = forcedTierWarning();
-  if (tierWarning) process.stderr.write(`gitglance: ${tierWarning}\n`);
+  if (tierWarning) process.stderr.write(`difftab: ${tierWarning}\n`);
 
   /**
    * 通道与空闲计时器互相接线:连接数一变(add / remove)就 `touch` 一次。
@@ -184,7 +184,7 @@ export async function startServer(
        */
       onDegrade: (cause) => {
         process.stderr.write(
-          `gitglance: file watching degraded — ${sanitizeMessage(cause.message, repo.root)}\n`,
+          `difftab: file watching degraded — ${sanitizeMessage(cause.message, repo.root)}\n`,
         );
         events.send('change', {});
       },
@@ -284,7 +284,7 @@ export async function startServer(
        *
        * 它答的是「这个端口现在还是**这个仓库**的实例吗」。光有三道校验答不了:
        * token 不匹配只证明「不是我们这一份会话」,而端口被系统回收给另一个仓库的
-       * gitglance 时,那边同样有一份合法 token —— 只不过不是我们记在注册表里的那个,
+       * difftab 时,那边同样有一份合法 token —— 只不过不是我们记在注册表里的那个,
        * 于是它会 403、被判为陈旧,正确。真正需要这个正文的是相反的一侧:200 之后
        * 还要确认路径确实是我们这个仓库,否则「复用」会把用户带到别人的页面(§5.8
        * 排除 pid 判活也是同一条理由)。
@@ -406,7 +406,7 @@ export async function startServer(
     // 这里不跟着 process.exit(),所以不需要 main.ts 那个 writeSync 的规避手法 ——
     // 那条是专为「写完立刻退出」准备的
     process.stderr.write(
-      `gitglance: local server error — ${sanitizeMessage(cause.message, repo.root)}\n`,
+      `difftab: local server error — ${sanitizeMessage(cause.message, repo.root)}\n`,
     );
   });
 

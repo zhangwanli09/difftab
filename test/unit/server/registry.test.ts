@@ -17,7 +17,7 @@ import {
 const cleanup: string[] = [];
 
 function tempRepo(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'gitglance-registry-'));
+  const dir = mkdtempSync(join(tmpdir(), 'difftab-registry-'));
   cleanup.push(dir);
   return dir;
 }

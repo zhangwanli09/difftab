@@ -19,12 +19,12 @@ import {
   once,
   openEvents,
   sleep,
-  startGitglance,
+  startDifftab,
   waitUntil,
 } from './helpers.js';
 
 /** 档位强制指定用的内部环境变量(spec §5.7)。 */
-const TIER_ENV = 'GITGLANCE_WATCH_TIER';
+const TIER_ENV = 'DIFFTAB_WATCH_TIER';
 
 let workdir;
 let repos;
@@ -32,14 +32,14 @@ cleanupOnExit(() => workdir);
 
 /** 见 helpers.js 的 `once()`:下限档 Node 22.0.0 不等顶层 `before()`。 */
 const setup = once(async () => {
-  workdir = mkdtempSync(join(tmpdir(), 'gitglance-events-'));
+  workdir = mkdtempSync(join(tmpdir(), 'difftab-events-'));
   // unicodePaths 是唯一带**整个未跟踪目录**的 fixture —— 轮询那条用例要的就是它
   repos = makeFixtures(join(workdir, 'repos'), ['staged', 'unicodePaths']);
 });
 
 test('SSE 端点同样过三道校验 —— 没有例外', async () => {
   await setup();
-  const server = await startGitglance({ cwd: repos.staged });
+  const server = await startDifftab({ cwd: repos.staged });
   try {
     // 无 cookie:第 3 道
     const anonymous = await new Promise((done, fail) => {
@@ -57,7 +57,7 @@ test('SSE 端点同样过三道校验 —— 没有例外', async () => {
 
 test('连上就拿到 text/event-stream,且响应头与别的端点一样严', async () => {
   await setup();
-  const server = await startGitglance({ cwd: repos.staged });
+  const server = await startDifftab({ cwd: repos.staged });
   try {
     const sse = openEvents(server.port, server.token);
     const res = await sse.connected;
@@ -78,7 +78,7 @@ test('连上就拿到 text/event-stream,且响应头与别的端点一样严', a
 
 test('仓库里 git 写操作之后,SSE 推出一个 change 事件', async () => {
   await setup();
-  const server = await startGitglance({ cwd: repos.staged });
+  const server = await startDifftab({ cwd: repos.staged });
   try {
     /**
      * 等连接建立**再多等一下**才动手:watcher 是在第一个订阅者到达时才起的(懒起,
@@ -99,7 +99,7 @@ test('仓库里 git 写操作之后,SSE 推出一个 change 事件', async () =>
      * 受「零写操作」约束的是产品代码,不是测试。这里要的就是一次真实的 `.git` 写入,
      * 而 `git checkout -b` 写的正是 HEAD —— §5.7 点名要盯住的那个文件。
      */
-    const branch = spawnSync('git', ['checkout', '-b', 'gitglance-probe'], {
+    const branch = spawnSync('git', ['checkout', '-b', 'difftab-probe'], {
       cwd: repos.staged,
       encoding: 'utf8',
     });
@@ -121,7 +121,7 @@ test(`${TIER_ENV} 能把三档逐个强制指定出来`, async () => {
   // 否则「我逐档验过了」建立在一次根本没生效的强制指定上
   const seen = [];
   for (const tier of ['A', 'B', 'C']) {
-    const server = await startGitglance({ cwd: repos.staged, env: { [TIER_ENV]: tier } });
+    const server = await startDifftab({ cwd: repos.staged, env: { [TIER_ENV]: tier } });
     try {
       const state = await authedGet(server.port, server.token, '/api/state');
       seen.push(JSON.parse(state.body).watch);
@@ -149,7 +149,7 @@ test(`${TIER_ENV}=C:工作区改动经轮询推出 change,且已存在的未跟�
    *    漏掉 `-uall` 时 git 把它折叠成一行 `? 未跟踪目录/`,新增文件根本不改变
    *    status 输出,轮询判定「无变化」—— 而那正是 agent 边跑边生成文件的形态
    */
-  const server = await startGitglance({ cwd: repos.unicodePaths, env: { [TIER_ENV]: 'C' } });
+  const server = await startDifftab({ cwd: repos.unicodePaths, env: { [TIER_ENV]: 'C' } });
   let probe;
   try {
     const sse = openEvents(server.port, server.token);
@@ -180,7 +180,7 @@ test(`${TIER_ENV}=C:工作区改动经轮询推出 change,且已存在的未跟�
 test(`${TIER_ENV} 写错时是一句话报错,不是 Node 异常栈`, async () => {
   await setup();
   await assert.rejects(
-    () => startGitglance({ cwd: repos.staged, env: { [TIER_ENV]: 'D' }, timeoutMs: 10_000 }),
+    () => startDifftab({ cwd: repos.staged, env: { [TIER_ENV]: 'D' }, timeoutMs: 10_000 }),
     (cause) => {
       // 悄悄退回自动判定的话,这里会**启动成功** —— 于是这条用例正是那条禁令的门禁
       assert.match(cause.message, /must be one of A, B, C/);

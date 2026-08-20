@@ -1,4 +1,4 @@
-# Contributing to GitGlance
+# Contributing to difftab
 
 Thanks for taking a look. This is a small, opinionated tool; the sections below are the
 things that are easy to get wrong here and hard to catch in review.
@@ -21,7 +21,7 @@ things that are easy to get wrong here and hard to catch in review.
 
 ## The read-only promise is not negotiable
 
-GitGlance never writes to the repository it is looking at: no stage/unstage, no commit,
+difftab never writes to the repository it is looking at: no stage/unstage, no commit,
 no discard, no pull/push, no branch, no stash. A pull request that adds a repository write
 operation will be declined regardless of how it is implemented or gated. Two CI gates
 enforce this (a `GIT_TRACE` command allowlist and a byte-for-byte `.git` comparison), and
@@ -46,7 +46,7 @@ pnpm build
 Run it against any git repository:
 
 ```bash
-node bin/gitglance.js            # --no-open just prints the URL
+node bin/difftab.js   # --no-open just prints the URL
 ```
 
 For frontend work, the Vite dev server proxies to the backend and reads the port and
@@ -54,12 +54,12 @@ token from the instance registry, so the backend has to be running first — and
 restarted alongside it:
 
 ```bash
-node bin/gitglance.js --no-open   # terminal A
-pnpm dev                          # terminal B
+node bin/difftab.js --no-open   # terminal A
+pnpm dev                        # terminal B
 ```
 
 The backend exits 45 seconds after the last client disconnects. If that is too fast while
-you are working, raise `GITGLANCE_IDLE_MS`.
+you are working, raise `DIFFTAB_IDLE_MS`.
 
 ## Gates
 
@@ -76,7 +76,7 @@ more often than you would expect.
 | `pnpm bench:startup` | cold start ≤ 300 ms |
 | `pnpm check:css` | CSS cascade ordering |
 | `pnpm check:pack` | published tarball contents |
-| `pnpm check:bin` | `bin/gitglance.js` is untouched by the build |
+| `pnpm check:bin` | `bin/difftab.js` is untouched by the build |
 
 `pnpm test:smoke` runs against build output, so a stale `dist/` fails in ways that look
 like three separate gates broke at once. Build first.
@@ -112,7 +112,7 @@ into a feature change.
 
 ## Reporting bugs
 
-Please include your OS, `node --version`, `git --version`, and the gitglance version.
+Please include your OS, `node --version`, `git --version`, and the difftab version.
 If it involves auto-refresh, say whether the page showed the "Polling" badge: the watcher
 runs in one of three tiers picked from your Node version and platform, and they behave
 differently by design.

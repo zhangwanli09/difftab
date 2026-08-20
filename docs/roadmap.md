@@ -1,4 +1,4 @@
-# GitGlance — 实施阶段与开源规划(§7 / §8)
+# difftab — 实施阶段与开源规划(§7 / §8)
 
 > 本文承载需求文档的 §7 与 §8,章节号沿用拆分前的编号,未重排。
 > 文中形如 `5.7` 的引用指 [`design.md`](design.md) 的对应小节;索引见 [`docs/README.md`](README.md)。
@@ -11,7 +11,7 @@
 
 | 阶段 | 内容 | 注意事项 |
 |---|---|---|
-| **S0** | 工具链脚手架:`package.json`(含 `engines` / `files` / scripts / `packageManager`)、`pnpm-lock.yaml`、`pnpm-workspace.yaml`(承载 `allowBuilds` 等全部 pnpm 设置)、`.gitignore`、**`bin/gitglance.js`(手写定稿,见 5.1)**、Vite + tsdown 配置、两份 tsconfig、Biome、lefthook、冷启动测量脚本;**按 5.0 建立目录骨架与依赖方向断言规则**;CI 两层作业骨架,且 **matrix 层的三平台 × Node 22/24/26 即刻拉起**(初期跑占位冒烟即可) | 三项前提验证须在本阶段收口,见下方「S0 的三项前提验证」。matrix 提前拉起是为了让 Windows / Linux 回归从第一天起持续存在,而不是堆到 S5 一次性暴露。`bin/gitglance.js` 放在 S0 是因为它不参与构建、内容不依赖后续阶段,而 `acceptance.md` §6 "未被构建管线触碰"这条验收项要成立,它必须在构建管线建立的同一阶段就已存在 |
+| **S0** | 工具链脚手架:`package.json`(含 `engines` / `files` / scripts / `packageManager`)、`pnpm-lock.yaml`、`pnpm-workspace.yaml`(承载 `allowBuilds` 等全部 pnpm 设置)、`.gitignore`、**`bin/difftab.js`(手写定稿,见 5.1)**、Vite + tsdown 配置、两份 tsconfig、Biome、lefthook、冷启动测量脚本;**按 5.0 建立目录骨架与依赖方向断言规则**;CI 两层作业骨架,且 **matrix 层的三平台 × Node 22/24/26 即刻拉起**(初期跑占位冒烟即可) | 三项前提验证须在本阶段收口,见下方「S0 的三项前提验证」。matrix 提前拉起是为了让 Windows / Linux 回归从第一天起持续存在,而不是堆到 S5 一次性暴露。`bin/difftab.js` 放在 S0 是因为它不参与构建、内容不依赖后续阶段,而 `acceptance.md` §6 "未被构建管线触碰"这条验收项要成立,它必须在构建管线建立的同一阶段就已存在 |
 | **S1** | CLI 脚手架 + HTTP server(**按 5.9 最终形态实现,含三道校验**)+ **注册表文件写入(port + token,`0o600` + `O_EXCL`)** + git shell 封装(status/diff)+ **5.12 协议类型随 server 一同定型** + **测试数据第一批** + **5.10 主门禁入 CI** | server 一建立即是最终形态,5.11 的 dev proxy 三道改写同期落地。**注册表的"写入"必须在本阶段**,否则 dev proxy 无 token 来源(见 5.11);"探活复用"与"空闲退出"留 S3c。**先做前端再补校验的顺序,会把"临时加环境变量放宽后端"变成本阶段内的最短路径,而那是 `decisions.md` §10 明令禁止的做法** |
 | **S2a** | 前端骨架(Preact 挂载 + signals state)+ `/api/state` 接线 + 变更列表组件(三类文件,按 path keyed)+ 让列表可读的最小样式;**5.10 第二层(只读 `.git` 冒烟)在此建立并入 matrix 作业**;冒烟套件补齐到跑构建产物 | 只读第二层保护的是 **S1 已落地**的 git 封装层(`GIT_OPTIONAL_LOCKS=0`),按本节总原则它本就该排在 S2 开头而非末尾。样式只做"能看清列表"这一档,主题留 S2c |
 | **S2b** | `/api/diff` 接线 + 深导入 `diff2html-ui-base` + hljs 22 语言与 `plaintext` 注册 + `draw()` 置于 Preact 的 ref/effect + 按文件懒加载联动 + 300+ 文件的性能验证;`app.css` 按 5.6 的顺序引入渲染所需 CSS(hljs 双主题 + `diff2html.min.css`,unlayered) | 高亮要出颜色就必须先有 hljs 主题 CSS,故 CSS 的 `@import` 骨架归本阶段、主题 token 归 S2c。5.5 那三条"静默出错"约束(`draw()` 后不得补调 `highlightCode()`、`plaintext` 必须注册、别名不是模块)全部落在本阶段。**入场时先确认体积门禁不再空转**:S2a 删掉 S0 spike 后没有任何入口 import `diff/`,产物 JS 从 196 KB 掉到 23.5 KB,两条 JS 预算因此暂时对着一个不含 diff2html / hljs 的产物通过;S0 那三项前提验证所量的东西要到本阶段接回渲染路径才重新被产物覆盖 |
@@ -57,7 +57,7 @@
 ## 8. 开源规划
 
 - **License**:MIT。运行时依赖 diff2html 为 MIT、highlight.js 为 BSD-3-Clause,均兼容
-- **仓库/包名**:`gitglance`(2026-07-28 首次复核 npm registry 返回 404,**2026-08-19 于 S6 再次复核仍是 404**;`git-glance` 已被他人占用 v1.0.1,仅影响搜索时的混淆,不构成冲突。GitHub 仓库名已定为 `zhangwanli09/gitglance`)
+- **仓库/包名**:`difftab`(**2026-08-20 由 `gitglance` 改定**——npm 的重名校验把包名小写化并去掉 `-` `_` `.` 后再与已有包比对,`gitglance` 归一后与他人已占用的 `git-glance` v1.0.1 完全相同,`GET /gitglance` 虽然一直返回 404,发布时仍会被 registry 以 "too similar to existing package" 拒绝;此前 2026-07-28 与 2026-08-19 两次复核只查了精确名,故一直判成"仅影响搜索时的混淆",判据与四个归一变体的核验见 `decisions.md` §10。GitHub 仓库名随之改为 `zhangwanli09/difftab`)
 - **需要补的东西**(S6 已落地,括号里是去处):README(`README.md` 英文 + `README.zh-CN.md` 中文,两份互链;**译文不是自动生成的,改一份要手动改另一份**)、LICENSE 文件(S0 即有)、清理硬编码的个人路径/凭据(全仓扫过,只有 `registry.ts` 注释里一个 Windows 路径示例)、Issue/PR 规范(`.github/ISSUE_TEMPLATE/` 两个表单 + `.github/PULL_REQUEST_TEMPLATE.md` + `CONTRIBUTING.md`)、semver + GitHub Releases(`RELEASING.md`)
 - **README 的语言与界面的语言是两件事,S6 把它们对齐了**:`docs/` 与代码注释写给维护者,中文;而产品表面(CLI 的 `--help` / 退出提示 / 版本守卫报错)从 S1 起就是英文,界面文案却是中文——这不是"还没翻",是同一个表面上的一处不一致。S6 把界面文案改成英文(约 30 条,判据与术语表见 `design.md` §5.4,并配了一条「前端产物 CJK 计数为 0」的冒烟门禁),中文读者由 `README.zh-CN.md` 承接;语言切换归 `spec.md` §4.2 首版不做
 - **不建 `CHANGELOG.md`**:GitHub Releases 的 notes 就是变更日志。两处写同一份清单,等于多一个会忘的地方——而首版发布频率低,自动生成也不划算

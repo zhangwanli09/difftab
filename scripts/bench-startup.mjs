@@ -8,7 +8,7 @@
 // 惰性执行、不计入 —— 否则该指标会随被测仓库规模漂移,失去回归意义。
 //
 // 判据由**后端的输出契约**承担:cli/start.ts 在 listen 成功后打印的第一行是且只是
-// URL,因此 READY_PATTERN 只认 URL 这一种形态。不要放宽成「以 gitglance: 开头的行」
+// URL,因此 READY_PATTERN 只认 URL 这一种形态。不要放宽成「以 difftab: 开头的行」
 // —— 那会匹配上启动横幅、警告、降级提示,于是量到一个没有意义的数字却显示绿色。
 
 import { spawn } from 'node:child_process';
@@ -16,7 +16,7 @@ import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const repoRoot = resolve(import.meta.dirname, '..');
-const entry = join(repoRoot, 'bin', 'gitglance.js');
+const entry = join(repoRoot, 'bin', 'difftab.js');
 
 /** spec §6 的门禁值。 */
 const BUDGET_MS = 300;
@@ -38,7 +38,7 @@ function measureOnce(cwd) {
     const child = spawn(process.execPath, [entry], {
       cwd,
       // 拉起浏览器在 CI 与测量中必须可关(spec §5.10)
-      env: { ...process.env, GITGLANCE_NO_OPEN: '1' },
+      env: { ...process.env, DIFFTAB_NO_OPEN: '1' },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 

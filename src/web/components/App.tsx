@@ -18,7 +18,7 @@ export function App() {
   return (
     <div class="flex h-screen flex-col bg-editor-background text-editor-foreground">
       <header class="flex shrink-0 items-baseline gap-3 border-b border-panel-border bg-title-bar-background px-3 py-2">
-        <span class="shrink-0 text-sm font-medium">GitGlance</span>
+        <span class="shrink-0 text-sm font-medium">difftab</span>
         {/* 分支状态与监听标注都只在拿到第一份 state 之后才画:没有它时 header 里
             少一段,而不是先画一个「未知分支 无上游」再被真实取值换掉 —— 后者两秒内
             说了一句假话,而「无上游」恰恰是 S3a 要区分开的那个真实状态。

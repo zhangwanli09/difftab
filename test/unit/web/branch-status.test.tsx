@@ -179,7 +179,7 @@ describe('App 的 header', () => {
     // 判据是 header 里**只有**标题,而不是「没出现『无上游』」那类写法:后者与文案
     // 字面量耦合,改一次文案就永远真空通过 —— 而这条恰恰是来防「先画一个占位分支」的,
     // 写死 main、画成 0/0、画成「未知分支」都是同一种退化,这里一次全盖住
-    expect(textOf(header)).toBe('GitGlance');
+    expect(textOf(header)).toBe('difftab');
 
     repoState.value = {
       branch: branch({ head: 'release/1.0', upstream: { ahead: 3, behind: 0 } }),

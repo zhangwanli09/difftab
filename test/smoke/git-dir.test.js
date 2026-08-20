@@ -19,7 +19,7 @@ import { tmpdir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { makeFixtures } from '../fixtures/make.mjs';
-import { authedGet, cleanupOnExit, once, startGitglance } from './helpers.js';
+import { authedGet, cleanupOnExit, once, startDifftab } from './helpers.js';
 
 let workdir;
 let repos;
@@ -27,7 +27,7 @@ cleanupOnExit(() => workdir);
 
 /** 见 helpers.js 的 `once()`:下限档 Node 22.0.0 不等顶层 `before()`。 */
 const setup = once(async () => {
-  workdir = mkdtempSync(join(tmpdir(), 'gitglance-gitdir-'));
+  workdir = mkdtempSync(join(tmpdir(), 'difftab-gitdir-'));
   repos = makeFixtures(join(workdir, 'repos'), ['linkedWorktree', 'submodule']);
 });
 
@@ -67,7 +67,7 @@ async function expectMergeMarked(root, label) {
 
   writeFileSync(join(gitDir, 'MERGE_HEAD'), `${'0'.repeat(40)}\n`);
 
-  const server = await startGitglance({ cwd: root });
+  const server = await startDifftab({ cwd: root });
   try {
     const state = JSON.parse((await authedGet(server.port, server.token, '/api/state')).body);
     assert.equal(

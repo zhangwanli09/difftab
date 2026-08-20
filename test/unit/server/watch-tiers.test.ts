@@ -69,7 +69,7 @@ afterEach(() => {
 
 /** 一个像仓库的目录(只需要目录结构:`watch` 已经是替身了)。 */
 function fakeRepo(): { root: string; gitDir: string } {
-  const root = mkdtempSync(join(tmpdir(), 'gitglance-tiers-'));
+  const root = mkdtempSync(join(tmpdir(), 'difftab-tiers-'));
   dirs.push(root);
   mkdirSync(join(root, '.git', 'refs', 'heads'), { recursive: true });
   return { root, gitDir: join(root, '.git') };

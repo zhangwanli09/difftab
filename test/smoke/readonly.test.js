@@ -41,7 +41,7 @@ cleanupOnExit(() => workdir);
  * `once()`:下限档 Node 22.0.0 的 runner 不等它。
  */
 const trace = once(async () => {
-  workdir = mkdtempSync(join(tmpdir(), 'gitglance-readonly-'));
+  workdir = mkdtempSync(join(tmpdir(), 'difftab-readonly-'));
   // fixture 生成本身是「开发流程的 git」,大量写操作 —— 必须在 GIT_TRACE 之外完成,
   // 否则它们会混进日志,门禁要么假红、要么被迫放宽白名单(那才是真正危险的)
   const repos = makeFixtures(join(workdir, 'repos'), NEEDED);

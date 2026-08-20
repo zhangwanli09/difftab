@@ -1,8 +1,18 @@
-# GitGlance 阶段日志
+# difftab 阶段日志
 
 **本文件是已收口阶段的记录,不是约束。** 约束在 `CLAUDE.md` 第 5 节(红线)与 `docs/decisions.md` §10(被排除的做法);需求的唯一事实来源是 `docs/`(索引见 `docs/README.md`)。
 
 倒序排列,新阶段收口时在顶部追加一节。**阶段推进已于 S6 结束**,`CLAUDE.md` 第 7 节随之从「开发阶段」换成「发布与维护约定」(见 `workflow.md` §9 末条),不再承载当前进度与跨阶段交接——那两样最后一次消费的记录就在下面的 S6 一节里。
+
+---
+
+## 改名 gitglance → difftab(2026-08-20)
+
+**不是重构,是一条被推翻的结论。** `roadmap.md` §8 与 `decisions.md` §10 从 2026-07-28 起记着"`gitglance` npm 未被占用",两次复核也确实都返回 404——但**查的是精确名**。npm 的重名校验先把包名小写化、去掉 `-` `_` `.` 再与已有包比对,`gitglance` 归一后与他人 2026-02 发布的 `git-glance` v1.0.1(描述 "Beautiful git repository summaries, statistics, and changelogs",同域)完全相同,发布时会被 registry 以 "too similar to existing package" 拒掉。**这个错误不会在任何门禁里响,只会在第一次 `npm publish` 那一刻响**,而那时改名的成本比现在高得多。新名 `difftab` 连同 `diff-tab` / `diff_tab` / `diff.tab` 四个归一变体逐个核过均为 404,全文搜索 0 结果;去掉 `git` 前缀同时避开了 Git 商标政策的建议与 npm 上极拥挤的 `git*` 命名空间。
+
+**改名面 242 处、62 个文件,其中只有三类不是机械替换。** 一是上述两条结论本身要重写(sed 换得掉名字,换不掉"不构成冲突"这个判断);二是围绕旧名写的英文文案——`package.json` 的 description、两份 README 的 tagline、`--help` 首行都在玩 "glance at" 的双关,换名后是病句;三是 `README.zh-CN.md`,它不是自动生成的,只改英文那份不会有任何门禁变红。其余按「长串在前」一遍 sed:`DIFFTAB_` 前缀的三个环境变量、`startDifftab` 测试助手、`DifftabServer` 类型、cookie 名 `difftab_token_<port>`、`<tmpdir>/difftab` 注册表目录,外加 `bin/gitglance.js` → `bin/difftab.js` 的文件改名(`check-bin-untouched.mjs` 的 `binPath` 与 `GUARD_MARKER` 必须跟着走,不一致时它会响亮报错——这次正是靠它确认守卫文案改到了)。**统一成全小写 `difftab`,不留第二种大小写形态**,省掉一份要长期同步的映射。
+
+产品行为零变化。唯一的对外破坏是三个 `GITGLANCE_*` 环境变量改名,包尚未发布,无外部用户。
 
 ---
 
@@ -58,7 +68,7 @@ S5 已收口(CI 全绿,run `32142555592` **17 个作业**——比上一阶段�
 
 **安全自查(macOS,2026-08-14/15)改了一处代码。** 三道校验的渗透式复核(15 种 Host 变体、双 Host 头、`Origin: null`)、CSP 实测(`frame-ancestors` 是唯一挡住同机 iframe 嵌套的那一道——三道校验全过、网络层拿到 200,浏览器仍拒绝渲染)、token 经命令行那条已知边界(紧循环采样,t=31ms 命中 1 拍;250ms 粗采样连打 24 次一无所获)。**改的那处是把方法判定挪到三道校验之后**——原先 405 排在 Host 校验前面,等于对一个 DNS rebinding 页面确认了服务的存在。休眠唤醒那条同期收掉,并**推翻了它原先的理由**:整机休眠在回环上不产生半开 TCP,`STALE_MS` 要靠「连接静默 + 标签切回」才走得到。
 
-**两处新门禁堵的都是"红线只有约定、没有断言"。** ① `bin/gitglance.js` 一直用 `process.stderr.write` + `process.exit(1)` —— 正是 §5.8 明令禁止的写法,而**冒烟本来就在三平台九档上扫这个文件**,只是没扫这一条;补一行正则同时罩住版本守卫与动态 import 失败两个出口(后者至今没有任何用例走到过)。扫描前要先剔注释,否则**越把理由写清楚的文件越容易假红**。CI 那侧取 stderr 必须**经管道**:文件重定向在 Windows 上是同步写,照样收得到,那一档会稳稳地绿着。② 新增「读 3 次 `/api/state` 事件数不变」——这是 `GIT_OPTIONAL_LOCKS=0` 在**监听侧**的判据,原先只有 §5.10 第二层 B 半的逐字节快照盯着,**而那一层不经过监听**。弄红验过:置成 `1` 时读 3 次出 3 个事件,自激循环当场现形。
+**两处新门禁堵的都是"红线只有约定、没有断言"。** ① `bin/difftab.js` 一直用 `process.stderr.write` + `process.exit(1)` —— 正是 §5.8 明令禁止的写法,而**冒烟本来就在三平台九档上扫这个文件**,只是没扫这一条;补一行正则同时罩住版本守卫与动态 import 失败两个出口(后者至今没有任何用例走到过)。扫描前要先剔注释,否则**越把理由写清楚的文件越容易假红**。CI 那侧取 stderr 必须**经管道**:文件重定向在 Windows 上是同步写,照样收得到,那一档会稳稳地绿着。② 新增「读 3 次 `/api/state` 事件数不变」——这是 `GIT_OPTIONAL_LOCKS=0` 在**监听侧**的判据,原先只有 §5.10 第二层 B 半的逐字节快照盯着,**而那一层不经过监听**。弄红验过:置成 `1` 时读 3 次出 3 个事件,自激循环当场现形。
 
 **三次 CI 红,病因全不在产品逻辑。** ① 全局安装脚本在 ubuntu 与 windows 挂死:经 shell 起进程时产品是**孙进程**,`'close'` 要等所有 stdio 管道关闭而孙进程还攥着,于是杀掉 shell 之后 `'close'` 永远不来,Node 以「unsettled top-level await」exit 13 收场——macOS 上 shell 直接 exec 掉自己,所以本机怎么跑都是绿的;改成等它按空闲自退、轮询 `exitCode`(`'exit'` 不依赖管道)。② 门禁脚本里那条 `git commit` 缺身份(runner 没有全局 `user.name`,fixture 是靠自己那份 env 提交的,管不到它)。③ **`/simplify` 把四份 SSE 客户端收成一份时,丢了一个 load-bearing 的 300ms 睡眠**:`await connected` 只说握手那一行到了,watcher 是在那之后的 `setImmediate` 里才建的;C 档躲不过去——它那条 1.5s 轮询的**首拍只建立基线**,抢在首拍之前切的分支被算进基线,于是 `.git` 那条没听见、轮询又认为"没变化",两头都不响。
 
@@ -110,7 +120,7 @@ S3b2 已收口(CI 全绿,run `31597447852` 11 个作业)—— 工作区侧三�
 
 ## S3b1 SSE 通道 + 档位骨架
 
-S3b1 已收口(CI 全绿,run `31547136471` 11 个作业)—— `.git` 侧非递归 watch + 150ms 合并窗口 + `/api/events`(15s 心跳,**三道校验一视同仁**)+ 前端 `EventSource` + `WatchState` 接真实取值,`GITGLANCE_WATCH_TIER=A|B|C` 作为首个交付物落地(取值不合法即启动失败,不退回自动判定,否则「我逐档验过了」会建立在一次没生效的强制指定上)。合并窗口是**「第一个事件起窗口、窗口内的后续事件被吞」**,不是「每来一个事件就往后推」—— 后者在 agent 持续写入下会一直不触发。监听**懒起**在第一个订阅者到达时(S3b2 的递归遍历会落在冷启动那条路径上),起了就留到关服务。浏览器实测:`git add` 与 `git checkout -b` 都无刷新地更新了页面,diff 容器**是同一个 DOM 节点**(§5.4 的滚动位置要求),心跳 15s 一发,dev 代理下同样流式通过。体积 JS 201.0 KB / gzip 67.4 / CSS 28.4 KB;冷启动中位 42.7ms。11 条新门禁**都先弄红过一次**。spec §6 的 1 个 `[S3b1]` 已勾。
+S3b1 已收口(CI 全绿,run `31547136471` 11 个作业)—— `.git` 侧非递归 watch + 150ms 合并窗口 + `/api/events`(15s 心跳,**三道校验一视同仁**)+ 前端 `EventSource` + `WatchState` 接真实取值,`DIFFTAB_WATCH_TIER=A|B|C` 作为首个交付物落地(取值不合法即启动失败,不退回自动判定,否则「我逐档验过了」会建立在一次没生效的强制指定上)。合并窗口是**「第一个事件起窗口、窗口内的后续事件被吞」**,不是「每来一个事件就往后推」—— 后者在 agent 持续写入下会一直不触发。监听**懒起**在第一个订阅者到达时(S3b2 的递归遍历会落在冷启动那条路径上),起了就留到关服务。浏览器实测:`git add` 与 `git checkout -b` 都无刷新地更新了页面,diff 容器**是同一个 DOM 节点**(§5.4 的滚动位置要求),心跳 15s 一发,dev 代理下同样流式通过。体积 JS 201.0 KB / gzip 67.4 / CSS 28.4 KB;冷启动中位 42.7ms。11 条新门禁**都先弄红过一次**。spec §6 的 1 个 `[S3b1]` 已勾。
 
 **S3b1 踩到的三条,都属「以为在验的东西其实没在验」。** 第一条是我自己量错:先前一次实测把「macOS 非递归 watch 会漏进嵌套写入」读反了(在 `watch()` 前一刻才 `mkdirSync`,**建流那一刻补报的一两条事件**被当成了嵌套事件),据此加的顶层段过滤是**死代码** —— 强制红检时「objects 写入不触发」那条用例在拿掉过滤后照样绿,才暴露出来。干净复测后拆掉,两条实测都回填了 spec §10;单测里「等一个固定毫秒数」也换成了「写探针写到它真的响」的 arming 步骤。第二条:`refresh()` 在 `/api/state` 失败后仍会照着**上一份快照**找条目去取 diff(用过期的 `oldPath`,正是重命名退化成全新增那条路),而钉它的用例只因为 `beforeEach` 把 `repoState` 置成 null 才通过 —— 生产里它一直非 null。第三条:「切回标签页就重连」在它自己注释描述的场景里根本不触发 —— 半开 TCP 下 `readyState` 一直是 `OPEN`。**心跳因此在前端也有用途**:静默两拍就当它死了,而周期定在 `shared/protocol.ts`、前端由它推出 `STALE_MS`,两边各写一个 15000 会在改周期时静默分家。反过来,连接一直活着就说明每个 `change` 都推到过了,那时**不补取**(它取的可能是一份数 MB 的 diff,而切标签是这个工具最频繁的动作)。
 
@@ -118,7 +128,7 @@ S3b1 已收口(CI 全绿,run `31547136471` 11 个作业)—— `.git` 侧非递�
 
 ## S3a 分支状态展示
 
-S3a 已收口(run `31495046172`)—— header 接上 `BranchStatus`,后端 S1 就已备齐(`# branch.ab` 缺失 → `upstream: null`),本阶段只是消费它。判据是**「无上游」与「已同步 0/0」必须是两份不同的输出**:`upstream?.ahead ?? 0` 那种写法不报错、不缺字段,只是把「没有可比对象」说成「与上游同步」;两条单测合起来钉这件事(无上游那份一个箭头都不许有 + 已同步那份两个 0 都得在),两种退化都先弄红过。header 的「首帧不画占位」压在**结构判据**上(`header` 的文本恰为 `GitGlance`)而非 `not.toContain('无上游')` —— 后者改一次文案就永远真空通过。spec §6 的 1 个 `[S3a]` 已勾。
+S3a 已收口(run `31495046172`)—— header 接上 `BranchStatus`,后端 S1 就已备齐(`# branch.ab` 缺失 → `upstream: null`),本阶段只是消费它。判据是**「无上游」与「已同步 0/0」必须是两份不同的输出**:`upstream?.ahead ?? 0` 那种写法不报错、不缺字段,只是把「没有可比对象」说成「与上游同步」;两条单测合起来钉这件事(无上游那份一个箭头都不许有 + 已同步那份两个 0 都得在),两种退化都先弄红过。header 的「首帧不画占位」压在**结构判据**上(`header` 的文本恰为 `difftab`)而非 `not.toContain('无上游')` —— 后者改一次文案就永远真空通过。spec §6 的 1 个 `[S3a]` 已勾。
 
 **S3a 留给 S3b2 的一条**(已消费:S3b2 用了「一个 guard 包住两项」那一半):header 现在是 `state !== null && <BranchStatus …>`,而 S3b2 的监听降级标注会是**第三个**读同一个 `repoState` 的地方(§5.7 的 `WatchState`)。别再叠第三个 `state !== null` —— 那时要么一个 guard 包住 header 两项,要么把 `RepoState | null` + `loadError` 泛化成 `DiffRequestState` 那样的标签联合(store.ts 已为 diff 做过这件事,理由同处)。
 
@@ -148,7 +158,7 @@ S1 收口时踩到的一条,写在这里因为它会再犯:**CI 只有下限档�
 
 ## S0 工具链脚手架
 
-S0 工具链脚手架(含 `pnpm-lock.yaml`、`pnpm-workspace.yaml` 的 `allowBuilds` 白名单、`.gitignore`、**手写定稿的 `bin/gitglance.js`**)+ 三项前提验证(在 pnpm 严格 node_modules 布局下跑)+ 三平台 CI 矩阵拉起。三项前提验证的清单见 spec §7 的「S0 的三项前提验证」。
+S0 工具链脚手架(含 `pnpm-lock.yaml`、`pnpm-workspace.yaml` 的 `allowBuilds` 白名单、`.gitignore`、**手写定稿的 `bin/difftab.js`**)+ 三项前提验证(在 pnpm 严格 node_modules 布局下跑)+ 三平台 CI 矩阵拉起。三项前提验证的清单见 spec §7 的「S0 的三项前提验证」。
 
 ---
 

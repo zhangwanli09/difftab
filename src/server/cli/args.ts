@@ -11,17 +11,17 @@ export interface CliOptions {
 
 export class CliUsageError extends Error {}
 
-export const HELP_TEXT = `gitglance — glance at what changed in this repository (read-only)
+export const HELP_TEXT = `difftab — see what changed in this repository (read-only)
 
 Usage:
-  gitglance [options]
+  difftab [options]
 
 Options:
   --no-open      print the URL instead of opening a browser
   -v, --version  print the version and exit
   -h, --help     print this help and exit
 
-gitglance never writes to your repository.
+difftab never writes to your repository.
 `;
 
 export function parseCliArgs(argv: readonly string[]): CliOptions {

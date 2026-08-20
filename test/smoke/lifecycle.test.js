@@ -6,7 +6,7 @@
 // 两侧全绿而中间没接上是完全可能的:touch 忘了挂在断连上、探活忘了带 token,
 // 都不报错。
 //
-// **宽限期一律用 `GITGLANCE_IDLE_MS` 压到秒级**(§5.8 给它的用途就是这个):
+// **宽限期一律用 `DIFFTAB_IDLE_MS` 压到秒级**(§5.8 给它的用途就是这个):
 // 真等 45 秒的用例没人会跑第二次。
 
 import assert from 'node:assert/strict';
@@ -23,12 +23,12 @@ import {
   once,
   openEvents,
   sleep,
-  startGitglance,
+  startDifftab,
   waitForExit,
 } from './helpers.js';
 
 /** 空闲宽限期的内部环境变量(spec §5.8)。 */
-const IDLE_ENV = 'GITGLANCE_IDLE_MS';
+const IDLE_ENV = 'DIFFTAB_IDLE_MS';
 
 let workdir;
 let repos;
@@ -36,13 +36,13 @@ cleanupOnExit(() => workdir);
 
 /** 见 helpers.js 的 `once()`:下限档 Node 22.0.0 不等顶层 `before()`。 */
 const setup = once(async () => {
-  workdir = mkdtempSync(join(tmpdir(), 'gitglance-lifecycle-'));
+  workdir = mkdtempSync(join(tmpdir(), 'difftab-lifecycle-'));
   repos = makeFixtures(join(workdir, 'repos'), ['staged']);
 });
 
 /** `os.tmpdir()` 下记着这个端口的注册表条目(spec §5.8 要求写在这里,不在仓库里)。 */
 function registryEntriesFor(port) {
-  const dir = join(tmpdir(), 'gitglance');
+  const dir = join(tmpdir(), 'difftab');
   let names;
   try {
     names = readdirSync(dir);
@@ -76,7 +76,7 @@ test('没有任何客户端时,宽限期一到就自己退 —— 不留后台�
   // 宽限期**从启动那一刻就开始计**,不等第一个客户端(§5.8):等第一个客户端才
   // 起计时的话,「浏览器压根没拉起来」(headless、无 xdg-open、--no-open 之后
   // 用户改了主意)这一整类情形留下的就是一个永久常驻的后台进程
-  const server = await startGitglance({ cwd: repos.staged, env: { [IDLE_ENV]: '1500' } });
+  const server = await startDifftab({ cwd: repos.staged, env: { [IDLE_ENV]: '1500' } });
 
   assert.equal(await waitForExit(server), 0, '空闲退出应当是正常退出,不是异常码');
   // 这句提示同时是「它是自己走的、不是被谁 kill 的」的判据。走 writeSync 是必需的:
@@ -103,7 +103,7 @@ test('stdout 的读端先走了(`| head -1`),空闲退出仍是干净的 0', asy
    * 而这条路承诺的是「读端走了不影响服务,浏览器照常用得上」。
    */
   const idleMs = 1500;
-  const server = await startGitglance({ cwd: repos.staged, env: { [IDLE_ENV]: String(idleMs) } });
+  const server = await startDifftab({ cwd: repos.staged, env: { [IDLE_ENV]: String(idleMs) } });
   const started = Date.now();
   server.child.stdout.destroy(); // 读端关掉,等同于 head 已经退了
 
@@ -117,7 +117,7 @@ test('stdout 的读端先走了(`| head -1`),空闲退出仍是干净的 0', asy
 
 test('有一条 SSE 连着就不退,断开之后才开始数宽限期', async () => {
   await setup();
-  const server = await startGitglance({ cwd: repos.staged, env: { [IDLE_ENV]: '1500' } });
+  const server = await startDifftab({ cwd: repos.staged, env: { [IDLE_ENV]: '1500' } });
   const events = openEvents(server.port, server.token);
   await events.connected;
 
@@ -133,7 +133,7 @@ test('有一条 SSE 连着就不退,断开之后才开始数宽限期', async ()
 
 test('多标签:关掉其中一个不退出,全部关掉后才在宽限期内退出', async () => {
   await setup();
-  const server = await startGitglance({ cwd: repos.staged, env: { [IDLE_ENV]: '1500' } });
+  const server = await startDifftab({ cwd: repos.staged, env: { [IDLE_ENV]: '1500' } });
   const first = openEvents(server.port, server.token);
   const second = openEvents(server.port, server.token);
   await first.connected;
@@ -150,10 +150,10 @@ test('多标签:关掉其中一个不退出,全部关掉后才在宽限期内退
 test('注册表条目写在 os.tmpdir(),退出时被清掉', async () => {
   await setup();
   const before = statusSnapshot(repos.staged);
-  const server = await startGitglance({ cwd: repos.staged, env: { [IDLE_ENV]: '1500' } });
+  const server = await startDifftab({ cwd: repos.staged, env: { [IDLE_ENV]: '1500' } });
 
   const entries = registryEntriesFor(server.port);
-  assert.equal(entries.length, 1, `os.tmpdir()/gitglance 下没找到本次实例的条目`);
+  assert.equal(entries.length, 1, `os.tmpdir()/difftab 下没找到本次实例的条目`);
   assert.equal(entries[0].token, server.token);
   assert.equal(entries[0].pid, server.child.pid);
   // 仓库目录内无任何新增文件(§6)—— 注册表写进 .git/ 或工作区既污染 git status,
@@ -166,12 +166,12 @@ test('注册表条目写在 os.tmpdir(),退出时被清掉', async () => {
 
 test('同一仓库再敲一次命令:复用已有实例,不起第二个进程', async () => {
   await setup();
-  const server = await startGitglance({ cwd: repos.staged, env: { [IDLE_ENV]: '30000' } });
+  const server = await startDifftab({ cwd: repos.staged, env: { [IDLE_ENV]: '30000' } });
   try {
     const before = statusSnapshot(repos.staged);
     const second = spawnSync(process.execPath, [BIN], {
       cwd: repos.staged,
-      env: { ...process.env, GITGLANCE_NO_OPEN: '1' },
+      env: { ...process.env, DIFFTAB_NO_OPEN: '1' },
       encoding: 'utf8',
       timeout: 30_000,
     });
@@ -198,13 +198,13 @@ test('同一仓库再敲一次命令:复用已有实例,不起第二个进程', 
 
 test('陈旧条目(实例被 SIGKILL,来不及清理)不会挡住下一次启动', async () => {
   await setup();
-  const dead = await startGitglance({ cwd: repos.staged, env: { [IDLE_ENV]: '30000' } });
+  const dead = await startDifftab({ cwd: repos.staged, env: { [IDLE_ENV]: '30000' } });
   // SIGKILL 没有清理机会,条目原样留在 os.tmpdir() 里指向一个已经死掉的端口
   dead.child.kill('SIGKILL');
   await waitForExit(dead);
   assert.equal(registryEntriesFor(dead.port).length, 1, '前提没成立:条目已经被清掉了');
 
-  const fresh = await startGitglance({ cwd: repos.staged, env: { [IDLE_ENV]: '30000' } });
+  const fresh = await startDifftab({ cwd: repos.staged, env: { [IDLE_ENV]: '30000' } });
   try {
     // **判据是 token 不同,不是端口不同**:内核完全可能把刚释放的端口再分配一次,
     // 而 token 每次启动都重新随机(§5.9)
@@ -219,7 +219,7 @@ test('陈旧条目(实例被 SIGKILL,来不及清理)不会挡住下一次启动
 
 test('探活端点答的是本仓库的身份,且同样过三道校验', async () => {
   await setup();
-  const server = await startGitglance({ cwd: repos.staged, env: { [IDLE_ENV]: '30000' } });
+  const server = await startDifftab({ cwd: repos.staged, env: { [IDLE_ENV]: '30000' } });
   try {
     const ok = await authedGet(server.port, server.token, '/api/instance');
     assert.equal(ok.status, 200);
@@ -241,7 +241,7 @@ test('探活端点答的是本仓库的身份,且同样过三道校验', async (
 test(`${IDLE_ENV} 写错时是一句话报错,不是 Node 异常栈`, async () => {
   await setup();
   await assert.rejects(
-    () => startGitglance({ cwd: repos.staged, env: { [IDLE_ENV]: 'soon' }, timeoutMs: 10_000 }),
+    () => startDifftab({ cwd: repos.staged, env: { [IDLE_ENV]: 'soon' }, timeoutMs: 10_000 }),
     (cause) => {
       // 悄悄退回默认的 45s 的话,这里会**启动成功** —— 而写错的那次照样跑出一个
       // 看着合理的行为,于是「我验过空闲退出了」建立在一次没生效的指定上

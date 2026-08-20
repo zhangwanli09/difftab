@@ -30,7 +30,7 @@ afterEach(() => {
 });
 
 function tempRepo(): string {
-  const dir = mkdtempSync(join(tmpdir(), 'gitglance-probe-'));
+  const dir = mkdtempSync(join(tmpdir(), 'difftab-probe-'));
   dirs.push(dir);
   return dir;
 }
@@ -107,7 +107,7 @@ describe('命中', () => {
     expect(req?.url).toBe('/api/instance');
     expect(req?.headers.host).toBe(`127.0.0.1:${instance.port}`);
     expect(req?.headers.cookie).toBe(
-      `gitglance_token_${instance.port}=${instance.port}.${TOKEN_SECRET}`,
+      `difftab_token_${instance.port}=${instance.port}.${TOKEN_SECRET}`,
     );
   });
 
@@ -143,7 +143,7 @@ describe('判为陈旧', () => {
     expect(await findLiveInstance(repo)).toBe(null);
   });
 
-  test('403 —— 那个端口已经归了别的 gitglance(它的 token 不是我们记下的这个)', async () => {
+  test('403 —— 那个端口已经归了别的 difftab(它的 token 不是我们记下的这个)', async () => {
     const repo = tempRepo();
     const instance = await fakeInstance(() => ({ status: 403, body: '{"error":{}}' }));
     register(repo, instance.port);

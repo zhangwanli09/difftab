@@ -1,4 +1,4 @@
-# GitGlance — 验收标准(§6)
+# difftab — 验收标准(§6)
 
 > 本文承载需求文档的 §6,章节号沿用拆分前的编号,未重排。
 > 文中形如 `5.7` 的引用指 [`design.md`](design.md) 的对应小节;索引见 [`docs/README.md`](README.md)。
@@ -78,6 +78,6 @@
 - [x] `[S0]` **`allowBuilds` 白名单生效**:两条一起看——(a) `pnpm ignored-builds` 报告 `None`;(b) 安装后 `.git/hooks` 下确有 lefthook 写入的钩子文件且能触发。**不以安装日志无报错为准**,漏列白名单时安装本身是成功的、构建脚本只是被静默跳过(见 5.11)。(a) 直接问 pnpm 自己忽略了谁,(b) 证明脚本不仅跑了还真干了活;两条互补,少任何一条都有一整类漏网
   - CI 上跑 (b) 必须给安装步骤设 `LEFTHOOK=1`:lefthook 的 postinstall 检测到 `CI` 就**跳过** `lefthook install`,生命周期脚本照跑却不写钩子。不设的话该项恒为假,且失败原因与 `allowBuilds` 无关,是假红(已实测)
 - [x] `[S0]` **pnpm 设置写在正确的文件里**:`allowBuilds` 等设置位于 `pnpm-workspace.yaml`;`package.json` 无 `pnpm` 字段、`.npmrc` 无非 auth 设置——**pnpm 11 对写错位置的设置是静默忽略**,故此项须逐个设置确认实际生效(如上一条以钩子文件为准),不能只看文件里写了什么(见 5.11)
-- [x] `[S1/S5]` `npm i -g gitglance` 后在 Node 22+ 环境下能正常运行,macOS / Windows / Linux 三端均验证通过;低于 22 时打印明确的版本要求提示并以非 0 退出,**不得是 SyntaxError 或 Node 异常栈**——版本守卫必须先于任何可能超出该语法/API 范围的模块加载执行(前半由三平台的 `global-install` 作业断言:`npm pack` 打出 tarball → `npm i -g` → 用**装到 PATH 上的那个可执行文件**在 fixture 仓库里跑通,顺带断言全局目录下没有任何传递依赖;后半由 `old-node-guard` 的三平台 matrix 断言 —— **那一档取 stderr 必须经管道**,文件重定向在 Windows 上是同步写、恒绿,守卫里那句话即便还是 5.8 明令禁止的 `process.stderr.write` + `process.exit()` 也照样通过(S5 期间实测发现 `bin/gitglance.js` 正是如此,已改为 `writeSync(2, …)`)。**两个作业都不在 matrix 冒烟档里做**——那一档"完全不装依赖"是 5.11 的红线,而全局装产品自己是另一回事,分开跑才说得清哪条绿的是什么)
-- [x] `[S0]` **`bin/gitglance.js` 未被构建管线触碰**:跑完完整构建后,该文件与仓库源文件逐字节一致,且不出现在任何打包入口中(该文件在 S0 即须定稿——它是手写保守语法 JS、不参与构建,内容不依赖后续阶段;真机上"低于下限的 Node 打印友好提示"部分见上方版本守卫项,标 `[S1/S5]`)
+- [x] `[S1/S5]` `npm i -g difftab` 后在 Node 22+ 环境下能正常运行,macOS / Windows / Linux 三端均验证通过;低于 22 时打印明确的版本要求提示并以非 0 退出,**不得是 SyntaxError 或 Node 异常栈**——版本守卫必须先于任何可能超出该语法/API 范围的模块加载执行(前半由三平台的 `global-install` 作业断言:`npm pack` 打出 tarball → `npm i -g` → 用**装到 PATH 上的那个可执行文件**在 fixture 仓库里跑通,顺带断言全局目录下没有任何传递依赖;后半由 `old-node-guard` 的三平台 matrix 断言 —— **那一档取 stderr 必须经管道**,文件重定向在 Windows 上是同步写、恒绿,守卫里那句话即便还是 5.8 明令禁止的 `process.stderr.write` + `process.exit()` 也照样通过(S5 期间实测发现 `bin/difftab.js` 正是如此,已改为 `writeSync(2, …)`)。**两个作业都不在 matrix 冒烟档里做**——那一档"完全不装依赖"是 5.11 的红线,而全局装产品自己是另一回事,分开跑才说得清哪条绿的是什么)
+- [x] `[S0]` **`bin/difftab.js` 未被构建管线触碰**:跑完完整构建后,该文件与仓库源文件逐字节一致,且不出现在任何打包入口中(该文件在 S0 即须定稿——它是手写保守语法 JS、不参与构建,内容不依赖后续阶段;真机上"低于下限的 Node 打印友好提示"部分见上方版本守卫项,标 `[S1/S5]`)
 

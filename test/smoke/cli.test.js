@@ -30,7 +30,7 @@ test('CLI 在当前 Node 上正常启动并退出 0,且报的版本就是 packag
   // 只断言形状的话,版本号漂移(改了 package.json 忘了改代码)照样能过 ——
   // 必须钉到同一个值上,否则这条测试守不住它唯一该守的东西
   assert.match(manifest.version, /^\d+\.\d+\.\d+/);
-  assert.equal(r.stdout.trim(), `gitglance ${manifest.version}`);
+  assert.equal(r.stdout.trim(), `difftab ${manifest.version}`);
 });
 
 test('版本守卫:低于下限时打印友好提示并以非 0 退出,而不是 SyntaxError', () => {
@@ -90,7 +90,7 @@ test('bare 仓库:一句话说清没有工作区,而不是 Node 异常栈', () =
   // §6 的 `[S4b]`。**必须在产物上端到端验**:`rev-parse --show-toplevel` 在 bare 下
   // 以 128 退出(已实测),而「128 退出」既可能被收成这句话,也可能一路冒成一屏栈 ——
   // 单测里那条 `rejects.toMatchObject({ code: 'bare-repo' })` 证到的是前一半
-  workdir = mkdtempSync(join(tmpdir(), 'gitglance-bare-'));
+  workdir = mkdtempSync(join(tmpdir(), 'difftab-bare-'));
   const repos = makeFixtures(join(workdir, 'repos'), ['bare']);
 
   // 「退出码 / 空 stdout / 不带栈」三条归 helpers(不是仓库那条用的是同一份),
@@ -118,7 +118,7 @@ function codeLines(source) {
     .join('\n');
 }
 
-test('bin/gitglance.js 退出前的报错一律 writeSync(2, …)', () => {
+test('bin/difftab.js 退出前的报错一律 writeSync(2, …)', () => {
   /**
    * spec §5.8 的红线:`process.stderr.write` + `process.exit()` 在 Windows 上写**管道**
    * 时是异步的,整条消息会被丢掉,症状是 stderr 全空。
@@ -130,11 +130,11 @@ test('bin/gitglance.js 退出前的报错一律 writeSync(2, …)', () => {
   assert.doesNotMatch(
     codeLines(readFileSync(BIN, 'utf8')),
     /process\.stderr\.write|console\.error/,
-    'bin/gitglance.js 出现了 process.stderr.write / console.error —— 退出前的报错必须走 writeSync(2, …)',
+    'bin/difftab.js 出现了 process.stderr.write / console.error —— 退出前的报错必须走 writeSync(2, …)',
   );
 });
 
-test('bin/gitglance.js 保持保守语法:不含守卫之后才安全的语法', () => {
+test('bin/difftab.js 保持保守语法:不含守卫之后才安全的语法', () => {
   const source = codeLines(readFileSync(BIN, 'utf8'));
   // 逐条对应 spec §5.1:守卫与新语法同处一个模块时,低于下限的用户拿到的是
   // 解析期 SyntaxError,守卫根本来不及执行
@@ -146,6 +146,6 @@ test('bin/gitglance.js 保持保守语法:不含守卫之后才安全的语法',
     [/\|\|=|&&=/, '逻辑赋值 ||= / &&='],
   ];
   for (const [pattern, name] of forbidden) {
-    assert.equal(pattern.test(source), false, `bin/gitglance.js 出现了${name}`);
+    assert.equal(pattern.test(source), false, `bin/difftab.js 出现了${name}`);
   }
 });

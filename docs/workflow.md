@@ -1,4 +1,4 @@
-# GitGlance — 开发方式(§9)
+# difftab — 开发方式(§9)
 
 > 本文承载需求文档的 §9,章节号沿用拆分前的编号,未重排。
 > 索引见 [`docs/README.md`](README.md)。

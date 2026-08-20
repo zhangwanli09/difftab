@@ -21,7 +21,7 @@ const IGNORE_SINCE = { major: 24, minor: 14, patch: 0 };
  * 没有它,S3b2 的六条档位验收项在单机上一条都无从自查 —— 一台机器只有一个 Node
  * 版本、一个平台,而三档正是按这两者分的。它不是给用户的开关,README 不写它。
  */
-export const TIER_ENV = 'GITGLANCE_WATCH_TIER';
+export const TIER_ENV = 'DIFFTAB_WATCH_TIER';
 
 /** 档位环境变量的取值不合法。由 main() 收成一句话友好报错。 */
 export class WatchTierError extends Error {
@@ -85,7 +85,7 @@ export function detectTier(nodeVersion: string, platform: string): WatchTier {
 /**
  * 实际生效的档位:环境变量优先,否则按运行时判定。
  *
- * **取值不合法时抛错而不是退回自动判定**:`GITGLANCE_WATCH_TIER=b` 那种手滑,退回
+ * **取值不合法时抛错而不是退回自动判定**:`DIFFTAB_WATCH_TIER=b` 那种手滑,退回
  * 自动判定的话在本机上多半照样给出 B 档,于是「我验过 B 档了」这个结论建立在
  * 一次根本没生效的强制指定上 —— 而 S3b2 的六条验收项全都压在这个变量上。
  */

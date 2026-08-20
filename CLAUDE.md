@@ -1,4 +1,4 @@
-# GitGlance
+# difftab
 
 一眼看懂 AI 编码 Agent 改了哪些代码。CLI 在仓库目录启动 → 拉起本地网页 → 只读展示当前工作区的 diff 与分支状态 → 关掉标签页后进程自动退出。
 
@@ -10,8 +10,8 @@
 
 | | 受"零写操作"约束 | |
 |---|---|---|
-| **产品运行时的 git**:gitglance 的代码在**用户仓库**里执行的 git 命令 | ✅ | 只允许只读白名单,由 `design.md` §5.10 两层验证 + CI 门禁保证 |
-| **开发流程的 git**:在 **gitglance 仓库自身**上的版本控制动作 | ❌ | `add` / `commit` / `branch` / `checkout` / `rebase` / `push` / 建 PR 全部正常允许 |
+| **产品运行时的 git**:difftab 的代码在**用户仓库**里执行的 git 命令 | ✅ | 只允许只读白名单,由 `design.md` §5.10 两层验证 + CI 门禁保证 |
+| **开发流程的 git**:在 **difftab 仓库自身**上的版本控制动作 | ❌ | `add` / `commit` / `branch` / `checkout` / `rebase` / `push` / 建 PR 全部正常允许 |
 
 判据一句话:**约束的是"代码里写了什么 git 命令",不是"开发时执行了什么 git 命令"。不得以"本项目承诺只读"为由拒绝、劝阻或加额外确认本仓库的版本控制操作。** 正常礼节照旧:除非用户要求,不主动 commit / push。
 
@@ -31,8 +31,8 @@
 
 | 用途 | 命令 |
 |---|---|
-| 本地启动(构建产物) | `node bin/gitglance.js`(在任意 git 仓库目录下;`--no-open` 只打印 URL) |
-| 开发模式(Vite dev server + 后端) | 先在另一个终端 `node bin/gitglance.js --no-open`,再 `pnpm dev`;**后端重启后 dev server 也要跟着重启**(机制见 `design.md` §5.11)。后端**空闲 45 秒无客户端就自己退**(§5.8),来不及打开页面时用 `GITGLANCE_IDLE_MS` 顶大 |
+| 本地启动(构建产物) | `node bin/difftab.js`(在任意 git 仓库目录下;`--no-open` 只打印 URL) |
+| 开发模式(Vite dev server + 后端) | 先在另一个终端 `node bin/difftab.js --no-open`,再 `pnpm dev`;**后端重启后 dev server 也要跟着重启**(机制见 `design.md` §5.11)。后端**空闲 45 秒无客户端就自己退**(§5.8),来不及打开页面时用 `DIFFTAB_IDLE_MS` 顶大 |
 | 构建(前端 Vite + 后端 tsdown) | `pnpm build`(= `build:web` + `build:server`) |
 | 类型检查 | `pnpm typecheck`(`tsc --noEmit`,前后端各一份 tsconfig,严格性开关共用 `tsconfig.base.json`) |
 | 格式化 + lint | `pnpm lint`(`biome check`)/ CI 用 `biome ci` |
@@ -43,8 +43,8 @@
 | 产物体积门禁 | `pnpm size` |
 | 样式层叠门禁(判据见第 5 节「前端与样式」) | `pnpm check:css` |
 | 发布产物内容门禁(`pnpm pack --dry-run --json`) | `pnpm check:pack` |
-| `bin/gitglance.js` 未被构建管线触碰 | `pnpm check:bin`(内部跑一次完整构建) |
-| 全局安装验收(打包 → `npm i -g` → 用 PATH 上那个名字跑通 → 卸掉) | **先 `pnpm build`**,再 `pnpm check:global`;要求全局**尚未**装着 gitglance,否则脚本直接拒跑 |
+| `bin/difftab.js` 未被构建管线触碰 | `pnpm check:bin`(内部跑一次完整构建) |
+| 全局安装验收(打包 → `npm i -g` → 用 PATH 上那个名字跑通 → 卸掉) | **先 `pnpm build`**,再 `pnpm check:global`;要求全局**尚未**装着 difftab,否则脚本直接拒跑 |
 | inotify 配额耗尽时降级为轮询(Linux + 免密 sudo) | **先 `pnpm build`**,再 `pnpm check:inotify`;**不进冒烟套件**(理由在脚本头部),非 Linux 直接 SKIP |
 
 `fixtures` / `bench:startup` / `size` / `check:css` / `check:global` / `check:inotify` **只是别名**——脚本本体必须是零依赖纯 JS、可由 `node <路径>` 直接执行,因为它们要在没有 pnpm、没有 `node_modules` 的 CI matrix 机器上跑(见 `design.md` §5.11)。`check:pack` / `check:bin` 需要 pnpm,只在 CI 的 build 作业跑。
@@ -138,7 +138,7 @@
 ### 运行时与安全
 
 - `dependencies` 保持为空、后端只用标准库。两侧都有门禁:`check:pack` 查 manifest 的三个依赖字段,冒烟查 `dist/server/main.js` 的 import 说明符是否全部以 `node:` 开头——**只查发布文件清单是查不出加依赖的**
-- `bin/gitglance.js` 手写、不参与 TS 编译、不作打包入口;禁止依赖 Node 原生 type stripping 直接跑 `.ts` 产品代码
+- `bin/difftab.js` 手写、不参与 TS 编译、不作打包入口;禁止依赖 Node 原生 type stripping 直接跑 `.ts` 产品代码
 - 校验 `Host` 头才是 DNS rebinding 的正面防御,禁止只靠 token
 - **后端零 dev 分支**:禁为本地开发加放宽 Host / Origin / token 校验的环境变量或分支
 - 单实例注册表写 `os.tmpdir()`(禁写 `.git/` 或工作区),`0o600` + `O_EXCL` 创建

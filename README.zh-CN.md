@@ -1,13 +1,13 @@
-# GitGlance
+# difftab
 
-**一眼看懂 AI 编码 Agent 改了哪些代码。**
+**一个标签页,看懂 AI 编码 Agent 改了哪些代码。**
 
 在仓库目录敲一条命令。本地网页随即打开,只读展示当前工作区的 diff 与分支状态。
 关掉标签页,进程自行退出。
 
 [English](README.md)
 
-GitGlance 面向的是 agent 刚跑完(或者还在跑)的那一刻:你想「瞥一眼」改了什么,而不是
+difftab 面向的是 agent 刚跑完(或者还在跑)的那一刻:你想「瞥一眼」改了什么,而不是
 开一场代码评审。它展示的就是 `git status` 与 `git diff HEAD` 的内容,以并排 diff 加语法
 高亮呈现,并在 agent 继续写的过程中自动刷新。它对你的仓库**全程零写操作**——这是核心承诺,
 由两道 CI 门禁守着,详见[下文](#全程零写操作)。
@@ -17,16 +17,16 @@ GitGlance 面向的是 agent 刚跑完(或者还在跑)的那一刻:你想「瞥
 不用装,在任意仓库目录里直接跑:
 
 ```bash
-npx gitglance           # pnpm 用户:pnpm dlx gitglance
+npx difftab        # pnpm 用户:pnpm dlx difftab
 ```
 
 首次要下载解包,多花几秒,之后走缓存。
 
-如果你每次 agent 跑完都要看一眼,那就装一次——`npx` 光是决定该跑哪个版本,就比 GitGlance
+如果你每次 agent 跑完都要看一眼,那就装一次——`npx` 光是决定该跑哪个版本,就比 difftab
 自己启动还花时间:
 
 ```bash
-npm i -g gitglance      # 或:pnpm add -g gitglance
+npm i -g difftab   # 或:pnpm add -g difftab
 ```
 
 要求 **Node.js 22.0.0 或更高**。`dependencies` 为空:后端只用 Node 标准库,前端在构建期
@@ -36,7 +36,7 @@ npm i -g gitglance      # 或:pnpm add -g gitglance
 
 ```bash
 cd /path/to/your/repo
-gitglance               # 或:npx gitglance
+difftab            # 或:npx difftab
 ```
 
 | 参数 | 作用 |
@@ -67,13 +67,13 @@ gitglance               # 或:npx gitglance
 linked worktree、submodule、二进制文件、超过 5MB 的文件、重命名(标注完整旧路径与相似度)、
 删除的文件,以及路径里带空格、引号、中日韩文字或 emoji 的文件。
 
-GitGlance 刻意只是个查看器:不编辑代码、不看历史、不做 blame、不承载评审流程。完整的不做
+difftab 刻意只是个查看器:不编辑代码、不看历史、不做 blame、不承载评审流程。完整的不做
 清单在 [CONTRIBUTING.md](CONTRIBUTING.md#the-read-only-promise-is-not-negotiable) 与
 [`docs/spec.md`](docs/spec.md) §4。
 
 ## 全程零写操作
 
-不是「尽量」。GitGlance 不 stage、不 commit、不 discard、不 pull / push、不建分支、
+不是「尽量」。difftab 不 stage、不 commit、不 discard、不 pull / push、不建分支、
 不 stash——它只发只读的 git 命令。这条由两道互相独立的门禁在每次 CI、三个平台上守着:
 
 1. **命令白名单。** 整条流程跑在 `GIT_TRACE` 之下,产品发出的每一次 git 调用——包括 git
@@ -125,7 +125,7 @@ macOS / Windows / Linux 三端均支持、均有测试。CI 在三平台 × Node
 ```bash
 pnpm install --frozen-lockfile   # pnpm 版本由 packageManager 字段固定
 pnpm build                       # 前端 Vite + 后端 tsdown
-node bin/gitglance.js            # 在任意 git 仓库目录下跑起来
+node bin/difftab.js              # 在任意 git 仓库目录下跑起来
 ```
 
 其余在 [CONTRIBUTING.md](CONTRIBUTING.md):dev server 怎么起、完整的门禁清单,以及这个仓库

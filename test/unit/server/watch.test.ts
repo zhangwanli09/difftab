@@ -101,7 +101,7 @@ describe(`${TIER_ENV}(S3b2 六条验收项的自查前提)`, () => {
   });
 
   test('取值不合法时抛错,而不是悄悄退回自动判定', () => {
-    // 退回自动判定的话,`GITGLANCE_WATCH_TIER=D` 在 macOS 上照样给出 B 档,于是
+    // 退回自动判定的话,`DIFFTAB_WATCH_TIER=D` 在 macOS 上照样给出 B 档,于是
     // 「我验过 B 档了」建立在一次根本没生效的强制指定上
     for (const bad of ['D', 'auto', 'native', 'AB']) {
       expect(() => resolveTier({ [TIER_ENV]: bad }, '22.0.0', 'darwin')).toThrow(WatchTierError);
@@ -123,7 +123,7 @@ describe('watch:`.git` 侧与工作区侧(§5.7,跑真实文件系统)', () => {
 
   /** 一个够用的 `.git`:HEAD、index、refs/heads,外加一个装满对象的 objects/。 */
   function fakeGitDir(): string {
-    const root = mkdtempSync(join(tmpdir(), 'gitglance-watch-'));
+    const root = mkdtempSync(join(tmpdir(), 'difftab-watch-'));
     dirs.push(root);
     const gitDir = join(root, '.git');
     for (const rel of ['refs/heads', 'refs/remotes/origin', 'objects/ab', 'logs']) {
@@ -207,7 +207,7 @@ describe('watch:`.git` 侧与工作区侧(§5.7,跑真实文件系统)', () => {
   });
 
   test('清单里缺目录不算错误 —— 有几个盯几个', () => {
-    const root = mkdtempSync(join(tmpdir(), 'gitglance-watch-'));
+    const root = mkdtempSync(join(tmpdir(), 'difftab-watch-'));
     dirs.push(root);
     // 连 refs/ 都没有的目录:gitWatchDirs 只返回它自己,createWatcher 照样起得来
     expect(gitWatchDirs(root)).toEqual([root]);
@@ -218,7 +218,7 @@ describe('watch:`.git` 侧与工作区侧(§5.7,跑真实文件系统)', () => {
     const gitDir = fakeGitDir();
     const calls: number[] = [];
     watchFor(gitDir, calls);
-    await armed(join(gitDir, 'gitglance-arm-probe'), calls);
+    await armed(join(gitDir, 'difftab-arm-probe'), calls);
 
     writeFileSync(join(gitDir, 'HEAD'), 'ref: refs/heads/feature\n');
     await vi.waitFor(() => expect(calls.length).toBe(1), { timeout: 3000, interval: 20 });
@@ -228,7 +228,7 @@ describe('watch:`.git` 侧与工作区侧(§5.7,跑真实文件系统)', () => {
     const gitDir = fakeGitDir();
     const calls: number[] = [];
     watchFor(gitDir, calls);
-    await armed(join(gitDir, 'gitglance-arm-probe'), calls);
+    await armed(join(gitDir, 'difftab-arm-probe'), calls);
 
     // index.lock → index → COMMIT_EDITMSG → HEAD 的 reflog → refs/heads/main
     writeFileSync(join(gitDir, 'index.lock'), '');
@@ -252,7 +252,7 @@ describe('watch:`.git` 侧与工作区侧(§5.7,跑真实文件系统)', () => {
     const gitDir = fakeGitDir();
     const calls: number[] = [];
     watchFor(gitDir, calls, { debounceMs: 50 });
-    await armed(join(gitDir, 'gitglance-arm-probe'), calls, 50);
+    await armed(join(gitDir, 'difftab-arm-probe'), calls, 50);
 
     writeFileSync(join(gitDir, 'objects', 'ab', 'cdef0123'), 'object payload');
     mkdirSync(join(gitDir, 'objects', 'cd'), { recursive: true });
@@ -330,7 +330,7 @@ describe('watch:`.git` 侧与工作区侧(§5.7,跑真实文件系统)', () => {
     const calls: number[] = [];
     const handle = watchFor(gitDir, calls, { debounceMs: 50 });
     // 先确认它本来是灵的,否则下面那条「没有回调」可能只是因为流还没起来
-    await armed(join(gitDir, 'gitglance-arm-probe'), calls, 50);
+    await armed(join(gitDir, 'difftab-arm-probe'), calls, 50);
 
     // 写完立刻关:合并窗口里那发定时器也必须被一并取消
     writeFileSync(join(gitDir, 'HEAD'), 'ref: refs/heads/x\n');

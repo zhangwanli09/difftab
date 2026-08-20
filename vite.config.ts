@@ -83,7 +83,7 @@ export default defineConfig(({ command }) => ({
 /**
  * 注册表是**运行中的后端**写的,所以先在另一个终端起后端,再 `pnpm dev`:
  *
- *   node bin/gitglance.js --no-open   # 或 pnpm build && node bin/gitglance.js
+ *   node bin/difftab.js --no-open   # 或 pnpm build && node bin/difftab.js
  *
  * 端口与 token 每次启动都变,后端重启后 dev server 也要重启 —— 配置只在加载时
  * 读一次。这个别扭是刻意的:它的替代品是让后端长期接受一个固定的 dev token。
@@ -95,8 +95,8 @@ function devProxy(): UserConfig['server'] {
   const backend = readRegistry(process.cwd());
   if (!backend) {
     console.warn(
-      '[gitglance] 没找到运行中的后端(os.tmpdir() 下无注册表项),/api 代理未启用。\n' +
-        '            先在另一个终端跑 `node bin/gitglance.js --no-open`,再重启 dev server。',
+      '[difftab] 没找到运行中的后端(os.tmpdir() 下无注册表项),/api 代理未启用。\n' +
+        '            先在另一个终端跑 `node bin/difftab.js --no-open`,再重启 dev server。',
     );
     return {};
   }

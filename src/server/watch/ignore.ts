@@ -39,7 +39,7 @@ function caseFold(segment: string, platform: string): string {
 
 /**
  * 造一个绑定平台的匹配器。**平台可注入是为了让三端的归一行为都能在一台机器上验**
- * —— 与 `GITGLANCE_WATCH_TIER` 同一个理由(§5.7)。
+ * —— 与 `DIFFTAB_WATCH_TIER` 同一个理由(§5.7)。
  *
  * 收到的是**相对被监听目录的路径**(A 档 Linux 侧是遍历到的条目,A 档 macOS/Windows
  * 与 B 档是事件路径),不是绝对路径 —— 传绝对路径进来也能工作,只是仓库自身若躺在

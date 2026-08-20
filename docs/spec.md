@@ -1,6 +1,6 @@
-# GitGlance — 需求文档
+# difftab — 需求文档
 
-> **产品名**:GitGlance(glance = 一瞥,意指快速看一眼代码变更、分支状态,不做复杂操作)
+> **产品名**:difftab(diff + tab,意指一条命令换来一个装着 diff 的浏览器标签页,看完关掉;2026-08-20 由 `gitglance` 改名,理由见 `decisions.md` §10)
 > **一句话定位**:一眼看懂 AI 编码 Agent 改了哪些代码——CLI 启动、本地网页展示,只读查看当前工作区的 diff 与分支状态,冷启动和资源占用做到最轻。
 
 ---
@@ -15,7 +15,7 @@
 
 核心用户:使用 AI coding agent 后,需要快速查看当前代码变更的开发者,跨平台(macOS / Windows / Linux)使用。
 
-分发方式:npm 包,`npm i -g gitglance` 全局安装(推荐)或 `npx gitglance` 直接试用(pnpm 用户为 `pnpm add -g gitglance` / `pnpm dlx gitglance`)。目标用户使用 AI coding agent,机器上必然已有 Node 环境,无需额外提供免运行时的分发形态。
+分发方式:npm 包,`npm i -g difftab` 全局安装(推荐)或 `npx difftab` 直接试用(pnpm 用户为 `pnpm add -g difftab` / `pnpm dlx difftab`)。目标用户使用 AI coding agent,机器上必然已有 Node 环境,无需额外提供免运行时的分发形态。
 
 **本仓库自身用 pnpm 开发(见 5.11),这与用户侧的安装方式无关**——包照常发到 npm registry,且 `dependencies` 为空、零传递依赖(见 `roadmap.md` §8),用户用哪个包管理器安装都一样。
 

@@ -31,7 +31,7 @@ export function browserCommand(platform: NodeJS.Platform, url: string): BrowserC
  * 这不是「为开发便利而放宽的分支」—— 它不改变任何校验,只决定要不要多起一个进程。
  */
 export function browserDisabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return Boolean(env.GITGLANCE_NO_OPEN);
+  return Boolean(env.DIFFTAB_NO_OPEN);
 }
 
 /**

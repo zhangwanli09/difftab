@@ -4,7 +4,7 @@ Please read CONTRIBUTING.md first if you have not.
 Two things worth knowing before you spend time here:
   · Requirements and design live in docs/ and are the single source of truth. A behaviour
     change lands there before it lands in code.
-  · GitGlance never writes to the repository it is looking at. Pull requests adding a
+  · difftab never writes to the repository it is looking at. Pull requests adding a
     repository write operation are declined regardless of how they are gated.
 -->
 

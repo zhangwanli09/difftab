@@ -1,16 +1,16 @@
 {
-  "name": "gitglance",
+  "name": "difftab",
   "version": "0.1.0",
-  "description": "Glance at what your AI coding agent changed — read-only local diff and branch viewer",
+  "description": "See what your AI coding agent changed — a read-only local diff and branch viewer in a browser tab",
   "license": "MIT",
   "author": "zhangwanli",
-  "homepage": "https://github.com/zhangwanli09/gitglance#readme",
+  "homepage": "https://github.com/zhangwanli09/difftab#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/zhangwanli09/gitglance.git"
+    "url": "git+https://github.com/zhangwanli09/difftab.git"
   },
   "bugs": {
-    "url": "https://github.com/zhangwanli09/gitglance/issues"
+    "url": "https://github.com/zhangwanli09/difftab/issues"
   },
   "keywords": [
     "git",
@@ -26,7 +26,7 @@
   ],
   "type": "module",
   "bin": {
-    "gitglance": "bin/gitglance.js"
+    "difftab": "bin/difftab.js"
   },
   "files": [
     "bin",
