@@ -180,4 +180,4 @@
 - **改产品行为要同步改两份 README**:`README.zh-CN.md` **不是自动生成的**,只改英文那份不会有任何门禁变红
 - **贡献者规范在 `CONTRIBUTING.md` 与 `.github/`**,产品承诺(只读、Non-goals)在那里也写了一遍给外部读者——改本文件第 6 节时要跟着改
 
-**两件留给首个真实用户的事**(都在 CI 之外,理由见 `acceptance.md` §6 开头的「真机」口径,已写进两份 README):浏览器在 Windows / Linux 桌面上真的弹出来;§5.9 那条 token 经命令行的边界在 `xdg-open` 下有多宽。两条都不阻塞发布。
+**两件留给首个真实用户的事**(都在 CI 之外,理由见 `acceptance.md` §6 开头的「真机」口径;**两条都不在 README 里,只在 docs**):浏览器在 Windows / Linux 桌面上真的弹出来;§5.9 那条 token 经命令行的边界在 `xdg-open` 下有多宽。两条都不阻塞发布。
