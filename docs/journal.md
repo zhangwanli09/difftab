@@ -6,6 +6,14 @@
 
 ---
 
+## Windows 真机验收(2026-08-22)
+
+**S6 交接的两条里,「浏览器真的弹出来」的 Windows 那半消费掉了。** 在 Windows 真机桌面上,`cmd /c start ""` 确实把默认浏览器拉了起来;同一轮里顺带看了变更展示、改文件后的自动刷新、以及关掉标签页后进程按空闲自动退出,均正常。**全局安装 / `npx` / 本地构建产物三种形态各跑一遍**——这三条路在 5.1 里走的是同一段拉起浏览器的代码,但装法不同(PATH 上的 shim、npx 的临时安装、直接 `node bin/difftab.js`),而 Windows 上 bin 靠的是 npm 生成的 `.cmd` / `.ps1` shim 而非 Unix 的可执行位,发布当天那条 `100644` 的坑在这里天然不成立。
+
+**这条记录不留回归,这是它的性质决定的,不是遗漏。** `acceptance.md` §6 开头那段口径写得很清楚:弹窗与否 runner 断言不了(没有桌面会话),`open` / `start` / `xdg-open` 的**选择与 argv** 已由 `browser.test.ts` 与 5.10 的单点断言每次推送重跑——真机这一次补的只是"argv 对了之后系统真的响应"这最后一跳。**剩下的仍是 Linux 桌面那台机器上的两件事**:弹窗,以及 §5.9 那条 token 经命令行的窗口在 `xdg-open` 下有多宽(后者刻意不进 CI,headless 上 `xdg-open` 立刻失败,量出来是个会让人放心的假数)。
+
+---
+
 ## 0.1.0 发布(2026-08-20)
 
 首个版本已发到 npm(`difftab@0.1.0`,`latest` 指向它,tarball 在 `registry.npmjs.org`),GitHub Release 建在 tag `v0.1.0` → `7e79211` 上。发布前 CI 在该提交上 **18 个作业**全绿(三平台 × Node 22/24/26 冒烟、`inotify-quota`、`global-install`、三档版本守卫都在里面),`acceptance.md` §6 一条未勾的都没有;本机复跑:单测 25 文件 / 256 例、冒烟 55 过 1 跳过(inotify 是 Linux 专有)、`check:pack` 9 个文件、体积 JS 202.9 KB / gzip 67.6 / CSS 28.6 KB、冷启动中位 41.8ms。
