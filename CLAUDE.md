@@ -123,6 +123,7 @@
 - 并排视图那对 `--d2h-change-*` **刻意与纯增删同色**(VS Code 没有这一档区分),是取舍不是漏映射
 - **diff2html 的行号列是 `position:absolute`,滚动容器内部必须有一个 positioned 祖先**(现在是 `DiffView` 交给 `Diff2HtmlUI` 那个宿主 div 上的 `relative`)——没有它包含块落到 ICB,而包含块在滚动容器之外的绝对定位盒不随该容器内容滚动:diff 一滚,代码行走了、整列行号原地钉死并画到容器外面;`pnpm check:css` 查产物里那条规则在不在
 - **`outputFormat` 的判据量 diff 面板的 border box、不量 content box**(`observe(el,{box:'border-box'})` + `entry.borderBoxSize`,两处都得写)——面板是 `overflow-auto` 滚动容器,换版式改内容高度→竖直滚动条进出→content box 抖十几像素,阈值附近两种版式来回重画;量法必须与阈值同住 `state/layout.ts`(自动化盖不到,拖窗口才看得见)
+- **变更列表一行的文件名与目录必须同住一个 `truncate` span**(名在前、目录在后)——拆成两个平级 flex 子项时每段各自成为 scroll container、基线改按边框盒合成,字号不同的两段于是按底边对齐,页面上只是「看着没对齐」;`change-list.test.tsx` 的「同住一个 truncate span」一条查树的形状(机制与实测见 `design.md` §5.4)
 - **`Diff2HtmlUI` 的 `colorScheme` 必须传 `'light'`**——传 `'auto'` 会让 diff2html 自带的 `--d2h-dark-*` 压过我们的取值,深色一条都不生效,而页面只是"深色不太像 VS Code"
 - **界面文案一律英文**(`docs/`、代码注释、测试名仍中文;术语表见 `design.md` §5.4)——冒烟里那条「前端产物 CJK 计数为 0」拦得住,但**后端那侧拦不到**(产物按 §5.1 保留注释),它的用户可见文案是 `sendError` 与各 `*Error` 的字面量
 - **`@theme` 里没人引用的 token 会被 Tailwind 裁掉**,引用名写错则产物里留下无定义的 `var()`、属性静默变 unset(两者都由 `pnpm check:css` 拦)

@@ -29,12 +29,15 @@ const CODE_LABELS: Record<StatusCode, string> = {
  *
  * 分隔符恒为 `/`(§5.12:路径「以 `/` 分隔」,由后端保证),因此这里不需要也
  * 不应该考虑平台差异 —— 那属于 git 知识,留在后端。
+ *
+ * **目录段不含尾部斜杠**(它排在文件名之后、单独成一段,见 §5.4),于是 `dir + name`
+ * 拼不回 `path` —— 名字里的 ForDisplay 就是这个意思,别拿它当通用的路径工具。
  */
-function splitPath(path: string): { dir: string; name: string } {
+function splitForDisplay(path: string): { dir: string; name: string } {
   const slash = path.lastIndexOf('/');
   return slash === -1
     ? { dir: '', name: path }
-    : { dir: path.slice(0, slash + 1), name: path.slice(slash + 1) };
+    : { dir: path.slice(0, slash), name: path.slice(slash + 1) };
 }
 
 /**
@@ -97,7 +100,7 @@ const ROW_CLASS =
   'flex w-full items-baseline gap-2 px-3 py-1 text-left text-sm focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus-border';
 
 function FileRow({ file, group }: { file: FileEntry; group: ChangeGroup['id'] }) {
-  const { dir, name } = splitPath(file.path);
+  const { dir, name } = splitForDisplay(file.path);
   /**
    * 选中态包成 `computed` 再作为 prop 传下去,**不在组件体里读 `selectedPath.value`**。
    *
@@ -126,6 +129,9 @@ function FileRow({ file, group }: { file: FileEntry; group: ChangeGroup['id'] })
         // 整个条目交回 store —— 取 diff 要带哪些参数(重命名的 oldPath)属 git 知识,
         // 不在组件里重写一遍(§5.0 不变式 4)
         onClick={() => selectFile(file)}
+        // 目录段被裁掉是**设计中的常态**(见下),完整路径于是在列表里找不回来了 ——
+        // 挂在整行上补一份。不放在目录那个 span 上:它被裁到零宽时就没得可悬停了
+        title={file.path}
         class={rowClass}
       >
         {/* 每个分组只展示它自己那一侧的状态位 —— 「已暂存」看 X,其余看 Y;
@@ -138,14 +144,21 @@ function FileRow({ file, group }: { file: FileEntry; group: ChangeGroup['id'] })
         ) : (
           <StatusBadge code={group === 'staged' ? file.staged : file.unstaged} />
         )}
-        <span class="truncate">
-          {dir && <span class="text-description-foreground">{dir}</span>}
-          <span>{name}</span>
+        {/* 文件名在前、目录在后(§5.4)。侧栏定宽 320px,而 `truncate` 的省略号在**右**端 ——
+            目录排在后面时,放不下先没的就是目录、文件名留到最后,这正是要的取舍;
+            改回「目录前缀 + 文件名」的老写法则反过来先吃掉文件名,而它才是认出这一行的东西。
+            **两段必须同住这一个 truncate span**:拆成两个平级的 flex 子项会静默毁掉基线对齐,
+            还得靠 flex-basis 去调谁先被裁、连带把下面那段重命名标注推到侧栏最右(机制与实测
+            见 `design.md` §5.4;`change-list.test.tsx` 里「同住一个 truncate span」那条钉着它)。
+            `min-w-0` 不能省:flex 子项的 min-width 默认 auto,不给它时 overflow:hidden 收不住 */}
+        <span class="min-w-0 truncate">
+          {name}
+          {dir && <span class="ml-2 text-xs text-description-foreground">{dir}</span>}
         </span>
         {/* 重命名的判据是 oldPath 存在,不是比对路径(§5.0 不变式 4)。
             点开后的 rename from/to 与相似度标注属 S4a,这里只把旧路径说清楚。 */}
         {file.oldPath && (
-          <span class="truncate text-xs text-description-foreground">
+          <span class="min-w-0 truncate text-xs text-description-foreground">
             ← {file.oldPath}
             {file.renameScore !== undefined && ` (${file.renameScore}%)`}
           </span>
