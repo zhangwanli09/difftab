@@ -146,6 +146,16 @@ export function makeFixtures(destDir, only) {
     writeFileSync(file, content);
   };
 
+  /**
+   * `count` 行文本,**带尾部换行**。
+   *
+   * 尾部那个换行不是凑整:少了它 git 会在补丁末尾多一条 `\ No newline at end of file`,
+   * 而 renames 仓库的用途是量相似度 —— 多出来的这一行会跟着进补丁,把 `R` 后面那个
+   * 百分比顶掉一档,于是「高相似度/低相似度」两个样本可能落到阈值的同一侧。
+   */
+  const lines = (count, render) =>
+    `${Array.from({ length: count }, (_, i) => render(i)).join('\n')}\n`;
+
   // `extra` 给 `--bare` / `--object-format=sha256` 这类只有个别仓库要的 init 参数
   const init = (name, ...extra) => {
     const cwd = join(dest, name);
@@ -232,16 +242,20 @@ export function makeFixtures(destDir, only) {
   //    git 会把它报成 D + A 而不是 R,前端的「重命名」标注不该在那里出现
   if (wanted('renames')) {
     const cwd = init('renames');
-    write(cwd, 'src/kept.txt', Array.from({ length: 20 }, (_, i) => `line ${i}`).join('\n') + '\n');
+    write(
+      cwd,
+      'src/kept.txt',
+      lines(20, (i) => `line ${i}`),
+    );
     write(
       cwd,
       'src/rewritten.txt',
-      Array.from({ length: 20 }, (_, i) => `old ${i}`).join('\n') + '\n',
+      lines(20, (i) => `old ${i}`),
     );
     write(
       cwd,
       'src/unpaired-a.txt',
-      Array.from({ length: 20 }, (_, i) => `keep ${i}`).join('\n') + '\n',
+      lines(20, (i) => `keep ${i}`),
     );
     commit(cwd, 'add files to rename');
 
@@ -250,9 +264,7 @@ export function makeFixtures(destDir, only) {
     write(
       cwd,
       'src/kept-renamed.txt',
-      Array.from({ length: 20 }, (_, i) => (i === 3 ? 'line three, edited' : `line ${i}`)).join(
-        '\n',
-      ) + '\n',
+      lines(20, (i) => (i === 3 ? 'line three, edited' : `line ${i}`)),
     );
     // 低相似度:改名 + 内容全部重写,**且一并 add**。
     // 必须 add 才落在阈值之下:status 的重命名检测比的是 HEAD → index,`git mv` 之后
@@ -262,7 +274,7 @@ export function makeFixtures(destDir, only) {
     write(
       cwd,
       'src/rewritten-renamed.txt',
-      Array.from({ length: 20 }, (_, i) => `completely different content ${i}`).join('\n') + '\n',
+      lines(20, (i) => `completely different content ${i}`),
     );
     git(cwd, 'add', '-A', 'src/rewritten-renamed.txt');
 
@@ -276,7 +288,7 @@ export function makeFixtures(destDir, only) {
     write(
       cwd,
       'src/unpaired-z.txt',
-      `${Array.from({ length: OVER_LINE_COUNT }, (_, i) => `nothing alike ${i}`).join('\n')}\n`,
+      lines(OVER_LINE_COUNT, (i) => `nothing alike ${i}`),
     );
     repos.renames = cwd;
   }
@@ -404,14 +416,14 @@ export function makeFixtures(destDir, only) {
     write(
       cwd,
       'bulky.txt',
-      `${Array.from({ length: 6 * 1024 }, (_, i) => (i === 3000 ? `${i}: before` : bulkyLine)).join('\n')}\n`,
+      lines(6 * 1024, (i) => (i === 3000 ? `${i}: before` : bulkyLine)),
     );
     commit(cwd, 'add a binary, two small files and one bulky file');
 
     write(
       cwd,
       'bulky.txt',
-      `${Array.from({ length: 6 * 1024 }, (_, i) => (i === 3000 ? `${i}: after` : bulkyLine)).join('\n')}\n`,
+      lines(6 * 1024, (i) => (i === 3000 ? `${i}: after` : bulkyLine)),
     );
 
     // 已跟踪的二进制变更 —— git 自己(含 .gitattributes)的判定,numstat 输出 `-\t-`
@@ -425,7 +437,7 @@ export function makeFixtures(destDir, only) {
     write(
       cwd,
       'wide.txt',
-      `${Array.from({ length: OVER_LINE_COUNT }, (_, i) => `line ${i}`).join('\n')}\n`,
+      lines(OVER_LINE_COUNT, (i) => `line ${i}`),
     );
 
     // 未跟踪的对照面:同样两类,走的却是另一条判定路径(NUL 探测 + lstat 体积)
