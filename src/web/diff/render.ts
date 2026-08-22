@@ -9,11 +9,24 @@
 // 深导入下面的 diff2html-ui-base ESM 源码模块参与 tree-shaking、hljs 实例由我们注入,
 // 是允许且推荐的。ColorSchemeType 只取类型 —— enum 作为值 import 会把整个枚举对象
 // 带进产物,而我们只需要字面量 'light'(为什么是它见下面 colorScheme 那段)。
+// OutputFormatType **不是** enum,是个普通的字符串联合(types.d.ts 里另有一个同名 const,
+// 我们没引),所以它不需要 ColorSchemeType 那样的 cast —— 别照着上一行给它也套一个。
 
-import type { ColorSchemeType } from 'diff2html/lib-esm/types.js';
+import type { ColorSchemeType, OutputFormatType } from 'diff2html/lib-esm/types.js';
 import { Diff2HtmlUI } from 'diff2html/lib-esm/ui/js/diff2html-ui-base.js';
 
 import { getHljs } from './hljs';
+
+/**
+ * diff2html 的两种版式 —— **别名,不是第二份声明**。
+ *
+ * 自己写一遍 `'side-by-side' | 'line-by-line'` 要配一个 `as OutputFormatType` 才塞得进
+ * 配置对象,而那个 cast 正好会在上游加出第三种版式时**把分叉压住不报**。别名没有这个口子。
+ *
+ * 名字留在这里而不搬去 `state/layout.ts`:它描述的是 diff2html 的配置面,
+ * 而「什么时候用哪个」才是状态那侧的判据 —— 反过来 import 会让这个适配层依赖状态。
+ */
+export type DiffOutputFormat = OutputFormatType;
 
 /**
  * 把一段 unified diff 渲染进 target 并高亮。
@@ -21,7 +34,7 @@ import { getHljs } from './hljs';
  * 调用方必须在 Preact 的 ref/effect 之后调用 —— `draw()` 内部是 `innerHTML` 赋值
  * 加命令式事件绑定,不能与 vdom 争夺同一棵子树(spec §5.5)。
  */
-export function renderDiff(target: HTMLElement, patch: string): void {
+export function renderDiff(target: HTMLElement, patch: string, format: DiffOutputFormat): void {
   const ui = new Diff2HtmlUI(
     target,
     patch,
@@ -33,7 +46,12 @@ export function renderDiff(target: HTMLElement, patch: string): void {
       stickyFileHeaders: false,
       highlight: true,
       drawFileList: false,
-      outputFormat: 'side-by-side',
+      /**
+       * **由调用方给,且必填、不给默认值**(spec §5.5)。漏传时要的是 `tsc` 当场报错,
+       * 而不是静默退回并排 —— 后者的症状是「这个视图怎么不跟着窗口变」,与漏传一个
+       * 参数毫无相似之处。判据本身(阈值、量哪个盒)不在这里,归 `state/layout.ts`。
+       */
+      outputFormat: format,
       /**
        * **必须是 'light',不能是 'auto'**(spec §5.6 / §5.5)。
        *

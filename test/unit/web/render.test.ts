@@ -13,6 +13,10 @@
 //    规则(特异性 0,2,0)压过基础规则、读回 diff2html 自带的 `--d2h-dark-*`,
 //    vscode-theme.css 覆写的那 23 个变量在深色下一条都不生效(spec §5.6)。
 //
+// 4. `outputFormat` 由调用方按 diff 面板宽度给(spec §5.5)。两种版式的判据是一对正反计数:
+//    并排下一个文件是**两张** `.d2h-diff-table`(各裹在一个 `.d2h-file-side-diff` 里),
+//    逐行下是**一张**且 `.d2h-file-side-diff` 一个都没有。传错时页面照常渲染,只是版式不对。
+//
 // **每条否定式断言都配一条正面断言**:容器空着的时候,"没有重复 span""没有 auto class"
 // 全都自动成立。所以每个用例都先确认 diff 真的画出来了、色真的上了。
 
@@ -88,7 +92,7 @@ const hljsSpanCount = () => host.querySelectorAll('[class*="hljs-"]').length;
 
 describe('renderDiff', () => {
   it('画出 diff 表格并给代码上色', () => {
-    renderDiff(host, TS_PATCH);
+    renderDiff(host, TS_PATCH, 'side-by-side');
 
     // 正面断言:下面几条否定式断言的前提
     expect(host.querySelector('.d2h-diff-table')).not.toBeNull();
@@ -97,7 +101,7 @@ describe('renderDiff', () => {
   });
 
   it('高亮只做一遍 —— 没有一模一样的 span 套一层', () => {
-    renderDiff(host, TS_PATCH);
+    renderDiff(host, TS_PATCH, 'side-by-side');
 
     // 在 `draw()` 后补一次 `highlightCode()`(即被禁的那个写法)时,**先炸的是这一条**:
     // 第二遍让上下文行也走一次 mergeStreams,于是连它的类名都被写坏(机制见文件头),
@@ -122,13 +126,13 @@ describe('renderDiff', () => {
   it('无扩展名文件走 plaintext 兜底,不抛异常也不空白', () => {
     // 漏注册 plaintext 时这里抛的是 `Unknown language: "plaintext"`,而整个 diff
     // 视图(不只这个文件)都渲染不出来
-    expect(() => renderDiff(host, LICENSE_PATCH)).not.toThrow();
+    expect(() => renderDiff(host, LICENSE_PATCH, 'side-by-side')).not.toThrow();
     expect(host.querySelector('.d2h-diff-table')).not.toBeNull();
     expect(host.textContent).toContain('MIT License');
   });
 
   it('重命名的补丁画成一个文件、新旧两个名字都在(§6:不退化成全新增)', () => {
-    renderDiff(host, RENAME_PATCH);
+    renderDiff(host, RENAME_PATCH, 'side-by-side');
 
     // 一个文件而不是两个:diff2html 把 `rename from/to` 认成同一个文件的两侧
     expect(host.querySelectorAll('.d2h-file-wrapper')).toHaveLength(1);
@@ -143,7 +147,7 @@ describe('renderDiff', () => {
   });
 
   it('容器上没有 d2h 自己那套深色 class —— 深浅归我们的 --d2h-* 覆写', () => {
-    renderDiff(host, TS_PATCH);
+    renderDiff(host, TS_PATCH, 'side-by-side');
 
     // 正面断言:colorScheme 确实生效了,只是生效成那个空 class
     expect(host.querySelector('.d2h-light-color-scheme')).not.toBeNull();
@@ -154,11 +158,25 @@ describe('renderDiff', () => {
     expect(host.querySelectorAll('.d2h-dark-color-scheme')).toHaveLength(0);
   });
 
+  // 两种版式的全部可断言差别就是这两个计数(其余断言两边同真,写了也不区分版式)。
+  // `.d2h-file-side-diff` 那列是否定式的一半,`.d2h-diff-table` 那列是配套的正面断言 ——
+  // 少了后者,一个什么都没画出来的容器同样能让「并排容器为 0」通过
+  it.each([
+    ['side-by-side', 2, 2],
+    ['line-by-line', 1, 0],
+  ] as const)('outputFormat=%s:%i 张表、%i 个并排容器', (format, tables, sideDiffs) => {
+    renderDiff(host, TS_PATCH, format);
+
+    expect(host.querySelectorAll('.d2h-diff-table')).toHaveLength(tables);
+    expect(host.querySelectorAll('.d2h-file-side-diff')).toHaveLength(sideDiffs);
+    expect(host.textContent).toContain('const prefix');
+  });
+
   it('同一个容器重画一次不会叠加两份 diff', () => {
     // S3b1 起同一个文件拿到新补丁就走这条路(DiffView 的 effect 按 [patch] 重跑),
     // 靠的是 draw() 内部整片覆盖 innerHTML
-    renderDiff(host, TS_PATCH);
-    renderDiff(host, TS_PATCH);
+    renderDiff(host, TS_PATCH, 'side-by-side');
+    renderDiff(host, TS_PATCH, 'side-by-side');
 
     // 数的是「几个文件」而不是「几张表」:并排视图下一个文件本来就是左右两张
     // `.d2h-diff-table`(实测),按表数会得到一个与叠加无关的 2

@@ -11,8 +11,9 @@ branch status — read-only. Close the tab and the process exits on its own.
 
 difftab is built for the moment right after an agent finishes (or while it is still
 running): you want a quick look at the changes, not a review session. It shows the
-same thing `git status` and `git diff HEAD` would, rendered as side-by-side diffs with
-syntax highlighting, and it refreshes itself as the agent keeps writing. It never writes
+same thing `git status` and `git diff HEAD` would, rendered as syntax-highlighted
+diffs — side by side when the window is wide enough, line by line when it is not —
+and it refreshes itself as the agent keeps writing. It never writes
 to your repository — the core promise, enforced by two CI gates and
 [described below](#never-writes-to-your-repository).
 
@@ -61,7 +62,8 @@ second process.
   individual files rather than collapsed into a single `dir/` entry.
 - **Diffs, lazily** — click a file to load its patch; nothing fetches the whole-repo diff.
   Rendered with [diff2html](https://diff2html.xyz/) and highlight.js in a VS Code-like
-  theme, light and dark following your system appearance.
+  theme, light and dark following your system appearance. The diff pane switches to a
+  line-by-line view on its own once it gets too narrow for two columns.
 - **Branch status** — current branch and ahead/behind counts, "no upstream" when there is
   none, and a label for detached HEAD or an in-progress rebase / merge / cherry-pick /
   revert / bisect / `git am`.

@@ -15,6 +15,7 @@ import type { ComponentChildren } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
 import type { DiffPayload } from '../../server/shared/protocol';
 import { renderDiff } from '../diff/render';
+import { diffOutputFormat } from '../state/layout';
 import { diffState, type RenameInfo } from '../state/store';
 
 /** 提示行的统一外观 —— 空态、加载中、错误、二进制、超大文件共用。 */
@@ -32,13 +33,19 @@ function Notice({ children }: { children: ComponentChildren }) {
  * 换文件那一路走的是卸载重挂(`key` 由调用方按 path 给),Preact 会把这个 div 连同
  * 底下 diff2html 的 DOM 一起摘掉 —— 不需要自己再清一次 `innerHTML`,那只是把一棵
  * 马上要被丢弃的大子树先拆一遍。
+ *
+ * **版式也是重画的理由,必须进依赖数组**(§5.5):`draw()` 是命令式的,格式变了不重跑
+ * 就永远停在旧版式上 —— 不报错,只是拖窗口时视图纹丝不动。在 body 里读这个 signal 是
+ * 安全的:本组件刻意没有子节点,重渲染只是复用同一个空 div,`host.current` 不变,
+ * 两次 `draw()` 因此落在同一个元素上(不像 ChangeList 那样会牵动几百行)。
  */
 function Patch({ patch }: { patch: string }) {
   const host = useRef<HTMLDivElement>(null);
+  const format = diffOutputFormat.value;
 
   useEffect(() => {
-    if (host.current) renderDiff(host.current, patch);
-  }, [patch]);
+    if (host.current) renderDiff(host.current, patch, format);
+  }, [patch, format]);
 
   // 刻意没有子节点:里面的一切都归 diff2html(见文件头)。
   //

@@ -8,6 +8,7 @@ import { render } from 'preact';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DiffPayload } from '../../../src/server/shared/protocol';
 import { DiffView } from '../../../src/web/components/DiffView';
+import { diffPanelWidth, SIDE_BY_SIDE_MIN_WIDTH } from '../../../src/web/state/layout';
 import { diffState, type RenameInfo } from '../../../src/web/state/store';
 
 /**
@@ -59,6 +60,9 @@ beforeEach(() => {
   container = document.createElement('div');
   document.body.appendChild(container);
   diffState.value = null;
+  // 面板宽度也要复位:它是模块级 signal,上一个用例写进去的值会跨用例串味,
+  // 而串味的表现是「某条用例单跑绿、整档跑红」
+  diffPanelWidth.value = SIDE_BY_SIDE_MIN_WIDTH;
   // 只挂载一次,之后各用例只写 state。**别在用例里补 render()**:DiffView 在渲染体里
   // 订阅 diffState,状态一变自己就重画 —— 手动补一次 render 会把"状态变了会不会重画"
   // 这件事替它做掉,而下面最后两条用例正是要证这个,补了就等于自己把断言绕过去。
@@ -68,6 +72,7 @@ beforeEach(() => {
 afterEach(() => {
   render(null, container);
   diffState.value = null;
+  diffPanelWidth.value = SIDE_BY_SIDE_MIN_WIDTH;
 });
 
 describe('DiffView', () => {
@@ -197,6 +202,27 @@ describe('DiffView', () => {
     // 都会走这条路
     expect(payloadNode()).toBe(before);
     expect(container.textContent).not.toContain('const first');
+  });
+
+  it('面板变窄变宽:版式跟着换,容器仍留在原地', async () => {
+    // 这条钉的是 §5.5 那句「格式必须进 effect 的依赖数组」。漏了不报错、页面照常有
+    // diff,只是拖窗口时版式纹丝不动 —— 没有任何别的东西看得见。
+    //
+    // 走的是直接写 `diffPanelWidth`,不经 ResizeObserver:happy-dom 的 ResizeObserver
+    // 是个空壳、也没有布局引擎(见 layout.test.ts 抬头),那一段归肉眼项。
+    diffPanelWidth.value = 700;
+    ready('a.ts', { kind: 'text', patch: patchFor('const first = 1;') });
+    await waitFor(() => expect(container.querySelectorAll('.d2h-diff-table')).toHaveLength(1));
+    const before = payloadNode();
+    expect(container.querySelectorAll('.d2h-file-side-diff')).toHaveLength(0);
+
+    diffPanelWidth.value = 1400;
+    await waitFor(() => expect(container.querySelectorAll('.d2h-file-side-diff')).toHaveLength(2));
+
+    // 补丁没变,重画的理由只可能是版式 —— 而且是**就地**重画:换成新元素等于把
+    // diff2html 画好的 DOM 连同滚动位置一起丢掉(同上一条用例的判据)
+    expect(payloadNode()).toBe(before);
+    expect(container.textContent).toContain('const first');
   });
 
   it('换文件:容器换新的,不会在新标题下留着上一个文件的 DOM', async () => {

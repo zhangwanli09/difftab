@@ -122,6 +122,7 @@
 - **且必须排在 diff2html 之后**:两者特异性同为 (0,1,0),胜出纯靠源码顺序,把 `@import "./vscode-theme.css"` 挪到 diff2html 之前会让 23 条覆写整片静默失效(两半都由 `pnpm check:css` 拦)
 - 并排视图那对 `--d2h-change-*` **刻意与纯增删同色**(VS Code 没有这一档区分),是取舍不是漏映射
 - **diff2html 的行号列是 `position:absolute`,滚动容器内部必须有一个 positioned 祖先**(现在是 `DiffView` 交给 `Diff2HtmlUI` 那个宿主 div 上的 `relative`)——没有它包含块落到 ICB,而包含块在滚动容器之外的绝对定位盒不随该容器内容滚动:diff 一滚,代码行走了、整列行号原地钉死并画到容器外面;`pnpm check:css` 查产物里那条规则在不在
+- **`outputFormat` 的判据量 diff 面板的 border box、不量 content box**(`observe(el,{box:'border-box'})` + `entry.borderBoxSize`,两处都得写)——面板是 `overflow-auto` 滚动容器,换版式改内容高度→竖直滚动条进出→content box 抖十几像素,阈值附近两种版式来回重画;量法必须与阈值同住 `state/layout.ts`(自动化盖不到,拖窗口才看得见)
 - **`Diff2HtmlUI` 的 `colorScheme` 必须传 `'light'`**——传 `'auto'` 会让 diff2html 自带的 `--d2h-dark-*` 压过我们的取值,深色一条都不生效,而页面只是"深色不太像 VS Code"
 - **界面文案一律英文**(`docs/`、代码注释、测试名仍中文;术语表见 `design.md` §5.4)——冒烟里那条「前端产物 CJK 计数为 0」拦得住,但**后端那侧拦不到**(产物按 §5.1 保留注释),它的用户可见文案是 `sendError` 与各 `*Error` 的字面量
 - **`@theme` 里没人引用的 token 会被 Tailwind 裁掉**,引用名写错则产物里留下无定义的 `var()`、属性静默变 unset(两者都由 `pnpm check:css` 拦)
@@ -170,7 +171,7 @@
 
 ## 7. 发布与维护约定
 
-**阶段推进到此结束:S0–S6 全部收口**(`acceptance.md` §6 一条未勾的都没有;S6 自己的清单是 `roadmap.md` §8)。各阶段的实测数字与踩坑在 `docs/journal.md`,需求与设计仍以 `docs/` 为唯一事实来源(索引见 `docs/README.md`)。License MIT,仓库已公开,**0.1.0 已于 2026-08-20 发到 npm**(过程与踩坑见 `docs/journal.md` 顶部一节)。
+**阶段推进到此结束:S0–S6 全部收口**(`acceptance.md` §6 里带 `[Sx]` 标记的一条未勾的都没有;S6 自己的清单是 `roadmap.md` §8)。**发布后新增的验收项标 `[后 0.1.0]`,不属于任何阶段**,各自跟着引入它的那次改动勾——它没勾不代表阶段回退了。各阶段的实测数字与踩坑在 `docs/journal.md`,需求与设计仍以 `docs/` 为唯一事实来源(索引见 `docs/README.md`)。License MIT,仓库已公开,**0.1.0 已于 2026-08-20 发到 npm**(过程与踩坑见 `docs/journal.md` 顶部一节)。
 
 - **发布步骤照 `RELEASING.md` 走,不凭记忆敲**——里面钉着七件会咬人的事(pnpm 要单独登录、2FA 的 OTP 拿不到就发不了、镜像源、`publishBranch`、manifest obfuscation、`prepublishOnly`、别在本仓库目录里用 `npx` 验收),依据在 `docs/decisions.md` §10
 - **semver:0.x 保留破坏性余地(尤其 CLI 参数与端口/token 行为),1.0.0 是结论不是起点**——等 §6 全通过且三端真机验过再发

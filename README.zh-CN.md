@@ -10,9 +10,9 @@
 [English](README.md)
 
 difftab 面向的是 agent 刚跑完(或者还在跑)的那一刻:你想「瞥一眼」改了什么,而不是
-开一场代码评审。它展示的就是 `git status` 与 `git diff HEAD` 的内容,以并排 diff 加语法
-高亮呈现,并在 agent 继续写的过程中自动刷新。它对你的仓库**全程零写操作**——这是核心承诺,
-由两道 CI 门禁守着,详见[下文](#全程零写操作)。
+开一场代码评审。它展示的就是 `git status` 与 `git diff HEAD` 的内容,以语法高亮的 diff
+呈现——窗口够宽时并排,不够宽时逐行——并在 agent 继续写的过程中自动刷新。它对你的仓库**全程零写
+操作**——这是核心承诺,由两道 CI 门禁守着,详见[下文](#全程零写操作)。
 
 ## 安装
 
@@ -55,7 +55,7 @@ difftab            # 或:npx difftab
   的目录展开到文件粒度,而不是折叠成一行 `dir/`。
 - **按文件懒加载的 diff** —— 点开某个文件才取它的补丁,任何时候都不会去取整仓 diff。渲染
   用 [diff2html](https://diff2html.xyz/) + highlight.js,配色仿 VS Code,深浅两套跟随系统
-  外观。
+  外观。diff 面板窄到放不下两列时自动切成逐行视图,够宽再切回并排。
 - **分支状态** —— 当前分支与 ahead/behind 计数,无上游时明说「无上游」;游离 HEAD 与进行
   中的 rebase / merge / cherry-pick / revert / bisect / `git am` 各出一个标注。
 - **自动刷新** —— 文件监听经 SSE 推到前端,agent 边改你边看。在递归监听会耗尽整机

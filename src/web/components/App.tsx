@@ -3,6 +3,8 @@
 // 两侧的所有权是分开的:列表归 Preact 的 keyed reconcile,单文件 diff 容器归
 // `Diff2HtmlUI`(§5.5,见 DiffView.tsx)。
 
+import { useEffect, useRef } from 'preact/hooks';
+import { observeDiffPanel } from '../state/layout';
 import { loadError, repoState } from '../state/store';
 import { BranchStatus } from './BranchStatus';
 import { ChangeList } from './ChangeList';
@@ -12,6 +14,17 @@ import { WatchBadge } from './WatchBadge';
 export function App() {
   const state = repoState.value;
   const error = loadError.value;
+  const diffPanel = useRef<HTMLElement>(null);
+
+  // diff 版式的**唯一**测量点(§5.5)。本组件只管「量哪个元素、什么时候开始和停」——
+  // 量法与阈值都在 `state/layout.ts`,两者是一个取舍的两半,拆开放会让其中一半失去说明。
+  //
+  // 量的是这个 `<section>` 而不是 DiffView 底下那个宿主 div:前者从挂载到卸载一直在,
+  // 后者每换一个文件就重建一次(`key={state.path}`),观察者会跟着反复拆建。
+  useEffect(() => {
+    const panel = diffPanel.current;
+    return panel === null ? undefined : observeDiffPanel(panel);
+  }, []);
 
   // 配色一律走 §5.6 的 VS Code token,不用 Tailwind 自带调色板:后者在深色下不会跟着
   // 翻,得给每个元素再写一遍 dark: 变体,而本项目的深浅切换发生在 token 层
@@ -54,7 +67,7 @@ export function App() {
         </nav>
         {/* diff 容器自己滚:列表侧的滚动位置在 SSE 刷新时要留住(§5.4),
             两侧共用一个滚动容器就做不到 */}
-        <section class="min-w-0 flex-1 overflow-auto">
+        <section ref={diffPanel} class="min-w-0 flex-1 overflow-auto">
           <DiffView />
         </section>
       </div>
