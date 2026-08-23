@@ -6,6 +6,18 @@
 
 ---
 
+## 0.1.1 发布（2026-08-23）
+
+`difftab@0.1.1` 已发到 npm（`latest` 指向它，tarball 在 `registry.npmjs.org`），GitHub Release 建在 tag `v0.1.1` → `f4ce8af` 上。内容是 0.1.0 之后的四条界面改动（标签页标题带仓库名、diff 面板按自身宽度切并排/逐行、变更列表文件名在前目录在后、藏掉 diff2html 自带的文件头）加一条 `bin/difftab.js` 以 100755 入库的修复，CLI 参数、HTTP 接口与只读承诺都没动。发布前 CI 在发布提交上 **17 个作业**全绿（三平台 × Node 22/24/26 冒烟、`inotify-quota`、`global-install`、三档版本守卫都在里面，run `32613872960`），`acceptance.md` §6 连四条 `[后 0.1.0]` 项在内一条未勾的都没有；本机复跑：单测 27 文件 / 271 例、冒烟 56 过 1 跳过（inotify 是 Linux 专有）、`check:pack` 9 个文件、体积 JS 203.4 KB / gzip 67.8 / CSS 29.3 KB、冷启动中位 42.7ms。
+
+**发布前清单里有一条会被上一次发布的验收步骤堵住：`pnpm check:global` 要求全局尚未装 difftab，而「发布之后」那节让你 `npm i -g difftab` 验收完就一直留在那儿。** 隔一版再发时它于是直接拒跑——这是它设计对了的地方（拒绝信息比一次假绿有用得多），但两节之间的这层因果原先没写下来，已补进 `RELEASING.md` 那一条。这次的处理是先 `npm rm -g difftab` 再跑，发布后按清单重新装回 0.1.1。
+
+**0.1.0 那节记着「registry 上那份是好的，所以不必发 0.1.1」，所以这次的 `fix(bin)` 不改变任何已安装用户看到的东西**——它修的是仓库本体的入库 mode，受益者是 clone 了本仓库、又在仓库目录里跑过 `npx difftab` 的人。Release notes 把它列进 Fixed 是照实说，但别把它读成「0.1.0 的包坏了」。
+
+**另记两件与 0.1.0 相反的小事。** 一是 `RELEASING.md` 第 1 步这次不是空转（0.1.0 时 `package.json` 早已是目标版本，那个提交会是空的），`npm version 0.1.1 --no-git-tag-version` 加 `chore(release): 0.1.1` 照走。二是「registry 上那份按空闲自行退出」这条验收用 `DIFFTAB_IDLE_MS` 把 45 秒压到 5 秒——走的是同一条退出路径，只是不必等满。
+
+---
+
 ## Windows 真机验收（2026-08-22）
 
 **S6 交接的两条里，「浏览器真的弹出来」的 Windows 那半消费掉了。** 在 Windows 真机桌面上，`cmd /c start ""` 确实把默认浏览器拉了起来；同一轮里顺带看了变更展示、改文件后的自动刷新、以及关掉标签页后进程按空闲自动退出，均正常。**全局安装 / `npx` / 本地构建产物三种形态各跑一遍**——这三条路在 5.1 里走的是同一段拉起浏览器的代码，但装法不同（PATH 上的 shim、npx 的临时安装、直接 `node bin/difftab.js`），而 Windows 上 bin 靠的是 npm 生成的 `.cmd` / `.ps1` shim 而非 Unix 的可执行位，发布当天那条 `100644` 的坑在这里天然不成立。

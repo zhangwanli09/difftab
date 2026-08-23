@@ -29,7 +29,9 @@ same list is a second place to forget.
       `package.json`, and the three dependency fields are empty.
 - [ ] `pnpm build && pnpm check:global` — packs, installs globally, runs the binary that
       landed on `PATH`, then uninstalls. Requires difftab **not** to be globally
-      installed already; the script refuses to run otherwise.
+      installed already; the script refuses to run otherwise — and the after-publish
+      check below leaves one behind, so `npm rm -g difftab` first if you ran it last
+      release.
 - [ ] Both READMEs describe what the version actually does. `README.zh-CN.md` is not
       auto-generated — it has to be updated by hand alongside `README.md`.
 
