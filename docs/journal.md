@@ -1,198 +1,198 @@
 # difftab 阶段日志
 
-**本文件是已收口阶段的记录,不是约束。** 约束在 `CLAUDE.md` 第 5 节(红线)与 `docs/decisions.md` §10(被排除的做法);需求的唯一事实来源是 `docs/`(索引见 `docs/README.md`)。
+**本文件是已收口阶段的记录，不是约束。** 约束在 `CLAUDE.md` 第 5 节（红线）与 `docs/decisions.md` §10（被排除的做法）；需求的唯一事实来源是 `docs/`（索引见 `docs/README.md`）。
 
-倒序排列,新阶段收口时在顶部追加一节。**阶段推进已于 S6 结束**,`CLAUDE.md` 第 7 节随之从「开发阶段」换成「发布与维护约定」(见 `workflow.md` §9 末条),不再承载当前进度与跨阶段交接——那两样最后一次消费的记录就在下面的 S6 一节里。
-
----
-
-## Windows 真机验收(2026-08-22)
-
-**S6 交接的两条里,「浏览器真的弹出来」的 Windows 那半消费掉了。** 在 Windows 真机桌面上,`cmd /c start ""` 确实把默认浏览器拉了起来;同一轮里顺带看了变更展示、改文件后的自动刷新、以及关掉标签页后进程按空闲自动退出,均正常。**全局安装 / `npx` / 本地构建产物三种形态各跑一遍**——这三条路在 5.1 里走的是同一段拉起浏览器的代码,但装法不同(PATH 上的 shim、npx 的临时安装、直接 `node bin/difftab.js`),而 Windows 上 bin 靠的是 npm 生成的 `.cmd` / `.ps1` shim 而非 Unix 的可执行位,发布当天那条 `100644` 的坑在这里天然不成立。
-
-**这条记录不留回归,这是它的性质决定的,不是遗漏。** `acceptance.md` §6 开头那段口径写得很清楚:弹窗与否 runner 断言不了(没有桌面会话),`open` / `start` / `xdg-open` 的**选择与 argv** 已由 `browser.test.ts` 与 5.10 的单点断言每次推送重跑——真机这一次补的只是"argv 对了之后系统真的响应"这最后一跳。**剩下的仍是 Linux 桌面那台机器上的两件事**:弹窗,以及 §5.9 那条 token 经命令行的窗口在 `xdg-open` 下有多宽(后者刻意不进 CI,headless 上 `xdg-open` 立刻失败,量出来是个会让人放心的假数)。
+倒序排列，新阶段收口时在顶部追加一节。**阶段推进已于 S6 结束**，`CLAUDE.md` 第 7 节随之从「开发阶段」换成「发布与维护约定」（见 `workflow.md` §9 末条），不再承载当前进度与跨阶段交接——那两样最后一次消费的记录就在下面的 S6 一节里。
 
 ---
 
-## 0.1.0 发布(2026-08-20)
+## Windows 真机验收（2026-08-22）
 
-首个版本已发到 npm(`difftab@0.1.0`,`latest` 指向它,tarball 在 `registry.npmjs.org`),GitHub Release 建在 tag `v0.1.0` → `7e79211` 上。发布前 CI 在该提交上 **18 个作业**全绿(三平台 × Node 22/24/26 冒烟、`inotify-quota`、`global-install`、三档版本守卫都在里面),`acceptance.md` §6 一条未勾的都没有;本机复跑:单测 25 文件 / 256 例、冒烟 55 过 1 跳过(inotify 是 Linux 专有)、`check:pack` 9 个文件、体积 JS 202.9 KB / gzip 67.6 / CSS 28.6 KB、冷启动中位 41.8ms。
+**S6 交接的两条里，「浏览器真的弹出来」的 Windows 那半消费掉了。** 在 Windows 真机桌面上，`cmd /c start ""` 确实把默认浏览器拉了起来；同一轮里顺带看了变更展示、改文件后的自动刷新、以及关掉标签页后进程按空闲自动退出，均正常。**全局安装 / `npx` / 本地构建产物三种形态各跑一遍**——这三条路在 5.1 里走的是同一段拉起浏览器的代码，但装法不同（PATH 上的 shim、npx 的临时安装、直接 `node bin/difftab.js`），而 Windows 上 bin 靠的是 npm 生成的 `.cmd` / `.ps1` shim 而非 Unix 的可执行位，发布当天那条 `100644` 的坑在这里天然不成立。
 
-**真正咬人的是 pnpm 的登录态,而它的报错完全不像认证问题。** 当时 `npm login` 已登录、`npm whoami` 有回应、`~/.npmrc` 里有 token,`pnpm publish` 仍然回 `[E404] 404 Not Found - PUT https://registry.npmjs.org/difftab`——**npm 对"不允许的写"在包还不存在时回 404 而不是 403**,于是错误长得像"包找不到",而包名确实还没被占,两件事叠在一起足以把人往"名字有问题"上带(刚从一次改名过来,这个方向尤其像真的)。判据是 `pnpm whoami`:pnpm 不认 npm CLI 的登录态,要单独 `pnpm login`。认证补上之后错误立刻换成 `ERR_PNPM_OTP_NON_INTERACTIVE`——那条才说实话,也反过来确认了 404 的病因。
-
-**2FA 决定了这一步没法非交互跑。** 账号的 `two-factor auth` 是 `auth-and-writes`(`npm profile get` 打得出来),每次发布都要一个六位 OTP,必须在真终端里跑或 `--otp=<code>` 传进去,码约 30 秒过期。这条与上一条一起补进了 `RELEASING.md`,「会咬人的事」从四条长到六条——**两条都属于只在 `publish` 那一刻才响的类型**,与改名那次踩的是同一类坑。
-
-**S6 记的第三条事实(开发机 `~/.npmrc` 指向 `registry.npmmirror.com`)已经不成立了,但它的判据一次都没有失效。** 现在那份 `~/.npmrc` 指的是 `registry.npmjs.org`。那条记录写的是一台机器当时的状态,而机器状态会变;S6 那一节按惯例不改,`RELEASING.md` 那侧删掉了这个前提、只留仍然成立的结论(`publishConfig.registry` 无论 `~/.npmrc` 怎么写都钉死目标)。**判据本身——pnpm 自己打印的那行 `📦 name@version → <registry>`——照旧管用**,这正是当初把"看那一行"写成发布步骤而不是写成一句叮嘱的价值:前提过期了,步骤还在。
-
-**装好之后读了一遍真正发布出去的 manifest,manifest obfuscation 的范围比"users have no business seeing our toolchain"窄。** pnpm 剥掉的只有 `packageManager` 与 `prepublishOnly`,其余 14 条 `scripts` 与 `devDependencies` 原样发布。`RELEASING.md` 原话("packageManager and the publish lifecycle scripts")字面准确,但容易被读成"所有脚本",已在那份文档里写明范围。发布产物 9 个文件,与 `check:pack` 的本机断言逐条对上;非本仓库目录里 `npm i -g difftab` 报 `added 1 package`(零传递依赖),registry 上那份在一个临时仓库里跑通、并按空闲退出。
-
-**发布当天踩到的第四件事,病根在仓库里而不在发布产物里:`bin/difftab.js` 一直以 `100644` 入库。** 症状分两幕,而两幕之间隔着一次「顺手把变更 discard 掉」——第一次在本仓库目录里跑 `npx difftab`,VS Code 冒出一个**内容零差异**的 `bin/difftab.js` 变更;把它 discard 之后再跑,得到 `sh: …/_npx/<hash>/node_modules/.bin/difftab: Permission denied`。原因是 npx 压根没去 registry 取包:cwd 的 `package.json` 自己就叫 `difftab` 且带同名 `bin`,npm exec 于是装了一条指回工作区的 `file:` 链接,它的 `fixBin` 把 bin 目标 chmod 0755——改的就是仓库本体,那个「变更」是纯 mode 变更,discard 等于亲手把可执行位摘掉。**registry 上那份是好的**(读过 `difftab-0.1.0.tgz`:`-rwxr-xr-x`,pnpm pack 会把 bin 归一成 0755),所以不必发 0.1.1。**值得记的是三道门禁为什么齐刷刷看不见它**:`check:bin` 比的是内容字节而 mode 不是内容,`check:pack` / `check:global` 查的是已被归一的 tarball,CI 每次全新 checkout 也不保留本地 chmod——**一件只在开发者本机可见、且在 CI 上永远绿的事**。补法是 `git update-index --chmod=+x` 把可执行位入库,并在 `check-bin-untouched.mjs` 最前面加一条钉 mode 的断言(在构建之前,失败得快)。**这条断言的第一版只查 index,是 `/code-review` 抓出来的**:`git update-index --chmod=+x` 只写暂存区,而别人 clone 到的是 HEAD 那份,于是"chmod 过、看见 PASS、那次改动却始终没进提交"的本机会假绿,而 CI 上 index 恒等于 HEAD——**只查 index 的门禁恰好在它唯一要保护的地方最弱**。改成两侧都查;按惯例弄红验过:去掉可执行位后它当场红,且报错文案直接把「幽灵变更 → discard → Permission denied」这条链写了出来。这条同时进了 `RELEASING.md`——「会咬人的事」六条长到七条,验收清单也补了一条「在别的 git 仓库里用 `npx difftab@<version>` 跑一遍」:在本仓库目录里跑,验的是自己的工作区,对刚发出去的那份**什么都没证明**。另外那半「拿不到记录一律 FAIL」也单独验了——`git ls-files -s` 对未跟踪路径是 **exit 0 + 空 stdout**,不把空输出判死,这条断言就会对着空字符串静默通过。
-
-**另记两件流程上的小事。** 一是 `RELEASING.md` 第 1 步对首版是空转:`package.json` 早已是 `0.1.0` 且仓库无 tag,`npm version` 与 `chore(release): 0.1.0` 那个提交会是空提交,直接从打 tag 起步。二是 tag 在两次发布失败之前就推上去了,无害——tag 与 publish 相互独立,且 `prepublishOnly` 每次重新构建,陈旧 `dist/` 发不出去。
+**这条记录不留回归，这是它的性质决定的，不是遗漏。** `acceptance.md` §6 开头那段口径写得很清楚：弹窗与否 runner 断言不了（没有桌面会话），`open` / `start` / `xdg-open` 的**选择与 argv** 已由 `browser.test.ts` 与 5.10 的单点断言每次推送重跑——真机这一次补的只是“argv 对了之后系统真的响应”这最后一跳。**剩下的仍是 Linux 桌面那台机器上的两件事**：弹窗，以及 §5.9 那条 token 经命令行的窗口在 `xdg-open` 下有多宽（后者刻意不进 CI，headless 上 `xdg-open` 立刻失败，量出来是个会让人放心的假数）。
 
 ---
 
-## 改名 gitglance → difftab(2026-08-20)
+## 0.1.0 发布（2026-08-20）
 
-**不是重构,是一条被推翻的结论。** `roadmap.md` §8 与 `decisions.md` §10 从 2026-07-28 起记着"`gitglance` npm 未被占用",两次复核也确实都返回 404——但**查的是精确名**。npm 的重名校验先把包名小写化、去掉 `-` `_` `.` 再与已有包比对,`gitglance` 归一后与他人 2026-02 发布的 `git-glance` v1.0.1(描述 "Beautiful git repository summaries, statistics, and changelogs",同域)完全相同,发布时会被 registry 以 "too similar to existing package" 拒掉。**这个错误不会在任何门禁里响,只会在第一次 `npm publish` 那一刻响**,而那时改名的成本比现在高得多。新名 `difftab` 连同 `diff-tab` / `diff_tab` / `diff.tab` 四个归一变体逐个核过均为 404,全文搜索 0 结果;去掉 `git` 前缀同时避开了 Git 商标政策的建议与 npm 上极拥挤的 `git*` 命名空间。
+首个版本已发到 npm（`difftab@0.1.0`，`latest` 指向它，tarball 在 `registry.npmjs.org`），GitHub Release 建在 tag `v0.1.0` → `7e79211` 上。发布前 CI 在该提交上 **18 个作业**全绿（三平台 × Node 22/24/26 冒烟、`inotify-quota`、`global-install`、三档版本守卫都在里面），`acceptance.md` §6 一条未勾的都没有；本机复跑：单测 25 文件 / 256 例、冒烟 55 过 1 跳过（inotify 是 Linux 专有）、`check:pack` 9 个文件、体积 JS 202.9 KB / gzip 67.6 / CSS 28.6 KB、冷启动中位 41.8ms。
 
-**改名面 242 处、62 个文件,其中只有三类不是机械替换。** 一是上述两条结论本身要重写(sed 换得掉名字,换不掉"不构成冲突"这个判断);二是围绕旧名写的英文文案——`package.json` 的 description、两份 README 的 tagline、`--help` 首行都在玩 "glance at" 的双关,换名后是病句;三是 `README.zh-CN.md`,它不是自动生成的,只改英文那份不会有任何门禁变红。其余按「长串在前」一遍 sed:`DIFFTAB_` 前缀的三个环境变量、`startDifftab` 测试助手、`DifftabServer` 类型、cookie 名 `difftab_token_<port>`、`<tmpdir>/difftab` 注册表目录,外加 `bin/gitglance.js` → `bin/difftab.js` 的文件改名(`check-bin-untouched.mjs` 的 `binPath` 与 `GUARD_MARKER` 必须跟着走,不一致时它会响亮报错——这次正是靠它确认守卫文案改到了)。**统一成全小写 `difftab`,不留第二种大小写形态**,省掉一份要长期同步的映射。
+**真正咬人的是 pnpm 的登录态，而它的报错完全不像认证问题。** 当时 `npm login` 已登录、`npm whoami` 有回应、`~/.npmrc` 里有 token，`pnpm publish` 仍然回 `[E404] 404 Not Found - PUT https://registry.npmjs.org/difftab`——**npm 对“不允许的写”在包还不存在时回 404 而不是 403**，于是错误长得像“包找不到”，而包名确实还没被占，两件事叠在一起足以把人往“名字有问题”上带（刚从一次改名过来，这个方向尤其像真的）。判据是 `pnpm whoami`：pnpm 不认 npm CLI 的登录态，要单独 `pnpm login`。认证补上之后错误立刻换成 `ERR_PNPM_OTP_NON_INTERACTIVE`——那条才说实话，也反过来确认了 404 的病因。
 
-产品行为零变化。唯一的对外破坏是三个 `GITGLANCE_*` 环境变量改名,包尚未发布,无外部用户。
+**2FA 决定了这一步没法非交互跑。** 账号的 `two-factor auth` 是 `auth-and-writes`（`npm profile get` 打得出来），每次发布都要一个六位 OTP，必须在真终端里跑或 `--otp=<code>` 传进去，码约 30 秒过期。这条与上一条一起补进了 `RELEASING.md`，「会咬人的事」从四条长到六条——**两条都属于只在 `publish` 那一刻才响的类型**，与改名那次踩的是同一类坑。
+
+**S6 记的第三条事实（开发机 `~/.npmrc` 指向 `registry.npmmirror.com`）已经不成立了，但它的判据一次都没有失效。** 现在那份 `~/.npmrc` 指的是 `registry.npmjs.org`。那条记录写的是一台机器当时的状态，而机器状态会变；S6 那一节按惯例不改，`RELEASING.md` 那侧删掉了这个前提、只留仍然成立的结论（`publishConfig.registry` 无论 `~/.npmrc` 怎么写都钉死目标）。**判据本身——pnpm 自己打印的那行 `📦 name@version → <registry>`——照旧管用**，这正是当初把“看那一行”写成发布步骤而不是写成一句叮嘱的价值：前提过期了，步骤还在。
+
+**装好之后读了一遍真正发布出去的 manifest，manifest obfuscation 的范围比“users have no business seeing our toolchain”窄。** pnpm 剥掉的只有 `packageManager` 与 `prepublishOnly`，其余 14 条 `scripts` 与 `devDependencies` 原样发布。`RELEASING.md` 原话（“packageManager and the publish lifecycle scripts”）字面准确，但容易被读成“所有脚本”，已在那份文档里写明范围。发布产物 9 个文件，与 `check:pack` 的本机断言逐条对上；非本仓库目录里 `npm i -g difftab` 报 `added 1 package`（零传递依赖），registry 上那份在一个临时仓库里跑通、并按空闲退出。
+
+**发布当天踩到的第四件事，病根在仓库里而不在发布产物里：`bin/difftab.js` 一直以 `100644` 入库。** 症状分两幕，而两幕之间隔着一次「顺手把变更 discard 掉」——第一次在本仓库目录里跑 `npx difftab`，VS Code 冒出一个**内容零差异**的 `bin/difftab.js` 变更；把它 discard 之后再跑，得到 `sh: …/_npx/<hash>/node_modules/.bin/difftab: Permission denied`。原因是 npx 压根没去 registry 取包：cwd 的 `package.json` 自己就叫 `difftab` 且带同名 `bin`，npm exec 于是装了一条指回工作区的 `file:` 链接，它的 `fixBin` 把 bin 目标 chmod 0755——改的就是仓库本体，那个「变更」是纯 mode 变更，discard 等于亲手把可执行位摘掉。**registry 上那份是好的**（读过 `difftab-0.1.0.tgz`：`-rwxr-xr-x`，pnpm pack 会把 bin 归一成 0755），所以不必发 0.1.1。**值得记的是三道门禁为什么齐刷刷看不见它**：`check:bin` 比的是内容字节而 mode 不是内容，`check:pack` / `check:global` 查的是已被归一的 tarball，CI 每次全新 checkout 也不保留本地 chmod——**一件只在开发者本机可见、且在 CI 上永远绿的事**。补法是 `git update-index --chmod=+x` 把可执行位入库，并在 `check-bin-untouched.mjs` 最前面加一条钉 mode 的断言（在构建之前，失败得快）。**这条断言的第一版只查 index，是 `/code-review` 抓出来的**：`git update-index --chmod=+x` 只写暂存区，而别人 clone 到的是 HEAD 那份，于是“chmod 过、看见 PASS、那次改动却始终没进提交”的本机会假绿，而 CI 上 index 恒等于 HEAD——**只查 index 的门禁恰好在它唯一要保护的地方最弱**。改成两侧都查；按惯例弄红验过：去掉可执行位后它当场红，且报错文案直接把「幽灵变更 → discard → Permission denied」这条链写了出来。这条同时进了 `RELEASING.md`——「会咬人的事」六条长到七条，验收清单也补了一条「在别的 git 仓库里用 `npx difftab@<version>` 跑一遍」：在本仓库目录里跑，验的是自己的工作区，对刚发出去的那份**什么都没证明**。另外那半「拿不到记录一律 FAIL」也单独验了——`git ls-files -s` 对未跟踪路径是 **exit 0 + 空 stdout**，不把空输出判死，这条断言就会对着空字符串静默通过。
+
+**另记两件流程上的小事。** 一是 `RELEASING.md` 第 1 步对首版是空转：`package.json` 早已是 `0.1.0` 且仓库无 tag，`npm version` 与 `chore(release): 0.1.0` 那个提交会是空提交，直接从打 tag 起步。二是 tag 在两次发布失败之前就推上去了，无害——tag 与 publish 相互独立，且 `prepublishOnly` 每次重新构建，陈旧 `dist/` 发不出去。
+
+---
+
+## 改名 gitglance → difftab（2026-08-20）
+
+**不是重构，是一条被推翻的结论。** `roadmap.md` §8 与 `decisions.md` §10 从 2026-07-28 起记着“`gitglance` npm 未被占用”，两次复核也确实都返回 404——但**查的是精确名**。npm 的重名校验先把包名小写化、去掉 `-` `_` `.` 再与已有包比对，`gitglance` 归一后与他人 2026-02 发布的 `git-glance` v1.0.1（描述 “Beautiful git repository summaries, statistics, and changelogs”，同域）完全相同，发布时会被 registry 以 “too similar to existing package” 拒掉。**这个错误不会在任何门禁里响，只会在第一次 `npm publish` 那一刻响**，而那时改名的成本比现在高得多。新名 `difftab` 连同 `diff-tab` / `diff_tab` / `diff.tab` 四个归一变体逐个核过均为 404，全文搜索 0 结果；去掉 `git` 前缀同时避开了 Git 商标政策的建议与 npm 上极拥挤的 `git*` 命名空间。
+
+**改名面 242 处、62 个文件，其中只有三类不是机械替换。** 一是上述两条结论本身要重写（sed 换得掉名字，换不掉“不构成冲突”这个判断）；二是围绕旧名写的英文文案——`package.json` 的 description、两份 README 的 tagline、`--help` 首行都在玩 “glance at” 的双关，换名后是病句；三是 `README.zh-CN.md`，它不是自动生成的，只改英文那份不会有任何门禁变红。其余按「长串在前」一遍 sed：`DIFFTAB_` 前缀的三个环境变量、`startDifftab` 测试助手、`DifftabServer` 类型、cookie 名 `difftab_token_<port>`、`<tmpdir>/difftab` 注册表目录，外加 `bin/gitglance.js` → `bin/difftab.js` 的文件改名（`check-bin-untouched.mjs` 的 `binPath` 与 `GUARD_MARKER` 必须跟着走，不一致时它会响亮报错——这次正是靠它确认守卫文案改到了）。**统一成全小写 `difftab`，不留第二种大小写形态**，省掉一份要长期同步的映射。
+
+产品行为零变化。唯一的对外破坏是三个 `GITGLANCE_*` 环境变量改名，包尚未发布，无外部用户。
 
 ---
 
 ## S6 开源准备
 
-S6 已收口(CI 全绿,run `32265530593` **17 个作业**;单测 255、冒烟 56,`check:pack` / `check:css` / `size` / `bench:startup` / `check:bin` / `check:global` 本机逐个跑过)。仓库已转 public,npm 尚未发布。`roadmap.md` §8 那份清单逐条落地:两份互链的 README、`CONTRIBUTING.md`、`RELEASING.md`、`.github/ISSUE_TEMPLATE/` 两个表单 + PR 模板、`package.json` 的仓库元数据。体积 JS 202.9 KB / gzip 67.7 / CSS 28.5 KB,冷启动中位 42.0ms——与 S4b 相比只差英文文案那几个字节。
+S6 已收口（CI 全绿，run `32265530593` **17 个作业**；单测 255、冒烟 56，`check:pack` / `check:css` / `size` / `bench:startup` / `check:bin` / `check:global` 本机逐个跑过）。仓库已转 public，npm 尚未发布。`roadmap.md` §8 那份清单逐条落地：两份互链的 README、`CONTRIBUTING.md`、`RELEASING.md`、`.github/ISSUE_TEMPLATE/` 两个表单 + PR 模板、`package.json` 的仓库元数据。体积 JS 202.9 KB / gzip 67.7 / CSS 28.5 KB，冷启动中位 42.0ms——与 S4b 相比只差英文文案那几个字节。
 
-**本阶段最大的一件事不在 §8 的清单上:界面文案原本全是中文,而 CLI 那一侧从 S1 起就是英文。** 写英文 README 写到"What you get"那一段才发现对不上——分发形态是 npm 全局包,`--help`、退出提示、版本守卫的报错都是英文,唯独网页界面说中文。它不是"还没翻",是同一个产品表面上的一处不一致,而没有任何门禁看得见。约 30 条文案改成英文(术语跟 git 自己的用词走:`Staged` / `Unstaged` / `Untracked` / `Conflicted` / `Detached HEAD` / `Rebasing`——用户是拿它对照 `git status` 看的),`<html lang>` 跟着改成 `en`,规则落 `design.md` §5.4、i18n 归 `spec.md` §4.2 首版不做。**改完顺手把两条断言弄红验了一次**(`Polling` → `Polled`、`Rebasing` → `Rebase`,5 条用例当场红),否则"用例跟着改绿了"证明不了它们还压在文案上。
+**本阶段最大的一件事不在 §8 的清单上：界面文案原本全是中文，而 CLI 那一侧从 S1 起就是英文。** 写英文 README 写到“What you get”那一段才发现对不上——分发形态是 npm 全局包，`--help`、退出提示、版本守卫的报错都是英文，唯独网页界面说中文。它不是“还没翻”，是同一个产品表面上的一处不一致，而没有任何门禁看得见。约 30 条文案改成英文（术语跟 git 自己的用词走：`Staged` / `Unstaged` / `Untracked` / `Conflicted` / `Detached HEAD` / `Rebasing`——用户是拿它对照 `git status` 看的），`<html lang>` 跟着改成 `en`，规则落 `design.md` §5.4、i18n 归 `spec.md` §4.2 首版不做。**改完顺手把两条断言弄红验了一次**（`Polling` → `Polled`、`Rebasing` → `Rebase`，5 条用例当场红），否则“用例跟着改绿了”证明不了它们还压在文案上。
 
-**漏了两条文案,而抓到它们的是"扫产物"不是"扫组件"。** 第一遍按组件文件逐个翻,`state/store.ts` 里那两条错误文案(`未知错误`、`请求失败(HTTP …)`)因此漏网——它们不长在 JSX 上,却会显示在错误条与 diff 的错误提示里。判据最后定成**「构建产物里的 CJK 字符数为 0」**:`grep -o '[一-龥]' dist/web/app.js | wc -l`。这条比按文件翻强的地方在于它不依赖"我想到了哪些文件",而前端产物里本来就不该有中文(注释在构建期已被去掉,diff2html / hljs 也不带)。**后端那份不适用**——`dist/server/main.js` 按 §5.1 不压缩不混淆,注释原样留着正是为了可审计;那一侧改为逐个查 `sendError` 与 `throw new …Error` 的字面量,全部是英文。补完这两条时 `store.test.ts` 有两条断言当场红,正是 §5.4 那条"改文案要同步改断言"预期的形态。**这条判据随后落成一道冒烟门禁**(弄红验过:把 `Polling` 改回「轮询刷新」当场红,并把上下文一起报出来)——不然"界面文案一律英文"就只是一条靠自觉的规则,而新写一条中文文案不会让任何东西响。冒烟 55 → 56。
+**漏了两条文案，而抓到它们的是“扫产物”不是“扫组件”。** 第一遍按组件文件逐个翻，`state/store.ts` 里那两条错误文案（`未知错误`、`请求失败(HTTP …)`）因此漏网——它们不长在 JSX 上，却会显示在错误条与 diff 的错误提示里。判据最后定成**「构建产物里的 CJK 字符数为 0」**：`grep -o '[一-龥]' dist/web/app.js | wc -l`。这条比按文件翻强的地方在于它不依赖“我想到了哪些文件”，而前端产物里本来就不该有中文（注释在构建期已被去掉，diff2html / hljs 也不带）。**后端那份不适用**——`dist/server/main.js` 按 §5.1 不压缩不混淆，注释原样留着正是为了可审计；那一侧改为逐个查 `sendError` 与 `throw new …Error` 的字面量，全部是英文。补完这两条时 `store.test.ts` 有两条断言当场红，正是 §5.4 那条“改文案要同步改断言”预期的形态。**这条判据随后落成一道冒烟门禁**（弄红验过：把 `Polling` 改回「轮询刷新」当场红，并把上下文一起报出来）——不然“界面文案一律英文”就只是一条靠自觉的规则，而新写一条中文文案不会让任何东西响。冒烟 55 → 56。
 
-**`test/unit/web/` 那个取分组文本的 helper 在换成英文之后变脆了,顺手改掉。** 它用 `h2.textContent.includes(title)` 找分组,中文的「已暂存 / 未暂存」互不为子串,英文的 `Staged` 却是 `Unstaged` 的子串——于是 `sectionTextOf('Staged')` 挑到哪一段取决于 DOM 顺序,而那个顺序归 `groupFiles`。改成 `startsWith`(h2 的文本是「标题 + 计数」)。**这条当下并不红**:`groupFiles` 恰好把 staged 排在 unstaged 前面,所以它是一条"现在对、以后不一定"的耦合,记在这里是因为它正是那种改一处调用顺序就悄悄换了断言对象的形态。
+**`test/unit/web/` 那个取分组文本的 helper 在换成英文之后变脆了，顺手改掉。** 它用 `h2.textContent.includes(title)` 找分组，中文的「已暂存 / 未暂存」互不为子串，英文的 `Staged` 却是 `Unstaged` 的子串——于是 `sectionTextOf('Staged')` 挑到哪一段取决于 DOM 顺序，而那个顺序归 `groupFiles`。改成 `startsWith`（h2 的文本是「标题 + 计数」）。**这条当下并不红**：`groupFiles` 恰好把 staged 排在 unstaged 前面，所以它是一条“现在对、以后不一定”的耦合，记在这里是因为它正是那种改一处调用顺序就悄悄换了断言对象的形态。
 
-**三条与发布有关的事实,全是实测出来的,而且都属于"不实测就会在发布那一刻才发现"**(证据在 `decisions.md` §10):
+**三条与发布有关的事实，全是实测出来的，而且都属于“不实测就会在发布那一刻才发现”**（证据在 `decisions.md` §10）：
 
-1. **npm / pnpm 无条件把根目录下所有 `README*` 打进 tarball,与 `files` 白名单无关。** 加了 `README.zh-CN.md` 之后 `check:pack` 当场红——`files` 里只列了 `README.md`。这条反过来说明 **`files` 不是一份完整的白名单**:真正决定发出去什么的是 npm 的固定规则叠加 `files`。门禁架在 `pnpm pack` 的**实际输出**上而不是架在 `files` 字段上,所以它抓得到——当初那个选择在这里兑现了。
-2. **`--publish-branch` 的默认值是 `master`,而本仓库是 `main`。** 写进 `pnpm-workspace.yaml` 的 `publishBranch`,并用一组对照确认这个 camelCase 键真的被读到了(故意写成 `release`,`pnpm publish` 就停在分支确认上)——按 §5.11 那条红线,写错位置或拼错键名都是**静默忽略**,而"没报错"与"设置生效了"在这里长得一模一样。
-3. **开发机的全局 `~/.npmrc` 指向 `registry.npmmirror.com`(只读镜像),而 `_authToken` 存的是 npmjs 那份。** 不管这件事,`pnpm publish` 会朝镜像源发。`package.json` 的 `publishConfig.registry` 钉住 `registry.npmjs.org`,dry run 确认打印的目标跟着变了。判据就是 pnpm 自己打印的那一行 `📦 name@version → <registry>`,`RELEASING.md` 因此把"看那一行"写成发布步骤的一部分,而不是写成一句叮嘱。
+1. **npm / pnpm 无条件把根目录下所有 `README*` 打进 tarball，与 `files` 白名单无关。** 加了 `README.zh-CN.md` 之后 `check:pack` 当场红——`files` 里只列了 `README.md`。这条反过来说明 **`files` 不是一份完整的白名单**：真正决定发出去什么的是 npm 的固定规则叠加 `files`。门禁架在 `pnpm pack` 的**实际输出**上而不是架在 `files` 字段上，所以它抓得到——当初那个选择在这里兑现了。
+2. **`--publish-branch` 的默认值是 `master`，而本仓库是 `main`。** 写进 `pnpm-workspace.yaml` 的 `publishBranch`，并用一组对照确认这个 camelCase 键真的被读到了（故意写成 `release`，`pnpm publish` 就停在分支确认上）——按 §5.11 那条红线，写错位置或拼错键名都是**静默忽略**，而“没报错”与“设置生效了”在这里长得一模一样。
+3. **开发机的全局 `~/.npmrc` 指向 `registry.npmmirror.com`（只读镜像），而 `_authToken` 存的是 npmjs 那份。** 不管这件事，`pnpm publish` 会朝镜像源发。`package.json` 的 `publishConfig.registry` 钉住 `registry.npmjs.org`，dry run 确认打印的目标跟着变了。判据就是 pnpm 自己打印的那一行 `📦 name@version → <registry>`，`RELEASING.md` 因此把“看那一行”写成发布步骤的一部分，而不是写成一句叮嘱。
 
-**`RELEASING.md` 与 `CONTRIBUTING.md` 的写法都是"只写会咬人的那几条"。** 发布清单不复述 semver 是什么,只钉四件:镜像源、`publishBranch`、不要关 manifest obfuscation(打出来的 `package.json` 本就与仓库里的不同,别误判成产物不干净)、`prepublishOnly` 确实会跑(所以不必先手动 build,陈旧的 `dist/` 也发不出去)。贡献指南同理,四条"改了不报错"的:架构边界、测试布局(放错目录静默不跑)、CSS 层叠、git 调用参数——外部贡献者读不到 `decisions.md` §10 的全部推导,但这四条是他们最可能踩的。
+**`RELEASING.md` 与 `CONTRIBUTING.md` 的写法都是“只写会咬人的那几条”。** 发布清单不复述 semver 是什么，只钉四件：镜像源、`publishBranch`、不要关 manifest obfuscation（打出来的 `package.json` 本就与仓库里的不同，别误判成产物不干净）、`prepublishOnly` 确实会跑（所以不必先手动 build，陈旧的 `dist/` 也发不出去）。贡献指南同理，四条“改了不报错”的：架构边界、测试布局（放错目录静默不跑）、CSS 层叠、git 调用参数——外部贡献者读不到 `decisions.md` §10 的全部推导，但这四条是他们最可能踩的。
 
-**不建 `CHANGELOG.md`**:GitHub Releases 的 notes 就是变更日志。两处写同一份清单等于多一个会忘的地方,而首版发布频率低,自动生成也不划算。
+**不建 `CHANGELOG.md`**：GitHub Releases 的 notes 就是变更日志。两处写同一份清单等于多一个会忘的地方，而首版发布频率低，自动生成也不划算。
 
-**S5 交接的两条已消费**:浏览器在 Windows / Linux 桌面上真的弹出来、`xdg-open` 下 token 经命令行的窗口有多宽——两条都写进了两份 README 的「Platform support / 平台支持」里,标成"等首个真实用户",且明说第二条**刻意不在 CI 里量**(headless 上量出来是个会让人放心的假数)。`CLAUDE.md` 第 7 节因此按 `workflow.md` §9 的约定整体退场,换成发布与维护约定。
+**S5 交接的两条已消费**：浏览器在 Windows / Linux 桌面上真的弹出来、`xdg-open` 下 token 经命令行的窗口有多宽——两条都写进了两份 README 的「Platform support / 平台支持」里，标成“等首个真实用户”，且明说第二条**刻意不在 CI 里量**（headless 上量出来是个会让人放心的假数）。`CLAUDE.md` 第 7 节因此按 `workflow.md` §9 的约定整体退场，换成发布与维护约定。
 
-**代码评审(`/code-review medium`)抓到四条,全是准确性而非正确性,已逐条修掉。** 值得记的是它们的共同形态:**都出在“改完之后没人再读一遍的地方”**。① 两份 README 把只读白名单写成四条,而门禁里实际是五条(`version` —— `git --version` 在 trace 里的形态);一个真去核对安全声明的读者会发现多出来一条。② `docs/journal.md` 与 `workflow.md` §9 仍把「当前进度与未消费的交接」路由到 `CLAUDE.md` 第 7 节,而那一节这一阶段刚被换掉——**退场时只改了被退场的那一端,没改指向它的两端**。③ `check:pack` 的 README 规则里 `.md` 是可选的,于是 `README.sh` / `README.js` 也会被当成译文放行——一道“发出去的东西没有一件是意外进来的”门禁,自己开了个口子。④ 新加的 CJK 字符类只罩汉字与假名,不罩全角标点(U+FF00–FFEF)与 CJK 标点(U+3000–303F):**一条把词翻成英文、括号却留成全角的文案照样过闸**,而那正是“翻了一半”最常见的形态。第 ④ 条按实际的全角括号弄红验过(第一次用 `sed` 插入时插成了 ASCII 括号,门禁没红——**差点把“验过了”记在一次根本没生效的注入上**,与 §5.7 那条“强制指定不合法即失败”防的是同一件事)。
+**代码评审（`/code-review medium`）抓到四条，全是准确性而非正确性，已逐条修掉。** 值得记的是它们的共同形态：**都出在“改完之后没人再读一遍的地方”**。① 两份 README 把只读白名单写成四条，而门禁里实际是五条（`version`——`git --version` 在 trace 里的形态）；一个真去核对安全声明的读者会发现多出来一条。② `docs/journal.md` 与 `workflow.md` §9 仍把「当前进度与未消费的交接」路由到 `CLAUDE.md` 第 7 节，而那一节这一阶段刚被换掉——**退场时只改了被退场的那一端，没改指向它的两端**。③ `check:pack` 的 README 规则里 `.md` 是可选的，于是 `README.sh` / `README.js` 也会被当成译文放行——一道“发出去的东西没有一件是意外进来的”门禁，自己开了个口子。④ 新加的 CJK 字符类只罩汉字与假名，不罩全角标点（U+FF00–FFEF）与 CJK 标点（U+3000–303F）：**一条把词翻成英文、括号却留成全角的文案照样过闸**，而那正是“翻了一半”最常见的形态。第 ④ 条按实际的全角括号弄红验过（第一次用 `sed` 插入时插成了 ASCII 括号，门禁没红——**差点把“验过了”记在一次根本没生效的注入上**，与 §5.7 那条“强制指定不合法即失败”防的是同一件事）。
 
-**`/simplify` 那轮的主线是「新加的文档把已有的表抄了第三第四份」。** 命令与门禁表原本只在 `CLAUDE.md` 第 3 节一处,而它带着一条"每新增一个 script 立即回来补全本节"的常驻规则;S6 一口气又抄进了 `README.md`、`README.zh-CN.md` 与 `CONTRIBUTING.md`,那条规则却只点名它当初看见的那一份。收法是**选一个对外的家**:两份 README 的开发段收成三行 + 一句指路(README 的读者是用户,不是贡献者),`CONTRIBUTING.md` 成为唯一对外的门禁表,同步义务扩写进 `CLAUDE.md` 第 3 节与 `workflow.md` §9 的收口判据 3。Non-goals 那份同理但只收一半:**长期不做留在原地**(它按定义不会变),**首版不做改成指路**——那半会随版本移动,而 issue 模板里的副本是最没人回头读的一份,过期时它变成一句给贡献者的错误理由。
+**`/simplify` 那轮的主线是「新加的文档把已有的表抄了第三第四份」。** 命令与门禁表原本只在 `CLAUDE.md` 第 3 节一处，而它带着一条“每新增一个 script 立即回来补全本节”的常驻规则；S6 一口气又抄进了 `README.md`、`README.zh-CN.md` 与 `CONTRIBUTING.md`，那条规则却只点名它当初看见的那一份。收法是**选一个对外的家**：两份 README 的开发段收成三行 + 一句指路（README 的读者是用户，不是贡献者），`CONTRIBUTING.md` 成为唯一对外的门禁表，同步义务扩写进 `CLAUDE.md` 第 3 节与 `workflow.md` §9 的收口判据 3。Non-goals 那份同理但只收一半：**长期不做留在原地**（它按定义不会变），**首版不做改成指路**——那半会随版本移动，而 issue 模板里的副本是最没人回头读的一份，过期时它变成一句给贡献者的错误理由。
 
-**两条小的**:`check:pack` 的 README 规则把 `.md` 提到语言段外面,于是"带语言段却不带 `.md`"在结构上就写不出来,不必再靠注释提醒(穷举 6859 个样本验过与原式等价);冒烟那两个用例改用 `helpers.js` 的 `REPO_ROOT` 并共用一份资源清单——清单写两份时,添一个资源漏掉的那一处不会红,而 CJK 那道门禁漏掉一个文件恰恰意味着那个文件里的中文没人看着。改完把它重新弄红验过一遍。
+**两条小的**：`check:pack` 的 README 规则把 `.md` 提到语言段外面，于是“带语言段却不带 `.md`”在结构上就写不出来，不必再靠注释提醒（穷举 6859 个样本验过与原式等价）；冒烟那两个用例改用 `helpers.js` 的 `REPO_ROOT` 并共用一份资源清单——清单写两份时，添一个资源漏掉的那一处不会红，而 CJK 那道门禁漏掉一个文件恰恰意味着那个文件里的中文没人看着。改完把它重新弄红验过一遍。
 
-**跳掉一条**:`tooLargeNotice` 的四个字面量翻译后形状变一致了,可以合成两个,但合并要丢掉 ` in total` —— 而正是那两个词在说"这个 KB 是文件体积,不是关于行数的什么东西",也正是这两条分支当初分开的理由。
+**跳掉一条**：`tooLargeNotice` 的四个字面量翻译后形状变一致了，可以合成两个，但合并要丢掉 ` in total`——而正是那两个词在说“这个 KB 是文件体积，不是关于行数的什么东西”，也正是这两条分支当初分开的理由。
 
-**第一次推上去 CI 全红,而病因不在仓库里。** 17 个作业无一执行、6 秒内全灭、`--log-failed` 取不到日志、每个 job 的 `steps` 都是空数组 —— 这个形态本身就是判据:**跑都没跑起来,不可能是代码**。答案在 check-run 的 annotation 里(`gh api …/check-runs/<id>/annotations`),一句话:账单失败或额度不足。私有仓库的 Actions 分钟数计费,而这个矩阵有 17 个作业、其中 6 个跑在 macOS(10×)与 Windows(2×)上。修法是把仓库转 public —— 本来就是 S6 要走的一步,公开仓库的 Actions 免费。**记这一条是因为下一次它长得会一模一样**:红得整整齐齐、没有任何日志,而第一反应会是去翻自己刚改的代码。
+**第一次推上去 CI 全红，而病因不在仓库里。** 17 个作业无一执行、6 秒内全灭、`--log-failed` 取不到日志、每个 job 的 `steps` 都是空数组——这个形态本身就是判据：**跑都没跑起来，不可能是代码**。答案在 check-run 的 annotation 里（`gh api …/check-runs/<id>/annotations`），一句话：账单失败或额度不足。私有仓库的 Actions 分钟数计费，而这个矩阵有 17 个作业、其中 6 个跑在 macOS（10×）与 Windows（2×）上。修法是把仓库转 public——本来就是 S6 要走的一步，公开仓库的 Actions 免费。**记这一条是因为下一次它长得会一模一样**：红得整整齐齐、没有任何日志，而第一反应会是去翻自己刚改的代码。
 
-转公开前扫过整个 git 历史(不只是工作树):无 `.env` / 密钥文件 / 凭据值 / 个人绝对路径;两处 `_authToken` 命中是文档在**叙述**「`~/.npmrc` 里存着一份 token」,没有值。
+转公开前扫过整个 git 历史（不只是工作树）：无 `.env` / 密钥文件 / 凭据值 / 个人绝对路径；两处 `_authToken` 命中是文档在**叙述**「`~/.npmrc` 里存着一份 token」，没有值。
 
-**没做的两件,都是有意的**:① **README 里没有截图** —— 现在放的话要么进 tarball(白名单不收)要么用 GitHub raw 绝对链接,而首个版本的界面还会动;② **npm 未发布** —— `pnpm publish` 是不可逆的对外动作,按 `RELEASING.md` 的清单由人来敲。
+**没做的两件，都是有意的**：① **README 里没有截图**——现在放的话要么进 tarball（白名单不收）要么用 GitHub raw 绝对链接，而首个版本的界面还会动；② **npm 未发布**——`pnpm publish` 是不可逆的对外动作，按 `RELEASING.md` 的清单由人来敲。
 
 ---
 
 ## S5 跨平台验证 + 安全加固自查
 
-S5 已收口(CI 全绿,run `32142555592` **17 个作业**——比上一阶段多出的 6 个全是本阶段建的:`inotify-quota` 一个、`global-install` 三平台、`old-node-guard` 由 1 档扩成 3 档)。spec §6 至此**一条未勾的都没有**。单测 251 → 255,冒烟 48 → 55。
+S5 已收口（CI 全绿，run `32142555592` **17 个作业**——比上一阶段多出的 6 个全是本阶段建的：`inotify-quota` 一个、`global-install` 三平台、`old-node-guard` 由 1 档扩成 3 档）。spec §6 至此**一条未勾的都没有**。单测 251 → 255，冒烟 48 → 55。
 
-**本阶段最大的一件事是改了「真机」的口径,而不是写了多少代码。** 开工时本机只有 macOS,7 条 `/S5` 的 Windows / Linux 项挂着。逐条核过之后其中 6 条**本来就是可断言的**:监听与过滤只需要一条 SSE 加几次写文件;inotify 用量在 `/proc/<pid>/fdinfo/*` 里逐行数得到;压低 `fs.inotify.max_user_watches` 需要 root,而 **GitHub 的 ubuntu runner 本就有免密 sudo**;全局安装只是多一步 `npm i -g`。runner 跑在真实内核的真实机器上,与"自备真机"的差别不在于是不是真机,**在于有没有桌面会话**。放弃人工路线的理由不是省事,是**人工确认不留回归**——一次性的目视结果不会在下一次改动把它弄坏时响,而这几条恰恰属于"坏了也不报错"那一类。落在 CI 之外的只剩两样:浏览器真的弹出来,以及 §5.9 那条 token 经命令行的边界在 `xdg-open` 下有多宽(headless runner 上 `xdg-open` 立刻失败,量出来是个**会让人放心的假数**,不如不量)。
+**本阶段最大的一件事是改了「真机」的口径，而不是写了多少代码。** 开工时本机只有 macOS，7 条 `/S5` 的 Windows / Linux 项挂着。逐条核过之后其中 6 条**本来就是可断言的**：监听与过滤只需要一条 SSE 加几次写文件；inotify 用量在 `/proc/<pid>/fdinfo/*` 里逐行数得到；压低 `fs.inotify.max_user_watches` 需要 root，而 **GitHub 的 ubuntu runner 本就有免密 sudo**；全局安装只是多一步 `npm i -g`。runner 跑在真实内核的真实机器上，与“自备真机”的差别不在于是不是真机，**在于有没有桌面会话**。放弃人工路线的理由不是省事，是**人工确认不留回归**——一次性的目视结果不会在下一次改动把它弄坏时响，而这几条恰恰属于“坏了也不报错”那一类。落在 CI 之外的只剩两样：浏览器真的弹出来，以及 §5.9 那条 token 经命令行的边界在 `xdg-open` 下有多宽（headless runner 上 `xdg-open` 立刻失败，量出来是个**会让人放心的假数**，不如不量）。
 
-**推翻了 spec 的一条源码推断,并因此改了机制。** §5.7 原写着「遍历途中耗尽 inotify 配额会 `emit('error')`,兜底照常生效」——实测不成立:配额 128 对 1200 个目录,遍历必然撞上 ENOSPC,而 `mode` 一直是 `native`、一个错误都没有。真正让它浮出水面的是**下一次要注册 watch 的时候**,也就是工作区新出现一个条目那一刻;于是"降级"发生在用户第一次新建文件之后,而不是启动那一刻。残留缺口因此是**改一个启动前就存在、且没轮上注册的文件**:不引出注册尝试 → 事件静默丢失 → 没有任何东西会响。两条候选补法里"建流前先探一次非递归 watch"**被实测否掉**(根那次注册在该配额下是成功的),剩下的低频安全轮询落地为 A / B 档也跑一条 30s 的 status 比对,**不翻 `mode`、不上报降级**(原生监听确实还活着,只是不完整;多刷一次没代价,把状态说错有)。门禁那条断言实测 **29251ms 刷出来** —— 29 秒正是 30s 那一拍,证明走的是安全轮询而不是碰巧被原生监听看见。
+**推翻了 spec 的一条源码推断，并因此改了机制。** §5.7 原写着「遍历途中耗尽 inotify 配额会 `emit('error')`，兜底照常生效」——实测不成立：配额 128 对 1200 个目录，遍历必然撞上 ENOSPC，而 `mode` 一直是 `native`、一个错误都没有。真正让它浮出水面的是**下一次要注册 watch 的时候**，也就是工作区新出现一个条目那一刻；于是“降级”发生在用户第一次新建文件之后，而不是启动那一刻。残留缺口因此是**改一个启动前就存在、且没轮上注册的文件**：不引出注册尝试 → 事件静默丢失 → 没有任何东西会响。两条候选补法里“建流前先探一次非递归 watch”**被实测否掉**（根那次注册在该配额下是成功的），剩下的低频安全轮询落地为 A / B 档也跑一条 30s 的 status 比对，**不翻 `mode`、不上报降级**（原生监听确实还活着，只是不完整；多刷一次没代价，把状态说错有）。门禁那条断言实测 **29251ms 刷出来**——29 秒正是 30s 那一拍，证明走的是安全轮询而不是碰巧被原生监听看见。
 
-**一条门禁探针写错了,反而暴露出一条会随版本发出去的边界。** 第一版拿一个**未跟踪**文件去验安全轮询,永远为假——`git status` 里未跟踪条目只有一行 `? <路径>`,**改它的内容一个字节都不变**。于是所有走轮询的路(C 档、降级之后、安全轮询)都看不见它。已记进 §5.7 并标注不修:要看见就得给每个未跟踪文件算内容哈希,而未跟踪文件恰恰可能是几百 MB 的构建产物。
+**一条门禁探针写错了，反而暴露出一条会随版本发出去的边界。** 第一版拿一个**未跟踪**文件去验安全轮询，永远为假——`git status` 里未跟踪条目只有一行 `? <路径>`，**改它的内容一个字节都不变**。于是所有走轮询的路（C 档、降级之后、安全轮询）都看不见它。已记进 §5.7 并标注不修：要看见就得给每个未跟踪文件算内容哈希，而未跟踪文件恰恰可能是几百 MB 的构建产物。
 
-**Windows 那条差点被判成"过滤失效"。** tier A 在 windows 三档上稳定多出 1 次刷新,而合并窗口本来就把 50 次突发写入压成 1 个——"逐段过滤没生效"与"`ReadDirectoryChangesW` 缓冲区溢出"给出的数**一模一样**。把写入间隔开到大于合并窗口才分得开:**慢写 6 次三端九档一律 0,快写 50 次只有 Windows 出 1**。溢出时内核报的是"丢了一批"而不是路径,Node emit 一个没有 `filename` 的事件,而那种按 §5.7 是**刻意放行**的。记成已知边界:慢写那一路是判据,快写在 Windows 放宽到最多 1。
+**Windows 那条差点被判成“过滤失效”。** tier A 在 windows 三档上稳定多出 1 次刷新，而合并窗口本来就把 50 次突发写入压成 1 个——“逐段过滤没生效”与“`ReadDirectoryChangesW` 缓冲区溢出”给出的数**一模一样**。把写入间隔开到大于合并窗口才分得开：**慢写 6 次三端九档一律 0，快写 50 次只有 Windows 出 1**。溢出时内核报的是“丢了一批”而不是路径，Node emit 一个没有 `filename` 的事件，而那种按 §5.7 是**刻意放行**的。记成已知边界：慢写那一路是判据，快写在 Windows 放宽到最多 1。
 
-**安全自查(macOS,2026-08-14/15)改了一处代码。** 三道校验的渗透式复核(15 种 Host 变体、双 Host 头、`Origin: null`)、CSP 实测(`frame-ancestors` 是唯一挡住同机 iframe 嵌套的那一道——三道校验全过、网络层拿到 200,浏览器仍拒绝渲染)、token 经命令行那条已知边界(紧循环采样,t=31ms 命中 1 拍;250ms 粗采样连打 24 次一无所获)。**改的那处是把方法判定挪到三道校验之后**——原先 405 排在 Host 校验前面,等于对一个 DNS rebinding 页面确认了服务的存在。休眠唤醒那条同期收掉,并**推翻了它原先的理由**:整机休眠在回环上不产生半开 TCP,`STALE_MS` 要靠「连接静默 + 标签切回」才走得到。
+**安全自查（macOS，2026-08-14/15）改了一处代码。** 三道校验的渗透式复核（15 种 Host 变体、双 Host 头、`Origin: null`）、CSP 实测（`frame-ancestors` 是唯一挡住同机 iframe 嵌套的那一道——三道校验全过、网络层拿到 200，浏览器仍拒绝渲染）、token 经命令行那条已知边界（紧循环采样，t=31ms 命中 1 拍；250ms 粗采样连打 24 次一无所获）。**改的那处是把方法判定挪到三道校验之后**——原先 405 排在 Host 校验前面，等于对一个 DNS rebinding 页面确认了服务的存在。休眠唤醒那条同期收掉，并**推翻了它原先的理由**：整机休眠在回环上不产生半开 TCP，`STALE_MS` 要靠「连接静默 + 标签切回」才走得到。
 
-**两处新门禁堵的都是"红线只有约定、没有断言"。** ① `bin/difftab.js` 一直用 `process.stderr.write` + `process.exit(1)` —— 正是 §5.8 明令禁止的写法,而**冒烟本来就在三平台九档上扫这个文件**,只是没扫这一条;补一行正则同时罩住版本守卫与动态 import 失败两个出口(后者至今没有任何用例走到过)。扫描前要先剔注释,否则**越把理由写清楚的文件越容易假红**。CI 那侧取 stderr 必须**经管道**:文件重定向在 Windows 上是同步写,照样收得到,那一档会稳稳地绿着。② 新增「读 3 次 `/api/state` 事件数不变」——这是 `GIT_OPTIONAL_LOCKS=0` 在**监听侧**的判据,原先只有 §5.10 第二层 B 半的逐字节快照盯着,**而那一层不经过监听**。弄红验过:置成 `1` 时读 3 次出 3 个事件,自激循环当场现形。
+**两处新门禁堵的都是“红线只有约定、没有断言”。** ① `bin/difftab.js` 一直用 `process.stderr.write` + `process.exit(1)`——正是 §5.8 明令禁止的写法，而**冒烟本来就在三平台九档上扫这个文件**，只是没扫这一条；补一行正则同时罩住版本守卫与动态 import 失败两个出口（后者至今没有任何用例走到过）。扫描前要先剔注释，否则**越把理由写清楚的文件越容易假红**。CI 那侧取 stderr 必须**经管道**：文件重定向在 Windows 上是同步写，照样收得到，那一档会稳稳地绿着。② 新增「读 3 次 `/api/state` 事件数不变」——这是 `GIT_OPTIONAL_LOCKS=0` 在**监听侧**的判据，原先只有 §5.10 第二层 B 半的逐字节快照盯着，**而那一层不经过监听**。弄红验过：置成 `1` 时读 3 次出 3 个事件，自激循环当场现形。
 
-**三次 CI 红,病因全不在产品逻辑。** ① 全局安装脚本在 ubuntu 与 windows 挂死:经 shell 起进程时产品是**孙进程**,`'close'` 要等所有 stdio 管道关闭而孙进程还攥着,于是杀掉 shell 之后 `'close'` 永远不来,Node 以「unsettled top-level await」exit 13 收场——macOS 上 shell 直接 exec 掉自己,所以本机怎么跑都是绿的;改成等它按空闲自退、轮询 `exitCode`(`'exit'` 不依赖管道)。② 门禁脚本里那条 `git commit` 缺身份(runner 没有全局 `user.name`,fixture 是靠自己那份 env 提交的,管不到它)。③ **`/simplify` 把四份 SSE 客户端收成一份时,丢了一个 load-bearing 的 300ms 睡眠**:`await connected` 只说握手那一行到了,watcher 是在那之后的 `setImmediate` 里才建的;C 档躲不过去——它那条 1.5s 轮询的**首拍只建立基线**,抢在首拍之前切的分支被算进基线,于是 `.git` 那条没听见、轮询又认为"没变化",两头都不响。
+**三次 CI 红，病因全不在产品逻辑。** ① 全局安装脚本在 ubuntu 与 windows 挂死：经 shell 起进程时产品是**孙进程**，`'close'` 要等所有 stdio 管道关闭而孙进程还攥着，于是杀掉 shell 之后 `'close'` 永远不来，Node 以「unsettled top-level await」exit 13 收场——macOS 上 shell 直接 exec 掉自己，所以本机怎么跑都是绿的；改成等它按空闲自退、轮询 `exitCode`（`'exit'` 不依赖管道）。② 门禁脚本里那条 `git commit` 缺身份（runner 没有全局 `user.name`，fixture 是靠自己那份 env 提交的，管不到它）。③ **`/simplify` 把四份 SSE 客户端收成一份时，丢了一个 load-bearing 的 300ms 睡眠**：`await connected` 只说握手那一行到了，watcher 是在那之后的 `setImmediate` 里才建的；C 档躲不过去——它那条 1.5s 轮询的**首拍只建立基线**，抢在首拍之前切的分支被算进基线，于是 `.git` 那条没听见、轮询又认为“没变化”，两头都不响。
 
 ## S4b git 异常状态
 
-S4b 已收口(CI 全绿,run `31808495613` 11 个作业,**且是首推即绿**——前三次收口都在下限档红过一轮)。分支状态那一栏补齐三件事:detached 画「游离 HEAD」而不是 git 的字面量 `(detached)`、进行中的多步操作出一个标签、冲突文件在列表里自成一组且印 XY 两位。仓库形态那一侧:linked worktree 与 submodule 正常启动(git 目录分别在主仓库的 `worktrees/` 与父仓库的 `modules/` 下),bare 仓库给一句话拒绝并以 1 退出。SHA-256 空树常量实测回填 `6ef19b41…c5321`,`resolveDiffBase` 里那条「暂不支持」的分支随之删掉。fixture 第二批余下 7 个就位(9 → 16 个,全量生成 804ms → 1.5s)。单测 251 / 冒烟 48;体积 JS 202.7 KB / gzip 68.1 / CSS 28.5 KB,冷启动中位 43.6ms(`readOperation` 只挂在 `/api/state` 上,不在启动路径)。产品链路实测:在停在冲突上的 rebase 仓库里,`/api/state` 回 `{"head":"(detached)","detached":true,"operation":"rebase"}` 与一条 `conflicted:true`。spec §6 的 2 个 `[S4b]` 已勾。
+S4b 已收口（CI 全绿，run `31808495613` 11 个作业，**且是首推即绿**——前三次收口都在下限档红过一轮）。分支状态那一栏补齐三件事：detached 画「游离 HEAD」而不是 git 的字面量 `(detached)`、进行中的多步操作出一个标签、冲突文件在列表里自成一组且印 XY 两位。仓库形态那一侧：linked worktree 与 submodule 正常启动（git 目录分别在主仓库的 `worktrees/` 与父仓库的 `modules/` 下），bare 仓库给一句话拒绝并以 1 退出。SHA-256 空树常量实测回填 `6ef19b41…c5321`，`resolveDiffBase` 里那条「暂不支持」的分支随之删掉。fixture 第二批余下 7 个就位（9 → 16 个，全量生成 804ms → 1.5s）。单测 251 / 冒烟 48；体积 JS 202.7 KB / gzip 68.1 / CSS 28.5 KB，冷启动中位 43.6ms（`readOperation` 只挂在 `/api/state` 上，不在启动路径）。产品链路实测：在停在冲突上的 rebase 仓库里，`/api/state` 回 `{"head":"(detached)","detached":true,"operation":"rebase"}` 与一条 `conflicted:true`。spec §6 的 2 个 `[S4b]` 已勾。
 
-**本阶段唯一的新机制:`operation` 在 `git status` 的输出里一行都没有。** 前面每个阶段的数据都来自那一条主查询,这次的判据只能是 git 目录下的状态文件(git 自己的 `wt-status.c` 也是这么判的),于是 `operation.ts` 成了 `server/git` 里**唯一不起子进程的模块**——为它多起一次 git,既落在每次 `/api/state` 上,又要往 §5.10 的只读白名单里添一条,而读文件存在性一个字节都不写。判据表按序取第一个命中,顺序有两处是实测定的:**rebase 停下时 git 目录里同时躺着 `rebase-merge/` 与 merge 留下的 `MERGE_MSG` / `AUTO_MERGE`**,先判 merge 会把用户正在做的事标错;`git am` 与 `git rebase --apply` **共用同一个 `rebase-apply/` 目录**,里面有没有 `rebasing` 是唯一的区分,合成一个标注等于对着一个正在 `git am` 的用户说他在变基。两条都不报错,只是说错话。
+**本阶段唯一的新机制：`operation` 在 `git status` 的输出里一行都没有。** 前面每个阶段的数据都来自那一条主查询，这次的判据只能是 git 目录下的状态文件（git 自己的 `wt-status.c` 也是这么判的），于是 `operation.ts` 成了 `server/git` 里**唯一不起子进程的模块**——为它多起一次 git，既落在每次 `/api/state` 上，又要往 §5.10 的只读白名单里添一条，而读文件存在性一个字节都不写。判据表按序取第一个命中，顺序有两处是实测定的：**rebase 停下时 git 目录里同时躺着 `rebase-merge/` 与 merge 留下的 `MERGE_MSG` / `AUTO_MERGE`**，先判 merge 会把用户正在做的事标错；`git am` 与 `git rebase --apply` **共用同一个 `rebase-apply/` 目录**，里面有没有 `rebasing` 是唯一的区分，合成一个标注等于对着一个正在 `git am` 的用户说他在变基。两条都不报错，只是说错话。
 
-**三条「按最省事的写法来就会静默出错」,都已进红线。** ① 状态文件必须按 `rev-parse --git-dir` 找:linked worktree 下 `.git` 是个**文件**,拼 `<root>/.git` 在那种仓库里永远读不到,于是操作标注永远不出现;`readStatus` 因此改收整个 `RepoInfo` 而不是两个同型字符串——并排放着的两个 path 调换顺序不会报错,只会让 `operation` 从此恒为空。② 冲突的判据是「这条来自 `u` 记录」而不是状态位:`DD`(双方都删)与 `AA`(双方都新增)两位里一个 `U` 都没有,靠状态位认会把它们漏回「已暂存」+「未暂存」两组,而**那两组都不是它的处境**。③ 冲突文件自身的 diff 不需要任何特殊分支——实测 `git diff HEAD` 正常出补丁,正文就是带 `<<<<<<<` 的工作区内容,而那正是用户此刻要看的东西。
+**三条「按最省事的写法来就会静默出错」，都已进红线。** ① 状态文件必须按 `rev-parse --git-dir` 找：linked worktree 下 `.git` 是个**文件**，拼 `<root>/.git` 在那种仓库里永远读不到，于是操作标注永远不出现；`readStatus` 因此改收整个 `RepoInfo` 而不是两个同型字符串——并排放着的两个 path 调换顺序不会报错，只会让 `operation` 从此恒为空。② 冲突的判据是「这条来自 `u` 记录」而不是状态位：`DD`（双方都删）与 `AA`（双方都新增）两位里一个 `U` 都没有，靠状态位认会把它们漏回「已暂存」+「未暂存」两组，而**那两组都不是它的处境**。③ 冲突文件自身的 diff 不需要任何特殊分支——实测 `git diff HEAD` 正常出补丁，正文就是带 `<<<<<<<` 的工作区内容，而那正是用户此刻要看的东西。
 
-**代码评审抓到一条只有一个字面量之差的歧义:`detached` 是拿 `# branch.head` 与字面量 `(detached)` 比出来的,而 porcelain v2 给不出别的判据——git 的 refname 规则却允许真有一个分支叫这个名字。** 第一版按 `!branch.detached` 藏 ahead/behind,于是那个分支的计数会跟着名字一起消失。名字那一栏在那种仓库里没救,计数还救得回来,所以判据改成「有上游就画」。这条的形态值得记:**歧义在数据源里,能做的是别让它的影响面扩大**。
+**代码评审抓到一条只有一个字面量之差的歧义：`detached` 是拿 `# branch.head` 与字面量 `(detached)` 比出来的，而 porcelain v2 给不出别的判据——git 的 refname 规则却允许真有一个分支叫这个名字。** 第一版按 `!branch.detached` 藏 ahead/behind，于是那个分支的计数会跟着名字一起消失。名字那一栏在那种仓库里没救，计数还救得回来，所以判据改成「有上游就画」。这条的形态值得记：**歧义在数据源里，能做的是别让它的影响面扩大**。
 
-**`/simplify` 那轮里,一条「按分组判」被换成了「按条目判」。** 冲突徽章原本靠 `group === 'conflicted'` 决定印一位还是两位——那让这一行画得对不对取决于 `groupFiles` 与组件是否一致,而那个一致性没有任何东西在管;`file.conflicted` 就在条目上,同样长。同轮还把两个 header 标签的外观合成一个 `Badge`(它们并排画,改一处只会让它们高矮不一,没有用例看得见)、把冒烟那条「一句话拒绝、不是 Node 栈」收进 helpers(它在两个文件里已经长出了强弱不同的两份断言)。
+**`/simplify` 那轮里，一条「按分组判」被换成了「按条目判」。** 冲突徽章原本靠 `group === 'conflicted'` 决定印一位还是两位——那让这一行画得对不对取决于 `groupFiles` 与组件是否一致，而那个一致性没有任何东西在管；`file.conflicted` 就在条目上，同样长。同轮还把两个 header 标签的外观合成一个 `Badge`（它们并排画，改一处只会让它们高矮不一，没有用例看得见）、把冒烟那条「一句话拒绝、不是 Node 栈」收进 helpers（它在两个文件里已经长出了强弱不同的两份断言）。
 
-**一个已知的覆盖边界,写在注入点的注释里而不是留着自己发现**:轮询探针是 `readStatusRaw`,看不见 `operation`。三档都在 `gitDir` 上建了非递归 watch,`MERGE_HEAD` / `rebase-merge/` 的增删就落在那儿,正常路径照样刷新;只有那条 watch 自己也失败、整体落到轮询之后,一次「只动 git 目录、不动 HEAD 也不动工作区」的操作(实际只有 `rebase --quit` 这一类)才会让标注停在旧值上。不为它把探针拆成两个来源——那会让「轮询与主查询是同一条命令」从构造事实降级成巧合。
+**一个已知的覆盖边界，写在注入点的注释里而不是留着自己发现**：轮询探针是 `readStatusRaw`，看不见 `operation`。三档都在 `gitDir` 上建了非递归 watch，`MERGE_HEAD` / `rebase-merge/` 的增删就落在那儿，正常路径照样刷新；只有那条 watch 自己也失败、整体落到轮询之后，一次「只动 git 目录、不动 HEAD 也不动工作区」的操作（实际只有 `rebase --quit` 这一类）才会让标注停在旧值上。不为它把探针拆成两个来源——那会让「轮询与主查询是同一条命令」从构造事实降级成巧合。
 
 ## S4a diff 边界情况
 
-S4a 已收口(CI 全绿,run `31755831717` 11 个作业)—— 已跟踪那一侧的 `binary` / `too-large` 两个分支接上:`git diff --numstat -z` 取代原先那次 `--name-only`,**一次调用同时回答三个问题**(是不是已跟踪、是不是二进制、改了多少行),多付的那次 git 往返因此买到全部三样(19.3ms → 27.3ms/请求)。前端在打开的 diff 上标注「重命名自 <完整旧路径>(相似度 N%)」—— 与 diff2html 自己那个文件头不重复:它把两个名字压成 `src/{old.txt → new.txt}` 且**不含相似度**(实测),而 binary / too-large 那几路压根没有补丁头。fixture 第二批的 diff 部分就位(`diffEdges` 仓库 + `renames` / `unicodePaths` 各补一个样本),全量生成 804ms。本机浏览器实测:二进制 / 6MB / 6 万行 / 未跟踪四条各出各的话,`wide.txt` 显示「共 634 KB」而不是「0 MB」;`.ts` diff 上 431 个 hljs span、**属性逐字相同的嵌套 span 为 0**(S2b 那条重复高亮红线仍守着)。单测 217 / 冒烟 47;体积与冷启动均无变化(42.4ms,diff 不在启动路径上)。spec §6 的 3 个 `[S4a]` 已勾。
+S4a 已收口（CI 全绿，run `31755831717` 11 个作业）——已跟踪那一侧的 `binary` / `too-large` 两个分支接上：`git diff --numstat -z` 取代原先那次 `--name-only`，**一次调用同时回答三个问题**（是不是已跟踪、是不是二进制、改了多少行），多付的那次 git 往返因此买到全部三样（19.3ms → 27.3ms/请求）。前端在打开的 diff 上标注「重命名自 <完整旧路径>（相似度 N%）」——与 diff2html 自己那个文件头不重复：它把两个名字压成 `src/{old.txt → new.txt}` 且**不含相似度**（实测），而 binary / too-large 那几路压根没有补丁头。fixture 第二批的 diff 部分就位（`diffEdges` 仓库 + `renames` / `unicodePaths` 各补一个样本），全量生成 804ms。本机浏览器实测：二进制 / 6MB / 6 万行 / 未跟踪四条各出各的话，`wide.txt` 显示「共 634 KB」而不是「0 MB」；`.ts` diff 上 431 个 hljs span、**属性逐字相同的嵌套 span 为 0**（S2b 那条重复高亮红线仍守着）。单测 217 / 冒烟 47；体积与冷启动均无变化（42.4ms，diff 不在启动路径上）。spec §6 的 3 个 `[S4a]` 已勾。
 
-**5MB 那道闸最后卡的是「补丁多大」而不是「文件多大」,这是本阶段唯一改了 spec 机制的决定。** 第一版按 §5.2 原文用 `fs.stat` 判文件体积,代码评审指出:已跟踪文件的补丁只含改动与上下文,于是**一个 6MB 的数据文件改一行就再也看不了**,而那是 agent 最常见的输出之一。反过来行数也替代不了它——「一行 6MB」的文件 numstat 只报 1 行。两者都量不到的东西正是字节,所以那一闸只能由取补丁那次调用**自己带着 `maxStdoutBytes` 去撞**,超限就地掐断 git。改完顺带闭掉一个原本要记成「已知缺口」的洞:已删除文件取不到工作区体积,按文件体积判时它只剩行数一道闸。`fs.stat` 从判据降为**只用于展示**,且只在要拒绝的那两条分支上才去 `lstat` —— 正常那条路一次系统调用都不欠。
+**5MB 那道闸最后卡的是「补丁多大」而不是「文件多大」，这是本阶段唯一改了 spec 机制的决定。** 第一版按 §5.2 原文用 `fs.stat` 判文件体积，代码评审指出：已跟踪文件的补丁只含改动与上下文，于是**一个 6MB 的数据文件改一行就再也看不了**，而那是 agent 最常见的输出之一。反过来行数也替代不了它——「一行 6MB」的文件 numstat 只报 1 行。两者都量不到的东西正是字节，所以那一闸只能由取补丁那次调用**自己带着 `maxStdoutBytes` 去撞**，超限就地掐断 git。改完顺带闭掉一个原本要记成「已知缺口」的洞：已删除文件取不到工作区体积，按文件体积判时它只剩行数一道闸。`fs.stat` 从判据降为**只用于展示**，且只在要拒绝的那两条分支上才去 `lstat`——正常那条路一次系统调用都不欠。
 
-**代码评审抓到的两条,根子是同一个:改造时把「逐字相等」这个判据丢了。** 旧的 `--name-only` 要求返回值与请求路径**逐字相等**才算数,顺带挡住了两件事;换成 numstat 后判据一度变成「输出非空」,两件事同时漏出来:① **pathspec 默认是 wildmatch**,`path=*` 于是回一份**整仓 diff**(直接撞上「禁止一次性取全仓 diff」那条红线),而一个真实存在、名字带 `*` 的文件会捎带上邻居的补丁——后者在 main 上**本来就是坏的**,只是没人发现;② `parseNumstat(...)[0]` 在 git **配不上对**的重命名上掷硬币(`git mv` 后重写却不 `add`,status 照报 `R100`),实测排在前面的是旧文件那条 20 行的删除,行数闸放行、6 万行补丁照发。两条各配了一道**独立**的防线(`GIT_LITERAL_PATHSPECS=1` 与「按路径挑、按合计算」),而且各有一条只有它才拦得住的用例——`path=*` 靠挑记录,名字带 `*` 的真实文件靠字面量 pathspec。
+**代码评审抓到的两条，根子是同一个：改造时把「逐字相等」这个判据丢了。** 旧的 `--name-only` 要求返回值与请求路径**逐字相等**才算数，顺带挡住了两件事；换成 numstat 后判据一度变成「输出非空」，两件事同时漏出来：① **pathspec 默认是 wildmatch**，`path=*` 于是回一份**整仓 diff**（直接撞上「禁止一次性取全仓 diff」那条红线），而一个真实存在、名字带 `*` 的文件会捎带上邻居的补丁——后者在 main 上**本来就是坏的**，只是没人发现；② `parseNumstat(...)[0]` 在 git **配不上对**的重命名上掷硬币（`git mv` 后重写却不 `add`，status 照报 `R100`），实测排在前面的是旧文件那条 20 行的删除，行数闸放行、6 万行补丁照发。两条各配了一道**独立**的防线（`GIT_LITERAL_PATHSPECS=1` 与「按路径挑、按合计算」），而且各有一条只有它才拦得住的用例——`path=*` 靠挑记录，名字带 `*` 的真实文件靠字面量 pathspec。
 
-**又一次「CI 只有下限档红,而红的原因不在产品逻辑」,这是第三次。** 首推之后 windows × Node 22.0.x 单独红:`huge.txt` 回的是 500 而不是 `too-large`。超限掐断 git 之后,那一档会走进 `'error'` 分支,`GitError.kind` 因此是 `exit` 而不是 `overflow`;另外 8 档与本机全绿,因为那个事件根本不触发。修法是**判定超限之后一律以 `overflow` 收尾**,流上的 `'error'` 一并咽掉(没人监听的流错误会掀掉整个服务)。为它补的封装层用例**在 POSIX 上不论有没有那道 guard 都是绿的**——留着是因为 CI 三个 Windows 档会真的跑到它,而且坏掉时给的是「kind 不对」而不是「接口回了 500」。
+**又一次「CI 只有下限档红，而红的原因不在产品逻辑」，这是第三次。** 首推之后 windows × Node 22.0.x 单独红：`huge.txt` 回的是 500 而不是 `too-large`。超限掐断 git 之后，那一档会走进 `'error'` 分支，`GitError.kind` 因此是 `exit` 而不是 `overflow`；另外 8 档与本机全绿，因为那个事件根本不触发。修法是**判定超限之后一律以 `overflow` 收尾**，流上的 `'error'` 一并咽掉（没人监听的流错误会掀掉整个服务）。为它补的封装层用例**在 POSIX 上不论有没有那道 guard 都是绿的**——留着是因为 CI 三个 Windows 档会真的跑到它，而且坏掉时给的是「kind 不对」而不是「接口回了 500」。
 
-11 条门禁都先弄红过一次;`/simplify` 之后**又整体重弄一遍**——机制换了,旧的红检就不再证明新的接线。其中一条第一版**没弄红**:「numstat 重命名记录占三段」的多记录输入里,路径压根不像记录,平铺切分照样对;改成「旧路径自己长得像一条记录」(路径含制表符,正是 `-z` 存在的理由)才真的钉住。`/simplify` 另修掉一个死析取项(git 的重命名检测发生在 pathspec 过滤**之后**,记录的 `path` 必落在我们给的两个路径里)与一次白付的 `lstat`(未跟踪那条路原先要付两次)。
+11 条门禁都先弄红过一次；`/simplify` 之后**又整体重弄一遍**——机制换了，旧的红检就不再证明新的接线。其中一条第一版**没弄红**：「numstat 重命名记录占三段」的多记录输入里，路径压根不像记录，平铺切分照样对；改成「旧路径自己长得像一条记录」（路径含制表符，正是 `-z` 存在的理由）才真的钉住。`/simplify` 另修掉一个死析取项（git 的重命名检测发生在 pathspec 过滤**之后**，记录的 `path` 必落在我们给的两个路径里）与一次白付的 `lstat`（未跟踪那条路原先要付两次）。
 
 ## S3c 进程生命周期
 
-S3c 已收口(CI 全绿,run `31708311355` 11 个作业)—— 注册表的**消费**那一半接上:启动时对记录的端口做 HTTP 探活(`GET /api/instance`,探活自己也带 token 与合规 Host),命中就把用户送去那个实例并以 0 退出、全程不碰注册表;没人连的宽限期 45 秒一到自己走,退出时清掉自己那条。判活**绝不用 pid**,而且 200 还不够——返回的 repo 路径要与本仓库归一后相等,否则一个被系统回收的端口就能把用户带到别人的页面。空闲判据是**「SSE 连接数」∪「任何通过三道校验的请求」**:前者是正面判据,后者补住「刚被复用、浏览器还在启动」与「页面活着但 SSE 被中间层回收了」这两种连接数同样为 0 的形态,取并集只会晚退不会早退。宽限期**从 listen 那一刻就开始计**,不等第一个客户端——等它的话,「浏览器压根没拉起来」(headless、无 `xdg-open`、`--no-open` 之后改主意)就留下一个永久常驻进程。本机浏览器实测:刷新 3 次、后台标签 60 秒(期间新建的文件在切回来时已在列表里)、关掉页面 25 秒再开,进程都还在;关掉最后一个标签约 45 秒后自己退,stdout 留下 `no tabs left — exiting`、`os.tmpdir()` 下的条目一并清掉。单测 193 / 冒烟 45;冷启动中位 42.5ms(**无变化**——注册表不存在时压根不探活),体积不变(只动后端与 CLI)。spec §6 的 2 个 `[S3c]` 已勾;第 3 条改标 `[S3c/S5]`,理由见下。
+S3c 已收口（CI 全绿，run `31708311355` 11 个作业）——注册表的**消费**那一半接上：启动时对记录的端口做 HTTP 探活（`GET /api/instance`，探活自己也带 token 与合规 Host），命中就把用户送去那个实例并以 0 退出、全程不碰注册表；没人连的宽限期 45 秒一到自己走，退出时清掉自己那条。判活**绝不用 pid**，而且 200 还不够——返回的 repo 路径要与本仓库归一后相等，否则一个被系统回收的端口就能把用户带到别人的页面。空闲判据是**「SSE 连接数」∪「任何通过三道校验的请求」**：前者是正面判据，后者补住「刚被复用、浏览器还在启动」与「页面活着但 SSE 被中间层回收了」这两种连接数同样为 0 的形态，取并集只会晚退不会早退。宽限期**从 listen 那一刻就开始计**，不等第一个客户端——等它的话，「浏览器压根没拉起来」（headless、无 `xdg-open`、`--no-open` 之后改主意）就留下一个永久常驻进程。本机浏览器实测：刷新 3 次、后台标签 60 秒（期间新建的文件在切回来时已在列表里）、关掉页面 25 秒再开，进程都还在；关掉最后一个标签约 45 秒后自己退，stdout 留下 `no tabs left — exiting`、`os.tmpdir()` 下的条目一并清掉。单测 193 / 冒烟 45；冷启动中位 42.5ms（**无变化**——注册表不存在时压根不探活），体积不变（只动后端与 CLI）。spec §6 的 2 个 `[S3c]` 已勾；第 3 条改标 `[S3c/S5]`，理由见下。
 
-**这一阶段最贵的一课:我为 A 写的回归用例,抓到的是 A 前面那一步。** 「`writeSync` 在读端已走时抛 EPIPE」是本机推理出来、加了 try/catch 并配了冒烟用例的(`| head -1` 之后仍要干净地退 0)。CI 上唯一红的一档是 **windows × Node 24**,而红的不是那句告别——是**紧跟 URL 的那句普通 `process.stdout.write`**:Node 文档载明**管道写只在 Windows 上是异步的**(POSIX 上同步),失败因此以 `'error'` 事件到达,零监听器的流收到它就是整个进程带裸栈以 1 退出,**243ms 就死了**,远早于宽限期;macOS / Linux 同一条路一声不响,所以本机怎么跑都是绿的。修法是入口给 stdout / stderr 各挂一个**只咽 EPIPE** 的 `'error'` 监听器(读端走了不是错误,服务照常给浏览器用)。两条教训:**「用 `writeSync`」与「允许这次写失败」是同一条要求的两半**;以及**只断言退出码不够**——243ms 崩掉与 1500ms 正常退出可以给出同一个码,用例因此补了一条「它是熬到宽限期才退的」。
+**这一阶段最贵的一课：我为 A 写的回归用例，抓到的是 A 前面那一步。** 「`writeSync` 在读端已走时抛 EPIPE」是本机推理出来、加了 try/catch 并配了冒烟用例的（`| head -1` 之后仍要干净地退 0）。CI 上唯一红的一档是 **windows × Node 24**，而红的不是那句告别——是**紧跟 URL 的那句普通 `process.stdout.write`**：Node 文档载明**管道写只在 Windows 上是异步的**（POSIX 上同步），失败因此以 `'error'` 事件到达，零监听器的流收到它就是整个进程带裸栈以 1 退出，**243ms 就死了**，远早于宽限期；macOS / Linux 同一条路一声不响，所以本机怎么跑都是绿的。修法是入口给 stdout / stderr 各挂一个**只咽 EPIPE** 的 `'error'` 监听器（读端走了不是错误，服务照常给浏览器用）。两条教训：**「用 `writeSync`」与「允许这次写失败」是同一条要求的两半**；以及**只断言退出码不够**——243ms 崩掉与 1500ms 正常退出可以给出同一个码，用例因此补了一条「它是熬到宽限期才退的」。
 
-**第二课来自代码评审:探活的那个 1.5s 超时原本是个摆设。** 响应头一到手,`req.destroy()` 的错误就只落在 `res` 上,而 `IncomingMessage` 会把无人监听的 `'error'` 吞掉——于是对端「发了响应头就装死」时 Promise 永不 settle,而它前面就是 `await`,**启动整个吊死、一行输出都没有**,比根本没有超时更难看出来(本机复现:300ms 的超时挂满 3 秒仍无结果)。已有的「对端连响应头都不发」那条用例抓不到它:那时错误确实落在 `req` 上,两者只差一次 `writeHead`。修法是超时与正文上限两处都自己 `resolve(null)`,再在 `res` 上加一条 `'close'` 兜底。
+**第二课来自代码评审：探活的那个 1.5s 超时原本是个摆设。** 响应头一到手，`req.destroy()` 的错误就只落在 `res` 上，而 `IncomingMessage` 会把无人监听的 `'error'` 吞掉——于是对端「发了响应头就装死」时 Promise 永不 settle，而它前面就是 `await`，**启动整个吊死、一行输出都没有**，比根本没有超时更难看出来（本机复现：300ms 的超时挂满 3 秒仍无结果）。已有的「对端连响应头都不发」那条用例抓不到它：那时错误确实落在 `req` 上，两者只差一次 `writeHead`。修法是超时与正文上限两处都自己 `resolve(null)`，再在 `res` 上加一条 `'close'` 兜底。
 
-**红检的形态本阶段变了:被保护的行为就是「进程会退出」,弄红之后 `node --test` 自己也被吊住**(子进程不退 → runner 的事件循环不空),所以每条红检都要配一次 kill;而且**判定输出不能经 `grep` 管道**——缓冲会让判定字符串迟迟不出现,看起来像还在跑。9 条门禁都先弄红过一次,其中「SSE 断开后重新武装」那条在 `/simplify` 把它从端点挪进通道的 `onChange` 之后**重新弄红了一遍**:机制换了,旧的红检就不再证明新的接线。
+**红检的形态本阶段变了：被保护的行为就是「进程会退出」，弄红之后 `node --test` 自己也被吊住**（子进程不退 → runner 的事件循环不空），所以每条红检都要配一次 kill；而且**判定输出不能经 `grep` 管道**——缓冲会让判定字符串迟迟不出现，看起来像还在跑。9 条门禁都先弄红过一次，其中「SSE 断开后重新武装」那条在 `/simplify` 把它从端点挪进通道的 `onChange` 之后**重新弄红了一遍**：机制换了，旧的红检就不再证明新的接线。
 
-**`/simplify` 推动的一处深度修正值得记:凡是「需要往 `CLAUDE.md` 加一条规则来补偿」的机制,深度多半不对。** 空闲计时最初在 SSE 端点上手工 `touch` 三次,并为此加了一条红线「断连那一侧必须重新武装」——而规则之所以存在,正因为机制可以被忘掉。改成 `createSseChannel({ onChange })` 之后,能改变连接数的只有 `add` / `remove` 两处,新增端点自动被覆盖,红线随之改写成「接在通道上,别在端点上写」。同一轮还把 `InstanceInfo` 移出了 `shared/`:那个目录的定义是「前端唯一允许 import 的后端目录」,放一个前端永远不消费的类型进去,「前端到底依赖什么」就不再有按目录回答的办法。
+**`/simplify` 推动的一处深度修正值得记：凡是「需要往 `CLAUDE.md` 加一条规则来补偿」的机制，深度多半不对。** 空闲计时最初在 SSE 端点上手工 `touch` 三次，并为此加了一条红线「断连那一侧必须重新武装」——而规则之所以存在，正因为机制可以被忘掉。改成 `createSseChannel({ onChange })` 之后，能改变连接数的只有 `add` / `remove` 两处，新增端点自动被覆盖，红线随之改写成「接在通道上，别在端点上写」。同一轮还把 `InstanceInfo` 移出了 `shared/`：那个目录的定义是「前端唯一允许 import 的后端目录」，放一个前端永远不消费的类型进去，「前端到底依赖什么」就不再有按目录回答的办法。
 
-**明确不做的两条**(已进 spec §10):无订阅者时暂停降级轮询(空闲退出已经把它封在 45 秒内,而「恢复」分支漏掉时的症状是页面连上了却永远不刷新);探活前用 pid 或开机时间做负向预筛(便宜,但两者都能把一个**活着**的实例判成陈旧,而那正是这个功能要防的事)。
+**明确不做的两条**（已进 spec §10）：无订阅者时暂停降级轮询（空闲退出已经把它封在 45 秒内，而「恢复」分支漏掉时的症状是页面连上了却永远不刷新）；探活前用 pid 或开机时间做负向预筛（便宜，但两者都能把一个**活着**的实例判成陈旧，而那正是这个功能要防的事）。
 
 ## S3b2 三档监听 + 轮询兜底
 
-S3b2 已收口(CI 全绿,run `31597447852` 11 个作业)—— 工作区侧三档接上:`ignore.ts` 的逐段匹配函数(A 档传给 `fs.watch` 的 `ignore`、B 档在回调**最前面**调同一个)、C 档不建任何递归 watch 而走 1.5s 轮询、任一路径失败即降级为轮询并推一个 `change`,前端 header 多一个 `WatchBadge`(判据是 `mode`,**永远不看 `tier`**)。轮询探针由 `http/server.ts` **注入**(`readStatusRaw` = `STATUS_ARGS`),`watch/` 因此既不 import `git/`、也没在 §5.0 的依赖图上加边,而「轮询与主查询是同一条命令」成了构造上的事实。`WatchHandle` 从此 `size` 只数 `.git` 侧、工作区侧的死活看 `mode`。本机实测:三档在真实浏览器上逐个跑过 —— C 档 header 出「轮询刷新」且**在已存在的未跟踪目录里新增文件 1.5s 内进列表**(`-uall` 那条红线的正面形态),A 档无标注、删目录 0.6s 内反映,A / B 档往 `node_modules` 嵌套目录写 50 个文件都是 0 个 `change`、紧接着写一个真文件各推 1 个;降级轮询空闲 CPU 0.27%(门禁 <1%)。体积 JS 201.4 KB / gzip 67.5 / CSS 28.5 KB;冷启动中位 42.6ms。16 条新门禁**都先弄红过一次**(其中一条第一版没弄红:C 档「不上报降级」那条事后 emit 'error',而那时轮询早起来了、短路替它挡住,把顺序改回去照样绿 —— 改成**建流那一刻就失败**才真的钉住)。spec §6 的 1 个 `[S3b2]`(资源占用)已勾;6 条 `[S3b2/S5]` 单机只验得到前一半,按规矩不勾。
+S3b2 已收口（CI 全绿，run `31597447852` 11 个作业）——工作区侧三档接上：`ignore.ts` 的逐段匹配函数（A 档传给 `fs.watch` 的 `ignore`、B 档在回调**最前面**调同一个）、C 档不建任何递归 watch 而走 1.5s 轮询、任一路径失败即降级为轮询并推一个 `change`，前端 header 多一个 `WatchBadge`（判据是 `mode`，**永远不看 `tier`**）。轮询探针由 `http/server.ts` **注入**（`readStatusRaw` = `STATUS_ARGS`），`watch/` 因此既不 import `git/`、也没在 §5.0 的依赖图上加边，而「轮询与主查询是同一条命令」成了构造上的事实。`WatchHandle` 从此 `size` 只数 `.git` 侧、工作区侧的死活看 `mode`。本机实测：三档在真实浏览器上逐个跑过——C 档 header 出「轮询刷新」且**在已存在的未跟踪目录里新增文件 1.5s 内进列表**（`-uall` 那条红线的正面形态），A 档无标注、删目录 0.6s 内反映，A / B 档往 `node_modules` 嵌套目录写 50 个文件都是 0 个 `change`、紧接着写一个真文件各推 1 个；降级轮询空闲 CPU 0.27%（门禁 <1%）。体积 JS 201.4 KB / gzip 67.5 / CSS 28.5 KB；冷启动中位 42.6ms。16 条新门禁**都先弄红过一次**（其中一条第一版没弄红：C 档「不上报降级」那条事后 emit 'error'，而那时轮询早起来了、短路替它挡住，把顺序改回去照样绿——改成**建流那一刻就失败**才真的钉住）。spec §6 的 1 个 `[S3b2]`（资源占用）已勾；6 条 `[S3b2/S5]` 单机只验得到前一半，按规矩不勾。
 
-**S3b2 踩到两条,都是「量出来的数先确认单位」那一类。** 第一条:第一版空闲 CPU 量出 **18%**,差点据此去改轮询周期 —— 实为 macOS 的 `ps -o time` 是 `MM:SS.ss` 而不是 `HH:MM:SS`,按三段解析把秒当成了分钟,虚高整 60 倍(真实值 0.27%)。复查的手段是**换一条独立路径重量**:`GIT_TRACE` 记到的 `git status` 时间戳证明轮询确实 1.53s 一拍、且只有一拍,而 13 次 status 从 Node 里量自身 CPU 只有 0.01s —— 两者对不上才暴露是读数问题,而不是产品问题。第二条是门禁的证伪力:把 `-uall` 从 `STATUS_ARGS` 里拿掉,**整套 36 条冒烟只有轮询那一条红**,其余全绿(单测也全绿)—— 这正是那条红线所说的"静默",也说明那条用例必须写成「往**已存在的**未跟踪目录里新增文件」,写成新建目录就永远抓不到它。同样地,把逐段匹配换成 basename 比对后,单测里 A / B 两档跑真实文件系统的用例**双双变红**,而所有 mock 用例照常绿。
+**S3b2 踩到两条，都是「量出来的数先确认单位」那一类。** 第一条：第一版空闲 CPU 量出 **18%**，差点据此去改轮询周期——实为 macOS 的 `ps -o time` 是 `MM:SS.ss` 而不是 `HH:MM:SS`，按三段解析把秒当成了分钟，虚高整 60 倍（真实值 0.27%）。复查的手段是**换一条独立路径重量**：`GIT_TRACE` 记到的 `git status` 时间戳证明轮询确实 1.53s 一拍、且只有一拍，而 13 次 status 从 Node 里量自身 CPU 只有 0.01s——两者对不上才暴露是读数问题，而不是产品问题。第二条是门禁的证伪力：把 `-uall` 从 `STATUS_ARGS` 里拿掉，**整套 36 条冒烟只有轮询那一条红**，其余全绿（单测也全绿）——这正是那条红线所说的“静默”，也说明那条用例必须写成「往**已存在的**未跟踪目录里新增文件」，写成新建目录就永远抓不到它。同样地，把逐段匹配换成 basename 比对后，单测里 A / B 两档跑真实文件系统的用例**双双变红**，而所有 mock 用例照常绿。
 
 ## S3b1 SSE 通道 + 档位骨架
 
-S3b1 已收口(CI 全绿,run `31547136471` 11 个作业)—— `.git` 侧非递归 watch + 150ms 合并窗口 + `/api/events`(15s 心跳,**三道校验一视同仁**)+ 前端 `EventSource` + `WatchState` 接真实取值,`DIFFTAB_WATCH_TIER=A|B|C` 作为首个交付物落地(取值不合法即启动失败,不退回自动判定,否则「我逐档验过了」会建立在一次没生效的强制指定上)。合并窗口是**「第一个事件起窗口、窗口内的后续事件被吞」**,不是「每来一个事件就往后推」—— 后者在 agent 持续写入下会一直不触发。监听**懒起**在第一个订阅者到达时(S3b2 的递归遍历会落在冷启动那条路径上),起了就留到关服务。浏览器实测:`git add` 与 `git checkout -b` 都无刷新地更新了页面,diff 容器**是同一个 DOM 节点**(§5.4 的滚动位置要求),心跳 15s 一发,dev 代理下同样流式通过。体积 JS 201.0 KB / gzip 67.4 / CSS 28.4 KB;冷启动中位 42.7ms。11 条新门禁**都先弄红过一次**。spec §6 的 1 个 `[S3b1]` 已勾。
+S3b1 已收口（CI 全绿，run `31547136471` 11 个作业）——`.git` 侧非递归 watch + 150ms 合并窗口 + `/api/events`（15s 心跳，**三道校验一视同仁**）+ 前端 `EventSource` + `WatchState` 接真实取值，`DIFFTAB_WATCH_TIER=A|B|C` 作为首个交付物落地（取值不合法即启动失败，不退回自动判定，否则「我逐档验过了」会建立在一次没生效的强制指定上）。合并窗口是**「第一个事件起窗口、窗口内的后续事件被吞」**，不是「每来一个事件就往后推」——后者在 agent 持续写入下会一直不触发。监听**懒起**在第一个订阅者到达时（S3b2 的递归遍历会落在冷启动那条路径上），起了就留到关服务。浏览器实测：`git add` 与 `git checkout -b` 都无刷新地更新了页面，diff 容器**是同一个 DOM 节点**（§5.4 的滚动位置要求），心跳 15s 一发，dev 代理下同样流式通过。体积 JS 201.0 KB / gzip 67.4 / CSS 28.4 KB；冷启动中位 42.7ms。11 条新门禁**都先弄红过一次**。spec §6 的 1 个 `[S3b1]` 已勾。
 
-**S3b1 踩到的三条,都属「以为在验的东西其实没在验」。** 第一条是我自己量错:先前一次实测把「macOS 非递归 watch 会漏进嵌套写入」读反了(在 `watch()` 前一刻才 `mkdirSync`,**建流那一刻补报的一两条事件**被当成了嵌套事件),据此加的顶层段过滤是**死代码** —— 强制红检时「objects 写入不触发」那条用例在拿掉过滤后照样绿,才暴露出来。干净复测后拆掉,两条实测都回填了 spec §10;单测里「等一个固定毫秒数」也换成了「写探针写到它真的响」的 arming 步骤。第二条:`refresh()` 在 `/api/state` 失败后仍会照着**上一份快照**找条目去取 diff(用过期的 `oldPath`,正是重命名退化成全新增那条路),而钉它的用例只因为 `beforeEach` 把 `repoState` 置成 null 才通过 —— 生产里它一直非 null。第三条:「切回标签页就重连」在它自己注释描述的场景里根本不触发 —— 半开 TCP 下 `readyState` 一直是 `OPEN`。**心跳因此在前端也有用途**:静默两拍就当它死了,而周期定在 `shared/protocol.ts`、前端由它推出 `STALE_MS`,两边各写一个 15000 会在改周期时静默分家。反过来,连接一直活着就说明每个 `change` 都推到过了,那时**不补取**(它取的可能是一份数 MB 的 diff,而切标签是这个工具最频繁的动作)。
+**S3b1 踩到的三条，都属「以为在验的东西其实没在验」。** 第一条是我自己量错：先前一次实测把「macOS 非递归 watch 会漏进嵌套写入」读反了（在 `watch()` 前一刻才 `mkdirSync`，**建流那一刻补报的一两条事件**被当成了嵌套事件），据此加的顶层段过滤是**死代码**——强制红检时「objects 写入不触发」那条用例在拿掉过滤后照样绿，才暴露出来。干净复测后拆掉，两条实测都回填了 spec §10；单测里「等一个固定毫秒数」也换成了「写探针写到它真的响」的 arming 步骤。第二条：`refresh()` 在 `/api/state` 失败后仍会照着**上一份快照**找条目去取 diff（用过期的 `oldPath`，正是重命名退化成全新增那条路），而钉它的用例只因为 `beforeEach` 把 `repoState` 置成 null 才通过——生产里它一直非 null。第三条：「切回标签页就重连」在它自己注释描述的场景里根本不触发——半开 TCP 下 `readyState` 一直是 `OPEN`。**心跳因此在前端也有用途**：静默两拍就当它死了，而周期定在 `shared/protocol.ts`、前端由它推出 `STALE_MS`，两边各写一个 15000 会在改周期时静默分家。反过来，连接一直活着就说明每个 `change` 都推到过了，那时**不补取**（它取的可能是一份数 MB 的 diff，而切标签是这个工具最频繁的动作）。
 
-**S3b1 留给 S3b2 的两条**(均已消费):降级挂点从 `onError` 改名为 `onDegrade`,`http/server.ts` 在那里翻 `mode` 并推 `change`;`WatchHandle.size` 仍只数 `.git` 侧,出错的 watcher 照旧在 error 回调里摘掉。
+**S3b1 留给 S3b2 的两条**（均已消费）：降级挂点从 `onError` 改名为 `onDegrade`，`http/server.ts` 在那里翻 `mode` 并推 `change`；`WatchHandle.size` 仍只数 `.git` 侧，出错的 watcher 照旧在 error 回调里摘掉。
 
 ## S3a 分支状态展示
 
-S3a 已收口(run `31495046172`)—— header 接上 `BranchStatus`,后端 S1 就已备齐(`# branch.ab` 缺失 → `upstream: null`),本阶段只是消费它。判据是**「无上游」与「已同步 0/0」必须是两份不同的输出**:`upstream?.ahead ?? 0` 那种写法不报错、不缺字段,只是把「没有可比对象」说成「与上游同步」;两条单测合起来钉这件事(无上游那份一个箭头都不许有 + 已同步那份两个 0 都得在),两种退化都先弄红过。header 的「首帧不画占位」压在**结构判据**上(`header` 的文本恰为 `difftab`)而非 `not.toContain('无上游')` —— 后者改一次文案就永远真空通过。spec §6 的 1 个 `[S3a]` 已勾。
+S3a 已收口（run `31495046172`）——header 接上 `BranchStatus`，后端 S1 就已备齐（`# branch.ab` 缺失 → `upstream: null`），本阶段只是消费它。判据是**「无上游」与「已同步 0/0」必须是两份不同的输出**：`upstream?.ahead ?? 0` 那种写法不报错、不缺字段，只是把「没有可比对象」说成「与上游同步」；两条单测合起来钉这件事（无上游那份一个箭头都不许有 + 已同步那份两个 0 都得在），两种退化都先弄红过。header 的「首帧不画占位」压在**结构判据**上（`header` 的文本恰为 `difftab`）而非 `not.toContain('无上游')`——后者改一次文案就永远真空通过。spec §6 的 1 个 `[S3a]` 已勾。
 
-**S3a 留给 S3b2 的一条**(已消费:S3b2 用了「一个 guard 包住两项」那一半):header 现在是 `state !== null && <BranchStatus …>`,而 S3b2 的监听降级标注会是**第三个**读同一个 `repoState` 的地方(§5.7 的 `WatchState`)。别再叠第三个 `state !== null` —— 那时要么一个 guard 包住 header 两项,要么把 `RepoState | null` + `loadError` 泛化成 `DiffRequestState` 那样的标签联合(store.ts 已为 diff 做过这件事,理由同处)。
+**S3a 留给 S3b2 的一条**（已消费：S3b2 用了「一个 guard 包住两项」那一半）：header 现在是 `state !== null && <BranchStatus …>`，而 S3b2 的监听降级标注会是**第三个**读同一个 `repoState` 的地方（§5.7 的 `WatchState`）。别再叠第三个 `state !== null`——那时要么一个 guard 包住 header 两项，要么把 `RepoState | null` + `loadError` 泛化成 `DiffRequestState` 那样的标签联合（store.ts 已为 diff 做过这件事，理由同处）。
 
 ## S2c 主题样式 + 体积收口
 
-S2c 已收口(run `31307265563`)—— `@theme` 承载 VS Code Light/Dark Modern token(**浅色写在 `@theme`、深色只写 delta**,在 `vscode-theme.css` 的媒体查询里)+ 23 个无前缀 `--d2h-*` 一律写成 `var(--color-…)` 指向那些 token(**深浅因此只声明一次** —— CSS 变量在使用时解析)+ 组件全部改用 token(零 `dark:` 变体)+ happy-dom 让渲染路径第一次有了自动化覆盖 + `too-large` 加 `reason`(用户拍板,已改 spec §5.12)。体积收口实测:JS 199.5 KB(余 43%)/ gzip 66.7 / CSS 28.3 KB(余 29%,本阶段涨的 6 KB 全是 token 与工具类),已回填 spec §5.5。浏览器实测:`/api/state` 47ms、FCP 56-72ms;深浅切换后 `--d2h-bg-color`(#fff / #1f1f1f)与 hljs 关键字色(`rgb(215,58,73)` / `rgb(255,123,114)`)都真的翻,140 个 hljs span 类名完好。六条新门禁(check:css 四条 + `colorScheme` 单测 + 用例目录布局)**都先弄红过一次**。spec §6 的 2 个 `[S2c]` + 2 个 `[S0/S2c]` 已勾。
+S2c 已收口（run `31307265563`）——`@theme` 承载 VS Code Light/Dark Modern token（**浅色写在 `@theme`、深色只写 delta**，在 `vscode-theme.css` 的媒体查询里）+ 23 个无前缀 `--d2h-*` 一律写成 `var(--color-…)` 指向那些 token（**深浅因此只声明一次**——CSS 变量在使用时解析）+ 组件全部改用 token（零 `dark:` 变体）+ happy-dom 让渲染路径第一次有了自动化覆盖 + `too-large` 加 `reason`（用户拍板，已改 spec §5.12）。体积收口实测：JS 199.5 KB（余 43%）/ gzip 66.7 / CSS 28.3 KB（余 29%，本阶段涨的 6 KB 全是 token 与工具类），已回填 spec §5.5。浏览器实测：`/api/state` 47ms、FCP 56-72ms；深浅切换后 `--d2h-bg-color`（#fff / #1f1f1f）与 hljs 关键字色（`rgb(215,58,73)` / `rgb(255,123,114)`）都真的翻，140 个 hljs span 类名完好。六条新门禁（check：css 四条 + `colorScheme` 单测 + 用例目录布局）**都先弄红过一次**。spec §6 的 2 个 `[S2c]` + 2 个 `[S0/S2c]` 已勾。
 
-**S2c 踩到两条,都属"以为在验的东西其实没在验"。** 第一条:**diff2html 的深色配色不是靠 `--d2h-dark-*` 自动生效,而是由容器 class 门控**——S2b 顺手写下的 `colorScheme: 'auto'` 会让 `.d2h-auto-color-scheme` 前缀规则(0,2,0)压过基础规则(0,1,0),于是 S2c 覆写的那 23 个 `--d2h-*` 在深色下**一条都不生效**,页面只是"深色不太像 VS Code"。改成 `'light'`(那个 class 在 d2h 的 CSS 里一条规则都没有)后,深浅才都落在我们这套 token 上;顺带发现 3.4.56 的 auto 块里 `.d2h-deleted` 挂错成了 `.d2h-dark-color-scheme` 前缀,即便走它的方案也还要自己补规则。判据钉在单测里:**容器上不许出现那两个 class**。
+**S2c 踩到两条，都属“以为在验的东西其实没在验”。** 第一条：**diff2html 的深色配色不是靠 `--d2h-dark-*` 自动生效，而是由容器 class 门控**——S2b 顺手写下的 `colorScheme: 'auto'` 会让 `.d2h-auto-color-scheme` 前缀规则(0,2,0)压过基础规则(0,1,0)，于是 S2c 覆写的那 23 个 `--d2h-*` 在深色下**一条都不生效**，页面只是“深色不太像 VS Code”。改成 `'light'`（那个 class 在 d2h 的 CSS 里一条规则都没有）后，深浅才都落在我们这套 token 上；顺带发现 3.4.56 的 auto 块里 `.d2h-deleted` 挂错成了 `.d2h-dark-color-scheme` 前缀，即便走它的方案也还要自己补规则。判据钉在单测里：**容器上不许出现那两个 class**。
 
-第二条关于测试环境自身:**happy-dom 20.11.2 的 `Attr.nodeName` 返回空串**,而 diff2html 的 `mergeStreams.open()` 恰好用它重新序列化属性,于是带 `<del>` / `<ins>` 的增删行类名被写坏成裸属性。第一版"高亮出颜色"的断言压在增删行上,于是以一个**与产品无关**的理由变红——**DOM 测试环境不是浏览器的等价物**,这类断言必须压在上下文行上(真机上那 140 个 span 是好的)。反过来也有好处:它让"`draw()` 后不得补调 `highlightCode()`"这条禁令在 happy-dom 上更容易抓——第二遍连上下文行也被卷进去,span 数 20+ 直接掉到 0。
+第二条关于测试环境自身：**happy-dom 20.11.2 的 `Attr.nodeName` 返回空串**，而 diff2html 的 `mergeStreams.open()` 恰好用它重新序列化属性，于是带 `<del>` / `<ins>` 的增删行类名被写坏成裸属性。第一版“高亮出颜色”的断言压在增删行上，于是以一个**与产品无关**的理由变红——**DOM 测试环境不是浏览器的等价物**，这类断言必须压在上下文行上（真机上那 140 个 span 是好的）。反过来也有好处：它让“`draw()` 后不得补调 `highlightCode()`”这条禁令在 happy-dom 上更容易抓——第二遍连上下文行也被卷进去，span 数 20+ 直接掉到 0。
 
 ## S2b diff 渲染 + 懒加载
 
-S2b 已收口(CI 全绿,run `31292552317` 11 个作业)—— `/api/diff` 接线 + `DiffView` 把 `draw()` 放进 effect + 四个 `DiffPayload` 分支各有渲染 + 按文件懒加载(一次点击一个请求)。本机实测:320 文件仓库列全、20 次点击 = 20 次请求、点击到渲染中位 50ms;真实 TS diff 上 177 个 hljs span / 12 类,**嵌套 span 只有 hljs 自身的语法嵌套(params>attr、string>subst),没有重复高亮**;`.txt` 走 plaintext 兜底不报错;dev 代理下整页功能同样正常。产物 JS 从 S2a 的 23.5 KB 回到 198.9 KB(gzip 66.5 / CSS 25.3),**体积门禁不再空转**,下限档也第一次跑在含 diff2html/hljs 的产物上。spec §6 的 2 个 `[S2b]` + `[S0/S2b]` + 2 个 `[S1/S2b]` 已勾。
+S2b 已收口（CI 全绿，run `31292552317` 11 个作业）——`/api/diff` 接线 + `DiffView` 把 `draw()` 放进 effect + 四个 `DiffPayload` 分支各有渲染 + 按文件懒加载（一次点击一个请求）。本机实测：320 文件仓库列全、20 次点击 = 20 次请求、点击到渲染中位 50ms；真实 TS diff 上 177 个 hljs span / 12 类，**嵌套 span 只有 hljs 自身的语法嵌套（params>attr、string>subst），没有重复高亮**；`.txt` 走 plaintext 兜底不报错；dev 代理下整页功能同样正常。产物 JS 从 S2a 的 23.5 KB 回到 198.9 KB（gzip 66.5 / CSS 25.3），**体积门禁不再空转**，下限档也第一次跑在含 diff2html/hljs 的产物上。spec §6 的 2 个 `[S2b]` + `[S0/S2b]` + 2 个 `[S1/S2b]` 已勾。
 
-S2b 留给 S3b1 的一条(现已修掉,但同一个坑在接 SSE 时会以别的形状再来):**取 diff 时把状态从 `ready` 回退成 `loading`,等于把渲染 diff 的子树整个卸载再重挂**,diff2html 画好的 DOM 连同滚动位置一起没。今天只是「再点一次当前行闪一下空白」,S3b1 之后每个 `change` 事件都会走这条路,而 §5.4 要求刷新不丢选中文件与滚动位置——那正是引入框架的理由。判据:**同一个 path 重新取时不回退 loading,换 path 才清空**;单测钉在 store 层(拆掉即红,已弄红验证过)。
+S2b 留给 S3b1 的一条（现已修掉，但同一个坑在接 SSE 时会以别的形状再来）：**取 diff 时把状态从 `ready` 回退成 `loading`，等于把渲染 diff 的子树整个卸载再重挂**，diff2html 画好的 DOM 连同滚动位置一起没。今天只是「再点一次当前行闪一下空白」，S3b1 之后每个 `change` 事件都会走这条路，而 §5.4 要求刷新不丢选中文件与滚动位置——那正是引入框架的理由。判据：**同一个 path 重新取时不回退 loading，换 path 才清空**；单测钉在 store 层（拆掉即红，已弄红验证过）。
 
 ## S2a 骨架 + 变更列表 + 只读第二层
 
-S2a 踩到两条。第一条是"门禁自己假绿"那一类:**spec §5.10 第二层原本写的"`chmod -R a-w .git` 后跑完整流程,任何写尝试都会直接失败暴露"是错的**——git 把 index 回写当 best-effort,`.git` 只读时它静默跳过、exit 0、stderr 全空(已实测并回填 spec §10)。于是故意删掉 `GIT_OPTIONAL_LOCKS=0` 的产物照样能让那一层全绿。现改为 A(只读 `.git` 跑通)+ B(可写 `.git` 上逐字节快照比对 + 一条"不设该变量的对照组确实改了 `.git`"的正面断言)两半,缺一不可。**判据仍是那句老话:门禁必须能在被保护的东西坏掉时变红,写完先把它弄红一次再说。**
+S2a 踩到两条。第一条是“门禁自己假绿”那一类：**spec §5.10 第二层原本写的“`chmod -R a-w .git` 后跑完整流程，任何写尝试都会直接失败暴露”是错的**——git 把 index 回写当 best-effort，`.git` 只读时它静默跳过、exit 0、stderr 全空（已实测并回填 spec §10）。于是故意删掉 `GIT_OPTIONAL_LOCKS=0` 的产物照样能让那一层全绿。现改为 A（只读 `.git` 跑通）+ B（可写 `.git` 上逐字节快照比对 + 一条“不设该变量的对照组确实改了 `.git`”的正面断言）两半，缺一不可。**判据仍是那句老话：门禁必须能在被保护的东西坏掉时变红，写完先把它弄红一次再说。**
 
-第二条重复了 S1 的形态、值得再记一次:**CI 只有下限档红,而红的原因不在产品代码**。这次是 Windows × Node 22.0.x 的退出钩子 `rmSync` 报 `EBUSY`——Windows 删不掉仍是某进程 cwd 的目录,而 `child.kill()` 返回时进程还没被回收。**30 条断言全过、进程仍以 1 退出**。竞态一直都在,是"按需生成 fixture"拿掉了掩盖它的遍历延迟才暴露。教训有二:**收尾失败不该盖过断言结果**(重试 + 只警告);以及**性能优化会掀开被时序掩盖的 bug**,证据见 spec §10。
+第二条重复了 S1 的形态、值得再记一次：**CI 只有下限档红，而红的原因不在产品代码**。这次是 Windows × Node 22.0.x 的退出钩子 `rmSync` 报 `EBUSY`——Windows 删不掉仍是某进程 cwd 的目录，而 `child.kill()` 返回时进程还没被回收。**30 条断言全过、进程仍以 1 退出**。竞态一直都在，是“按需生成 fixture”拿掉了掩盖它的遍历延迟才暴露。教训有二：**收尾失败不该盖过断言结果**（重试 + 只警告）；以及**性能优化会掀开被时序掩盖的 bug**，证据见 spec §10。
 
 ## S1 CLI + HTTP server + git 封装 + 只读主门禁
 
-S1 收口时踩到的一条,写在这里因为它会再犯:**CI 只有下限档红是常态,而下限档红的原因往往不在产品代码**。本次是 Node 22.0.0 的 `node --test` 不等顶层 `before()`(证据见 spec §10),24/26 与本机全绿、三平台 22.0.x 同时红。matrix 把 22 这档钉在 **22.0.x 而不是 22 线最新版**,价值就在这里。
+S1 收口时踩到的一条，写在这里因为它会再犯：**CI 只有下限档红是常态，而下限档红的原因往往不在产品代码**。本次是 Node 22.0.0 的 `node --test` 不等顶层 `before()`（证据见 spec §10），24/26 与本机全绿、三平台 22.0.x 同时红。matrix 把 22 这档钉在 **22.0.x 而不是 22 线最新版**，价值就在这里。
 
 ## S0 工具链脚手架
 
-S0 工具链脚手架(含 `pnpm-lock.yaml`、`pnpm-workspace.yaml` 的 `allowBuilds` 白名单、`.gitignore`、**手写定稿的 `bin/difftab.js`**)+ 三项前提验证(在 pnpm 严格 node_modules 布局下跑)+ 三平台 CI 矩阵拉起。三项前提验证的清单见 spec §7 的「S0 的三项前提验证」。
+S0 工具链脚手架（含 `pnpm-lock.yaml`、`pnpm-workspace.yaml` 的 `allowBuilds` 白名单、`.gitignore`、**手写定稿的 `bin/difftab.js`**）+ 三项前提验证（在 pnpm 严格 node_modules 布局下跑）+ 三平台 CI 矩阵拉起。三项前提验证的清单见 spec §7 的「S0 的三项前提验证」。
 
 ---
 
-## 附:已收口阶段的 spec 阅读切口
+## 附：已收口阶段的 spec 阅读切口
 
-- **S5** 跨平台验证 + 安全自查:§5.9、§5.1 的拉起浏览器段、§6 全表复核(实际还重读了 §5.7 的三档与兜底——机制在本阶段被实测改掉了)
+- **S5** 跨平台验证 + 安全自查：§5.9、§5.1 的拉起浏览器段、§6 全表复核（实际还重读了 §5.7 的三档与兜底——机制在本阶段被实测改掉了）
 
-`CLAUDE.md` 第 4 节曾有一张「做哪个阶段 → 本会话必读哪几节」的表,只列尚未收口的阶段,已随文档拆分删去(理由见 `docs/workflow.md` §9)。以下是各阶段当时的切口,备查:
+`CLAUDE.md` 第 4 节曾有一张「做哪个阶段 → 本会话必读哪几节」的表，只列尚未收口的阶段，已随文档拆分删去（理由见 `docs/workflow.md` §9）。以下是各阶段当时的切口，备查：
 
 | 做这个阶段 | 本会话必读 | 明确不必读 |
 |---|---|---|
@@ -206,14 +206,14 @@ S0 工具链脚手架(含 `pnpm-lock.yaml`、`pnpm-workspace.yaml` 的 `allowBui
 | **S4a** diff 边界情况 | §5.2、§5.12 的 `DiffPayload`、§10 「git 行为」、§7 的 fixture 第二批清单 | §5.6、§5.7、§5.11 |
 | **S4b** git 异常状态 | §5.3、§5.2 的仓库定位段、§5.12 的 `BranchState`、§10 「git 行为」 | §5.5、§5.6、§5.7 |
 
-## 附:门禁与测试是在哪个阶段建立的
+## 附：门禁与测试是在哪个阶段建立的
 
-`CLAUDE.md` 第 3 节命令表的「状态」列只标是否可用,逐阶段的明细收在这里:
+`CLAUDE.md` 第 3 节命令表的「状态」列只标是否可用，逐阶段的明细收在这里：
 
-- **单元/集成测试(`pnpm test`)**:S0(hljs 语言装配)+ S1(解析器、三道校验、未跟踪 diff 构造、对真实 fixture 的集成、dev proxy)+ S2c(happy-dom 下的 diff2html 渲染路径与 `DiffView` 四分支)+ S3b1(档位判定与合并窗口、假时钟下的 15s 心跳、`EventSource` 替身下的连接开关)+ S3b2(逐段忽略判据、三档各注册了什么、B 档回调过滤、轮询与降级)+ S4a(numstat 解析的三种记录形态、对 `diffEdges` / 通配符路径 / 配不上对的重命名的集成断言、封装层的 overflow 收尾、前端重命名标注与体积为 0 的文案)+ S4b(判据表的优先级与 `am` / rebase 之分、`u` 记录一律带 `conflicted`、对 detached / merge / rebase / worktree / submodule / bare / SHA-256 七个仓库的集成断言、前端的降级标注与冲突分组)
-- **冒烟测试(`pnpm test:smoke`)**:S0(版本守卫、版本号一致性、产物只 import 标准库)+ S1 第一层(`GIT_TRACE` 白名单断言 + 子进程单点断言 + 三道校验)+ S2a 第二层(`readonly-git-dir.test.js`:A 只读 `.git` / B `.git` 逐字节比对)+ S3b1(`/api/events` 过三道校验、真实 `git checkout -b` 推出 `change`、三档环境变量各给一份不同的 `watch` 载荷)+ S3b2(C 档在**已存在的**未跟踪目录里新增文件,经轮询推出 `change`)+ S4a(四个 `kind` 在产物上各回各的、超大文件的响应正文必须是小的、`path=*` 取不到东西)+ S4b(bare 仓库在产物上给一句话拒绝、不带 Node 栈;停在冲突上的 rebase 仓库跑一遍只读白名单)
-- **fixture(`pnpm fixtures`)**:S1 第一批;S4a 补上第二批的 diff 部分(`diffEdges` 仓库,外加 `renames` 的「配不上对的重命名」与 `unicodePaths` 的通配符文件名各一个);S4b 补上异常状态那半(detached HEAD、merge / rebase 停在冲突上、linked worktree、submodule、bare、SHA-256 空仓库,共 7 个)。清单见 spec §7 末段
-- **冷启动(`pnpm bench:startup`)**:S0 建立,S1 接真实流程(本机中位数 ~40ms)
-- **体积(`pnpm size`)**:S0 建立,S2c 收口回填实测。注意 S2a 删掉 S0 spike 后产物一度不含 diff2html/hljs,门禁空转到 S2b 才恢复
-- **样式层叠(`pnpm check:css`)**:S0 建立三条(unlayered + hljs 在前 + 深色带媒体条件);S2c 加四条 —— 覆写 `--d2h-*` 的块也必须 unlayered、**且排在 d2h 默认值之后、且覆盖全部 23 个无前缀变量**、产物里没有无定义的 `var()` 引用、**深色 delta 里声明的每个 `--color-*` 在浅色侧都得有声明**
-- **发布产物内容(`pnpm check:pack`)/ `bin/` 未被构建触碰(`pnpm check:bin`)**:均 S0
+- **单元/集成测试（`pnpm test`）**：S0（hljs 语言装配）+ S1（解析器、三道校验、未跟踪 diff 构造、对真实 fixture 的集成、dev proxy）+ S2c（happy-dom 下的 diff2html 渲染路径与 `DiffView` 四分支）+ S3b1（档位判定与合并窗口、假时钟下的 15s 心跳、`EventSource` 替身下的连接开关）+ S3b2（逐段忽略判据、三档各注册了什么、B 档回调过滤、轮询与降级）+ S4a（numstat 解析的三种记录形态、对 `diffEdges` / 通配符路径 / 配不上对的重命名的集成断言、封装层的 overflow 收尾、前端重命名标注与体积为 0 的文案）+ S4b（判据表的优先级与 `am` / rebase 之分、`u` 记录一律带 `conflicted`、对 detached / merge / rebase / worktree / submodule / bare / SHA-256 七个仓库的集成断言、前端的降级标注与冲突分组）
+- **冒烟测试（`pnpm test:smoke`）**：S0（版本守卫、版本号一致性、产物只 import 标准库）+ S1 第一层（`GIT_TRACE` 白名单断言 + 子进程单点断言 + 三道校验）+ S2a 第二层（`readonly-git-dir.test.js`：A 只读 `.git` / B `.git` 逐字节比对）+ S3b1（`/api/events` 过三道校验、真实 `git checkout -b` 推出 `change`、三档环境变量各给一份不同的 `watch` 载荷）+ S3b2（C 档在**已存在的**未跟踪目录里新增文件，经轮询推出 `change`）+ S4a（四个 `kind` 在产物上各回各的、超大文件的响应正文必须是小的、`path=*` 取不到东西）+ S4b（bare 仓库在产物上给一句话拒绝、不带 Node 栈；停在冲突上的 rebase 仓库跑一遍只读白名单）
+- **fixture（`pnpm fixtures`）**：S1 第一批；S4a 补上第二批的 diff 部分（`diffEdges` 仓库，外加 `renames` 的「配不上对的重命名」与 `unicodePaths` 的通配符文件名各一个）；S4b 补上异常状态那半（detached HEAD、merge / rebase 停在冲突上、linked worktree、submodule、bare、SHA-256 空仓库，共 7 个）。清单见 spec §7 末段
+- **冷启动（`pnpm bench:startup`）**：S0 建立，S1 接真实流程（本机中位数 ~40ms）
+- **体积（`pnpm size`）**：S0 建立，S2c 收口回填实测。注意 S2a 删掉 S0 spike 后产物一度不含 diff2html/hljs，门禁空转到 S2b 才恢复
+- **样式层叠（`pnpm check:css`）**：S0 建立三条（unlayered + hljs 在前 + 深色带媒体条件）；S2c 加四条——覆写 `--d2h-*` 的块也必须 unlayered、**且排在 d2h 默认值之后、且覆盖全部 23 个无前缀变量**、产物里没有无定义的 `var()` 引用、**深色 delta 里声明的每个 `--color-*` 在浅色侧都得有声明**
+- **发布产物内容（`pnpm check:pack`）/ `bin/` 未被构建触碰（`pnpm check:bin`）**：均 S0
