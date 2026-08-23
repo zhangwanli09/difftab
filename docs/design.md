@@ -135,6 +135,9 @@ scripts/               bench:startup、size 门禁
 - **`html()` 不做语法高亮**（已实测，见 `decisions.md` §10）。高亮位于 `Diff2HtmlUI.highlightCode()`，它依赖 `highlight.js-helpers` 的 `closeTags` / `nodeStream` / `mergeStreams` / `getLanguage`——先把整个文件的代码合起来交给 hljs，再按 diff 的行边界切回、补齐跨行未闭合的标签。**被排除的是三个预构建 UI bundle，不是 UI 层的源码**：允许深导入 ESM 源码模块 `diff2html/lib-esm/ui/js/diff2html-ui-base.js`，它参与 tree-shaking、hljs 实例由我们注入，深导入合法（模块体积与依据见 `decisions.md` §10）。自行重写这段切分逻辑不在本项目要解决的问题之列
   - `draw()` 内部是 `innerHTML` 赋值 + 命令式绑定事件，**必须放在 Preact 的 ref/effect 之后**，不与 vdom 争夺同一棵子树（与 5.4 的 keyed reconcile 不冲突：列表由 Preact 管，单文件 diff 容器由 `Diff2HtmlUI` 管）
   - 用不到的开关一律关掉：`synchronisedScroll` / `fileListToggle` / `fileContentToggle` / `stickyFileHeaders` 全部 `false`，只留 `highlight: true`
+  - **diff2html 自带的那条文件头（`.d2h-file-header`）整条不显示**，由 5.6 的一条 `display: none` 承担——diff2html **没有**关掉它的配置项（上一条那四个开关管的是同步滚动、文件列表折叠与吸顶，头照画），这件事只能落在样式那侧
+    - 它里面**只有四样：文件图标、文件名、`CHANGED` / `RENAMED` 之类的标签、一个「Viewed」折叠复选框**（2026-08-23 实测，见 `decisions.md` §10）。前两样与 `DiffView` 自己那行标题重复，第三样里唯一有信息量的重命名已由 `RenameNotice` 说得更全（带完整旧路径与相似度，依据同见 §10），第四样在 `fileContentToggle: false` 下是死的——**四样合起来，藏掉它页面上不掉任何信息**
+    - **`+N` / `-M` 那对增删统计不在这条头里**：它属于文件列表模板（`d2h-file-list-line` 里的 `.d2h-file-stats`），而我们传 `drawFileList: false`，那份列表从来没画过。特意写下这条是因为它太容易被想当然（GitHub 的文件头上就有那对数字）——藏掉文件头**不等于**放弃了统计，difftab 至今就没在页面上给过增删行数
   - **`colorScheme` 传 `'light'`，不传 `'auto'`**——深浅切换由 5.6 覆写的 `--d2h-*` 承担，不走 diff2html 自带那套 class 门控的 `--d2h-dark-*`。传 `'auto'` 不报错，只是深色下我们的 VS Code 取值一条都不生效（机制与实测见 5.6 与 `decisions.md` §10）
   - **`outputFormat` 按 diff 面板宽度自动切**：面板宽度 < 1024px 给 `line-by-line`，否则 `side-by-side`。**1024 是算出来的，与 Tailwind 的 `lg` 数值相同纯属巧合**（那是视口断点，这里是面板宽度）：diff2html 的表是 13px Menlo，并排每侧留 `9em` 行号槽、逐行留 `8em`（实测见 `decisions.md` §10），于是面板 1024 时并排每侧只剩约 395px（约 50 个等宽字符）而逐行有 920px（约 118 个），50 列正是多数源码行开始要横向滚的地方。以下几条都属「违反后不报错」：
     - **判据是 diff 面板自身的宽度，不是视口宽度**。5.4 的外壳里侧栏固定 `w-80`（320px）且 `shrink-0`，面板宽度恒等于「视口 − 320」；按视口判等于把这个常数在两处各写一遍，而侧栏宽度将来一改，阈值就静默错位到别的地方去了
@@ -203,6 +206,8 @@ S0 spike 的口径：22 个语言模块 + `plaintext` 全部注册 + 深导入 `
 **深色那半是 delta，于是“声明侧”也有同一形状的静默失效**：`vscode-theme.css` 的 `@media (prefers-color-scheme: dark)` 里只列与浅色不同的 token，名字**写错一个字符不会有任何症状**——上面那条断言查的是**引用**侧，而一条 `--color-git-modifed: …` 在语法上就是个合法的新自定义属性，连“无定义”都算不上（它反而给 `defined` 集合添了一个成员）。后果是深色下那个 token 悄悄留在浅色取值上。故 `check:css` 再增一条：**产物里凡在深色媒体条件内声明的 `--color-*`，都必须在深色条件之外也有声明**。反向不查——浅色有而深色没有，正是“深浅共用同一取值”的正常写法（见 5.5 的六个 diff 底色）。
 
 **随之而来的一条硬约束**：diff2html 渲染出的内部元素**只能通过覆写 `--d2h-*` CSS 变量改配色，不得用 Tailwind 工具类去压**——无层的 diff2html CSS 同样会胜过 `@layer utilities`，写了也不生效（见 `decisions.md` §10 禁止项）。同理，hljs 主题与 diff2html 的 CSS **不得放进任何 `@layer`**，一旦放进去就把上面这层保障拆掉了。
+
+**`vscode-theme.css` 末尾那两条选择器规则在这条约束之外，且只有这两条**：`.d2h-diff-table { font-family }` 与 `.d2h-file-header { display: none }`。47 个 `--d2h-*` 实测全是颜色，**字体与显不显示都没有变量可覆**，而那条约束管的是配色。两条与 diff2html 自己的同名规则特异性同为 (0,1,0)，胜出与那 23 条变量覆写同理——**靠本文件排在 `diff2html.min.css` 之后**。文件头不显示之后，`--d2h-file-header-bg-color` / `--d2h-file-header-border-color` 两条映射**仍要留在映射块里**：`check:css` 的覆盖率断言是从 diff2html 自己那块推导出全部无前缀变量名再逐一比对的，删掉即红——它们不是死代码，是那条断言的一部分。**不为 `display: none` 另加断言**：它失效的症状是文件头又出现在页面上，肉眼可见，不属于门禁要防的那类静默故障（`.d2h-diff-table` 那条字体覆写有完全相同的顺序依赖，同样没有专门的断言）。
 
 **diff2html 的行号列是 `position: absolute`，滚动容器内部必须有一个 positioned 祖先**（依据与实测见 `decisions.md` §10）。这与 5.4 的“两侧各自滚”是同一个决定的两半：diff2html 把行号做成绝对定位、偏移量全 auto，靠的是“包含块 = 初始包含块，而滚的就是整个文档”这个前提；我们为了让 SSE 刷新时留住列表侧的滚动位置，把滚动收进了内层的 `overflow-auto` 容器，那个前提就不再成立——**包含块在滚动容器之外的绝对定位盒不随该容器的内容滚动**，于是一滚代码行就跑了、整列行号原地不动，页面不报任何错。
 

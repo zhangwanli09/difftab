@@ -118,18 +118,36 @@ body {
   color: var(--color-editor-foreground);
 }
 
-/* diff2html 的两处字体。**这是唯一用选择器去动 d2h 元素的地方,且只动 font-family**:
- * 47 个 --d2h-* 变量实测全是颜色,字体没有变量可覆,而 d2h 把它俩写死了 ——
- * 代码区 `Menlo,Consolas,monospace`、文件头 `Source Sans Pro,…`(前者装不到就一路
- * 回退,后者本机基本一定装不到)。"只能改变量"那条红线管的是配色,不是字体。
+/* 这两条是本文件里**唯二**用选择器去动 d2h 元素的规则,也是"只能改 --d2h-*"那条
+ * 红线之外仅有的两条 —— 那条红线管的是**配色**,而这里改的是字体与显不显示,
+ * 47 个 --d2h-* 变量实测全是颜色,这两样一个都覆不到。
  *
  * 也不能改用 Tailwind 工具类:工具类在 @layer utilities 里,压不过无层的 d2h 规则。
- * 选择器与 d2h 自己那两条同为 (0,1,0),靠**排在后面**取胜 —— 这又回到本文件
+ * 两条与 d2h 自己的同名规则同为 (0,1,0),靠**排在后面**取胜 —— 这又回到本文件
  * 必须 unlayered 且引在 diff2html.min.css 之后。 */
+
+/* 代码区的等宽字体。d2h 把它写死成 `Menlo,Consolas,monospace`(装不到就一路回退) */
 .d2h-diff-table {
   font-family: var(--font-mono);
 }
 
+/* diff2html 自带的那条文件头整条不显示(spec §5.5)。
+ *
+ * 它里面只有四样:文件图标、文件名、`CHANGED`/`RENAMED` 之类的标签、一个"Viewed"
+ * 折叠复选框(2026-08-23 实测,见 decisions.md §10)。文件名与 `DiffView` 自己那行
+ * 标题重复,重命名已由 `RenameNotice` 说得更全(带完整旧路径与相似度),折叠复选框在
+ * `fileContentToggle: false` 下是死的 —— 藏掉它页面上不掉任何信息。
+ *
+ * **`+N`/`-M` 那对统计不在这条头里**:它在文件列表模板(`.d2h-file-stats`)里,
+ * 而我们传 `drawFileList: false`,那份列表从来没画过。别把这条当成"为了藏头
+ * 牺牲了统计"—— difftab 至今就没在页面上给过增删行数。
+ *
+ * 只能走 CSS:d2h 的两份 file-diff 模板都把这个头无条件写成 `.d2h-file-wrapper`
+ * 的第一个子节点,没有任何配置项关得掉它。
+ *
+ * **上面映射块里的 --d2h-file-header-bg-color / --d2h-file-header-border-color
+ * 不要跟着删**:`check:css` 的覆盖率断言从 d2h 自己那块推导出全部无前缀变量名逐一
+ * 比对,少一个就红。它们不是死代码,是那条断言的一部分。 */
 .d2h-file-header {
-  font-family: var(--font-sans);
+  display: none;
 }
