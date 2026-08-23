@@ -25,11 +25,9 @@ cd /path/to/your/repo
 difftab
 ```
 
-| Option | What it does |
-|---|---|
-| `--no-open` | print the URL instead of opening a browser |
-| `-v`, `--version` | print the version and exit |
-| `-h`, `--help` | print help and exit |
+- `--no-open` — print the URL instead of opening a browser
+- `-v`, `--version` — print the version and exit
+- `-h`, `--help` — print help and exit
 
 Running it again in the same repository reuses the running instance.
 
