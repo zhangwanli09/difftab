@@ -1,6 +1,6 @@
 // 仓库定位、启动前置检查、diff 基准(spec §5.2 / §5.3)。
 
-import { isAbsolute, resolve } from 'node:path';
+import { basename, isAbsolute, resolve } from 'node:path';
 import { GitError, runGit } from './run.ts';
 
 /** `--porcelain=v2` 的最低要求(spec §5.2)。 */
@@ -111,6 +111,24 @@ export async function locateRepo(cwd: string): Promise<RepoInfo> {
     // `--git-dir` 在仓库根下返回相对路径 `.git`,换个子目录跑又是绝对路径
     gitDir: isAbsolute(gitDir) ? gitDir : resolve(root, gitDir),
   };
+}
+
+/**
+ * 工作区根目录名 —— 页面标题里的项目标识(§5.4 / §5.12 的 `RepoState.repoName`)。
+ *
+ * **和 `root` 住在一起,不在消费者那边现切**:下面那条「用 `node:path` 不手写切分」
+ * 的理由整个建立在 `root` 是怎么来的之上(`rev-parse --show-toplevel`),而那件事只有
+ * 本文件知道。放在 `http/` 里的话,这里改一次 `root` 的产出方式,那边的论证就静默过期。
+ *
+ * **用 `node:path` 的 `basename`,不要自己切 `/`**:Windows 上 `--show-toplevel` 回的是
+ * `C:/…` 正斜杠,而 win32 的 basename 两种分隔符都认;POSIX 上 `\` 是合法文件名字符,
+ * posix 的 basename 不会误把它当分隔符。两个平台各有一半是手写切分挑不对的。
+ *
+ * 根目录没有 basename 时(`/`、Windows 盘符根)回空串,**不编一个名字出来** ——
+ * 「取不到时显示什么」是展示决定,归消费者(见 `shared/protocol.ts`)。
+ */
+export function repoNameOf(repo: RepoInfo): string {
+  return basename(repo.root);
 }
 
 /**

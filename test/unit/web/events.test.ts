@@ -54,6 +54,7 @@ class FakeEventSource {
 }
 
 const state: RepoState = {
+  repoName: 'demo',
   branch: { head: 'main', detached: false, upstream: null },
   files: [],
   watch: { mode: 'native', tier: 'A' },

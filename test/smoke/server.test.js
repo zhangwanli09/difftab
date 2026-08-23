@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { test } from 'node:test';
 import { makeFixtures } from '../fixtures/make.mjs';
 import {
@@ -208,6 +208,20 @@ test('只有 GET —— 出现非幂等方法即 405', async () => {
     const res = await authedGet(server.port, server.token, '/api/state', {}, method);
     assert.equal(res.status, 405, `${method} 返回了 ${res.status}`);
   }
+});
+
+test('/api/state 的 repoName 是工作区根目录名 —— 标签页标题的项目标识(spec §5.4)', async () => {
+  await setup();
+  // **这是「后端真的从真实仓库推出了它」唯一的端到端证据**:单测那侧的 `RepoState`
+  // fixture 是手写的,后端把这个字段填成常量、填成整条路径,甚至压根不填,单测一条
+  // 都不会红 —— 而页面上只是标题不对,不报错。
+  const state = JSON.parse((await authedGet(server.port, server.token, '/api/state')).body);
+  assert.equal(state.repoName, basename(repos.unicodePaths));
+  // 给的是目录名不是路径:带绝对路径的响应只有 /api/instance 一个,且不是给前端的。
+  // **两种分隔符都查**:今天 `rev-parse --show-toplevel` 一律回正斜杠,所以只查 `/`
+  // 在本机是够的 —— 但这条断言防的正是「有人把 basename 换成手写切分」,而那种写法
+  // 挑错分隔符时恰恰是在 Windows 上回一条 `C:\\…\\repo`,只查 `/` 的版本会放它过闸
+  assert.doesNotMatch(state.repoName, /[/\\]/, `repoName 里有路径分隔符:${state.repoName}`);
 });
 
 test('路径含非 ASCII / 空格 / 引号的文件,在产物上也不出现转义残留', async () => {

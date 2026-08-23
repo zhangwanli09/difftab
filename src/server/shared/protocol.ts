@@ -132,6 +132,19 @@ export interface WatchState {
 
 /** `GET /api/state` 的响应体。 */
 export interface RepoState {
+  /**
+   * 工作区根目录名(`RepoInfo.root` 的 basename),页面标题里的项目标识(§5.4)。
+   *
+   * **给的是目录名而不是路径**:「错误消息不含绝对路径」防的是把本机目录结构混进
+   * 面向页面的输出,而标题恰恰要出现在页面上 —— basename 是回答「这个标签属于哪个
+   * 项目」所需的最小的那一份。带绝对路径的 `InstanceInfo` 不在 `shared/` 里,
+   * 也不是给前端的(§5.12)。
+   *
+   * **空串的含义是「这个根目录没有 basename」**(`/`、Windows 的盘符根),与
+   * `BranchState.head` 同一条口径:后端不为此编一个名字出来 —— 那是在事实来源这一层
+   * 说假话;「取不到时显示什么」是展示决定,归消费者(前端退回纯 `difftab`)。
+   */
+  repoName: string;
   branch: BranchState;
   files: FileEntry[];
   watch: WatchState;

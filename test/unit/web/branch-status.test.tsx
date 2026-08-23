@@ -182,6 +182,7 @@ describe('App 的 header', () => {
     expect(textOf(header)).toBe('difftab');
 
     repoState.value = {
+      repoName: 'demo',
       branch: branch({ head: 'release/1.0', upstream: { ahead: 3, behind: 0 } }),
       files: [],
       watch: { mode: 'native', tier: 'A' },

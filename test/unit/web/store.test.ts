@@ -154,6 +154,7 @@ describe('groupFiles', () => {
 
 describe('loadState', () => {
   const state: RepoState = {
+    repoName: 'demo',
     branch: { head: 'main', detached: false, upstream: null },
     files: [file({ path: 'a.txt', staged: 'M' })],
     watch: { mode: 'native', tier: 'A' },
@@ -378,6 +379,7 @@ describe('refresh(一次 SSE change 之后要重取什么)', () => {
   const fresh: DiffPayload = { kind: 'text', patch: 'new\n' };
 
   const stateWith = (files: FileEntry[]): RepoState => ({
+    repoName: 'demo',
     branch: { head: 'main', detached: false, upstream: null },
     files,
     watch: { mode: 'native', tier: 'A' },

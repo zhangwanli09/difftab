@@ -7,7 +7,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { Socket } from 'node:net';
 import { homedir } from 'node:os';
 import { DiffRequestError, readDiff } from '../git/diff.ts';
-import type { RepoInfo } from '../git/repo.ts';
+import { type RepoInfo, repoNameOf } from '../git/repo.ts';
 import { readStatus, readStatusRaw } from '../git/status.ts';
 import type { ErrorPayload, RepoState, WatchState } from '../shared/protocol.ts';
 import { forcedTierWarning, initialMode, resolveTier } from '../watch/tier.ts';
@@ -103,6 +103,9 @@ export async function startServer(
     const payload: ErrorPayload = { error: { code, message: sanitizeMessage(message, repo.root) } };
     sendJson(res, status, payload);
   };
+
+  // 实例级常量:`repo` 整个进程生命周期不变,没有理由每次 /api/state 再切一遍
+  const repoName = repoNameOf(repo);
 
   const secret = createSecret();
   // 端口是 listen 之后才知道的,token 里又要绑端口 —— 先起 server,再合成 token
@@ -272,6 +275,7 @@ export async function startServer(
         // 而它与工作区根在 linked worktree / submodule 下是两条完全不同的路径
         const status = await readStatus(repo);
         sendJson(res, 200, {
+          repoName,
           branch: status.branch,
           files: status.files,
           watch: currentWatchState(),

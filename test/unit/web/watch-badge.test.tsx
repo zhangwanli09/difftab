@@ -65,6 +65,7 @@ describe('App 的 header', () => {
     const header = container.querySelector('header');
 
     repoState.value = {
+      repoName: 'demo',
       branch: { head: 'main', detached: false, upstream: null },
       files: [],
       watch: { mode: 'native', tier: 'A' },
@@ -75,6 +76,7 @@ describe('App 的 header', () => {
     // 降级是**运行中**发生的:后端在降级时推一个 change,前端重取 /api/state 才
     // 看得见(§5.7)。这里模拟的就是那次重取的结果
     repoState.value = {
+      repoName: 'demo',
       branch: { head: 'main', detached: false, upstream: null },
       files: [],
       watch: { mode: 'polling', tier: 'A' },
