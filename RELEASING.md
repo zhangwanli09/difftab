@@ -7,8 +7,8 @@ infrequent, and `pnpm publish`'s git checks are worth more than the automation w
 
 Semver. **0.x keeps room for breaking changes**, particularly to CLI flags and to port and
 token behaviour. 1.0.0 is not a starting point but a conclusion: it waits until every
-acceptance item in [`docs/acceptance.md`](docs/acceptance.md) §6 passes and all three
-platforms have been verified on real machines. The core promise of this tool is being
+gate in [`docs/gates.md`](docs/gates.md) passes and all three platforms have been
+verified on real machines. The core promise of this tool is being
 read-only with zero side effects, and 1.0.0 should mean those promises are covered by the
 two read-only gates — not that the package looks official.
 
@@ -23,8 +23,8 @@ same list is a second place to forget.
       what matters here: the three-platform × Node 22/24/26 smoke matrix, `inotify-quota`,
       `global-install`, and `old-node-guard` are where cross-platform regressions surface,
       and `build` going green says nothing about any of them.
-- [ ] Every acceptance item in `docs/acceptance.md` §6 marked for a shipped stage is
-      checked, and the stage record is in `docs/journal.md`.
+- [ ] Every gate in `docs/gates.md` is green, and anything left unverified is written
+      down in `docs/history.md` under the open items.
 - [ ] `pnpm check:pack` — the tarball is `bin/`, `dist/`, both READMEs, LICENSE and
       `package.json`, and the three dependency fields are empty.
 - [ ] `pnpm build && pnpm check:global` — packs, installs globally, runs the binary that
@@ -97,7 +97,7 @@ gh release create v0.1.0 --title "v0.1.0" --notes "…"
   `~/.npm/_npx/<hash>/` and runs *your* `dist/`. So a green run there proves nothing about
   what you just published. It also mutates the repo — npm's `fixBin` chmods the link target,
   which is the real file in your tree, to 0755. That is harmless now that `bin/difftab.js`
-  is committed as 100755 (`check:bin` pins it, see `docs/decisions.md` §10), but on 0.1.0 it
+  is committed as 100755 (`check:bin` pins it, see `docs/decisions.md`), but on 0.1.0 it
   produced a content-free mode-only diff in `git status`; discarding that diff removed the
   exec bit and the next run died with `sh: …/.bin/difftab: Permission denied`. Verify from a
   directory that is not this repo — the same rule the `npm i -g` check below already follows.

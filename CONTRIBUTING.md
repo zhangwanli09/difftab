@@ -11,11 +11,11 @@ things that are easy to get wrong here and hard to catch in review.
 
 ## Before you open a pull request
 
-- **Read [`docs/spec.md`](docs/spec.md) §4 (Non-goals) first if you are adding a feature.**
+- **Read the Non-goals in [`docs/spec.md`](docs/spec.md) first if you are adding a feature.**
   Some things are permanently out of scope, not merely unbuilt — see below.
-- **Check the routing table in [`CLAUDE.md`](CLAUDE.md) §4** for which section of
-  [`docs/design.md`](docs/design.md) covers the area you are touching, and read that
-  section. Most of it exists because something silently broke once.
+- **Check the routing table in [`CLAUDE.md`](CLAUDE.md) §4** for which file under
+  [`docs/design/`](docs/design/) covers the area you are touching, and read that one.
+  Most of it exists because something silently broke once.
 - Open an issue first for anything beyond a bug fix. It saves you writing code against a
   design decision that was already made and written down.
 
@@ -34,7 +34,7 @@ repository are completely normal.
 Also permanently out of scope: editing code, accounts and cloud sync, and multi-user
 collaboration (PR review, comments, approvals). A second list holds what is deliberately
 out of the *first* version — that one moves as versions ship, so read it at the source:
-[`docs/spec.md`](docs/spec.md) §4.2.
+[`docs/spec.md`](docs/spec.md).
 
 ## Setting up
 
@@ -88,7 +88,7 @@ like three separate gates broke at once. Build first.
 ## Things that fail silently
 
 The full list is [`CLAUDE.md`](CLAUDE.md) §5, with the evidence behind each one in
-[`docs/decisions.md`](docs/decisions.md) §10. The four that bite most often:
+[`docs/decisions.md`](docs/decisions.md). The four that bite most often:
 
 - **Architecture boundaries.** git subprocesses may only appear in `server/git`; launching
   a browser only in `server/cli`; `src/web` must not import `src/server` (except
