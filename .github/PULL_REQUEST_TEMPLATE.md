@@ -21,7 +21,7 @@ Two things worth knowing before you spend time here:
 - [ ] `pnpm lint`, `pnpm typecheck` and `pnpm test` pass
 - [ ] `pnpm build` then `pnpm test:smoke` passes (smoke runs against `dist/`, so a stale
       build fails in misleading ways)
-- [ ] Behaviour changes are reflected in `docs/` first, with the section number kept stable
+- [ ] Behaviour changes are reflected in `docs/` first
 - [ ] New tests live in `test/unit/server/` or `test/unit/web/` — anywhere else under
       `test/unit/` and they are silently never run
 - [ ] Each new gate or assertion was made to fail once, on purpose, to prove it is wired up
