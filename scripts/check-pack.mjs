@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 发布产物内容门禁(spec §6 / §8)。
+// 发布产物内容门禁。
 //
 // 用 `pnpm pack --dry-run --json` 核对将要发出去的**文件清单**与**运行时依赖**,
 // 不必实际落 tarball。
@@ -7,7 +7,7 @@
 //     package.json;不得含 src/、配置文件与测试。
 //   · dependencies / optionalDependencies / peerDependencies 必须为空 ——
 //     只查文件清单是查不出这条的:加一个运行时依赖不会改变文件清单,构建照样成功,
-//     用户却开始悄悄拿到一棵传递依赖树,而 §2 承诺没有这棵树。
+//     用户却开始悄悄拿到一棵传递依赖树,而承诺没有这棵树。
 //     读的是磁盘上的 package.json:pnpm 的 manifest obfuscation 只**剥**字段
 //     (packageManager、publish 生命周期脚本),从不新增依赖,所以这份就是准的。
 //     产物侧的对应断言在 test/smoke/ —— 那边直接查 dist/ 里的 import 说明符。
@@ -24,14 +24,14 @@ import { join, resolve } from 'node:path';
 
 const repoRoot = resolve(import.meta.dirname, '..');
 
-/** 必须为空的依赖字段(spec §5.1 / CLAUDE.md §5:后端只用标准库)。 */
+/** 必须为空的依赖字段(/ CLAUDE.md :后端只用标准库)。 */
 const MUST_BE_EMPTY = ['dependencies', 'optionalDependencies', 'peerDependencies'];
 
 const ALLOWED = [
   { label: 'bin/', test: (p) => p.startsWith('bin/') },
   { label: 'dist/', test: (p) => p.startsWith('dist/') },
-  // npm / pnpm 无条件把根目录下的所有 README* 打进 tarball,与 files 白名单无关(已实测,
-  // 见 decisions.md §10)。译文 README 因此只有两条路:进白名单,或者根本别叫 README.*。
+  // npm / pnpm 无条件把根目录下的所有 README* 打进 tarball,与 files 白名单无关(已实测)。
+  // 译文 README 因此只有两条路:进白名单,或者根本别叫 README.*。
   // 选前者 —— 5 KB 的译文进 tarball 无害,而改名会让它在 GitHub 上失去约定俗成的位置。
   //
   // `.md` **提在语言段外面**,于是"带语言段却不带 `.md`"在结构上就写不出来 —— 把它写成
@@ -106,13 +106,13 @@ if (nonEmptyDeps.length > 0) {
   for (const [field, names] of nonEmptyDeps) {
     console.error(`\nFAIL  ${field} 非空:${names.join(', ')}`);
   }
-  console.error('后端只用标准库、dependencies 保持为空(CLAUDE.md §5 红线 / spec §5.1)');
+  console.error('后端只用标准库、dependencies 保持为空(CLAUDE.md 红线)');
   failed = true;
 } else {
   console.log(`PASS  ${MUST_BE_EMPTY.join(' / ')} 均为空`);
 }
 if (!failed) {
-  console.log('\nPASS  发布产物内容干净(spec §6 / §8)');
+  console.log('\nPASS 发布产物内容干净');
 }
 
 process.exit(failed ? 1 : 0);

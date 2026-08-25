@@ -17,7 +17,7 @@ const outDir = fileURLToPath(new URL('./dist/web', import.meta.url));
  * 从后端单一来源拿是同一条理由。
  *
  * JSX 走 Vite 8 的 Oxc 选项,不引 @preact/preset-vite(它会拖入 @babel/core)。
- * 代价是失去 prefresh 的组件状态保留 HMR,整页刷新对本项目够用(spec §5.11)。
+ * 代价是失去 prefresh 的组件状态保留 HMR,整页刷新对本项目够用。
  *
  * alias 是 Oxc 选项的补位,不是重复设置:dev 下 Vite 的依赖预扫描不吃 oxc.jsx,
  * 会按默认 importSource 去找 react/jsx-dev-runtime 并报 "could not be resolved"
@@ -53,10 +53,10 @@ export default defineConfig(({ command }) => ({
     outDir,
     emptyOutDir: true,
     target: 'es2022',
-    // 单份 CSS,便于 §5.6 的层叠顺序在产物里可验证、也便于体积门禁计量
+    // 单份 CSS,便于层叠顺序在产物里可验证、也便于体积门禁计量
     cssCodeSplit: false,
     // 服务端对所有响应发 Cache-Control: no-store,内容哈希没有意义;
-    // 且 §5.9 要求静态资源按内存清单白名单式映射,文件名必须固定
+    // 且要求静态资源按内存清单白名单式映射,文件名必须固定
     rollupOptions: {
       output: {
         entryFileNames: 'app.js',
@@ -70,12 +70,12 @@ export default defineConfig(({ command }) => ({
   server: {
     port: 5173,
     strictPort: true,
-    // §5.9 的三道校验全部在代理层解决,**后端零 dev 分支**(spec §5.9 / §5.11):
+    // 三道校验全部在代理层解决,**后端零 dev 分支**:
     //   Host   —— changeOrigin 改写成后端的 127.0.0.1:<port>
     //   Origin —— configure 钩子里重写为后端自身 origin
-    //   token  —— 从 os.tmpdir() 的注册表(§5.8)读出 port 与 token,注入 Cookie 头
+    //   token —— 从 os.tmpdir() 的注册表读出 port 与 token,注入 Cookie 头
     // 在后端加一个「dev 模式放宽校验」的环境变量是这里唯一被禁止的捷径:那等于
-    // 把正面防御做成一个可被误开的开关(§10 明令禁止)。
+    // 把正面防御做成一个可被误开的开关(明令禁止)。
     ...(command === 'serve' ? devProxy() : {}),
   },
 }));

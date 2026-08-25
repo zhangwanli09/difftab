@@ -1,4 +1,4 @@
-// 未跟踪文件的手工 unified diff 构造、`--numstat` 解析与路径边界(spec §5.2)。
+// 未跟踪文件的手工 unified diff 构造、`--numstat` 解析与路径边界。
 
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -39,7 +39,7 @@ describe('resolveInRepo', () => {
   });
 });
 
-describe('parseNumstat(§5.2:已跟踪那一侧的二进制与行数判定)', () => {
+describe('parseNumstat(已跟踪那一侧的二进制与行数判定)', () => {
   test('普通记录:一条占一个 NUL 段,行数是加 + 减', () => {
     expect(parseNumstat('1\t2\ta.txt\0')).toEqual([
       { binary: false, lines: 3, path: 'a.txt', oldPath: null },
@@ -53,7 +53,7 @@ describe('parseNumstat(§5.2:已跟踪那一侧的二进制与行数判定)', ()
   });
 
   test('重命名记录占**三**段:后两段是新旧路径,不能再被当成记录去解析', () => {
-    // 实测形态(spec §10):`1\t0\t\0<旧>\0<新>`,路径字段是空的,且顺序与
+    // 实测形态:`1\t0\t\0<旧>\0<新>`,路径字段是空的,且顺序与
     // porcelain 的 `2 ` 记录**相反**(那边新在前)。读反了不报错,只是标注里的
     // 「重命名自」指着新名字。
     //
@@ -130,7 +130,7 @@ describe('untrackedDiff', () => {
     writeFileSync(join(root, 'many-lines.txt'), `${'x\n'.repeat(50_001)}`);
     const payload = await untrackedDiff(root, 'many-lines.txt');
     // reason 必须是 lines 而不是 size:体积只有约 100 KB,前端若只拿到体积就会
-    // 显示「文件过大(0 MB)」这种自相矛盾的话(§5.12)
+    // 显示「文件过大(0 MB)」这种自相矛盾的话
     expect(payload).toEqual({ kind: 'too-large', size: 100_002, reason: 'lines' });
   });
 

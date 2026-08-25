@@ -1,5 +1,5 @@
 // 状态文件按 `git rev-parse --git-dir` 找,而**那条路径在各平台上都拼得出来**
-// (spec §5.3 / §5.2 的红线,跑的是 dist/ 产物)。
+// (红线,跑的是 dist/ 产物)。
 //
 // 为什么非要在冒烟里再来一遍:`test/unit/server/git-integration.test.ts` 已经有
 // linked worktree / submodule 两条用例,但 (a) 单测只在 CI 的 ubuntu 档跑,而这条红线

@@ -1,4 +1,4 @@
-// 空闲退出的计时器(spec §5.8)。
+// 空闲退出的计时器。
 //
 // 这里钉的两类错都不报错:**退早了**(用户开着页面,进程自己没了)与**退不掉**
 // (关完标签留一个后台常驻进程)。45 秒的用例没人会跑第二次,所以用假时钟。
@@ -13,7 +13,7 @@ import {
 } from '../../../src/server/http/idle.ts';
 
 describe('resolveIdleMs', () => {
-  test('默认是 spec §5.8 的 45 秒', () => {
+  test('默认是 45 秒', () => {
     expect(resolveIdleMs({})).toBe(IDLE_EXIT_MS);
     expect(IDLE_EXIT_MS).toBe(45_000);
   });
@@ -25,7 +25,7 @@ describe('resolveIdleMs', () => {
   test('取值不合法即抛,不退回默认的 45s', () => {
     // 退回默认的话,手滑写错的那次照样启动成功、照样跑出一个看着合理的行为,
     // 于是「我验过空闲退出了」建立在一次根本没生效的强制指定上 —— 而症状是
-    // 那条用例等满 45 秒后超时,读起来像产品坏了(同 §5.7 的 WATCH_TIER)
+    // 那条用例等满 45 秒后超时,读起来像产品坏了(同 WATCH_TIER)
     for (const raw of ['abc', '0', '-5', 'NaN', '1e999x']) {
       expect(() => resolveIdleMs({ [IDLE_ENV]: raw }), raw).toThrow(IdleConfigError);
     }

@@ -1,4 +1,4 @@
-// 拉起浏览器的单点断言(spec §5.10「唯一的非 git 子进程豁免」)。
+// 拉起浏览器的单点断言(「唯一的非 git 子进程豁免」)。
 //
 // fake git wrapper 劫持不到这一处调用,所以它必须在这里单独被钉住:
 // 命令来自固定映射、参数只有 URL 一项。「产品代码里只有这一处非 git 子进程」
@@ -16,7 +16,7 @@ describe('browserCommand', () => {
     expect(browserCommand('win32', URL_)).toEqual({
       command: 'cmd',
       // 空串是 `start` 的窗口标题占位。少了它,带引号的 URL 会被当作标题吞掉,
-      // 浏览器根本不开(spec §5.1)—— 而这是一个只在 Windows 上出现的静默失败
+      // 浏览器根本不开—— 而这是一个只在 Windows 上出现的静默失败
       args: ['/c', 'start', '', URL_],
     });
   });

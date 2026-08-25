@@ -1,10 +1,10 @@
-// `npm i -g difftab` 三端验收(spec §6 的全局安装项)。
+// `npm i -g difftab` 三端验收(全局安装项)。
 //
 // 打包 → 全局装 → **用装到 PATH 上的那个可执行文件**在一个真仓库里跑通 → 卸掉。
 // 三件事一起证:产物清单齐全(缺文件时这里才炸,`check:pack` 只看清单)、Windows 的
 // `.cmd` shim 起得来、以及全局目录里除了 difftab 自己什么都没多出来。
 //
-// **零依赖纯 JS,可由 `node scripts/check-global-install.mjs` 直接执行**(spec §5.11):
+// **零依赖纯 JS,可由 `node scripts/check-global-install.mjs` 直接执行**:
 // 它要跑在 CI 上不装任何依赖的机器上。起进程与清理复用 `test/smoke/helpers.js`
 // (同样零依赖)—— 尤其是"第一行是 URL"那个 ready 判据,不在这里再定义一遍。
 // 前置条件只有两个 —— `dist/` 已就位(CI 里是下载的 artifact,本机需先 `pnpm build`),
@@ -134,7 +134,7 @@ try {
     args: [],
     // Windows 上 `difftab` 是个 `.cmd` shim,不经 shell 起不来
     shell: true,
-    // 没有客户端来连,让它按空闲退出自己收场(spec §5.8)—— 见下面为什么不 kill
+    // 没有客户端来连,让它按空闲退出自己收场—— 见下面为什么不 kill
     env: { DIFFTAB_IDLE_MS: '1000' },
   });
 

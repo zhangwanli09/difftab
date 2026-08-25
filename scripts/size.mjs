@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// 产物体积门禁(spec §5.5 / §6)。
+// 产物体积门禁。
 //
 // 零依赖纯 JS,可由 `node scripts/size.mjs` 直接执行 —— 它要在没有 pnpm、
 // 没有 node_modules 的 CI matrix 机器上跑,package.json 里的 `size` 只是别名。
 //
 // 用法:
 //   node scripts/size.mjs            对照门禁,超预算即以非 0 退出
-//   node scripts/size.mjs --json     以 JSON 输出实测值(用于回填 spec §5.5 表格)
+//   node scripts/size.mjs --json 以 JSON 输出实测值(用于回填表格)
 
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
@@ -15,7 +15,7 @@ import { gzipSync } from 'node:zlib';
 const repoRoot = resolve(import.meta.dirname, '..');
 const webDir = join(repoRoot, 'dist', 'web');
 
-/** spec §5.5 的门禁。当前为预算值,S2 收口时回填实测。 */
+/** 门禁。当前为预算值,S2 收口时回填实测。 */
 const BUDGETS = [
   { name: '前端 JS(明文)', match: /\.js$/, metric: 'plain', limit: 350 * 1024 },
   { name: '前端 JS(gzip)', match: /\.js$/, metric: 'gzip', limit: 120 * 1024 },
@@ -80,6 +80,6 @@ if (process.argv.includes('--json')) {
 }
 
 if (results.some((r) => !r.ok)) {
-  console.error('\nsize: 超出 spec §5.5 的体积门禁。第一刀砍 hljs 语言清单(见 §5.5)。');
+  console.error('\nsize: 超出体积门禁。第一刀砍 hljs 语言清单。');
   process.exit(1);
 }

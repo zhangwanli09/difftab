@@ -1,5 +1,5 @@
 {
-  // 后端 TS 与三份 .ts 构建配置的类型检查(spec §5.11)。严格性开关见 tsconfig.base.json。
+  // 后端 TS 与三份 .ts 构建配置的类型检查。严格性开关见 tsconfig.base.json。
   //
   // 注意 scripts/*.mjs 与 test/smoke/*.js **不在**任何 tsconfig 里 —— 它们是纯 JS,
   // 不参与类型检查,因此拿不到 @types/node@^22 的 API 上限保护;这两处用错新 API

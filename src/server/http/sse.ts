@@ -1,11 +1,11 @@
-// SSE 通道(spec §5.8 / §5.12 的 `GET /api/events`)。
+// SSE 通道(`GET /api/events`)。
 //
 // 单独一个文件、且只依赖 `write` / `end` 两个方法,是为了让心跳能被**单测**钉住:
 // 心跳周期 15s,接在 ServerResponse 上就只能靠一个跑 15 秒的用例去验,而那种用例
 // 没人会跑第二次。这里用假时钟推 15s 即可。
 //
 // 心跳本身不是给用户看的,是给中间层看的:浏览器、系统休眠、以及 `pnpm dev` 下的
-// Vite 代理都可能在长时间静默后把一条看起来死掉的连接回收。而这条连接同时是 §5.8
+// Vite 代理都可能在长时间静默后把一条看起来死掉的连接回收。而这条连接同时是
 // 空闲退出的判据 —— 它被悄悄回收,进程就会在用户还开着页面时以为没人了。
 // **周期定在 `shared/protocol.ts`**:前端要按同一个数判连接死活(理由记在那里)。
 
@@ -35,7 +35,7 @@ export function formatEvent(name: string, data: unknown): string {
 export interface SseChannel {
   add(client: SseClient): void;
   remove(client: SseClient): void;
-  /** 当前连接数。§5.8 的空闲退出以它为判据。 */
+  /** 当前连接数。空闲退出以它为判据。 */
   readonly size: number;
   send(name: string, data: unknown): void;
   close(): void;
@@ -46,7 +46,7 @@ export interface SseChannelOptions {
   /**
    * 连接数可能变了就叫一声(`add` / `remove` 之后各一次)。
    *
-   * **§5.8 的空闲计时挂在这里,而不是挂在端点上**:`size` 是空闲退出唯一的正面判据,
+   * **空闲计时挂在这里,而不是挂在端点上**:`size` 是空闲退出唯一的正面判据,
    * 而能改变它的只有这两个方法。让端点自己记得在断连那一侧重新武装计时器,等于把
    * 「关掉最后一个标签之后进程要退」寄存在人的记忆里——漏掉不报错,只是进程从此不退。
    * 挂在这里,将来任何一处 add / remove 都自动被覆盖。
@@ -78,7 +78,7 @@ export function createSseChannel({
   };
 
   const heartbeat = setInterval(() => send('heartbeat', {}), heartbeatMs);
-  // 心跳绝不该是进程活着的理由:没有连接时它每 15s 空转一次,而 §5.8 的空闲退出
+  // 心跳绝不该是进程活着的理由:没有连接时它每 15s 空转一次,而空闲退出
   // 靠的是连接数,不是有没有定时器
   heartbeat.unref();
 

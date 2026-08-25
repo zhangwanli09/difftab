@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 冷启动测量(spec §6「冷启动 · CLI 侧」)。
+// 冷启动测量(CLI 侧:进程 ready 并打印 URL)。
 //
 // 零依赖纯 JS,可由 `node scripts/bench-startup.mjs` 直接执行 —— 它要在没有 pnpm、
 // 没有 node_modules 的 CI matrix 机器上跑,package.json 里的 `bench:startup` 只是别名。
@@ -18,7 +18,7 @@ import { join, resolve } from 'node:path';
 const repoRoot = resolve(import.meta.dirname, '..');
 const entry = join(repoRoot, 'bin', 'difftab.js');
 
-/** spec §6 的门禁值。 */
+/** 门禁值。 */
 const BUDGET_MS = 300;
 const RUNS = 7;
 const READY_PATTERN = /^http:\/\/127\.0\.0\.1:\d+\//;
@@ -37,7 +37,7 @@ function measureOnce(cwd) {
     const started = process.hrtime.bigint();
     const child = spawn(process.execPath, [entry], {
       cwd,
-      // 拉起浏览器在 CI 与测量中必须可关(spec §5.10)
+      // 拉起浏览器在 CI 与测量中必须可关
       env: { ...process.env, DIFFTAB_NO_OPEN: '1' },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -119,6 +119,6 @@ console.log(`  样本 (${RUNS} 次): ${samples.map(fmt).join('  ')}`);
 console.log(`  中位数 ${fmt(median)} / 门禁 ${BUDGET_MS}ms  最快 ${fmt(samples[0])}`);
 
 if (median > BUDGET_MS) {
-  console.error(`\nbench:startup: 冷启动中位数 ${fmt(median)} 超出 ${BUDGET_MS}ms 门禁(spec §6)。`);
+  console.error(`\nbench:startup: 冷启动中位数 ${fmt(median)} 超出 ${BUDGET_MS}ms 门禁。`);
   process.exit(1);
 }

@@ -1,7 +1,7 @@
-// 后端入口(spec §5.1)。由 bin/difftab.js 在版本守卫通过后动态 import。
+// 后端入口。由 bin/difftab.js 在版本守卫通过后动态 import。
 //
 // 本文件只做「解析参数 → 分派」,启动流程本身在 cli/start.ts ——
-// 依赖方向是 bin → server/cli → server/http → {server/git, server/watch}(spec §5.0)。
+// 依赖方向是 bin → server/cli → server/http → {server/git, server/watch}。
 
 import { readFileSync, writeSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -27,7 +27,7 @@ function readVersion(): string {
   return manifest.version;
 }
 
-/** 一句话友好报错,不是 Node 异常栈(spec §5.2 的启动前置检查)。 */
+/** 一句话友好报错,不是 Node 异常栈(启动前置检查)。 */
 function fail(message: string): never {
   // **`writeSync` 而不是 `process.stderr.write`**:后者写到**管道**时在 Windows 上
   // 是异步的,紧跟着 `process.exit()` 会把还在缓冲区里的内容整条丢掉 —— 而冒烟测试
@@ -53,7 +53,7 @@ function fail(message: string): never {
  * 失败因此以一个 `'error'` 事件到达 —— 零监听器的流收到 `'error'` 就是整个进程带着
  * 裸栈以 1 退出。已在 CI 的 windows × Node 24 档实测到:`head` 一退,紧接着那句
  * 「read-only view of this repository」就把服务打死了,而 macOS / Linux 上同一条路
- * 一声不响(见 spec §10)。
+ * 一声不响。
  *
  * 服务本身没坏 —— 浏览器照常用得上,45 秒没人连再自己退,所以这里只是把 EPIPE
  * 咽掉。**非 EPIPE 的错误照旧抛**:那是真出事了,不该借这条路一起被吞掉。

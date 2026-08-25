@@ -1,9 +1,9 @@
-// §5.9 的三道校验与安全响应头。纯函数,便于单测逐条钉住。
+// 三道校验与安全响应头。纯函数,便于单测逐条钉住。
 //
 // **后端零 dev 分支**:本文件不得出现任何放宽这三道校验的环境变量或分支。
 // Vite dev server 与后端不同源,会同时撞上 Host、Origin、token 三道门 —— 解法一律
 // 放在 dev server 的代理层(改写 Host / Origin、注入 token cookie),见 vite.config.ts。
-// 在这里开一个口子,等于把正面防御做成一个可被误开的开关(spec §5.9 / §10)。
+// 在这里开一个口子,等于把正面防御做成一个可被误开的开关。
 
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 
@@ -15,7 +15,7 @@ const ALLOWED_HOSTNAMES = ['127.0.0.1', 'localhost'];
 /**
  * cookie 名带上端口。
  *
- * cookie 的作用域是 host 而非 origin,**不隔离端口**(spec §5.9):同机另一个监听
+ * cookie 的作用域是 host 而非 origin,**不隔离端口**:同机另一个监听
  * `127.0.0.1:<其他端口>` 的服务同样会收到我们的 cookie,反过来它设的同名 cookie
  * 也会盖掉我们的。名字里带端口,两个 difftab 实例(不同仓库、不同端口)才能
  * 在同一个浏览器里共存。
@@ -33,7 +33,7 @@ export function createSecret(): string {
  * token 形如 `<port>.<secret>`。
  *
  * 端口写进 token 本身,是为了让服务端校验时**一并绑定校验本次会话的端口**
- * (spec §5.9 第 3 条):cookie 会泄漏给本机其他 localhost 服务,带上端口后
+ * cookie 的作用域是 host 而非 origin:它会泄漏给本机其他 localhost 服务,带上端口后
  * 那份 token 在别处无法复用。
  */
 export function composeToken(port: number, secret: string): string {
@@ -44,7 +44,7 @@ export function composeToken(port: number, secret: string): string {
  * 打印给用户、也拿去拉起浏览器的那个 URL。
  *
  * **只此一处**:探活复用命中时,是**另一个进程**按注册表里的 port + token 重新拼出
- * 同一个 URL 交给浏览器(§5.8)。两处各拼一遍的话,哪天 token 的落地方式变了
+ * 同一个 URL 交给浏览器。两处各拼一遍的话,哪天 token 的落地方式变了
  * (换 query 名、换编码),复用那条路会拼出一个 403 的链接 —— 而它平时不走,
  * 谁也不会先注意到。
  */
@@ -97,9 +97,9 @@ export function tokensMatch(presented: string | null | undefined, expected: stri
 /**
  * 第 3 道之外的公共响应头。
  *
- * CSP 的后三个指令**不回退到 `default-src`**,不显式写就等于没设(spec §5.9 / §10):
+ * CSP 的后三个指令**不回退到 `default-src`**,不显式写就等于没设:
  * `'none'` 一并挡掉被 iframe 嵌套、`<base>` 改写相对 URL 与表单外发。
- * 不开 `'unsafe-inline'` 是 §5.11 构建链路顺带解锁的 —— 产物是独立的 .js / .css、
+ * 不开 `'unsafe-inline'` 是构建链路顺带解锁的 —— 产物是独立的 .js / .css、
  * 页面无内联脚本,才有条件不开。
  */
 export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
@@ -121,7 +121,7 @@ export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
  * 把 token 落成 cookie 的 Set-Cookie 值。
  *
  * `HttpOnly; SameSite=Strict` + 随后 302 掉 query,避免 token 长期滞留在浏览器
- * 历史、地址栏和日志中(spec §5.9)。不设 `Secure` —— 那会让 http://127.0.0.1
+ * 历史、地址栏和日志中。不设 `Secure` —— 那会让 http://127.0.0.1
  * 上的 cookie 直接不生效。
  */
 export function tokenCookie(port: number, token: string): string {

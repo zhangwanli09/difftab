@@ -1,9 +1,9 @@
-// 面板宽度 → diff 版式的映射(spec §5.5)。
+// 面板宽度 → diff 版式的映射。
 //
 // **这里测的是判据,不是那条 wiring**:`App.tsx` 里 `ResizeObserver` → `diffPanelWidth`
 // 那一段在 happy-dom 上盖不到 —— 它的 `ResizeObserver` 是个 `observe()` 什么都不做的
-// 空壳,而且它本来也没有布局引擎、量不出宽度(实测,见 `decisions.md` §10)。那一段归
-// `acceptance.md` §6 的肉眼项;能自动化的是「给定宽度该出哪种版式」与「版式变了会不会
+// 空壳,而且它本来也没有布局引擎、量不出宽度(实测)。那一段归
+// 的肉眼项;能自动化的是「给定宽度该出哪种版式」与「版式变了会不会
 // 重画」(后者在 diff-view.test.tsx)。
 
 import { beforeEach, describe, expect, it } from 'vitest';

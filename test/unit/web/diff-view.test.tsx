@@ -1,4 +1,4 @@
-// DiffView 的四个 payload 分支与容器所有权(spec §5.5 / §5.12 / §5.4)。
+// DiffView 的四个 payload 分支与容器所有权。
 //
 // store 那份用例盯的是「取 diff 时状态怎么转」,本文件盯的是「同一份状态渲染成什么」——
 // 两件事分开:S2b 那个坑(同一个文件重新取时回退 loading)在 store 层已经钉住了,
@@ -13,7 +13,7 @@ import { diffState, type RenameInfo } from '../../../src/web/state/store';
 
 /**
  * **那行上下文(`export const keep`)不是凑数的**:happy-dom 的 `Attr.nodeName` 返回空串
- * (实测,见 render.test.ts 与 spec §10),于是凡是走过 diff2html `mergeStreams` 的行
+ * (实测,见 render.test.ts 与),于是凡是走过 diff2html `mergeStreams` 的行
  * —— 也就是带 `<del>` / `<ins>` 词级标记的增删行 —— 类名会被写坏。上下文行不走那条路,
  * 类名完好,所以"高亮出颜色"这条断言只能压在它身上。删掉它,断言会以一个与产品无关的
  * 理由变红。
@@ -112,10 +112,10 @@ describe('DiffView', () => {
     ready('a.ts', { kind: 'text', patch: patchFor('const x = 1;') });
     await waitFor(() => expect(container.querySelector('.d2h-file-wrapper')).not.toBeNull());
 
-    // 少了这个包含块,右侧一滚整列行号就原地钉死、与代码行错开(§5.6)。
+    // 少了这个包含块,右侧一滚整列行号就原地钉死、与代码行错开。
     //
     // **断言只能压在类名上**:happy-dom 没有排版引擎,"滚动后行号还对得上"在这里
-    // 不可判定,真布局由 §6 的人工那步验;这条钉的是"那个类名还在",防的是有人把它
+    // 不可判定,真布局由人工那步验;这条钉的是"那个类名还在",防的是有人把它
     // 当成多余的工具类顺手删掉。等 diff2html 画完再断言不是白等 —— `draw()` 是往这个
     // 元素上赋 `innerHTML`,顺带钉住它没把我们的 class 冲掉。
     // 类名换成拼出来的(`cx('relative')` 之类)这条照样绿,而 Tailwind 扫不到字面量、
@@ -150,7 +150,7 @@ describe('DiffView', () => {
     expect(byLines).not.toContain('MB');
   });
 
-  it('重命名条目标注旧路径与相似度(§6:点开后要标注为重命名)', async () => {
+  it('重命名条目标注旧路径与相似度(点开后要标注为重命名)', async () => {
     ready('src/new name.ts', { kind: 'text', patch: patchFor('const x = 1;') }, {
       oldPath: 'src/old name.ts',
       score: 95,
@@ -177,7 +177,7 @@ describe('DiffView', () => {
   });
 
   it('体积取不到时(已删除的文件)不把 0 说成 1 KB —— 两个 reason 都是', async () => {
-    // 已被删除的文件在工作区没有体积可取,后端给的是 0(§5.12)。formatSize 的
+    // 已被删除的文件在工作区没有体积可取,后端给的是 0。formatSize 的
     // `Math.max(1, …)` 会把它说成「1 KB」—— 一个编出来的数
     ready('gone.txt', { kind: 'too-large', size: 0, reason: 'lines' });
     await waitFor(() => expect(container.textContent).toContain('Too many lines'));
@@ -198,14 +198,14 @@ describe('DiffView', () => {
     await waitFor(() => expect(container.textContent).toContain('const second'));
 
     // 元素**同一个**是这条验收的全部内容:换成新元素就意味着 diff2html 画好的 DOM
-    // 连同滚动位置一起被丢掉,而 §5.4 要求刷新不丢这两样。S3b1 起每个 change 事件
+    // 连同滚动位置一起被丢掉,而要求刷新不丢这两样。S3b1 起每个 change 事件
     // 都会走这条路
     expect(payloadNode()).toBe(before);
     expect(container.textContent).not.toContain('const first');
   });
 
   it('面板变窄变宽:版式跟着换,容器仍留在原地', async () => {
-    // 这条钉的是 §5.5 那句「格式必须进 effect 的依赖数组」。漏了不报错、页面照常有
+    // 这条钉的是那句「格式必须进 effect 的依赖数组」。漏了不报错、页面照常有
     // diff,只是拖窗口时版式纹丝不动 —— 没有任何别的东西看得见。
     //
     // 走的是直接写 `diffPanelWidth`,不经 ResizeObserver:happy-dom 的 ResizeObserver

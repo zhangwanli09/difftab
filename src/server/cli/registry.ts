@@ -1,7 +1,7 @@
-// 同仓库单实例的注册表文件(spec §5.8)。
+// 同仓库单实例的注册表文件。
 //
 // 写入在 S1 就落地(dev proxy 要从这里拿 token,否则那段时间里「临时给后端加个
-// 放宽校验的环境变量」就成了最短路径,而那是 §10 明令禁止的做法);**消费**它的
+// 放宽校验的环境变量」就成了最短路径,而那是红线明令禁止的做法);**消费**它的
 // 那一半 —— 探活复用 —— 在 S3c,落在同目录的 probe.ts。
 
 import { createHash } from 'node:crypto';
@@ -20,7 +20,7 @@ import { join, resolve } from 'node:path';
 export interface RegistryEntry {
   pid: number;
   port: number;
-  /** `<port>.<secret>`,dev proxy 靠它注入 cookie(spec §5.11)。 */
+  /** `<port>.<secret>`,dev proxy 靠它注入 cookie。 */
   token: string;
   repoRoot: string;
   startedAt: number;
@@ -29,8 +29,8 @@ export interface RegistryEntry {
 /**
  * 注册表目录。
  *
- * **绝不能写进 `.git/` 或工作区** —— 那既污染 `git status`,也实质违背零写操作承诺
- * (spec §5.8 / §10)。`os.tmpdir()` 的权限因平台而异,Linux 上是 `/tmp`(1777,
+ * **绝不能写进 `.git/` 或工作区** —— 那既污染 `git status`,也实质违背零写操作承诺。
+ * `os.tmpdir()` 的权限因平台而异,Linux 上是 `/tmp`(1777,
  * 同机其他用户可读),所以这里再套一层每用户私有子目录,文件本身另有 0o600。
  */
 function registryDir(): string {
@@ -72,7 +72,7 @@ export function registryPath(repoRoot: string): string {
  * 写入注册表。
  *
  * `0o600` 必须**配合 `O_EXCL` 在创建时**给出(`'wx'` + mode),而不是先建后 chmod ——
- * 后者留下一个竞态窗口,窗口里文件是可读的,而它存着本次会话的 token(spec §5.8)。
+ * 后者留下一个竞态窗口,窗口里文件是可读的,而它存着本次会话的 token。
  */
 function writeExclusive(path: string, payload: string): void {
   const fd = openSync(path, 'wx', 0o600);
@@ -97,7 +97,7 @@ export function writeRegistry(entry: RegistryEntry): string {
      * 写注册表),所以覆盖是对的。
      *
      * 保留 `O_EXCL` + 显式 unlink 而不是改成 `'w'`:两者的区别只在这个分支要不要
-     * 显式承认「我在覆盖别人的条目」。而 §5.8 那条 `0o600` 必须在创建时给出的要求
+     * 显式承认「我在覆盖别人的条目」。而那条 `0o600` 必须在创建时给出的要求
      * 也只有 `'wx'` 满足 —— `'w'` 对已存在的文件根本不套用 mode,一次遗留的
      * 0644 条目会被原样沿用,里面躺着本次会话的 token。
      */

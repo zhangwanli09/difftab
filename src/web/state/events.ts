@@ -1,9 +1,9 @@
-// SSE 订阅(spec §5.8 / §5.12 的 `GET /api/events`)。
+// SSE 订阅(`GET /api/events`)。
 //
 // 前端这一侧只做两件事:收到 `change` 就重取一次状态,以及**在标签重新激活时判断
 // 这条连接还活着没有**。档位与降级判定全在后端 —— 前端不内联任何监听知识
-//(§5.0 不变式 4);心跳是唯一的例外,它在这里被当成「对端还在」的证据用(见
-// `STALE_MS`),而那是 §5.8 给它定的用途本身。
+//(架构边界不变式 4);心跳是唯一的例外,它在这里被当成「对端还在」的证据用(见
+// `STALE_MS`),而那是给它定的用途本身。
 
 import { HEARTBEAT_MS } from '../../server/shared/protocol';
 import { refresh } from './store';
@@ -25,7 +25,7 @@ export const RECONNECT_MS = 3000;
  * 自己重连的次数上限。
  *
  * 「永久关闭」里能自愈的只有一种:后端或 dev 代理抖了一下,回了条 5xx。**换个端口
- * 重启的后端是治不好的** —— 端口由内核随机分配(§5.9),旧标签页永远敲不到新实例。
+ * 重启的后端是治不好的** —— 端口由内核随机分配,旧标签页永远敲不到新实例。
  * 不封顶的话,一个早就该关掉的标签页会每 3 秒敲一次,敲到用户关掉浏览器为止。
  * 封顶之后仍有一条复活路径:切回标签页时重新武装(见 `onVisible`),而用户回来
  * 看一眼,正好是最值得再试一次的时刻。
@@ -48,7 +48,7 @@ export const STALE_MS = HEARTBEAT_MS * 2 + 5_000;
 /**
  * 订阅后端事件。返回一个取消订阅的函数(给测试与将来可能的重挂用)。
  *
- * 不带 token:它在生产下是 HttpOnly cookie、dev 下由代理注入(§5.9 / §5.11),
+ * 不带 token:它在生产下是 HttpOnly cookie、dev 下由代理注入,
  * 两条路径浏览器都会自动带上,前端完全不接触 token。
  */
 export function connectEvents(): () => void {
@@ -65,7 +65,7 @@ export function connectEvents(): () => void {
       clearTimeout(retry);
       retry = null;
     }
-    // 已经连着(或正在连)就不动它:每次重连都是一条新的 HTTP 连接,而 §5.8 的
+    // 已经连着(或正在连)就不动它:每次重连都是一条新的 HTTP 连接,而
     // 空闲退出以连接数为判据,反复开关等于让后端在「有人」和「没人」之间抖动
     if (source !== null && source.readyState !== CLOSED) return false;
 
@@ -75,7 +75,7 @@ export function connectEvents(): () => void {
     lastSeen = Date.now();
     /**
      * 每条消息都是一次「对端还在」的证据,心跳也算 —— 它在后端的用途是别让中间层
-     * 把静默的连接回收掉(§5.8),在前端的用途见 `STALE_MS`。重试计数也在这里清:
+     * 把静默的连接回收掉,在前端的用途见 `STALE_MS`。重试计数也在这里清:
      * 清在 `open()` 里的话上限永远不会到,因为每次重试都要经过 `open()`。
      */
     const seen = () => {
@@ -99,7 +99,7 @@ export function connectEvents(): () => void {
   };
 
   /**
-   * 标签重新激活时主动重连并重取一次(spec §5.8)。
+   * 标签重新激活时主动重连并重取一次。
    *
    * 系统休眠唤醒、Chrome 省内存丢弃后台标签之后,这条连接可能已经死了而
    * `error` 事件永远不会来 —— 页面于是停在休眠前的那一屏,看上去只是「没有变更」。
@@ -110,7 +110,7 @@ export function connectEvents(): () => void {
    * **补取只在真的重连了之后做**:连接从头到尾活着,就说明期间的每个 `change`
    * 都已经推到过了(后台标签照收,被冻结的页面在恢复时把排队的事件补上),
    * 而心跳刚刚证明了这一点。这时再取一次纯属白取,它取的却可能是一份数 MB 的
-   * diff(§5.2 的阈值)—— 而切标签正是这个工具最频繁的动作。
+   * diff(阈值)—— 而切标签正是这个工具最频繁的动作。
    */
   const onVisible = () => {
     if (document.hidden) return;

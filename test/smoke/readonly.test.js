@@ -1,14 +1,14 @@
-// §5.10 的**主门禁**:跑一遍完整流程,断言产品只执行了只读白名单里的 git 子命令。
+// **主门禁**:跑一遍完整流程,断言产品只执行了只读白名单里的 git 子命令。
 //
-// 记录手段是 git 自带的 `GIT_TRACE=<绝对路径>`(见 spec §5.10 / §10 的实测依据):
+// 记录手段是 git 自带的 `GIT_TRACE=<绝对路径>`(实测依据):
 // 它把每一次 git 调用连同完整参数追加进日志文件,三端同一套写法。原方案「PATH 上放
 // 一个 fake git wrapper」在 Windows 上落不了地 —— Node ≥ 20.12 起不带 `shell` 就
 // 拒绝 spawn `.cmd` / `.bat`,而把 node.exe 复制成 git.exe 时 node 自己会先把 argv
 // 吃掉一截(`-c` 被当成 `--check`,下一个参数还被 path.resolve 改写),记到的
-// 「完整子命令」是错的。两条都已实测,证据在 spec §10。
+// 「完整子命令」是错的。两条都已实测,证据在。
 //
 // GIT_TRACE 比 PATH 劫持还多覆盖一层:git **内部**再起的子进程(自动 gc 之类)
-// 同样会被记下来,而那正是「写进 .git/ 但不改变 status 输出」的典型 —— §5.10
+// 同样会被记下来,而那正是「写进 .git/ 但不改变 status 输出」的典型 ——
 // 排除「前后 git status 比对」时说的就是它。
 //
 // 4.1 的「零写操作」是产品核心承诺,本文件是它在开发期唯一的自动化护栏。
@@ -65,7 +65,7 @@ const trace = once(async () => {
 test('劫持真的生效 —— 日志里确实记到了东西', async () => {
   // 这条不是凑数的。GIT_TRACE 没生效(路径不是绝对的、env 没传下去、
   // 产品换了个不经封装层的方式调 git)时,下面那条白名单断言会对着一个**空数组**
-  // 通过 —— 而假绿的只读门禁比没有门禁更糟(spec §5.10)
+  // 通过 —— 而假绿的只读门禁比没有门禁更糟
   const commands = await trace();
   assert.ok(commands.length >= 8, `只记到 ${commands.length} 条 git 调用,劫持多半没生效`);
 
@@ -108,7 +108,7 @@ test('status 的参数逐字固定 —— 降级轮询将来要复用同一条',
 });
 
 test('产品代码里只有两处 child_process:git 封装层与拉起浏览器', () => {
-  // §5.10 的「唯一非 git 子进程豁免」那一半。fake wrapper 也好 GIT_TRACE 也好,
+  // 「唯一非 git 子进程豁免」那一半。fake wrapper 也好 GIT_TRACE 也好,
   // 都劫持不到非 git 的子进程,只能静态断言。
   //
   // 这条与 biome 的 noRestrictedImports 互补而非重复:lint 只看 import 说明符,
@@ -150,6 +150,6 @@ test('产品代码里只有两处 child_process:git 封装层与拉起浏览器'
   assert.deepEqual(
     using.sort(),
     allowed,
-    'src/ 下 child_process 的出现位置变了 —— spec §5.0 不变式 1/2 要求先改 spec',
+    'src/ 下 child_process 的出现位置变了 —— 架构边界不变式 1/2 要求先改文档再改代码',
   );
 });

@@ -1,12 +1,12 @@
-// 分支状态(spec §5.12 的 `BranchState` / §6「变更列表与分支状态」)。
+// 分支状态(`BranchState` / 「变更列表与分支状态」)。
 //
 // 本文件只有一条真正的判据:**`upstream === null` 是「无上游」,不是 0/0**。
-// 无上游的分支根本不输出 `# branch.ab` 行(已实测,§5.2),而最省事的写法
+// 无上游的分支根本不输出 `# branch.ab` 行(已实测),而最省事的写法
 // (`upstream?.ahead ?? 0`)会把「没有可比对象」画成「与上游同步」——不报错、
-// 不缺字段,只是说了一句假话,§6 因此把它单列成一条验收项。类型里 `upstream` 是
-// `null | { … }` 正是为了让这条分支无法被漏掉(§5.12),这里顺着它写就够了。
+// 不缺字段,只是说了一句假话,因此把它单列成一条验收项。类型里 `upstream` 是
+// `null | { … }` 正是为了让这条分支无法被漏掉,这里顺着它写就够了。
 //
-// 另外两条降级标注归 §5.3:**detached** 时 `head` 是 git 给的字面量 `(detached)`,
+// 另外两条降级标注归 :**detached** 时 `head` 是 git 给的字面量 `(detached)`,
 // 不能当分支名画出去;**进行中的多步操作**(rebase / merge / …)后端从 git 目录读来,
 // 由 `operation` 承载。两者都是「不崩溃还不够,得让用户看得出自己在什么状态里」。
 
@@ -60,7 +60,7 @@ function Upstream({ upstream }: { upstream: BranchState['upstream'] }) {
  * 进行中的多步操作的**展示文案**。
  *
  * 判据不在这里 —— 哪些状态文件对应哪个操作是 git 知识,住在
- * `server/git/operation.ts`(§5.0 不变式 4)。`am` 与 `rebase` 分成两条正是因为
+ * `server/git/operation.ts`(架构边界不变式 4)。`am` 与 `rebase` 分成两条正是因为
  * 后端把它们分开了:两者共用同一个 `rebase-apply/` 目录,合并成一句话等于对着一个
  * 正在 `git am` 的用户说他在变基。
  */
@@ -98,7 +98,7 @@ export function BranchStatus({ branch }: { branch: BranchState }) {
    * - **detached**:git 在 `# branch.head` 里给的是字面量 `(detached)`,原样画出去
    *   等于在页面上凭空多出一个叫「(detached)」的分支。判据取 `branch.detached`
    *   而不是比对那个字面量 —— 后者是 git 的输出细节,协议已经把它翻译成布尔了
-   *   (§5.12);
+   *;
    * - `head` 为空只可能是 status 输出里没有 `# branch.head`(见 `BranchState.head`),
    *   兜一句话,而不是在标题旁边留一段看不出所以然的空白;
    * - 其余就是分支名。

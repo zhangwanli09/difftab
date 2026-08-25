@@ -1,4 +1,4 @@
-// 按文件懒加载取 diff(spec §5.2)。
+// 按文件懒加载取 diff。
 //
 // **禁止一次性获取或渲染全仓 diff** —— agent 单次改 300+ 文件是常态,整仓 diff 会
 // 冻结浏览器主线程数秒到数十秒,同时拖垮冷启动指标。
@@ -10,7 +10,7 @@ import { resolveDiffBase } from './repo.ts';
 import { GitError, runGit, runGitStrict } from './run.ts';
 
 /**
- * 超过这个字节数只提示、不预览(spec §3 / §5.2)。
+ * 超过这个字节数只提示、不预览。
  *
  * **两条路量的东西不同,但量的都是「前端要吃下多少字节」**:未跟踪那一侧整份文件
  * 就是补丁,所以量文件(还省得把它读进来);已跟踪那一侧补丁只含改动与上下文,
@@ -20,7 +20,7 @@ const MAX_BYTES = 5 * 1024 * 1024;
 
 /**
  * 行数上限。体积阈值挡不住另一头:超长行数的窄文件体积不大,但逐行构造 diff 与
- * 前端渲染同样会卡(spec §5.2)。
+ * 前端渲染同样会卡。
  *
  * 已跟踪那一侧数的是**改动行数**(numstat 的加 + 减),未跟踪数的是文件行数 ——
  * 后者本来就整份都是新增行。两边量的都是「前端要渲染多少行」。
@@ -85,7 +85,7 @@ export interface Numstat {
 /**
  * `git diff --numstat -z` 的解析。**重命名记录不是一段而是三段。**
  *
- * 实测(见 spec §10):普通记录是 `<加>\t<减>\t<路径>`,一条占一个 NUL 段;
+ * 实测:普通记录是 `<加>\t<减>\t<路径>`,一条占一个 NUL 段;
  * 重命名记录的**路径字段是空的**,后面紧跟两段 `<旧路径>` `<新路径>` ——
  * 与 `status --porcelain=v2` 的 `2 ` 记录**顺序相反**(那边是新在前、旧在后)。
  * 无状态地按 NUL 平铺切分,就会把 `<旧路径>` 当成下一条记录的开头。
@@ -127,11 +127,11 @@ export function parseNumstat(output: string): Numstat[] {
  *    `ls-files` 输出为空),status 却照样报 `1 D.`、基准侧也还在。只认 index 会把
  *    它误判成未跟踪、掉进读磁盘那条路,以「文件不存在」告终;
  * 2. **是不是二进制**。已跟踪那一侧一律以 git 自己的判定为准(含 `.gitattributes`),
- *    比 NUL 探测准确(§5.2),形态是 `-\t-\t<路径>`;
+ *    比 NUL 探测准确,形态是 `-\t-\t<路径>`;
  * 3. **改了多少行**。行数阈值那一路的判据。
  *
  * 重命名同样要传两个路径 + `-M`:只传新路径时 git 无法配对,numstat 会把它算成
- * 一个全新增文件(行数因此是整份文件),与补丁那一侧的退化是同一回事(§5.2)。
+ * 一个全新增文件(行数因此是整份文件),与补丁那一侧的退化是同一回事。
  */
 async function readNumstat(
   root: string,
@@ -148,7 +148,7 @@ async function readNumstat(
    * **一次查询可以回不止一条记录**,所以必须按路径挑,不能取 `[0]`:
    *
    * 传了两个路径而 git **配不上对**时(`git mv` 之后把内容全部重写、留在工作区不
-   * `git add` —— status 照报 `R100`,所以 `oldPath` 是有的,见 §10),它会拆成
+   * `git add` —— status 照报 `R100`,所以 `oldPath` 是有的),它会拆成
    * 「删掉旧的」+「新增新的」两条,按路径排序。取 `[0]` 就是掷硬币:实测那条
    * 60,000 行的改名里,排在前面的是旧文件那条 100 行的删除,于是行数闸放它过去,
    * 一份 6 万行的补丁照旧发给浏览器 —— 正是本阶段要防的那次冻结。二进制同理,
@@ -180,7 +180,7 @@ async function worktreeSize(abs: string): Promise<number | null> {
 }
 
 /**
- * 已跟踪文件的补丁,以及三道拒绝(§5.2 / §5.12)。
+ * 已跟踪文件的补丁,以及三道拒绝。
  *
  * **已跟踪那一侧卡的是「补丁多大」,不是「文件多大」**:文件体积只对未跟踪那条路
  * 成立(整份文件就是补丁),而已跟踪文件的补丁只包含改动与上下文 —— 按文件体积拒绝,
@@ -194,10 +194,10 @@ async function worktreeSize(abs: string): Promise<number | null> {
  *
  * `size` 只用于**说话**(告诉用户这文件多大),不再参与判定,所以**只在要拒绝的那两条
  * 分支上才去 `lstat`**:正常那条路(绝大多数请求)一次系统调用都不欠。文件已被删除时
- * 取不到,给 0,前端据此不显示体积(§5.12)。
+ * 取不到,给 0,前端据此不显示体积。
  *
  * **重命名条目必须同时传新旧两个路径**:只传新路径时 git 看不到另一侧、无法配对,
- * 会把重命名退化成一个全新增文件(已实测,spec §5.2),「重命名识别并标注」随之落空。
+ * 会把重命名退化成一个全新增文件(已实测),「重命名识别并标注」随之落空。
  * 两个路径都来自 status 的 `2 ` 记录,无需额外查询。
  */
 async function trackedDiff(
@@ -210,7 +210,7 @@ async function trackedDiff(
 ): Promise<DiffPayload> {
   if (stat?.binary) return { kind: 'binary' };
   if (stat && stat.lines > MAX_LINES) {
-    // 行数这一路的 size 可能只有几百 KB,前端因此必须靠 reason 而不是 size 说话(§5.12)
+    // 行数这一路的 size 可能只有几百 KB,前端因此必须靠 reason 而不是 size 说话
     return { kind: 'too-large', size: (await worktreeSize(abs)) ?? 0, reason: 'lines' };
   }
 
@@ -245,8 +245,7 @@ function newFileHeader(path: string, mode: string): string[] {
 /**
  * 未跟踪文件的补丁:**直接读文件内容手工构造 unified diff**。
  *
- * 不用 `git diff --no-index` —— 它依赖 `/dev/null` 作为对比端,Windows 上不可移植
- * (spec §5.2 / §10)。
+ * 不用 `git diff --no-index` —— 它依赖 `/dev/null` 作为对比端,Windows 上不可移植。
  */
 export async function untrackedDiff(root: string, path: string): Promise<DiffPayload> {
   const abs = resolveInRepo(root, path);
@@ -280,7 +279,7 @@ export async function untrackedDiff(root: string, path: string): Promise<DiffPay
 
   const buffer = await readFile(abs);
   // 已跟踪文件的二进制判定以 `git diff --numstat` 为准(git 自身含 .gitattributes
-  // 的判定结果,比启发式准确);只有未跟踪文件才走 NUL 字节探测(spec §5.2)
+  // 的判定结果,比启发式准确);只有未跟踪文件才走 NUL 字节探测
   if (buffer.includes(0)) return { kind: 'binary' };
 
   const text = buffer.toString('utf8');
@@ -290,7 +289,7 @@ export async function untrackedDiff(root: string, path: string): Promise<DiffPay
   const lines = text === '' ? [] : text.split('\n');
   if (endsWithNewline) lines.pop();
   // 体积没超、行数超了 —— `reason` 区分的就是这条路径:文件可能只有几百 KB,
-  // 光把体积报给前端解释不了为什么不预览(§5.12)
+  // 光把体积报给前端解释不了为什么不预览
   if (lines.length > MAX_LINES) return { kind: 'too-large', size: info.size, reason: 'lines' };
 
   const head = newFileHeader(path, info.mode & 0o111 ? '100755' : '100644');
@@ -320,7 +319,7 @@ export async function readDiff(root: string, query: DiffQuery): Promise<DiffPayl
   // 这不是缓存,`resolveDiffBase` 刻意不跨请求缓存的理由见 repo.ts
   const [base, listed] = await Promise.all([resolveDiffBase(root), inIndex(root, query.path)]);
 
-  // 这一轮躲不掉:二进制与行数都必须在**取补丁之前**判完(§5.2)。未跟踪那条路两样
+  // 这一轮躲不掉:二进制与行数都必须在**取补丁之前**判完。未跟踪那条路两样
   // 都不用 —— 它自己读磁盘时顺手就有,所以这里只为已跟踪那一侧付这次调用
   const stat = await readNumstat(root, base, query.path, query.oldPath);
 

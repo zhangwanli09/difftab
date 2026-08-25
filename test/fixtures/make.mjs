@@ -1,18 +1,17 @@
 #!/usr/bin/env node
-// 测试仓库生成脚本 —— **第一批(S1)+ 第二批全部(S4a 的 diff 边界 + S4b 的异常状态)**
-// (spec §7 末段)。
+// 测试仓库生成脚本 —— **第一批(S1)+ 第二批全部(S4a 的 diff 边界 + S4b 的异常状态)**。
 //
 // 零依赖纯 JS,可由 `node test/fixtures/make.mjs [目标目录]` 直接执行:它要在没有
-// pnpm、没有 node_modules 的 CI matrix 机器上跑,`pnpm fixtures` 只是别名(§5.11)。
+// pnpm、没有 node_modules 的 CI matrix 机器上跑,`pnpm fixtures` 只是别名。
 //
-// 本脚本对测试仓库执行的 git init / add / commit 属「开发流程的 git」,不受 §4.1
+// 本脚本对测试仓库执行的 git init / add / commit 属「开发流程的 git」,不受
 // 零写操作约束(作用域见 CLAUDE.md 第 1 节)。
 //
-// 第一批的选取标准是**决定解析器结构,不是边界修补**:这几项分别决定 §5.2 的 `-z`
+// 第一批的选取标准是**决定解析器结构,不是边界修补**:这几项分别决定 `-z`
 // 与 `core.quotePath=false` 是否真的生效、解析循环是有状态还是无状态平铺、
-// `# branch.ab` 缺失的降级路径、以及 §5.3 的 diff 基准该做成怎样的接口形状。
+// `# branch.ab` 缺失的降级路径、以及 diff 基准该做成怎样的接口形状。
 // 删除与未跟踪符号链接按同一判据从第二批上调进来 —— 它们决定的是「已跟踪走
-// git diff / 未跟踪读磁盘」那次分流本身(spec §7 末段有修订记录)。
+// git diff / 未跟踪读磁盘」那次分流本身。
 // 第二批分两次就位:**S4a 的 diff 边界**(新增/二进制/超大,即下面的 diffEdges)与
 // **S4b 的异常状态**(detached HEAD / merge / rebase 进行中 / linked worktree /
 // submodule / bare / SHA-256 空仓库)。
@@ -57,7 +56,7 @@ const WINDOWS = process.platform === 'win32';
 export const OUTSIDE_SECRET = 'SHOULD-NEVER-APPEAR-IN-ANY-DIFF';
 
 /**
- * 路径转义那条验收项的样本:非 ASCII、空格、引号各来一个(§6)。
+ * 路径转义那条验收项的样本:非 ASCII、空格、引号各来一个。
  *
  * 最后那个**通配符文件名**不是凑数:`git diff -- <路径>` 的路径默认按 wildmatch
  * 解释,于是它会匹配到 `docs/starlight.md` 上 —— 页面在 A 的标题下显示 B 的补丁。
@@ -95,7 +94,7 @@ export const ALL_REPOS = [
 
 /**
  * 二进制内容。**判据是 NUL 字节**:已跟踪那一侧由 git 自己认(numstat 输出
- * `-\t-\t<path>`),未跟踪那一侧由我们自己探(§5.2),两条路都靠它。
+ * `-\t-\t<path>`),未跟踪那一侧由我们自己探,两条路都靠它。
  * 前面那八个字节是 PNG 的魔数,只为让 fixture 一眼看得出想扮演什么。
  */
 function binaryBytes(seed) {
@@ -214,7 +213,7 @@ export function makeFixtures(destDir, only) {
 
   const repos = {};
 
-  // 1. 路径含非 ASCII / 空格 / 引号 —— 验 §5.2 的 `-z`(列表)与
+  // 1. 路径含非 ASCII / 空格 / 引号 —— 验 `-z`(列表)与
   //    `core.quotePath=false`(补丁正文头部行)是否真的都生效
   if (wanted('unicodePaths')) {
     const cwd = init('unicode-paths');
@@ -222,14 +221,14 @@ export function makeFixtures(destDir, only) {
     // `docs/star*.md` 的**陪衬**:通配符要能匹配到别人身上,得先有个别人,而且它
     // 必须**同样已跟踪且已改动** —— 未跟踪的文件压根不进 `git diff`,那样这条就
     // 证伪不了任何东西。内容里那句话是判据:它出现在 `star*.md` 的补丁里,
-    // 就说明路径被当成了模式(§5.2 的 `GIT_LITERAL_PATHSPECS`)
+    // 就说明路径被当成了模式(`GIT_LITERAL_PATHSPECS`)
     if (!WINDOWS) write(cwd, 'docs/starlight.md', 'plain\n');
     commit(cwd, 'add files with tricky paths');
     for (const path of TRICKY_PATHS) write(cwd, path, 'one\ntwo modified\nthree\n');
     if (!WINDOWS) write(cwd, 'docs/starlight.md', 'MATCHED-BY-WILDCARD-NOT-BY-NAME\n');
     write(cwd, 'docs/未跟踪 文件.md', 'brand new\n');
     // 整个目录都未跟踪 —— 这是 `-uall` 唯一能被证伪的形态:少了它,git 把它折叠成
-    // 一行 `? 未跟踪目录/`,列表里只剩一个点不开的目录条目(§5.2 / §6)。
+    // 一行 `? 未跟踪目录/`,列表里只剩一个点不开的目录条目。
     // 上面那个未跟踪文件在 `docs/` 里,而 `docs/` 已被跟踪,折不折叠都长一样,
     // 证不了这条
     write(cwd, '未跟踪目录/a.md', 'nested one\n');
@@ -280,7 +279,7 @@ export function makeFixtures(destDir, only) {
 
     // **status 说是重命名、`git diff -M` 却配不上对**的那一档:`git mv` 之后把内容
     // 全部重写、**留在工作区不 add**。index 里躺着的仍是一次纯改名,所以 status 照报
-    // `2 ... R100`(§10),条目因此带着 oldPath;而 `diff -M` 比的是 HEAD → 工作区,
+    // `2 ... R100`,条目因此带着 oldPath;而 `diff -M` 比的是 HEAD → 工作区,
     // 相似度为零,于是它把这一条拆成「删旧」+「增新」**两条** numstat 记录。
     // 行数刻意超过 50,000:按下标取记录的写法会拿到旧文件那条几十行的删除,
     // 于是行数闸放行,一份 6 万行的补丁照旧发给浏览器(S4a 的代码评审抓到的第二条)
@@ -313,7 +312,7 @@ export function makeFixtures(destDir, only) {
     repos.staged = cwd;
   }
 
-  // 3b. 删除 + 未跟踪符号链接 —— 决定「已跟踪 / 未跟踪」那次分流的判据本身(§7 末段)
+  // 3b. 删除 + 未跟踪符号链接 —— 决定「已跟踪 / 未跟踪」那次分流的判据本身
   if (wanted('deletions')) {
     const cwd = init('deletions');
     write(cwd, 'staged-deleted.txt', 'gone from the index\n');
@@ -376,7 +375,7 @@ export function makeFixtures(destDir, only) {
   }
 
   // 5. 空仓库(`git init` 后无提交)—— HEAD 不存在,`git diff HEAD` 直接 fatal,
-  //    diff 基准须降级为空树哈希(§5.3)。**放一个已 add 的文件**:否则全是未跟踪,
+  //    diff 基准须降级为空树哈希。**放一个已 add 的文件**:否则全是未跟踪,
   //    空树基准那条路径一次都走不到,而它正是本项要证的东西
   if (wanted('empty')) {
     const cwd = init('empty');
@@ -401,7 +400,7 @@ export function makeFixtures(destDir, only) {
 
   // 7. diff 边界(**第二批的 diff 部分,S4a**):新增 / 二进制 / 超大 / 超多行。
   //    第一批全是「决定解析器结构」的样本,这一批决定的是**取 diff 之前那道判定**:
-  //    哪些文件根本不该走到 `git diff` 的输出上(§5.2 的二进制与两个阈值)
+  //    哪些文件根本不该走到 `git diff` 的输出上(二进制与两个阈值)
   if (wanted('diffEdges')) {
     const cwd = init('diff-edges');
     // 二进制、超大、超多行三者都要有「改前」的一面,否则它们只是新增文件,
@@ -432,7 +431,7 @@ export function makeFixtures(destDir, only) {
     // **两个阈值刻意各自只被一个文件触发,互为对照**:
     //   huge.txt 是「一行 6MB」—— 体积超标而行数只有 1,行数阈值挡不住它;
     //   wide.txt 是「60,000 行短文本」约 700KB —— 行数超标而体积远不到 5MB,
-    //     体积阈值挡不住它,而前端只拿到体积时会显示「文件过大(0 MB)」(§5.12)
+    //     体积阈值挡不住它,而前端只拿到体积时会显示「文件过大(0 MB)」
     write(cwd, 'huge.txt', `${'x'.repeat(OVER_SIZE_BYTES)}\n`);
     write(
       cwd,
@@ -444,14 +443,14 @@ export function makeFixtures(destDir, only) {
     write(cwd, 'untracked.bin', binaryBytes('never committed'));
     write(cwd, 'untracked-huge.txt', `${'y'.repeat(OVER_SIZE_BYTES)}\n`);
 
-    // 已暂存的新增文件(X=A):§6 的「新文件正确展示」要的是**已跟踪**那一侧的新增,
+    // 已暂存的新增文件(X=A):「新文件正确展示」要的是**已跟踪**那一侧的新增,
     // 与未跟踪的新文件是两条不同的代码路径 —— 前者走 git diff,后者手工构造
     write(cwd, 'added-staged.txt', 'brand new line one\nbrand new line two\n');
     git(cwd, 'add', 'added-staged.txt');
     repos.diffEdges = cwd;
   }
 
-  // 8. git 异常状态(**第二批的余下部分,S4b**,spec §5.3)。
+  // 8. git 异常状态(**第二批的余下部分,S4b**)。
   //    这一批与前两批的分别在于:它们要证的不是「解析对不对」也不是「拦不拦得住」,
   //    而是**这些仓库形态下工具还能不能正常工作**,以及分支状态那一栏说的是不是实话
 
@@ -473,7 +472,7 @@ export function makeFixtures(destDir, only) {
 
   // 8b. merge 进行中(冲突停下)—— `MERGE_HEAD` + 一条 `u UU` 记录。
   //     冲突条目是**三个分组谓词唯一无法从 XY 读出来的东西**:两位都不是 `.`,
-  //     不单独成组就会同时落进「已暂存」与「未暂存」(§5.3)
+  //     不单独成组就会同时落进「已暂存」与「未暂存」
   if (wanted('mergeConflict')) {
     const cwd = init('merge-conflict');
     diverge(cwd);
@@ -495,7 +494,7 @@ export function makeFixtures(destDir, only) {
 
   // 8d. linked worktree —— `.git` 是**文件**不是目录,真正的 git 目录在
   //     `<主仓库>/.git/worktrees/<名>`。按 `<root>/.git` 拼路径的写法在这里永远
-  //     读不到状态文件,而它不报错(§5.3)
+  //     读不到状态文件,而它不报错
   if (wanted('linkedWorktree')) {
     const main = init('worktree-main');
     write(main, 'shared.txt', 'v1\n');
@@ -539,12 +538,12 @@ export function makeFixtures(destDir, only) {
   }
 
   // 8f. bare 仓库 —— 没有工作区,`rev-parse --show-toplevel` 直接以 128 退出(已实测)。
-  //     要的是一句话拒绝,不是崩溃(§5.2 / §5.3)
+  //     要的是一句话拒绝,不是崩溃
   if (wanted('bare')) {
     repos.bare = init('bare.git', '--bare');
   }
 
-  // 8g. SHA-256 的空仓库 —— 空树哈希那个常量的实测来源(§5.3)。
+  // 8g. SHA-256 的空仓库 —— 空树哈希那个常量的实测来源。
   //     与 `empty` 一样放一个已 add 的文件:否则空树基准那条路径一次都走不到
   if (wanted('sha256Empty')) {
     const cwd = init('sha256-empty', '--object-format=sha256');

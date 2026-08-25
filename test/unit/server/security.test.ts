@@ -1,4 +1,4 @@
-// §5.9 三道校验的单测。每条断言对应 spec 里一句「必须」。
+// 三道校验的单测。每条断言对应 spec 里一句「必须」。
 
 import { describe, expect, test } from 'vitest';
 import {
@@ -88,7 +88,7 @@ describe('第 3 道:token', () => {
 test('CSP 的三个不回退指令都显式写了', () => {
   const csp = SECURITY_HEADERS['Content-Security-Policy'] ?? '';
   // frame-ancestors / base-uri / form-action 均**不回退到 default-src**,
-  // 不显式写就等于没设(spec §5.9 / §10)
+  // 不显式写就等于没设
   expect(csp).toContain("frame-ancestors 'none'");
   expect(csp).toContain("base-uri 'none'");
   expect(csp).toContain("form-action 'none'");

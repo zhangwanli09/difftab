@@ -1,4 +1,4 @@
-// CLI 启动 + §5.9 三道校验 + 注册表写入,**跑的是 dist/ 产物**(spec §5.11 CI 分层)。
+// CLI 启动 + 三道校验 + 注册表写入,**跑的是 dist/ 产物**(CI 分层)。
 //
 // 与 test/unit/server/security.test.ts 的分工:那边钉纯函数的行为,这边钉「它们真的
 // 被接在了唯一入口上」。三道校验各自写对、却漏接一处端点,单测全绿而这里会红。
@@ -93,7 +93,7 @@ test('第 1 道:Host 不是 127.0.0.1/localhost 加本端口一律 403', async (
 
 test('三道校验排在其余一切判定之前 —— 没过的请求一律与那句 forbidden 逐字节一致', async () => {
   await setup();
-  // 判据见 spec §6 的 `[S5]` 验收项;**钉的是那条类级规则,不是「方法判定」这一个实例** ——
+  // **钉的是那条类级规则,不是「方法判定」这一个实例** ——
   // 按方法枚举的话,下一个被顺手提到函数开头的廉价 guard(体积上限、限流)照样漏,而套件全绿
   const baseline = await authedGet(server.port, server.token, '/api/state', ATTACKER_HOST);
   assert.equal(baseline.status, 403, '基准:攻击者 Host 下的普通 GET 应当是 403');
@@ -210,7 +210,7 @@ test('只有 GET —— 出现非幂等方法即 405', async () => {
   }
 });
 
-test('/api/state 的 repoName 是工作区根目录名 —— 标签页标题的项目标识(spec §5.4)', async () => {
+test('/api/state 的 repoName 是工作区根目录名 —— 标签页标题的项目标识', async () => {
   await setup();
   // **这是「后端真的从真实仓库推出了它」唯一的端到端证据**:单测那侧的 `RepoState`
   // fixture 是手写的,后端把这个字段填成常量、填成整条路径,甚至压根不填,单测一条
@@ -251,7 +251,7 @@ test('query 里的路径是字面量:`path=*` 取不到东西,更不是一份整
   await setup();
   // 路径来自 URL query,是外部输入;而 `git diff -- <路径>` 默认按 wildmatch 解释。
   // 少了 GIT_LITERAL_PATHSPECS 与「按路径挑记录」这两道,`*` 会变成一份整仓补丁 ——
-  // 既撞上 §5.2「禁止一次性获取全仓 diff」,也让浏览器主线程冻上数秒
+  // 既撞上「禁止一次性获取全仓 diff」,也让浏览器主线程冻上数秒
   for (const path of ['*', 'docs/*', '?ocs/**']) {
     const res = await authedGet(
       server.port,
@@ -280,7 +280,7 @@ test('注册表落在 os.tmpdir(),权限 0600,仓库目录内无任何新增文�
     assert.ok(mine, `os.tmpdir()/difftab 下找不到本次会话的注册表项`);
 
     const entry = JSON.parse(readFileSync(mine, 'utf8'));
-    // dev proxy 就靠这两个字段拿到 token 与端口(spec §5.11)
+    // dev proxy 就靠这两个字段拿到 token 与端口
     assert.equal(entry.token, other.token);
     assert.ok(entry.repoRoot.endsWith('staged'), `repoRoot 记错了:${entry.repoRoot}`);
 
@@ -335,7 +335,7 @@ test('diff 边界在产物上也各回各的 kind,且超大文件不会把正文
     assert.equal((await get('assets/icon.bin')).payload.kind, 'binary');
     assert.equal((await get('untracked.bin')).payload.kind, 'binary');
 
-    // §6 的「超大文件提示不支持预览而非卡死」在这一层的判据是**正文有多大**:
+    // 「超大文件提示不支持预览而非卡死」在这一层的判据是**正文有多大**:
     // 判定漏掉时接口会照常回 200、kind 也还是 'text',只是正文里躺着 6MB 补丁 ——
     // 断言 kind 的写法看不出区别,而浏览器那头是几秒到几十秒的主线程冻结
     for (const path of ['huge.txt', 'untracked-huge.txt']) {
@@ -391,12 +391,12 @@ test('未知参数给用法提示,而不是抛 parseArgs 的异常', () => {
 });
 
 test('后端零 dev 分支:产物里的自有环境变量只有这三个', () => {
-  // §5.9 / §10:dev server 的跨源问题一律在代理层解决(见 vite.config.ts),
+  // :dev server 的跨源问题一律在代理层解决(见 vite.config.ts),
   // **后端不得为此新增任何环境变量或分支** —— 那等于把正面防御做成一个可被误开的
   // 开关。这条把「不得」变成一个会红的断言:加一个 DIFFTAB_DEV_SKIP_AUTH 就炸。
   //
   // 名单是**逐个具名**的,不是「以 DIFFTAB_ 开头就放行」:三个都由 spec 点名要求
-  // (拉起浏览器的开关见 §5.10,档位强制指定见 §5.7,空闲宽限期见 §5.8),
+  // (拉起浏览器的开关,档位强制指定,空闲宽限期),
   // 且三个都不碰三道校验。想加第四个的人得先来改这一行,顺带读到上面这段话。
   const bundle = readFileSync(
     join(import.meta.dirname, '..', '..', 'dist', 'server', 'main.js'),
@@ -412,12 +412,12 @@ test('dist/ 产物齐备 —— 静态托管的白名单指向的三个文件都
   }
 });
 
-test('前端产物里一个中文字符都没有 —— 界面文案一律英文(spec §5.4)', () => {
+test('前端产物里一个中文字符都没有 —— 界面文案一律英文', () => {
   // 判据落在**产物**上而不是逐个文件翻源码:漏网的那两条(`state/store.ts` 里的错误
   // 文案)正是因为它们不长在 JSX 上,按组件翻就想不起来。产物里本来就不该有中文
   // —— 注释在构建期已被去掉,diff2html / hljs 也不带。
   //
-  // **后端那份不能这么查**:`dist/server/main.js` 按 §5.1 不压缩不混淆,注释原样留着
+  // **后端那份不能这么查**:`dist/server/main.js` 不压缩不混淆,注释原样留着
   // 正是为了让用户自己核查跑了哪些 git 命令。那一侧的用户可见文案是 `sendError` 与
   // 各个 `*Error` 的字面量,由 test/unit/server/ 那边压。
   //

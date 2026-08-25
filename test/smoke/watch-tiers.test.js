@@ -1,4 +1,4 @@
-// 三档监听在**各平台上的实际行为**,跑的是 dist/ 产物(spec §5.7、§6 的四条档位验收项)。
+// 三档监听在**各平台上的实际行为**,跑的是 dist/ 产物(四条档位验收项)。
 //
 // 与别处的分工:
 //   - `test/unit/server/watch-tiers.test.ts` 钉判档函数(给什么版本回什么档),
@@ -28,7 +28,7 @@ import {
   waitUntil,
 } from './helpers.js';
 
-/** `node_modules` 里那条深路径。**必须是嵌套的**,只写顶层目录本身证伪不了 basename 写法(§6)。 */
+/** `node_modules` 里那条深路径。**必须是嵌套的**,只写顶层目录本身证伪不了 basename 写法。 */
 const DEEP = ['node_modules', 'some-dep', 'lib', 'nested'];
 
 /**
@@ -51,7 +51,7 @@ const setup = once(async () => {
 });
 
 /**
- * 这条 CI 泳道**应该**判到哪一档(spec §5.7 的三档表)。
+ * 这条 CI 泳道**应该**判到哪一档。
  *
  * **不加这条断言的话,判档一旦漂走,覆盖会静默地关掉而不是变红**:两个用例都按拿到
  * 的档位分支,于是 Linux × Node 24 若某天回了 C,test 1 就从 C 那个出口早退、
@@ -113,12 +113,12 @@ test('自动判定的那一档:node_modules 深层批量写入不刷新,同一�
     const state = JSON.parse((await authedGet(server.port, server.token, '/api/state')).body);
     const { tier, mode } = state.watch;
     t.diagnostic(`平台 ${process.platform} · Node ${process.versions.node} → 档位 ${tier}`);
-    assert.equal(tier, expectedTier(), '判到的档位与 §5.7 的三档表对不上');
+    assert.equal(tier, expectedTier(), '判到的档位与三档表对不上');
 
     /**
      * **判据是「这批写入之后多出了几个」,不是「一共有几个」**(2026-08-18 实测,CI 的
      * windows 三档):起监听那一下,Windows 会先冒出一个事件 —— `ReadDirectoryChangesW`
-     * 建流时会把建流前一刻的写入补报进来,而 `filename` 为 null 的事件按 §5.7 是**放行**
+     * 建流时会把建流前一刻的写入补报进来,而 `filename` 为 null 的事件是**放行**
      * 的(漏刷一次比多刷一次糟)。它与 `node_modules` 那批写入毫无关系,却把绝对计数
      * 顶成 1,读起来像"过滤没生效"。**这不是把标准放宽**:下面量的仍然是那 50 次写入
      * 引出了几次刷新,只是把量程的零点挪到了它们开始之前。
@@ -130,7 +130,7 @@ test('自动判定的那一档:node_modules 深层批量写入不刷新,同一�
     if (baseline > 0) t.diagnostic(`起监听阶段先来了 ${baseline} 个事件,已作为零点扣除`);
 
     /**
-     * **C 档跳过,这是已知边界而不是漏测**(§5.7):C 档的工作区通路是轮询,比的是
+     * **C 档跳过,这是已知边界而不是漏测**:C 档的工作区通路是轮询,比的是
      * `git status` 的输出本身,那条路上根本不调 `isIgnored` —— 没有 `.gitignore` 的
      * 仓库里,`node_modules` 下的新文件照样进列表、照样触发一次刷新。它的验收项是
      * 另一条(inotify 用量),见下一个用例。
@@ -152,7 +152,7 @@ test('自动判定的那一档:node_modules 深层批量写入不刷新,同一�
      *
      * 快写一批在 Windows 上有第二种解释:`ReadDirectoryChangesW` 的通知缓冲区被一次
      * 突发写满时,内核报的是"丢了一批",Node 由此 emit 一个**没有 filename** 的事件,
-     * 而按 §5.7 那种事件是**刻意放行**的(漏刷一次比多刷一次糟)。它与"逐段过滤没生效"
+     * 而那种事件是**刻意放行**的(漏刷一次比多刷一次糟)。它与"逐段过滤没生效"
      * 会给出一模一样的一个事件 —— 合并窗口把 50 次写入本来也压成 1 个。
      *
      * 慢写把两者分开:每次写入之间隔开一个合并窗口,过滤失效时应当逐个漏出来(数个
@@ -180,7 +180,7 @@ test('自动判定的那一档:node_modules 深层批量写入不刷新,同一�
     /**
      * **慢写那一路是判据,三端一律 0**;快写那一路在 Windows 上放宽到最多 1 次 ——
      * `ReadDirectoryChangesW` 的通知缓冲区被突发写满时报的是"丢了一批"而不是路径,
-     * Node 由此 emit 一个没有 `filename` 的事件,而那种事件按 §5.7 是**刻意放行**的
+     * Node 由此 emit 一个没有 `filename` 的事件,而那种事件是**刻意放行**的
      * (漏刷一次比多刷一次糟)。这不是把标准放宽:合并窗口本来就把 50 次写入压成
      * 1 个,单看快写那一路时"过滤失效"与"缓冲区溢出"给出的数一模一样,**能分辨的
      * 只有慢写那一路** —— 过滤失效时它会逐个漏出来。
@@ -210,9 +210,9 @@ test('读 /api/state 不会引出刷新事件 —— 自激循环的判据', asy
    * 每读一次状态就跑一次 `git status`,而**只要它往 `.git` 里写一个字节,`.git` 侧的
    * watch 就会推一个 `change`,前端收到就再读一次状态** —— 一个不报错、只是 CPU 常年
    * 挂着 1% 的自激循环,而 status 的输出从头到尾都是对的。挡住它的是封装层那句
-   * `GIT_OPTIONAL_LOCKS=0`(§5.2 红线:不设它 git 会把 stat 缓存写回 `.git/index`)。
+   * `GIT_OPTIONAL_LOCKS=0`(红线:不设它 git 会把 stat 缓存写回 `.git/index`)。
    *
-   * 那条红线原本只有 §5.10 第二层 B 半的逐字节快照盯着,而**那是在单进程里比对文件,
+   * 那条红线原本只有第二层 B 半的逐字节快照盯着,而**那是在单进程里比对文件,
    * 不经过监听**。这里从另一头断:连着 SSE 的时候连读几次状态,一个事件都不该冒出来。
    * 三个平台各跑一次 —— git 在哪个平台上多写一次都算数。
    */
@@ -245,7 +245,7 @@ test('Linux · inotify 用量:A 档不随 node_modules 的目录数增长,C 档�
   await setup();
   if (process.platform !== 'linux') {
     // inotify 是 Linux 专有;macOS 走 FSEvents、Windows 走 ReadDirectoryChangesW,
-    // 两者都是单句柄监听整棵树,本就没有配额这回事(§5.7 的三档表)
+    // 两者都是单句柄监听整棵树,本就没有配额这回事
     t.skip('inotify 是 Linux 专有');
     return;
   }
@@ -303,7 +303,7 @@ test('Linux · inotify 用量:A 档不随 node_modules 的目录数增长,C 档�
      * 同时压一条与目录数挂钩的相对判据 —— 阈值将来因别的原因放宽时,后者仍拦得住
      * 「过滤失效」这一种。
      */
-    assert.equal(tier, expectedTier(), '判到的档位与 §5.7 的三档表对不上');
+    assert.equal(tier, expectedTier(), '判到的档位与三档表对不上');
     /**
      * **「数得低」与「还在原生监听」必须一起断**:递归 watch 若因任何原因没建起来
      * (配额耗尽后 Node 把已注册的全 `close()` 掉、网络盘 ENOSYS、根那次注册失败),

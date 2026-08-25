@@ -1,15 +1,15 @@
-// 单个文件的 diff 视图(spec §5.5 / §5.12 的 `DiffPayload`)。
+// 单个文件的 diff 视图(`DiffPayload`)。
 //
 // **这是 vdom 与 diff2html 的交界**:列表由 Preact 管,单文件 diff 容器由
-// `Diff2HtmlUI` 管(§5.5)。`draw()` 内部是 `innerHTML` 赋值加命令式事件绑定,
+// `Diff2HtmlUI` 管。`draw()` 内部是 `innerHTML` 赋值加命令式事件绑定,
 // 因此容器必须满足两条:
 //   1. 渲染发生在 Preact 提交 DOM **之后** —— 靠 effect,不在渲染期直接摸 DOM;
 //   2. 那个容器在 vdom 里**永远没有子节点**,否则两边会对着同一棵子树各改各的,
 //      Preact 下一次 diff 时按自己记得的空子树去比对真实的一大棵 DOM。
 //
 // 四个 `kind` 全部在这里分支。S4a 起两条路都会填 binary / too-large:未跟踪那条靠
-// NUL 探测与文件体积,已跟踪那条靠 `--numstat` 与 `lstat`(§5.2)—— 前端不区分来源,
-// 它拿到的就是同一个判别联合(§5.0 不变式 4)。
+// NUL 探测与文件体积,已跟踪那条靠 `--numstat` 与 `lstat`—— 前端不区分来源,
+// 它拿到的就是同一个判别联合(架构边界不变式 4)。
 
 import type { ComponentChildren } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
@@ -34,7 +34,7 @@ function Notice({ children }: { children: ComponentChildren }) {
  * 底下 diff2html 的 DOM 一起摘掉 —— 不需要自己再清一次 `innerHTML`,那只是把一棵
  * 马上要被丢弃的大子树先拆一遍。
  *
- * **版式也是重画的理由,必须进依赖数组**(§5.5):`draw()` 是命令式的,格式变了不重跑
+ * **版式也是重画的理由,必须进依赖数组**:`draw()` 是命令式的,格式变了不重跑
  * 就永远停在旧版式上 —— 不报错,只是拖窗口时视图纹丝不动。在 body 里读这个 signal 是
  * 安全的:本组件刻意没有子节点,重渲染只是复用同一个空 div,`host.current` 不变,
  * 两次 `draw()` 因此落在同一个元素上(不像 ChangeList 那样会牵动几百行)。
@@ -51,14 +51,14 @@ function Patch({ patch }: { patch: string }) {
   //
   // **`relative` 不是排版需要,是 diff2html 行号列的包含块**:它把行号做成
   // `position: absolute`,而包含块在滚动容器之外的绝对定位盒不随容器内容滚动 ——
-  // 少了这个类,右侧一滚整列行号就原地钉死、与代码行错开,页面不报任何错(§5.6)。
+  // 少了这个类,右侧一滚整列行号就原地钉死、与代码行错开,页面不报任何错。
   return <div ref={host} class="relative" />;
 }
 
 /**
  * 体积的可读写法。
  *
- * **不能一律按 MB 取整**:`reason: 'lines'` 那一路的文件可能只有几百 KB(§5.12),
+ * **不能一律按 MB 取整**:`reason: 'lines'` 那一路的文件可能只有几百 KB,
  * 按 MB 取整会显示「0 MB」。
  */
 function formatSize(bytes: number): string {
@@ -67,14 +67,14 @@ function formatSize(bytes: number): string {
 }
 
 /**
- * 拒绝预览的原因(§5.12 的 `reason`)。
+ * 拒绝预览的原因(`reason`)。
  *
  * 两个触发口的文案必须不同:行数那一路的体积可能只有几百 KB,单说「文件过大」会
  * 让用户对着一个不大的数字发愣。**具体阈值(5MB / 50,000 行)刻意不写在这里** ——
- * 它属 server/git 那一侧的判据,复述一遍就是第二份事实来源(§5.0 不变式 4)。
+ * 它属 server/git 那一侧的判据,复述一遍就是第二份事实来源(架构边界不变式 4)。
  */
 function tooLargeNotice(payload: Extract<DiffPayload, { kind: 'too-large' }>): string {
-  // 体积可能压根取不到:已被删除的文件在工作区已经没有了,后端给的是 0(§5.12)。
+  // 体积可能压根取不到:已被删除的文件在工作区已经没有了,后端给的是 0。
   // 那时不能照着 formatSize 报一个「1 KB」—— 编一个数出来比不说更糟。
   // 两个 reason 都会遇上这件事,所以判据只写一次
   const size = payload.size > 0 ? formatSize(payload.size) : null;
@@ -85,7 +85,7 @@ function tooLargeNotice(payload: Extract<DiffPayload, { kind: 'too-large' }>): s
 }
 
 /**
- * 重命名标注(§6:「点开后标注为重命名,展示 rename from/to 与相似度」)。
+ * 重命名标注(「点开后标注为重命名,展示 rename from/to 与相似度」)。
  *
  * 补丁正文里的 `rename from/to` 由 diff2html 画在文件头上(旧名 → 新名),但那是
  * `RENAMED` 标签、且**不含相似度** —— 相似度来自 status 的 `R<score>`,

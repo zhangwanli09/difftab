@@ -1,5 +1,4 @@
-// 启动流程:前置检查 → 探活复用 → 起 server → 写注册表 → 打印 URL → 拉起浏览器
-// (spec §5.1 / §5.8)。
+// 启动流程:前置检查 → 探活复用 → 起 server → 写注册表 → 打印 URL → 拉起浏览器。
 
 import { writeSync } from 'node:fs';
 import { locateRepo } from '../git/repo.ts';
@@ -20,7 +19,7 @@ export async function start(options: StartOptions): Promise<void> {
    *
    * 复用与新起两条路各写一遍的话,只有新起那条天天在跑 —— 改了第一行的形状
    * (加前缀、换写法)会在复用那条上静默漂走,而 `scripts/bench-startup.mjs` 与
-   * 冒烟套件的 ready 判据都压在这一行上(spec §6「ready 的口径」)。
+   * 冒烟套件的 ready 判据都压在这一行上。
    */
   function announce(url: string, note: string): void {
     process.stdout.write(`${url}\n`);
@@ -29,11 +28,11 @@ export async function start(options: StartOptions): Promise<void> {
   }
 
   // 前置检查失败(git 不在 PATH、不是仓库、版本过低、bare)抛 PreflightError,
-  // 由 main() 收成一句话友好报错,而不是 Node 异常栈(spec §5.2)
+  // 由 main() 收成一句话友好报错,而不是 Node 异常栈
   const repo = await locateRepo(options.cwd);
 
   /**
-   * **同一个仓库已经有实例在跑,就把用户送去那一个**(spec §5.8)。
+   * **同一个仓库已经有实例在跑,就把用户送去那一个**。
    *
    * 判活是 HTTP 探活而不是 pid —— 理由在 probe.ts。命中这条路之后**什么都不写**:
    * 不写注册表(那条目属于对面那个进程)、不装信号与 exit 处理器(装了会在本进程
@@ -50,7 +49,7 @@ export async function start(options: StartOptions): Promise<void> {
 
   const server = await startServer(repo, {
     /**
-     * 空闲宽限期走满(spec §5.8)。**「怎么退」归这一层**:http/ 那边只知道
+     * 空闲宽限期走满。**「怎么退」归这一层**:http/ 那边只知道
      * 「没人了」,退出码、提示语、以及退出前要不要先 close 都是启动流程的事。
      */
     onIdle: () => stop(0, 'difftab: no tabs left — exiting.\n'),
