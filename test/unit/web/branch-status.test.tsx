@@ -1,7 +1,7 @@
-// 分支状态展示的单测(spec §6「变更列表与分支状态」的 `[S3a]` 那条)。
+// 分支状态展示的单测。
 //
 // 守的是一件**不会报错、只会说假话**的事:无上游的分支不输出 `# branch.ab` 行
-// (已实测,§5.2),后端因此把 `upstream` 给成 `null`;而 `upstream?.ahead ?? 0`
+// (已实测),后端因此把 `upstream` 给成 `null`;而 `upstream?.ahead ?? 0`
 // 这种写法会把它画成「↑0 ↓0」,页面上看起来一切正常,只是把「没有可比对象」
 // 说成了「与上游同步」。
 //
@@ -42,7 +42,7 @@ beforeEach(() => {
 
 afterEach(() => {
   render(null, container);
-  // signals 活在组件树之外(§5.4),不清就会漏进下一个用例
+  // signals 活在组件树之外,不清就会漏进下一个用例
   repoState.value = null;
   loadError.value = null;
   diffState.value = null;
@@ -95,7 +95,7 @@ describe('BranchStatus', () => {
   });
 });
 
-describe('BranchStatus 的降级标注(§5.3 / §6 的 `[S4b]`)', () => {
+describe('BranchStatus 的降级标注', () => {
   it('detached 时不把 git 的字面量 `(detached)` 当分支名画出去', () => {
     // 后端**不替它编一个名字**(那是在事实来源那一层说假话,见 `BranchState.head`),
     // 所以「画什么」这件事就落在这里。原样画出去的症状是页面上凭空多出一个

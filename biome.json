@@ -49,15 +49,15 @@
                 "patterns": [
                   {
                     "group": ["**/server/**", "!**/server/shared", "!**/server/shared/**"],
-                    "message": "spec §5.0 依赖方向:src/web 不得 import src/server 下任何模块,server/shared/ 除外。git 状态位含义、空树哈希、路径转义规则、重命名判定一律由 shared/ 的协议类型承载。"
+                    "message": "依赖方向:src/web 不得 import src/server 下任何模块,server/shared/ 除外。git 状态位含义、空树哈希、路径转义规则、重命名判定一律由 shared/ 的协议类型承载。"
                   },
                   {
                     "group": ["node:child_process", "child_process"],
-                    "message": "spec §5.0 架构边界:子进程只允许出现在 server/git(git)与 server/cli(拉起浏览器)。"
+                    "message": "架构边界:子进程只允许出现在 server/git(git)与 server/cli(拉起浏览器)。"
                   },
                   {
                     "group": ["diff", "@profoundlogic/hogan"],
-                    "message": "spec §5.11 红线:被 import 的包必须由自己声明。这两个是 diff2html 的传递依赖,不得直接引用 —— pnpm 严格布局下今天会解析失败,但那是链接器的副作用,不是约束本身。要用就先进 package.json。"
+                    "message": "红线:被 import 的包必须由自己声明。这两个是 diff2html 的传递依赖,不得直接引用 —— pnpm 严格布局下今天会解析失败,但那是链接器的副作用,不是约束本身。要用就先进 package.json。"
                   }
                 ]
               }
@@ -77,7 +77,7 @@
                 "patterns": [
                   {
                     "group": ["**/http/**", "**/cli/**"],
-                    "message": "spec §5.0 依赖方向:server/git 不得反向 import http / cli。"
+                    "message": "依赖方向:server/git 不得反向 import http / cli。"
                   }
                 ]
               }
@@ -97,11 +97,11 @@
                 "patterns": [
                   {
                     "group": ["**/http/**", "**/cli/**"],
-                    "message": "spec §5.0 依赖方向:server/watch 不得反向 import http / cli。"
+                    "message": "依赖方向:server/watch 不得反向 import http / cli。"
                   },
                   {
                     "group": ["node:child_process", "child_process"],
-                    "message": "spec §5.0 架构边界:子进程只允许出现在 server/git(git)与 server/cli(拉起浏览器)。watch 拿变更靠 fs.watch,不靠子进程;降级轮询也要走 server/git 的封装层,否则 §5.10 的只读断言点静默失去覆盖。"
+                    "message": "架构边界:子进程只允许出现在 server/git(git)与 server/cli(拉起浏览器)。watch 拿变更靠 fs.watch,不靠子进程;降级轮询也要走 server/git 的封装层,否则只读断言点静默失去覆盖。"
                   }
                 ]
               }
@@ -121,11 +121,11 @@
                 "patterns": [
                   {
                     "group": ["**/cli/**"],
-                    "message": "spec §5.0 依赖方向:server/http 不得反向 import cli。"
+                    "message": "依赖方向:server/http 不得反向 import cli。"
                   },
                   {
                     "group": ["node:child_process", "child_process"],
-                    "message": "spec §5.0 架构边界:子进程只允许出现在 server/git(git)与 server/cli(拉起浏览器)。"
+                    "message": "架构边界:子进程只允许出现在 server/git(git)与 server/cli(拉起浏览器)。"
                   }
                 ]
               }
@@ -145,7 +145,7 @@
                 "patterns": [
                   {
                     "group": ["node:child_process", "child_process"],
-                    "message": "spec §5.0 架构边界:子进程只允许出现在 server/git(git)与 server/cli(拉起浏览器)。在别处起子进程即使命令只读也不报错,只是让 §5.10 只读门禁的断言点静默失去覆盖。"
+                    "message": "架构边界:子进程只允许出现在 server/git(git)与 server/cli(拉起浏览器)。在别处起子进程即使命令只读也不报错,只是让只读门禁的断言点静默失去覆盖。"
                   }
                 ]
               }

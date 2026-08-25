@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 样式层叠方案的产物门禁(spec §5.6 / §6)。
+// 样式层叠方案的产物门禁。
 //
 // 零依赖纯 JS,可由 `node scripts/check-css-cascade.mjs` 直接执行。
 //
@@ -7,7 +7,7 @@
 //   1. hljs 主题与 diff2html.min.css 在构建产物里仍是 unlayered ——
 //      无层样式在层叠中永远胜过有层样式,而 Tailwind v4 把 preflight 放在
 //      @layer base。一旦这两份 CSS 被裹进任何 @layer,这层结构性保障就没了。
-//      这正是 §7 列为 S0 前提验证第 1 项的东西:`@import "tailwindcss"` 展开后,
+//      这正是列为 S0 前提验证第 1 项的东西:`@import "tailwindcss"` 展开后,
 //      后续 @import 的内容是否确实保持 unlayered。
 //   2. **每一条** hljs 规则都排在**第一条** d2h 规则之前(diff2html 官方 README
 //      的要求),否则 hljs 配色被 d2h 覆盖。断言取 max(hljs) < min(d2h) 而不是
@@ -32,7 +32,7 @@
 //      按引用裁剪,而深色 delta 是我们自己的 CSS、不会被裁。于是删掉某个 token 的最后
 //      一处 var() 引用时,浅色侧消失、深色侧留着,同样由本条报出来。
 //   5. **没有无定义的 var() 引用**。Tailwind v4 会裁掉既没被工具类、也没被我们自己的
-//      CSS 以 var() 引用的 @theme 变量(已实测,spec §10),所以引用侧写错一个字符时
+//      CSS 以 var() 引用的 @theme 变量(已实测),所以引用侧写错一个字符时
 //      产物里留下的是一个无定义的 var() —— 该属性变成 unset,颜色悄悄没了,没有任何
 //      报错。--tw-* 除外:它们由 @property 声明,不走 `--x:` 这个形状。
 //   3/4. 深浅两套各就各位:两份主题都是无条件的 .hljs 规则、自身零 @media,
@@ -159,7 +159,7 @@ for (const [label, matched] of [
   const layered = matched.filter(inLayer);
   if (layered.length > 0) {
     failures.push(
-      `${label} 有 ${layered.length}/${matched.length} 条规则落在 @layer 内(如 "${layered[0].prelude.slice(0, 60)}",层链 ${layered[0].ancestors.join(' > ')})—— 无层胜有层的保障失效(spec §5.6)`,
+      `${label} 有 ${layered.length}/${matched.length} 条规则落在 @layer 内(如 "${layered[0].prelude.slice(0, 60)}",层链 ${layered[0].ancestors.join(' > ')})—— 无层胜有层的保障失效`,
     );
   } else {
     notes.push(`${label}:${matched.length} 条规则,全部 unlayered`);
@@ -175,7 +175,7 @@ if (hljsRules.length > 0 && d2hRules.length > 0) {
   } else {
     const late = hljsRules.filter((b) => b.start > firstD2h.start);
     failures.push(
-      `有 ${late.length}/${hljsRules.length} 条 hljs 规则排在了 diff2html.min.css 之后(如 "${late[0].prelude.slice(0, 60)}")—— 这部分配色会被 d2h 覆盖(spec §5.5)`,
+      `有 ${late.length}/${hljsRules.length} 条 hljs 规则排在了 diff2html.min.css 之后(如 "${late[0].prelude.slice(0, 60)}")—— 这部分配色会被 d2h 覆盖`,
     );
   }
 }
@@ -202,18 +202,18 @@ for (const block of d2hVarBlocks) {
 
 if (ourBlocks.length === 0) {
   failures.push(
-    `产物里找不到带哨兵 ${MAP_SENTINEL} 的 --d2h-* 映射块 —— 要么 vscode-theme.css 没被打进来(配色整片是 diff2html 的默认值),要么哨兵那行被删了(spec §5.6)`,
+    `产物里找不到带哨兵 ${MAP_SENTINEL} 的 --d2h-* 映射块 —— 要么 vscode-theme.css 没被打进来(配色整片是 diff2html 的默认值),要么哨兵那行被删了`,
   );
 } else if (theirBlocks.length === 0) {
   failures.push(
-    '产物里找不到 diff2html 自己声明 --d2h-* 默认值的块 —— 顺序与覆盖率断言都会对着空集合通过,先确认 diff2html.min.css 是否还在 @import 里(spec §5.6)',
+    '产物里找不到 diff2html 自己声明 --d2h-* 默认值的块 —— 顺序与覆盖率断言都会对着空集合通过,先确认 diff2html.min.css 是否还在 @import 里',
   );
 } else {
   // 2b:两侧都必须 unlayered。入层的后果是被 diff2html 的默认值(unlayered)压回去。
   const layered = d2hVarBlocks.filter(inLayer);
   if (layered.length > 0) {
     failures.push(
-      `有 ${layered.length}/${d2hVarBlocks.length} 个声明 --d2h-* 的块落在 @layer 内(如 "${firstOf(layered).prelude.slice(0, 60)}",层链 ${firstOf(layered).ancestors.join(' > ')})—— 会被 diff2html 自己 :host,:root 里的默认值压回去(spec §5.6)`,
+      `有 ${layered.length}/${d2hVarBlocks.length} 个声明 --d2h-* 的块落在 @layer 内(如 "${firstOf(layered).prelude.slice(0, 60)}",层链 ${firstOf(layered).ancestors.join(' > ')})—— 会被 diff2html 自己 :host,:root 里的默认值压回去`,
     );
   } else {
     notes.push(`--d2h-* 覆写:${d2hVarBlocks.length} 个块声明它,全部 unlayered`);
@@ -225,7 +225,7 @@ if (ourBlocks.length === 0) {
   const firstOurs = firstOf(ourBlocks);
   if (firstOurs.start < lastTheirs.start) {
     failures.push(
-      `--d2h-* 的覆写块排在了 diff2html 的默认值之前(覆写 @${firstOurs.start} < 默认值 @${lastTheirs.start})—— 两者特异性同为 (0,1,0),胜出全靠顺序,现在整片覆写静默失效。检查 app.css 里 @import "./vscode-theme.css" 是否还在 diff2html.min.css 之后(spec §5.6)`,
+      `--d2h-* 的覆写块排在了 diff2html 的默认值之前(覆写 @${firstOurs.start} < 默认值 @${lastTheirs.start})—— 两者特异性同为 (0,1,0),胜出全靠顺序,现在整片覆写静默失效。检查 app.css 里 @import "./vscode-theme.css" 是否还在 diff2html.min.css 之后`,
     );
   } else {
     notes.push('--d2h-* 覆写:整块排在 diff2html 默认值之后');
@@ -246,7 +246,7 @@ if (ourBlocks.length === 0) {
     failures.push('diff2html 那块里一个无前缀 --d2h-* 都没有 —— 覆盖率断言在对着空集合通过');
   } else if (missing.length > 0) {
     failures.push(
-      `diff2html 的 ${missing.length}/${theirNames.size} 个无前缀 --d2h-* 没有被映射:${missing.slice(0, 6).join(', ')}${missing.length > 6 ? ' …' : ''} —— 这些会留在 GitHub 的默认取值上(spec §5.6)`,
+      `diff2html 的 ${missing.length}/${theirNames.size} 个无前缀 --d2h-* 没有被映射:${missing.slice(0, 6).join(', ')}${missing.length > 6 ? ' …' : ''} —— 这些会留在 GitHub 的默认取值上`,
     );
   } else {
     notes.push(`--d2h-* 覆写:${theirNames.size} 个无前缀变量全部映射到 token`);
@@ -273,7 +273,7 @@ if (referenced.size === 0) {
   failures.push('产物里一个不带 fallback 的 var() 引用都没有 —— 本条断言在对着空集合通过');
 } else if (undefinedRefs.length > 0) {
   failures.push(
-    `${undefinedRefs.length} 个 var() 引用在产物里找不到定义:${undefinedRefs.slice(0, 5).join(', ')}${undefinedRefs.length > 5 ? ' …' : ''} —— 引用名写错或 @theme 变量被裁掉,该属性会静默变成 unset(spec §5.6)`,
+    `${undefinedRefs.length} 个 var() 引用在产物里找不到定义:${undefinedRefs.slice(0, 5).join(', ')}${undefinedRefs.length > 5 ? ' …' : ''} —— 引用名写错或 @theme 变量被裁掉,该属性会静默变成 unset`,
   );
 } else {
   notes.push(`var() 引用:${referenced.size} 个不带 fallback 的自定义属性,全部有定义`);
@@ -281,13 +281,13 @@ if (referenced.size === 0) {
 
 // --- 5b. diff2html 行号列的包含块那条工具类确实在产物里 --------------------
 // `DiffView` 给 diff2html 的宿主 div 挂了 `relative`,补的是行号列(它们是
-// `position: absolute`)的包含块;没有它右侧一滚,整列行号原地钉死(spec §5.6)。
+// `position: absolute`)的包含块;没有它右侧一滚,整列行号原地钉死。
 // 这条查的是**产物**而不是源码:Tailwind 靠 @source 扫**字面量**生成工具类,类名一旦
 // 改成拼出来的(`cx('relative')`、模板串、别处 import 的常量),DOM 上的 className 还是
 // 'relative'、组件测试照常绿,而 CSS 里那条规则没了 —— 布局静默退回坏的样子。
 if (!/(^|[\s,}])\.relative\s*\{[^}]*position\s*:\s*relative/.test(css)) {
   failures.push(
-    '产物里没有 `.relative{position:relative}` —— diff2html 行号列少了包含块,右侧一滚整列行号会原地钉死、与代码行错开(spec §5.6)',
+    '产物里没有 `.relative{position:relative}` —— diff2html 行号列少了包含块,右侧一滚整列行号会原地钉死、与代码行错开',
   );
 } else {
   notes.push('包含块:`.relative{position:relative}` 在产物里');
@@ -305,13 +305,13 @@ const lightColors = new Set(ruleBlocks.filter((b) => !inDarkMedia(b)).flatMap(co
 
 if (darkColors.size === 0) {
   failures.push(
-    '深色媒体条件里一个 --color-* 都没声明 —— vscode-theme.css 的深色 delta 没被打进产物,整页深色会停在浅色取值上(spec §5.6)',
+    '深色媒体条件里一个 --color-* 都没声明 —— vscode-theme.css 的深色 delta 没被打进产物,整页深色会停在浅色取值上',
   );
 } else {
   const orphans = [...darkColors].filter((n) => !lightColors.has(n));
   if (orphans.length > 0) {
     failures.push(
-      `深色里有 ${orphans.length} 个 --color-* 在浅色侧没有对应声明:${orphans.join(', ')} —— 名字写错的 delta 是个合法的新 token,不会报错,只是深色下那个颜色留在浅色取值上(spec §5.6)`,
+      `深色里有 ${orphans.length} 个 --color-* 在浅色侧没有对应声明:${orphans.join(', ')} —— 名字写错的 delta 是个合法的新 token,不会报错,只是深色下那个颜色留在浅色取值上`,
     );
   } else {
     notes.push(`深色 delta:${darkColors.size} 个 --color-*,浅色侧逐一都有声明`);
@@ -338,7 +338,7 @@ if (darkSet.size === 0) {
   if (onlyLight.length > 0 || onlyDark.length > 0) {
     failures.push(
       `深浅两套 hljs 规则的选择器集合不一致:仅浅色有 ${onlyLight.length} 条(如 ${onlyLight[0] ?? '—'}),仅深色有 ${onlyDark.length} 条(如 ${onlyDark[0] ?? '—'})。` +
-        '两份主题本应逐条对应;不对应意味着有规则漏在媒体条件之外,会无条件覆盖另一套(spec §5.6)',
+        '两份主题本应逐条对应;不对应意味着有规则漏在媒体条件之外,会无条件覆盖另一套',
     );
   } else {
     notes.push(

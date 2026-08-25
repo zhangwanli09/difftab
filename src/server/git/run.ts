@@ -1,12 +1,12 @@
-// 产品代码中**唯一**执行 git 子进程的位置(spec §5.0 不变式 1)。
+// 产品代码中**唯一**执行 git 子进程的位置(架构边界不变式 1)。
 //
-// §5.10 的只读白名单主门禁与 §5.2 的 `-c core.quotePath=false` 统一注入都依赖这个单点。
+// 只读白名单主门禁与 `-c core.quotePath=false` 统一注入都依赖这个单点。
 // 在别处调 git 即使命令只读也算违规 —— 不报错,只是让门禁静默失去覆盖。
 
 import { spawn } from 'node:child_process';
 
 /**
- * 所有 git 调用统一注入,不留给各调用点自己记得加(spec §5.2)。
+ * 所有 git 调用统一注入,不留给各调用点自己记得加。
  *
  * `-z` 只作用于 status / numstat 这类**列表输出**,管不到 `git diff` 的补丁正文 ——
  * 正文里的 `diff --git` / `---` / `+++` / `rename from|to` 头部行仍会按 C 风格转义
@@ -21,11 +21,11 @@ const GLOBAL_CONFIG = ['-c', 'core.quotePath=false'];
  *
  * `GIT_OPTIONAL_LOCKS=0` 是只读承诺的一部分而不是性能开关:默认情况下 `git status`
  * 会顺手把刷新过的 stat 缓存写回 `.git/index`。那不改变 status 的输出,因此
- * 「前后 `git status` 比对」这类验证发现不了它(§5.10 排除该做法的原因之一)。
+ * 「前后 `git status` 比对」这类验证发现不了它(排除该做法的原因之一)。
  *
- * **把这一行删掉,只读 `.git` 那半层门禁照样全绿**(已实测,见 §10):git 把 index
+ * **把这一行删掉,只读 `.git` 那半层门禁照样全绿**(已实测):git 把 index
  * 回写当 best-effort,`.git` 不可写时它静默跳过、exit 0、stderr 全空。真正看得见
- * 的是 §5.10 第二层的 **B 半**——在可写的 `.git` 上前后做逐字节快照比对
+ * 的是第二层的 **B 半**——在可写的 `.git` 上前后做逐字节快照比对
  * (`test/smoke/readonly-git-dir.test.js`)。别把 B 半当成 A 半的重复给删了。
  *
  * 该变量在 git < 2.15 上不存在,设了也无害 —— 那个区间的 git 只是照旧写 index。
@@ -34,7 +34,7 @@ const GLOBAL_CONFIG = ['-c', 'core.quotePath=false'];
  *
  * **`GIT_LITERAL_PATHSPECS=1` 是安全项而不是洁癖**:`--` 后面的路径默认是 **wildmatch
  * 模式**,不是字面路径。我们的路径全部来自 URL query,于是 `path=*` 会让
- * `git diff HEAD -- '*'` 回一份**整仓 diff**(已实测)——正是 §5.2 明令禁止、
+ * `git diff HEAD -- '*'` 回一份**整仓 diff**(已实测)——正是红线明令禁止、
  * 会把浏览器主线程冻上数十秒的那件事;而一个真实存在、名字里带 `*` 的文件同样会
  * 匹配到别人身上,页面在 A 的标题下显示 B 的补丁。设了它,`*` / `?` / `[…]` 一律
  * 按字面比较。本项目的路径无一例外来自 git 自己的输出,不需要任何通配语义。
@@ -49,7 +49,7 @@ const GIT_ENV = {
  * stdout 的**兜底**上限。没有它,一个几百 MB 的文件的 diff 会被整个读进内存,
  * 而这条路径上没有任何东西会先失败。
  *
- * 产品语义那道 5MB 闸不在这里,而是由调用方按次传 `maxStdoutBytes`(§5.2 的
+ * 产品语义那道 5MB 闸不在这里,而是由调用方按次传 `maxStdoutBytes`(
  * 「卡补丁字节数」——见 git/diff.ts):**能不能渲染取决于补丁多大,而不是文件多大**,
  * 一个 6MB 的数据文件改一行照样该看得见。本常量只管「别把进程撑爆」。
  */
@@ -153,7 +153,7 @@ export function runGit(
         settleOverflow();
         return;
       }
-      // ENOENT 即 git 不在 PATH —— 前置检查靠它给出一句话友好报错(§5.2)
+      // ENOENT 即 git 不在 PATH —— 前置检查靠它给出一句话友好报错
       rejectPromise(
         new GitError(
           cause.code === 'ENOENT' ? 'missing' : 'exit',

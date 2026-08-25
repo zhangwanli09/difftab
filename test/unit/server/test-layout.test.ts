@@ -1,4 +1,4 @@
-// 用例目录布局的门禁(spec §5.11「DOM 测试环境」)。
+// 用例目录布局的门禁。
 //
 // 守的是一件**只会静默出错**的事:`vitest.config.ts` 按目录分了两个 project
 // (server=node / web=happy-dom),include 因此是几条**具体路径**,不是笼统的

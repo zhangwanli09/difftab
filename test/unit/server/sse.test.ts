@@ -1,4 +1,4 @@
-// SSE 通道(src/server/http/sse.ts)的单测(spec §5.8 / §5.12)。
+// SSE 通道(src/server/http/sse.ts)的单测。
 //
 // 心跳周期是 15s —— 用真时钟验它的用例没人会跑第二次,所以这里用假时钟推。
 // 通道单独成文件、只依赖 `write` / `end` 两个方法,正是为了让这件事做得到。
@@ -67,7 +67,7 @@ describe('createSseChannel', () => {
 
   test('心跳每 15s 一发', async () => {
     // 心跳是给中间层看的:浏览器、系统休眠、dev 下的 Vite 代理都可能把一条长时间
-    // 静默的连接当死的回收,而这条连接同时是 §5.8 空闲退出的判据
+    // 静默的连接当死的回收,而这条连接同时是空闲退出的判据
     vi.useFakeTimers();
     const channel = createSseChannel();
     const client = fakeClient();

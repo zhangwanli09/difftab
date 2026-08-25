@@ -1,6 +1,6 @@
 // 前端状态层(src/web/state/store.ts)的单测。
 //
-// 盯的是 §5.0 不变式 4 的落地:分组只读 `FileEntry` 的字段,不在前端重新推导
+// 盯的是架构边界不变式 4 的落地:分组只读 `FileEntry` 的字段,不在前端重新推导
 // git 语义。这类回归不会让任何东西报错 —— 只是列表里少一类文件或多一类。
 
 import { beforeEach, describe, expect, test, vi } from 'vitest';
@@ -81,7 +81,7 @@ describe('groupFiles', () => {
   });
 
   test('X=M Y=M 的文件同时出现在已暂存与未暂存里', () => {
-    // `git add` 之后再改一次。归一到一个桶等于替用户丢掉一半信息,而 §6 点名要求
+    // `git add` 之后再改一次。归一到一个桶等于替用户丢掉一半信息,而点名要求
     // 「agent 执行过 git add 后,已暂存的改动仍能展示不遗漏」
     const groups = byId([file({ path: 'c.txt', staged: 'M', unstaged: 'M' })]);
     expect(groups.staged).toEqual(['c.txt']);
@@ -89,7 +89,7 @@ describe('groupFiles', () => {
   });
 
   test('未跟踪文件不会漏进「未暂存」—— 判据是 kind 而不是状态位', () => {
-    // 协议把未跟踪编码成 unstaged: '?'(§5.12)。若按「unstaged !== '.'」分组,
+    // 协议把未跟踪编码成 unstaged: '?'。若按「unstaged !== '.'」分组,
     // 每个未跟踪文件都会在未暂存组里再出现一次
     expect(byId([file({ path: 'new.txt', kind: 'untracked', unstaged: '?' })])).toEqual({
       conflicted: [],
@@ -102,7 +102,7 @@ describe('groupFiles', () => {
   test('冲突条目自成一组,不同时进已暂存与未暂存', () => {
     // `u` 记录的 XY 两位都不是 `.`,按字面判的实现会让它同时进两组 —— 而它哪一组
     // 都不属于:那两组说的是「已经 add 了」与「改了还没 add」,冲突文件正等着
-    // 用户决定内容(§5.3)。`DD` 那条同时钉住「判据不是状态位」:两位里一个 `U`
+    // 用户决定内容。`DD` 那条同时钉住「判据不是状态位」:两位里一个 `U`
     // 都没有,靠 `staged === 'U'` 认的实现会把它漏回那两组里去
     expect(
       byId([
@@ -219,7 +219,7 @@ describe('loadState', () => {
   });
 });
 
-describe('loadDiff(§5.2 的按文件懒加载)', () => {
+describe('loadDiff(按文件懒加载)', () => {
   const text: DiffPayload = { kind: 'text', patch: 'diff --git a/a.txt b/a.txt\n' };
 
   /** 请求 URL 里的 query —— 断言参数而不是断言字符串拼法。 */
@@ -233,7 +233,7 @@ describe('loadDiff(§5.2 的按文件懒加载)', () => {
 
   test('一次点击只发一个请求,且只带这一个文件的 path', async () => {
     // 禁止预取整个列表:agent 单次改 300+ 文件是常态,全仓 diff 会冻结主线程数秒到
-    // 数十秒(§5.2 / §6 的 300+ 文件验收项)
+    // 数十秒(300+ 文件验收项)
     const calls = stubJson(text);
     await loadDiff(file({ path: 'pkg/mod001.ts', unstaged: 'M' }));
 
@@ -244,7 +244,7 @@ describe('loadDiff(§5.2 的按文件懒加载)', () => {
   });
 
   test('重命名条目把 oldPath 一并传上 —— 漏传会退化成一个全新增文件', async () => {
-    // 只传新路径时 git 看不到另一侧、无法配对(已实测,§5.2)。症状不是报错:
+    // 只传新路径时 git 看不到另一侧、无法配对(已实测)。症状不是报错:
     // 页面上是一个内容完整、只是没有 rename from/to 的 diff
     const calls = stubJson(text);
     await loadDiff(file({ path: 'src/new.ts', oldPath: 'src/old.ts', staged: 'R' }));
@@ -264,7 +264,7 @@ describe('loadDiff(§5.2 的按文件懒加载)', () => {
 
   test('payload 原样落进 diffState —— binary / too-large 不例外', async () => {
     // 四个分支自 S4a 起后端都会真的返回(已跟踪那侧走 numstat,未跟踪那侧走 NUL
-    // 探测与体积),store 一律原样透传 —— 判别原因属后端知识(§5.12 / §5.0 不变式 4)
+    // 探测与体积),store 一律原样透传 —— 判别原因属后端知识(/ 架构边界不变式 4)
     for (const payload of [
       text,
       { kind: 'untracked-text', patch: '+new\n' },
@@ -341,7 +341,7 @@ describe('loadDiff(§5.2 的按文件懒加载)', () => {
 
   test('同一个文件重新取时不回退到 loading —— 否则每次刷新都把画好的 diff 拆掉重画', async () => {
     // 回退的代价不是闪一下:ready → loading 会让渲染 diff 的子树整个卸载,滚动位置
-    // 随之丢失。S3b1 起每个 SSE change 事件都会走这里,而 §5.4 要求刷新不丢滚动位置
+    // 随之丢失。S3b1 起每个 SSE change 事件都会走这里,而要求刷新不丢滚动位置
     diffState.value = { status: 'ready', path: 'a.txt', rename: null, payload: text };
     const fresh: DiffPayload = { kind: 'text', patch: 'updated\n' };
     stubJson(fresh);
@@ -429,7 +429,7 @@ describe('refresh(一次 SSE change 之后要重取什么)', () => {
   });
 
   test('重取用的是新列表里的条目 —— oldPath 跟着变,不能拿旧条目去取', async () => {
-    // 相似度与配对结果都会随改动变化。用旧条目取等于用过期的 oldPath(§5.2 双路径)
+    // 相似度与配对结果都会随改动变化。用旧条目取等于用过期的 oldPath(双路径)
     diffState.value = { status: 'ready', path: 'new.ts', rename: null, payload: text };
     const calls = stubEndpoints(
       stateWith([file({ path: 'new.ts', oldPath: 'renamed-again.ts', staged: 'R' })]),
@@ -465,7 +465,7 @@ describe('refresh(一次 SSE change 之后要重取什么)', () => {
      * 时它保持原值,只有原值非 null 才走得到「照着旧列表找条目」那一步 —— 而生产里
      * 它一直是非 null(第一帧就取过了)。第一版把它留在 null 上,拿掉产品里的
      * 提前返回照样全绿。旧列表的 oldPath 是过期的,拿它取 diff 正是重命名退化成
-     * 全新增那条路(§5.2)。
+     * 全新增那条路。
      */
     repoState.value = stateWith([file({ path: 'a.txt', oldPath: 'stale.txt', staged: 'R' })]);
     diffState.value = { status: 'ready', path: 'a.txt', rename: null, payload: text };

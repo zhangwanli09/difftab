@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // difftab CLI 入口 —— 版本守卫。
 //
-// 本文件手写维护,不参与 TypeScript 编译、不作为任何打包入口(spec §5.1 / §10)。
+// 本文件手写维护,不参与 TypeScript 编译、不作为任何打包入口。
 // 一旦它进了构建管线,就可能被注入超出 Node 22 的语法或被合并进主模块,
 // 低于下限的用户拿到的将是解析期 SyntaxError —— 守卫在解析期即失效。
 //
@@ -17,7 +17,7 @@
 import { writeSync } from 'node:fs';
 
 /**
- * 退出前的报错**一律 `writeSync(2, …)`**(spec §5.8 红线)。
+ * 退出前的报错**一律 `writeSync(2, …)`**(红线)。
  *
  * `process.stderr.write(…)` + `process.exit()` 在 Windows 上写**管道**时是异步的,
  * 整条消息会被丢掉 —— 症状是 stderr 全空、只剩一个退出码。而**文件重定向看不出

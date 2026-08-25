@@ -1,4 +1,4 @@
-// `git status --porcelain=v2 --branch -uall -z` 的调用与解析(spec §5.2)。
+// `git status --porcelain=v2 --branch -uall -z` 的调用与解析。
 
 import type { BranchState, FileEntry, StatusCode } from '../shared/protocol.ts';
 import { readOperation } from './operation.ts';
@@ -12,7 +12,7 @@ import { runGitStrict } from './run.ts';
  * 导出成常量是为了让 S3b 的降级轮询**复用逐字相同的这一条**,而不是各写各的:
  * 漏掉 `-uall` 的后果是静默的 —— git 会把未跟踪目录折叠成一行 `dir/`,于是在一个
  * 已存在的未跟踪目录里新增文件根本不改变输出,轮询判定「无变化」、页面不刷新,
- * 而那正是 agent 边跑边生成文件时最常见的形态(spec §5.7 / §10)。
+ * 而那正是 agent 边跑边生成文件时最常见的形态。
  *
  * 两个参数都不能省:`-uall` 见上;`-z` 是因为不加它 git 会对含非 ASCII 字符、空格、
  * 引号的路径做 C 风格转义并加引号(已实测)。
@@ -85,7 +85,7 @@ export function parseStatus(raw: string): StatusResult {
         } else if (key === 'branch.ab') {
           // `+3 -1`。**这一行在无上游时根本不输出**(已实测),因此 upstream 的
           // 初值是 null 而不是 { ahead: 0, behind: 0 } —— 「无上游」与「同步」是
-          // 两回事,合并成 0/0 就再也分不开了(spec §5.2 / §5.12)
+          // 两回事,合并成 0/0 就再也分不开了
           const m = /^\+(\d+)\s+-(\d+)$/.exec(value.trim());
           if (m?.[1] && m[2]) upstream = { ahead: Number(m[1]), behind: Number(m[2]) };
         }
@@ -138,7 +138,7 @@ export function parseStatus(raw: string): StatusResult {
           staged: asStatusCode(fields[1]?.[0]),
           unstaged: asStatusCode(fields[1]?.[1]),
           // **「是 `u` 记录」这件事只有这里知道**:XY 可以是 `DD` / `AA`,两位都不是
-          // `U`,下游再想从状态位认回来就已经晚了(§5.3 / §5.12 的 `conflicted`)
+          // `U`,下游再想从状态位认回来就已经晚了(`conflicted`)
           conflicted: true,
         });
         break;
@@ -166,10 +166,10 @@ export function parseStatus(raw: string): StatusResult {
 /**
  * 主查询的**原始输出**,不解析。
  *
- * 存在的唯一理由是 §5.7 的降级轮询:它只需要回答「变没变」,而逐字节比对原始输出
+ * 存在的唯一理由是降级轮询:它只需要回答「变没变」,而逐字节比对原始输出
  * 既是最省的判据,也让「轮询与主查询是同一条命令」成为**构造上的事实**而不是
  * 两处各自维护的巧合 —— 后者漏个 `-uall` 不报错,只是在一个已存在的未跟踪目录里
- * 新增文件时页面不刷新(§5.2 / §5.7 的红线)。
+ * 新增文件时页面不刷新(红线)。
  *
  * 比对解析后的结构也做得到,但那要么写一份深比较、要么 `JSON.stringify` 一遍,
  * 而两者都会随协议类型增删字段而静默改变灵敏度。
@@ -182,7 +182,7 @@ export async function readStatusRaw(root: string): Promise<string> {
  * 变更列表 + 分支状态。
  *
  * 取 `RepoInfo` 而不是两个字符串:进行中的多步操作只能从 **git 目录**下的状态文件读
- * (§5.3),而它和工作区根是两条不同的路径 —— linked worktree 与 submodule 下差得很远。
+ *,而它和工作区根是两条不同的路径 —— linked worktree 与 submodule 下差得很远。
  * 两个同类型参数并排放着,调换顺序不会报错,只会让 `operation` 从此恒为空。
  *
  * 两件事并发:`git status` 是一次子进程,`readOperation` 是七个 `access`,互不依赖。

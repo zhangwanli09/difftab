@@ -1,4 +1,4 @@
-// 监听层(src/server/watch/)的单测:档位判定 + `.git` 侧的 watch(spec §5.7)。
+// 监听层(src/server/watch/)的单测:档位判定 + `.git` 侧的 watch。
 //
 // 档位那一半是纯函数,逐档钉住;watcher 那一半是**行为**断言 —— 真的建 watch、
 // 真的写文件。理由是本阶段要守的两条红线(不递归、不对单个文件建 watch)都只在
@@ -25,7 +25,7 @@ import {
   type WatchHandle,
 } from '../../../src/server/watch/watcher.ts';
 
-describe('档位判定(§5.7)', () => {
+describe('档位判定', () => {
   test('`ignore` 的分界线正好在 24.14.0', () => {
     // 低于它就没有 `ignore`,Linux 上的递归 watch 会逐个注册 inotify watch 直到
     // 耗尽配额 —— 判错一档的代价是用户整机的编辑器开始报 ENOSPC
@@ -89,7 +89,7 @@ describe(`${TIER_ENV}(S3b2 六条验收项的自查前提)`, () => {
   });
 
   test('在没有 `ignore` 的 Node 上强制 A 档:提醒一句,但照样启动', () => {
-    // 拒绝启动会推翻 §6 已勾的「三档均可通过内部环境变量强制指定」;沉默则更糟 ——
+    // 拒绝启动会推翻已勾的「三档均可通过内部环境变量强制指定」;沉默则更糟 ——
     // Node 对未知选项是静默忽略,这次「A 档」跑的是一个**没有任何过滤的递归 watch**,
     // 而结论会写成「我验过 A 档了」
     expect(forcedTierWarning({ [TIER_ENV]: 'A' }, '22.0.0')).toMatch(/ignore/);
@@ -110,7 +110,7 @@ describe(`${TIER_ENV}(S3b2 六条验收项的自查前提)`, () => {
   });
 });
 
-describe('watch:`.git` 侧与工作区侧(§5.7,跑真实文件系统)', () => {
+describe('watch:`.git` 侧与工作区侧(跑真实文件系统)', () => {
   const dirs: string[] = [];
   const handles: WatchHandle[] = [];
 
@@ -137,7 +137,7 @@ describe('watch:`.git` 侧与工作区侧(§5.7,跑真实文件系统)', () => {
 
   /**
    * 起一个 watcher 并登记好收尾。**默认 `tier: 'C'`,也就是只起 `.git` 侧** ——
-   * C 档一个递归 watch 都不建(§5.7),于是那一组断言的每一次回调都只能来自
+   * C 档一个递归 watch 都不建,于是那一组断言的每一次回调都只能来自
    * `.git` 侧那几个非递归 watch。换成 A / B 的话「objects 里的写入不触发」那条会红,
    * 而红的原因是工作区那条递归 watch 也看得见它,与被测的东西无关。
    *
@@ -266,15 +266,15 @@ describe('watch:`.git` 侧与工作区侧(§5.7,跑真实文件系统)', () => {
   }, 15_000);
 
   /**
-   * 工作区侧,**跑真实文件系统**(§5.7 三档表 + §6「B 档:`node_modules` 的嵌套
+   * 工作区侧,**跑真实文件系统**(三档表 + 「B 档:`node_modules` 的嵌套
    * 子目录里批量写文件不触发刷新」)。
    *
    * 这一组不能写成 mock:要证伪的恰恰是「原生 watcher 到底把什么形状的路径交给
    * 匹配器」—— macOS / Windows 给的是**事件的相对路径**(`node_modules/.bin/foo`),
-   * 按 basename 比对匹配不上,过滤完全失效(§10)。断言我们传了什么参数的用例
+   * 按 basename 比对匹配不上,过滤完全失效。断言我们传了什么参数的用例
    * 对这条一个字都说不上。
    */
-  describe('工作区侧的三档(§5.7)', () => {
+  describe('工作区侧的三档', () => {
     /** 在 `fakeGitDir` 那个骨架旁边补出工作区:`src/` + 一层嵌套的 `node_modules/`。 */
     function watchRepo(tier: 'A' | 'B', calls: number[]): string {
       const root = dirname(fakeGitDir());
@@ -291,14 +291,14 @@ describe('watch:`.git` 侧与工作区侧(§5.7,跑真实文件系统)', () => {
       /**
        * A 档的过滤靠 `fs.watch` 的 `ignore`,而它自 Node 24.14.0 才有 —— 在更低的
        * 版本上强制指定 A 档,Node 会把这个未知选项**静默忽略**,于是这条用例会以
-       * 「过滤没生效」变红,而那正是 §5.7 判档要防的运行时行为,不是产品缺陷。
+       * 「过滤没生效」变红,而那正是判档要防的运行时行为,不是产品缺陷。
        * 跳过而不是假装通过:跑在 24.14+ 上的 CI build 作业照样把它盖住。
        */
       const runs = tier === 'B' || supportsIgnoreOption(process.versions.node);
       test.skipIf(!runs)(
         `${tier} 档:node_modules 的嵌套子目录里批量写文件不触发刷新`,
         async () => {
-          // 只写顶层目录本身证伪不了 basename 写法的缺陷(§6 明写了这一点):
+          // 只写顶层目录本身证伪不了 basename 写法的缺陷(明写了这一点):
           // 那种写法在 Linux 上碰巧成立,只有嵌套路径才把它分开
           const calls: number[] = [];
           const repoRoot = watchRepo(tier, calls);

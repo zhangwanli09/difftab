@@ -1,11 +1,11 @@
-// 前后端共用的协议类型(spec §5.12)。**前端唯一允许 import 的后端目录。**
+// 前后端共用的协议类型。**前端唯一允许 import 的后端目录。**
 //
 // 字段与判别式在 S1 即定型,即使 binary / too-large / 重命名标注的填充逻辑要到 S4、
 // watch 的真实取值要到 S3b。晚定的代价是前端按 kind: 'text' 单一形状、按「永远不
-// 降级」写死,后面再回头改渲染分支(spec §5.12「字段定型时机」)。
+// 降级」写死,后面再回头改渲染分支。
 //
 // 本文件描述**形状**,外加解释这些形状所需的谓词。**解析**逻辑(把 git 的字节变成
-// 这些形状)一律留在 server/git;而**状态位的含义**按 §5.0 不变式 4 正是本文件的职责,
+// 这些形状)一律留在 server/git;而**状态位的含义**按架构边界不变式 4 正是本文件的职责,
 // 否则每个消费者都会各自把 `staged !== '.'` 这类判据再写一遍,而那些判据并不都对
 // (见下面 `hasStagedChange` 的注释)。
 
@@ -21,7 +21,7 @@ export type StatusCode = '.' | 'M' | 'T' | 'A' | 'D' | 'R' | 'C' | 'U' | '?';
 export interface FileEntry {
   /** 相对仓库根、以 `/` 分隔的路径。原样来自 `-z` 输出,不含任何 C 风格转义。 */
   path: string;
-  /** 仅重命名/复制条目有:改名前的路径。取 diff 时必须与 `path` 一同传给 git(§5.2)。 */
+  /** 仅重命名/复制条目有:改名前的路径。取 diff 时必须与 `path` 一同传给 git。 */
   oldPath?: string;
   kind: 'tracked' | 'untracked';
   /** 暂存区相对 HEAD 的状态位(porcelain 的 X)。 */
@@ -32,12 +32,12 @@ export interface FileEntry {
   renameScore?: number;
   /**
    * 未合并(冲突)条目 —— **「这条来自 porcelain 的 `u` 记录」这一事实本身**,
-   * 不是从状态位推出来的(§5.3)。
+   * 不是从状态位推出来的。
    *
    * `u` 记录的 XY 可以是 `UU` / `AA` / `DD` / `AU` / `UD` 等组合,`DD` 两位都不是 `U`,
    * 所以靠状态位认会漏掉一半形态;而「未合并」恰恰是下面三个分组谓词唯一无法从
    * XY 读出来的东西。判据留在解析器那一侧,前端就不必重写一遍 porcelain 的记录类型
-   * (§5.0 不变式 4)。
+   * (架构边界不变式 4)。
    */
   conflicted?: true;
 }
@@ -46,13 +46,13 @@ export interface FileEntry {
  * 该条目在**暂存区侧**是否有改动(porcelain 的 X 位)。
  *
  * 判据看起来只是 `staged !== '.'`,但三种取值里有两种不能按字面读,所以它必须
- * 只有一份实现(§5.0 不变式 4):
+ * 只有一份实现(架构边界不变式 4):
  * - `?` 是本协议对未跟踪的编码、**不是** porcelain 的状态位,只出现在 `unstaged` 上;
  *   未跟踪自成一类,靠 `kind` 判定,不能靠状态位;
  * - **未合并(冲突)条目两侧同样都不是 `.`**,按字面读会让一个冲突文件同时进
  *   「已暂存」和「未暂存」两组 —— 而它哪一组都不属于:那两组说的是「已经 add 了」
- *   与「改了还没 add」,冲突文件正等着用户决定内容。它由 `isConflicted` 单独成组
- *   (§5.3),所以这里与下面都要把它排除掉。
+ *   与「改了还没 add」,冲突文件正等着用户决定内容。它由 `isConflicted` 单独成组,
+ *   所以这里与下面都要把它排除掉。
  */
 export function hasStagedChange(entry: FileEntry): boolean {
   return entry.kind === 'tracked' && !entry.conflicted && entry.staged !== '.';
@@ -92,16 +92,16 @@ export interface BranchState {
   /**
    * `null` 即**无上游**。
    *
-   * 无上游分支不输出 `# branch.ab` 行(已实测,§5.2),此时必须展示「无上游」
+   * 无上游分支不输出 `# branch.ab` 行(已实测),此时必须展示「无上游」
    * 而不是 0/0。把它编码进类型而非留作约定,前端就不可能漏掉这条分支。
    */
   upstream: null | { ahead: number; behind: number };
   /**
-   * 仓库正处于的多步操作;缺省即「没有」(§5.3)。
+   * 仓库正处于的多步操作;缺省即「没有」。
    *
    * 它**不来自 status 输出**——porcelain 里一行都没有,判据是 git 目录下的状态文件
    * (`server/git/operation.ts`)。`am` 与 `rebase` 分开列是因为两者共用同一个
-   * `rebase-apply/` 目录,合并成一个标注等于对用户说假话(§10 的实测)。
+   * `rebase-apply/` 目录,合并成一个标注等于对用户说假话(实测)。
    *
    * **与 `detached` 是同时出现的两件事,不是二选一**:rebase 停下时 status 报的
    * `# branch.head` 就是 `(detached)`(已实测)。
@@ -110,7 +110,7 @@ export interface BranchState {
 }
 
 /**
- * 服务端 SSE 心跳周期(spec §5.8「服务端 SSE 心跳约 15s」)。
+ * 服务端 SSE 心跳周期(约 15s)。
  *
  * **它是协议的一部分,所以定在这里而不是 http/sse.ts**:后端拿它当发送周期,前端
  * 拿它当「对端还在」的判据(`web/state/events.ts` 的 `STALE_MS` 由它推出来)。两边
@@ -120,7 +120,7 @@ export interface BranchState {
 export const HEARTBEAT_MS = 15_000;
 
 /**
- * 监听档位与是否已降级(spec §5.7 / §5.12)。
+ * 监听档位与是否已降级。
  *
  * 降级既可能是 C 档的既定形态,也可能是 A/B 档运行中落到轮询兜底 —— 前端无从
  * 自己推断,必须由后端告知。
@@ -133,12 +133,12 @@ export interface WatchState {
 /** `GET /api/state` 的响应体。 */
 export interface RepoState {
   /**
-   * 工作区根目录名(`RepoInfo.root` 的 basename),页面标题里的项目标识(§5.4)。
+   * 工作区根目录名(`RepoInfo.root` 的 basename),页面标题里的项目标识。
    *
    * **给的是目录名而不是路径**:「错误消息不含绝对路径」防的是把本机目录结构混进
    * 面向页面的输出,而标题恰恰要出现在页面上 —— basename 是回答「这个标签属于哪个
    * 项目」所需的最小的那一份。带绝对路径的 `InstanceInfo` 不在 `shared/` 里,
-   * 也不是给前端的(§5.12)。
+   * 也不是给前端的。
    *
    * **空串的含义是「这个根目录没有 basename」**(`/`、Windows 的盘符根),与
    * `BranchState.head` 同一条口径:后端不为此编一个名字出来 —— 那是在事实来源这一层
@@ -154,7 +154,7 @@ export interface RepoState {
  * `GET /api/diff` 的响应体,判别联合。
  *
  * `text` 是已跟踪文件的 `git diff` 补丁正文;`untracked-text` 是未跟踪文件手工
- * 构造的 unified diff(不走 `--no-index`,§5.2)—— 两者分开是因为后者的补丁不来自
+ * 构造的 unified diff(不走 `--no-index`)—— 两者分开是因为后者的补丁不来自
  * git,前端将来若要做「以 git 输出为准」的断言,得能区分。
  */
 export type DiffPayload =
@@ -166,17 +166,17 @@ export type DiffPayload =
       /** 文件字节数。**不足以解释拒绝的原因**,见 `reason`。 */
       size: number;
       /**
-       * 哪个阈值拦下了它:`size` 是体积超 5MB,`lines` 是行数超 50,000(§5.2 两个
+       * 哪个阈值拦下了它:`size` 是体积超 5MB,`lines` 是行数超 50,000(两个
        * 触发口都在 server/git/diff.ts)。
        *
        * 少了这个字段,行数那一路的文件前端只能拿到一个几百 KB 的体积 —— 既解释不了
        * 为什么不预览,按 MB 取整还会显示「文件过大(0 MB)」。判别原因属 git 侧知识,
-       * 前端无法从 `size` 反推(§5.0 不变式 4)。
+       * 前端无法从 `size` 反推(架构边界不变式 4)。
        */
       reason: 'size' | 'lines';
     };
 
-/** 错误响应。`message` 不含绝对路径(§5.12 / §5.9)。 */
+/** 错误响应。`message` 不含绝对路径。 */
 export interface ErrorPayload {
   error: { code: string; message: string };
 }

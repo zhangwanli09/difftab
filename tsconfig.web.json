@@ -1,8 +1,8 @@
 {
-  // 前端类型检查(spec §5.11)。JSX 走 Preact 的 automatic runtime。
+  // 前端类型检查。JSX 走 Preact 的 automatic runtime。
   // 严格性开关见 tsconfig.base.json。
   // 只包含 src/web 与 src/server/shared —— 后者是前端唯一允许 import 的后端目录
-  // (spec §5.0 依赖方向;运行时的强制由 biome.json 的 noRestrictedImports 承担)。
+  // (依赖方向;运行时的强制由 biome.json 的 noRestrictedImports 承担)。
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "target": "ES2022",

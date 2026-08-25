@@ -1,7 +1,7 @@
-// 前端状态(spec §5.4)。signals 而非 useState:SSE 刷新要在**不丢失当前选中文件
-// 与滚动位置**的前提下更新列表,状态必须活在组件树之外(§5.4 / §5.7)。
+// 前端状态。signals 而非 useState:SSE 刷新要在**不丢失当前选中文件
+// 与滚动位置**的前提下更新列表,状态必须活在组件树之外。
 //
-// 本文件是 §5.0 不变式 4 的落脚点之一:**前端不内联任何 git 知识**。
+// 本文件是架构边界不变式 4 的落脚点之一:**前端不内联任何 git 知识**。
 // 「这一侧算不算有改动」的判据在 `shared/protocol.ts`(`hasStagedChange` 等)——
 // 那三个谓词看着像 `!== '.'` 的同义反复,其实不是,`?` 与 `U` 都不能按字面读。
 // 本文件只负责把它们组织成三组;「重命名」同理看 `oldPath` 而不比对路径。
@@ -21,13 +21,13 @@ import {
 /** `GET /api/state` 的结果。null 表示还没拿到第一份。 */
 export const repoState = signal<RepoState | null>(null);
 
-/** 取不到状态时展示给用户的一句话。后端已保证不含绝对路径(§5.12)。 */
+/** 取不到状态时展示给用户的一句话。后端已保证不含绝对路径。 */
 export const loadError = signal<string | null>(null);
 
 /**
  * 这次请求指向的条目是不是重命名来的,以及相似度(`null` = git 没给)。
  *
- * **它跟着请求走,不是在渲染时去列表里现找**:§6 要求打开的 diff 上标注重命名,
+ * **它跟着请求走,不是在渲染时去列表里现找**:重命名要标注在打开的 diff 上,
  * 而选中的文件随时可能从下一份列表里消失(改动被撤销、被 commit 掉)。那时右侧
  * 刻意留着最后那份 diff(见 `refresh`),现找的写法会让标注**单独**消失,
  * 于是页面上是一份带 `rename from/to` 的补丁配着「这是个普通文件」的标题。
@@ -55,7 +55,7 @@ export type DiffRequestState =
 /**
  * `FileEntry` 的重命名两个字段 → 一个可选对象。
  *
- * 判据是 `oldPath` 存在,**不是比对新旧路径**(§5.0 不变式 4:重命名与否是 git 的
+ * 判据是 `oldPath` 存在,**不是比对新旧路径**(架构边界不变式 4:重命名与否是 git 的
  * 判定,前端不重写一遍)。
  */
 function renameOf(entry: FileEntry): RenameInfo | null {
@@ -74,7 +74,7 @@ export const diffState = signal<DiffRequestState | null>(null);
  * 又得让后来的人反复确认它走不到。派生之后错位不可表示,分支自然消失。
  *
  * 存 path 而不是 `FileEntry` 对象:列表刷新后条目是新对象,存对象等于每次刷新
- * 都丢选中。path 是 §5.12 里 `/api/diff` 的键,天然是这个身份(§5.4)。
+ * 都丢选中。path 是 `/api/diff` 的键,天然是这个身份。
  */
 export const selectedPath = computed(() => diffState.value?.path ?? null);
 
@@ -87,18 +87,17 @@ export interface ChangeGroup {
 }
 
 /**
- * 四个分组(spec §6「变更文件列表……已暂存、未暂存、未跟踪三类文件均正确展示」,
- * 外加 §5.3 的冲突一组)。
+ * 四个分组:已暂存、未暂存、未跟踪,外加冲突一组。
  *
  * **同一个文件可以同时出现在「已暂存」和「未暂存」里**,这不是 bug:porcelain 的
  * XY 是两位独立状态位,`git add` 之后再改一次就是 `X=M Y=M`(fixture 里的 c.txt)。
  * 强行归一到一个桶,等于在前端替用户丢掉一半信息 —— 而「agent 执行过 git add 后
- * 已暂存的改动仍能展示不遗漏」正是 §6 点名的验收项。
+ * 已暂存的改动仍能展示不遗漏」正是本工具要保证的一条。
  *
  * **冲突是唯一的例外,而且排在最前面**:它两侧状态位都不是 `.`,不单独成组就会
  * 同时落进上面两组,而它哪一组都不属于 —— 那两组说的是「已经 add 了」与「改了
  * 还没 add」,冲突文件正等着用户决定内容。排最前是因为 rebase / merge 停在半路时,
- * 它就是用户此刻唯一要处理的东西(§5.3;判据在 `isConflicted`,不在这里)。
+ * 它就是用户此刻唯一要处理的东西(判据在 `isConflicted`,不在这里)。
  *
  * 组内顺序沿用后端给的顺序(git 自己按路径排好的),不在前端再排一次:多一份排序
  * 意见就多一处与 `git status` 不一致的可能,而验收标准是「与 git status 结果一致」。
@@ -108,7 +107,7 @@ export function groupFiles(files: readonly FileEntry[]): ChangeGroup[] {
     { id: 'conflicted', title: 'Conflicted', files: files.filter(isConflicted) },
     { id: 'staged', title: 'Staged', files: files.filter(hasStagedChange) },
     { id: 'unstaged', title: 'Unstaged', files: files.filter(hasUnstagedChange) },
-    // -uall 保证这里是文件粒度,不会是折叠后的 `dir/`(§5.2)
+    // -uall 保证这里是文件粒度,不会是折叠后的 `dir/`
     { id: 'untracked', title: 'Untracked', files: files.filter(isUntracked) },
   ];
 }
@@ -143,7 +142,7 @@ function messageFrom(text: string, status: number): string {
  * 「Unexpected token 'E'…」,而它照样是绿的 —— 现有那条单测只盖 `/api/state`。
  *
  * 成功那一路仍走 `res.json()`:「未必是 JSON」只对错误正文成立,而 diff 的正文可以
- * 到 5MB(§5.2 的阈值),先 `text()` 再 `JSON.parse()` 等于把它在内存里存两份。
+ * 到 5MB(阈值),先 `text()` 再 `JSON.parse()` 等于把它在内存里存两份。
  *
  * 竞态判据**不在这里**:两个调用方各有各的序号,且要在拿到结果后才比对(见下)。
  */
@@ -167,7 +166,7 @@ let latestRequest = 0;
  * 拉一次 `/api/state`。
  *
  * 不带任何鉴权参数:token 在生产下由启动 URL 的 302 换成了 HttpOnly cookie、在
- * `vite dev` 下由代理注入(§5.9 / §5.11),两条路径浏览器都会自动带上。前端因此
+ * `vite dev` 下由代理注入,两条路径浏览器都会自动带上。前端因此
  * 完全不接触 token —— 它一旦落到 JS 能读的地方,HttpOnly 就白设了。
  *
  * 返回值是「`repoState` 这次换上新快照了吗」,给 `refresh()` 用:失败与被后一次请求
@@ -192,16 +191,16 @@ export async function loadState(): Promise<boolean> {
 let latestDiffRequest = 0;
 
 /**
- * 取**一个**文件的 diff(spec §5.2 的按文件懒加载)。
+ * 取**一个**文件的 diff(按文件懒加载)。
  *
  * 两处不能省的细节:
  *
  * - **重命名条目必须把 `oldPath` 一并传给后端**。只传新路径时 git 只看到一侧、无法
- *   配对,会把重命名退化成一个全新增文件(已实测,§5.2),「重命名识别并标注」随之
+ *   配对,会把重命名退化成一个全新增文件(已实测),「重命名识别并标注」随之
  *   落空 —— 而页面上看到的是一个内容完整、只是少了 rename from/to 的 diff,不像出错。
- *   判据是 `oldPath` 存在,不是自己比对路径(§5.0 不变式 4)
+ *   判据是 `oldPath` 存在,不是自己比对路径(架构边界不变式 4)
  * - **一次点击只发一个请求**。禁止预取整个列表:agent 单次改 300+ 文件是常态,
- *   全仓 diff 会冻结浏览器主线程数秒到数十秒(§5.2 / §6 的 300+ 文件验收项)
+ *   全仓 diff 会冻结浏览器主线程数秒到数十秒(300+ 文件验收项)
  */
 export async function loadDiff(entry: FileEntry): Promise<void> {
   const ticket = ++latestDiffRequest;
@@ -213,7 +212,7 @@ export async function loadDiff(entry: FileEntry): Promise<void> {
    * 回退的代价不是闪一下:`ready` 变 `loading` 会让渲染 diff 的那棵子树整个卸载,
    * diff2html 画好的 DOM 连同滚动位置一起没了,补丁回来后从零重画。今天的表现是
    * 「再点一次当前行(或它在另一组里的那一行)整个面板闪空」;到 S3b1 之后,每个
-   * SSE `change` 事件都会走这里,而 §5.4 要求刷新**不丢选中文件与滚动位置** ——
+   * SSE `change` 事件都会走这里,而要求刷新**不丢选中文件与滚动位置** ——
    * 那正是不自己写 reconcile、改用框架的理由,在这里回退等于把它退掉。
    *
    * 换文件才必须清空:留着上一个文件的 payload,新标题下会短暂挂着旧 diff。
@@ -238,7 +237,7 @@ export async function loadDiff(entry: FileEntry): Promise<void> {
  * 选中一个文件并拉它的 diff。
  *
  * 列表只把 `FileEntry` 交回来,「取 diff 要带哪些参数」留在本文件 —— 组件里再写一遍
- * 就等于把 §5.2 的双路径要求复制了一份,而两份里漏改一份是不会报错的。
+ * 就等于把双路径要求复制了一份,而两份里漏改一份是不会报错的。
  *
  * diff 的错误**不写进 `loadError`**:那条横幅说的是「列表取不到」,一个文件的 diff
  * 失败不该让整个页面看起来坏掉,它显示在右侧自己的位置上。
@@ -251,16 +250,16 @@ export function selectFile(entry: FileEntry): void {
 }
 
 /**
- * 一次 SSE `change` 之后要重取的东西(spec §5.7 / §5.8)。
+ * 一次 SSE `change` 之后要重取的东西。
  *
  * 三条不显然的地方:
  *
  * - **打开着的 diff 也要重取**,不能只刷列表:文件内容变了而列表条目没变(还是那个
  *   `1 .M`)是最常见的形态,只刷列表的话右侧停在旧补丁上,而页面看不出任何异样。
  *   `loadDiff` 里那条「同一个 path 不回退 loading」正是为这条路准备的 —— 否则每个
- *   事件都会把 diff2html 画好的 DOM 连同滚动位置一起卸载重挂(§5.4)
+ *   事件都会把 diff2html 画好的 DOM 连同滚动位置一起卸载重挂
  * - **先 state 后 diff,且用新列表里的条目**:重命名条目取 diff 必须带 `oldPath`
- *   (§5.2 的双路径),而相似度是会变的,拿旧条目去取等于用过期的 `oldPath`。
+ *   (双路径),而相似度是会变的,拿旧条目去取等于用过期的 `oldPath`。
  *   **列表没换上新的就整个不取**:`loadState()` 失败时 `repoState` 留着的是上一份
  *   快照,照着它找条目取 diff,恰好就是上面那句要避免的事 —— 而它不报错,只是
  *   `oldPath` 过期(重命名退化成全新增)。被后一次 `refresh` 顶掉时同理:那一次

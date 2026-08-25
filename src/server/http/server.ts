@@ -1,7 +1,7 @@
-// node:http server、路由、§5.9 三道校验、dist/web 静态托管(spec §5.9 / §5.12)。
+// node:http server、路由、三道校验、dist/web 静态托管。
 //
 // 本目录不直接触碰 git 与文件监听,只调用 git/ 与 watch/ 导出的函数 —— 这保证三道
-// 校验位于唯一入口,不会被某条旁路绕开(spec §5.0 不变式 3)。
+// 校验位于唯一入口,不会被某条旁路绕开(架构边界不变式 3)。
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { Socket } from 'node:net';
@@ -38,7 +38,7 @@ export interface DifftabServer {
 
 export interface ServerOptions {
   /**
-   * 宽限期走满且仍无客户端时调用一次(spec §5.8)。
+   * 宽限期走满且仍无客户端时调用一次。
    *
    * **进程怎么退是 cli 的事,不是 http 的事**:这里只知道「没人了」,而「退不退、
    * 用什么码退、退之前打什么」归启动流程(server/cli),否则这一层就得 import
@@ -48,9 +48,9 @@ export interface ServerOptions {
 }
 
 /**
- * `GET /api/instance` 的响应体(spec §5.12)。
+ * `GET /api/instance` 的响应体。
  *
- * **不放 `shared/`**:那个目录是「前端唯一允许 import 的后端目录」(§5.0 不变式 4),
+ * **不放 `shared/`**:那个目录是「前端唯一允许 import 的后端目录」(架构边界不变式 4),
  * 里面每一项都真的被 `src/web` 消费,而这一项的唯一消费者是**下一个 CLI 进程**。
  * 放进去等于把 shared/ 从「前端的契约面」变成「任何线上类型」,而「前端到底依赖什么」
  * 也就不再有一个按目录回答的办法。`cli → http` 是允许的依赖方向,probe 直接
@@ -62,7 +62,7 @@ export interface InstanceInfo {
 }
 
 /**
- * 错误信息不含绝对路径(spec §5.12 / §5.9)。
+ * 错误信息不含绝对路径。
  *
  * git 的 fatal 文本里经常带着完整仓库路径,原样回给页面就把本机目录结构泄漏进了
  * 一个任何本地页面都可能读到的响应体。
@@ -97,7 +97,7 @@ export async function startServer(
    *
    * 早先只在兜底的 500 分支上过一次 sanitizeMessage,于是「响应体不含绝对路径」这条
    * 不变式实际挂在「以后新增的错误消息恰好都不带路径」上 —— 那不是不变式,是巧合。
-   * 放在唯一出口上,新增分支自动被覆盖(spec §5.12)。
+   * 放在唯一出口上,新增分支自动被覆盖。
    */
   const sendError = (res: ServerResponse, status: number, code: string, message: string) => {
     const payload: ErrorPayload = { error: { code, message: sanitizeMessage(message, repo.root) } };
@@ -115,10 +115,10 @@ export async function startServer(
   /**
    * 档位在**启动时**定,不等第一个订阅者。
    *
-   * `/api/state` 里就带着它(§5.12),而那个请求先于任何 SSE 连接到达;更要紧的是
+   * `/api/state` 里就带着它,而那个请求先于任何 SSE 连接到达;更要紧的是
    * `DIFFTAB_WATCH_TIER` 写错时要在启动那一刻响亮地失败,而不是等到某次订阅。
    * 判定本身是纯计算(读 `process.versions.node` 与 `process.platform`),不落在
-   * §6 的 300ms 冷启动预算上。
+   * 300ms 冷启动预算上。
    */
   const tier = resolveTier();
   // 强制指定的档位在这个 Node 上跑不出它该有的样子时提醒一句(不拦启动,理由见那边)
@@ -132,7 +132,7 @@ export async function startServer(
   const events = createSseChannel({ onChange: () => idle.touch() });
 
   /**
-   * 空闲退出的计时器(spec §5.8)。**判据是 SSE 连接数,但任何通过校验的请求都重置
+   * 空闲退出的计时器。**判据是 SSE 连接数,但任何通过校验的请求都重置
    * 计时** —— 连接数是正面判据,而它在两种情形下同样是 0:刚被探活复用、浏览器
    * 还在启动的那几秒,以及页面活着但 SSE 被中间层悄悄回收了。两者取并集,退出条件
    * 因此严格弱于「连接数为 0 持续 45s」,只会晚退不会早退。
@@ -149,11 +149,11 @@ export async function startServer(
   /**
    * 监听**懒起**:第一个 SSE 订阅者到了才建,起了就一直留到关服务。
    *
-   * 两头都是有理由的。懒起是因为 §6 的冷启动门禁量的是「监听成功并打印 URL」,而
+   * 两头都是有理由的。懒起是因为冷启动门禁量的是「监听成功并打印 URL」,而
    * S3b2 的 A/B 档要在 repoRoot 上建递归 watch —— Linux 上那是用户态遍历整棵树,
    * 大仓库里足以把 300ms 预算一口吃掉,而此刻还没有任何人在等变更通知。
    * 不随最后一个订阅者关掉,则是因为刷新页面 = 断开再连,那会让上面那趟遍历
-   * 每刷新一次重来一遍;空闲着的原生 watch 本身开销接近零(§6 的资源占用项)。
+   * 每刷新一次重来一遍;空闲着的原生 watch 本身开销接近零(资源占用项)。
    */
   let watcher: WatchHandle | null = null;
   const ensureWatcher = () => {
@@ -165,13 +165,13 @@ export async function startServer(
       onChange: () => events.send('change', {}),
       /**
        * 轮询探针。**注入而不是让 watch/ 自己去调 git**:git 子进程只许出现在
-       * server/git(§5.0 不变式 1),而 §5.0 的依赖方向里也没有 watch → git 这条边。
+       * server/git(架构边界不变式 1),而依赖方向里也没有 watch → git 这条边。
        * 传进去的是主查询本身(`readStatusRaw` 用的就是 `STATUS_ARGS`),于是「轮询
        * 与主查询逐字相同」这条红线在这里是**一处赋值**而不是两处各自维护的巧合。
        * 拦住它的不是类型(签名只是 `() => Promise<string>`),是这个唯一的注入点
        * 加上冒烟里那条「C 档在已存在的未跟踪目录里新增文件要推出 change」。
        *
-       * **已知的覆盖边界**:`/api/state` 里的 `operation`(§5.3)不来自 status 输出,
+       * **已知的覆盖边界**:`/api/state` 里的 `operation`不来自 status 输出,
        * 所以这条探针看不见它。三档都在 `gitDir` 上建了非递归 watch,`MERGE_HEAD` /
        * `rebase-merge/` 的增删就落在那儿,正常情况下照样推得出 change;只有**那条
        * watch 自己也失败、整体落到轮询**之后,一次「只动 git 目录、不动 HEAD 也不动
@@ -181,8 +181,8 @@ export async function startServer(
        */
       pollStatus: () => readStatusRaw(repo.root),
       /**
-       * 降级为轮询(§5.7 的兜底)。**推一个 `change` 是必需的**:`mode` 只在
-       * `/api/state` 里,前端不重取就看不到降级 —— 而它自己无从推断这件事(§5.12),
+       * 降级为轮询(兜底)。**推一个 `change` 是必需的**:`mode` 只在
+       * `/api/state` 里,前端不重取就看不到降级 —— 而它自己无从推断这件事,
        * 于是页面会一直标着「原生监听」直到下一次真的有文件变更。
        */
       onDegrade: (cause) => {
@@ -195,7 +195,7 @@ export async function startServer(
   };
 
   /**
-   * 当前的监听状态(§5.12 的 `WatchState`)。
+   * 当前的监听状态(`WatchState`)。
    *
    * **每次请求现算,不是启动时算一次**:降级发生在运行中,而算一次存起来的那份
    * 不会报错,只是从此永远说「原生监听」。监听懒起(见上),还没起来时按档位的
@@ -221,7 +221,7 @@ export async function startServer(
     const url = new URL(req.url ?? '/', `http://${BIND_HOST}:${port}`);
 
     // 第 3 道:token。URL 带 token → 置换为 cookie 并 302 掉 query,
-    // 避免 token 长期滞留在浏览器历史、地址栏和日志中(spec §5.9)
+    // 避免 token 长期滞留在浏览器历史、地址栏和日志中
     const fromQuery = url.searchParams.get('token');
     if (fromQuery !== null) {
       if (!tokensMatch(fromQuery, token)) {
@@ -239,7 +239,7 @@ export async function startServer(
       res.end();
       return;
     }
-    // 所有端点统一校验,无例外(spec §5.9 第 4 条)
+    // 所有端点统一校验,无例外
     if (!tokensMatch(readCookieToken(req.headers.cookie, port), token)) {
       sendError(res, 403, 'forbidden', 'forbidden');
       return;
@@ -247,15 +247,15 @@ export async function startServer(
     /**
      * 到这里才算「有人在」,**三道校验之前不算**(上面那个 302 分支同理:token 对了
      * 才 touch)。放在函数开头看起来更省事,代价是本机任何一个端口扫描器都能无限期
-     * 续命一个该退的进程 —— 而 §5.8 的承诺是「不留后台常驻进程」。
+     * 续命一个该退的进程 —— 而承诺是「不留后台常驻进程」。
      */
     idle.touch();
 
     /**
-     * 只读工具不需要任何非幂等端点(spec §5.12)。
+     * 只读工具不需要任何非幂等端点。
      *
-     * **必须留在三道校验之后,不得挪回函数开头** —— 理由(泄漏服务存在性)见 spec §5.9
-     * 第 4 条,验收项 §6 `[S5]`。副作用是上面那个 query token 分支也排在它前面:带合法
+     * **必须留在三道校验之后,不得挪回函数开头** —— 理由(泄漏服务存在性)
+     * 见安全那节。副作用是上面那个 query token 分支也排在它前面:带合法
      * token 的非幂等请求会先被 302 换成 cookie 而不是 405。它已经过了三道校验,是取舍。
      */
     if (req.method !== 'GET' && req.method !== 'HEAD') {
@@ -271,7 +271,7 @@ export async function startServer(
 
     switch (url.pathname) {
       case '/api/state': {
-        // 整个 `RepoInfo` 传下去:进行中的多步操作要从 **git 目录**读(§5.3),
+        // 整个 `RepoInfo` 传下去:进行中的多步操作要从 **git 目录**读,
         // 而它与工作区根在 linked worktree / submodule 下是两条完全不同的路径
         const status = await readStatus(repo);
         sendJson(res, 200, {
@@ -284,13 +284,13 @@ export async function startServer(
       }
 
       /**
-       * 探活复用的应答(spec §5.8 / §5.12)。**消费者是下一个 CLI 进程,不是前端。**
+       * 探活复用的应答。**消费者是下一个 CLI 进程,不是前端。**
        *
        * 它答的是「这个端口现在还是**这个仓库**的实例吗」。光有三道校验答不了:
        * token 不匹配只证明「不是我们这一份会话」,而端口被系统回收给另一个仓库的
        * difftab 时,那边同样有一份合法 token —— 只不过不是我们记在注册表里的那个,
        * 于是它会 403、被判为陈旧,正确。真正需要这个正文的是相反的一侧:200 之后
-       * 还要确认路径确实是我们这个仓库,否则「复用」会把用户带到别人的页面(§5.8
+       * 还要确认路径确实是我们这个仓库,否则「复用」会把用户带到别人的页面(
        * 排除 pid 判活也是同一条理由)。
        */
       case '/api/instance': {
@@ -310,8 +310,8 @@ export async function startServer(
       }
 
       /**
-       * SSE(spec §5.8 / §5.12)。**三道校验在上面已经统一走过**,这里没有例外分支 ——
-       * 「所有端点(含 SSE)统一校验」正是 §5.9 第 4 条。
+       * SSE。**三道校验在上面已经统一走过**,这里没有例外分支 ——
+       * 「所有端点(含 SSE)统一校验」不留例外。
        */
       case '/api/events': {
         const headers = {
@@ -339,13 +339,13 @@ export async function startServer(
          * 是整个进程带着裸栈崩掉,而不是丢一条心跳。
          *
          * 顺序则是因为 add 之后、挂上之前的那一小段里断开的话,就再没人把它摘出去:
-         * 心跳会一直写向一条死响应,§5.8 的空闲退出也永远数不回 0。
+         * 心跳会一直写向一条死响应,空闲退出也永远数不回 0。
          */
         /**
          * 断开之后**必须再 touch 一次**:计时只在 `touch()` 里起,而这是「最后一个
          * 标签被关掉」在服务端的唯一形态。少了它,进程要等到下一个请求(而那正是
          * 没有人再发的东西)才想起来自己已经空了 —— 症状是关完浏览器留一个永久
-         * 常驻进程,与 §6 那条验收项正相反。
+         * 常驻进程,与那条验收项正相反。
          */
         res.on('close', () => events.remove(res));
         res.on('error', () => events.remove(res));
@@ -422,11 +422,11 @@ export async function startServer(
   token = composeToken(port, secret);
 
   /**
-   * **宽限期从这一刻就开始计,不等第一个客户端**(spec §5.8)。
+   * **宽限期从这一刻就开始计,不等第一个客户端**。
    *
    * 等第一个客户端才起计时看着更稳妥,实则把「浏览器压根没拉起来」整类情形
    * (headless、无 `xdg-open`、`--no-open` 之后用户改了主意)变成永久常驻的后台进程。
-   * 45 秒足够覆盖冷启动一个浏览器进程的 2-5s(§6)。
+   * 45 秒足够覆盖冷启动一个浏览器进程的 2-5s。
    */
   idle.touch();
 

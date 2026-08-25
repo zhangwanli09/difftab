@@ -1,29 +1,29 @@
-// 仓库定位、启动前置检查、diff 基准(spec §5.2 / §5.3)。
+// 仓库定位、启动前置检查、diff 基准。
 
 import { basename, isAbsolute, resolve } from 'node:path';
 import { GitError, runGit } from './run.ts';
 
-/** `--porcelain=v2` 的最低要求(spec §5.2)。 */
+/** `--porcelain=v2` 的最低要求。 */
 const MIN_GIT = { major: 2, minor: 11 };
 
 /**
  * 空树对象哈希。空仓库下 HEAD 不存在、`git diff HEAD` 直接 fatal,改用它作 diff 基准
- * 即可(spec §5.3),不必为空仓库写一条特殊分支。
+ * 即可,不必为空仓库写一条特殊分支。
  *
  * 硬编码是**要求**而不是偷懒:`git hash-object -t tree /dev/null` 依赖 `/dev/null`,
  * Windows 上不可移植;`git mktree` 会写对象库,直接违反只读承诺。
  */
 const EMPTY_TREE = {
   sha1: '4b825dc642cb6eb9a060e54bf8d69288fbee4904',
-  // 两个常量**都是实测取来的**,不是凭记忆写的(§5.3):写错的后果是空仓库下
+  // 两个常量**都是实测取来的**,不是凭记忆写的:写错的后果是空仓库下
   // diff 基准无效,而症状与「空仓库不支持」难以区分。SHA-256 这个于 S4b 在
-  // `git init --object-format=sha256` 的仓库上取值,并验过它当基准确实出补丁(§10)
+  // `git init --object-format=sha256` 的仓库上取值,并验过它当基准确实出补丁
   sha256: '6ef19b41225c5369f1c104d45d8d85efa9b057b53b14b4b9b939dd74decc5321',
 };
 
 export type PreflightCode = 'git-missing' | 'git-too-old' | 'not-a-repo' | 'bare-repo';
 
-/** 启动前置检查失败。CLI 据此打印一句话友好报错,而不是抛 Node 异常栈(§5.2)。 */
+/** 启动前置检查失败。CLI 据此打印一句话友好报错,而不是抛 Node 异常栈。 */
 export class PreflightError extends Error {
   readonly code: PreflightCode;
   constructor(code: PreflightCode, message: string) {
@@ -36,7 +36,7 @@ export class PreflightError extends Error {
 export interface RepoInfo {
   /** 工作区根目录绝对路径。 */
   root: string;
-  /** git 目录绝对路径。**不得假设它是 `<root>/.git`** —— linked worktree 下 `.git` 是文件(§5.2)。 */
+  /** git 目录绝对路径。**不得假设它是 `<root>/.git`** —— linked worktree 下 `.git` 是文件。 */
   gitDir: string;
 }
 
@@ -54,7 +54,7 @@ function tooOld(v: { major: number; minor: number }): boolean {
 /**
  * 前置检查 + 定位,一次做完。
  *
- * 两条命令并发跑:串行等于把两次进程启动开销叠加进 §6 的 300ms 冷启动预算,
+ * 两条命令并发跑:串行等于把两次进程启动开销叠加进 300ms 冷启动预算,
  * 而它们之间没有依赖。失败路径上的额外一次 `rev-parse` 不计成本 —— 那条路径的
  * 终点是打印一行报错然后退出。
  */
@@ -114,7 +114,7 @@ export async function locateRepo(cwd: string): Promise<RepoInfo> {
 }
 
 /**
- * 工作区根目录名 —— 页面标题里的项目标识(§5.4 / §5.12 的 `RepoState.repoName`)。
+ * 工作区根目录名 —— 页面标题里的项目标识(`RepoState.repoName`)。
  *
  * **和 `root` 住在一起,不在消费者那边现切**:下面那条「用 `node:path` 不手写切分」
  * 的理由整个建立在 `root` 是怎么来的之上(`rev-parse --show-toplevel`),而那件事只有
@@ -135,7 +135,7 @@ export function repoNameOf(repo: RepoInfo): string {
  * diff 的基准。
  *
  * 正常仓库是 `HEAD`;空仓库(尚无任何提交)下 HEAD 不存在,`git diff HEAD` 会 fatal,
- * 降级为空树哈希(spec §5.3)。
+ * 降级为空树哈希。
  *
  * 不做缓存:`git checkout --orphan` 之后 HEAD 会重新变回未出生状态,缓存的正结果
  * 会让 diff 从此全部 fatal。这条只在取 diff 时调用,不落在冷启动路径上。
@@ -145,9 +145,9 @@ export async function resolveDiffBase(root: string): Promise<string> {
   if (head.code === 0 && head.stdout.trim()) return 'HEAD';
 
   const format = await runGit(['rev-parse', '--show-object-format'], root);
-  // `--show-object-format` 随 SHA-256 支持(git 2.29 前后)才引入,高于 §5.2 的
+  // `--show-object-format` 随 SHA-256 支持(git 2.29 前后)才引入,高于
   // 下限 2.11。**非零退出即按 SHA-1 处理** —— 那个区间的 git 根本造不出 SHA-256
-  // 仓库,降级无歧义,不得让它成为空仓库路径上的崩溃点(spec §5.3)。
+  // 仓库,降级无歧义,不得让它成为空仓库路径上的崩溃点。
   const name = format.code === 0 ? format.stdout.trim() : 'sha1';
   return name === 'sha256' ? EMPTY_TREE.sha256 : EMPTY_TREE.sha1;
 }

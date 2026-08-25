@@ -1,10 +1,10 @@
-// 文件监听(spec §5.7):`.git` 侧的目录级非递归 watch + 工作区侧的三档 + 轮询兜底。
+// 文件监听:`.git` 侧的目录级非递归 watch + 工作区侧的三档 + 轮询兜底。
 //
 // `.git` 侧与档位无关:三档都要对 `HEAD`、`index`、`refs/`、`MERGE_HEAD` / `rebase-*`
 // 所在**目录**单独建**非递归** watch,提交与切分支才是即时的(C 档尤其依赖这条 ——
 // 它的工作区通路是 1.5s 轮询,只有 `.git` 侧是实时的)。
 //
-// 工作区侧按档位分(§5.7 的三档表):A 有 `ignore`、B 在回调里过滤、C 不建递归 watch。
+// 工作区侧按档位分:A 有 `ignore`、B 在回调里过滤、C 不建递归 watch。
 // **两侧共用同一个合并窗口**:一条 `git commit` 会同时惊动两侧,各起各的窗口等于
 // 每次提交刷两遍。
 
@@ -15,7 +15,7 @@ import { isIgnored } from './ignore.ts';
 import { initialMode, type WatchTier } from './tier.ts';
 
 /**
- * 事件合并窗口(spec §5.7 建议 100-200ms)。
+ * 事件合并窗口(建议 100-200ms)。
  *
  * **在 Linux 上这是必需项而非优化项**:用户态递归实现初次遍历目录树时会对遍历到的
  * 每个条目 emit 一次事件,启动瞬间即产生一波与实际变更无关的风暴。`.git` 侧同样需要:
@@ -24,24 +24,24 @@ import { initialMode, type WatchTier } from './tier.ts';
  */
 export const DEBOUNCE_MS = 150;
 
-/** 降级轮询的周期(spec §5.7「1.5s 轮询」)。C 档的工作区通路也是它。 */
+/** 降级轮询的周期(1.5s)。C 档的工作区通路也是它。 */
 export const POLL_MS = 1500;
 
 /**
- * **原生档(A / B)的低频安全轮询周期**(spec §5.7)。
+ * **原生档(A / B)的低频安全轮询周期**。
  *
  * 它补的是一个没有任何信号的缺口:Linux 上 inotify 配额在**遍历途中**耗尽时,Node
- * 一次都不 emit(2026-08-18 实测,推翻了此前的源码推断,见 §10)—— 没轮上注册的那些
+ * 一次都不 emit(2026-08-18 实测,推翻了此前的源码推断)—— 没轮上注册的那些
  * 目录里,改一个**启动前就存在**的文件从此静默丢失,`mode` 还一直说 `native`。
  * 原生监听少报了什么是没法从监听那一侧知道的,只有拿 status 输出本身去比才看得见。
  *
- * **取 30s 而不是 1.5s**:§6 要求「原生监听模式下空闲 CPU 接近零」,一次 status 几十
+ * **取 30s 而不是 1.5s**:要求「原生监听模式下空闲 CPU 接近零」,一次 status 几十
  * 毫秒,30s 一拍的占空比是千分之几;代价是那个病态场景下最坏 30s 的滞后。
  */
 export const SAFETY_POLL_MS = 30_000;
 
 export interface WatcherOptions {
-  /** `.git` 目录绝对路径。**不得假设是 `<root>/.git`** —— linked worktree 下它是文件(§5.2)。 */
+  /** `.git` 目录绝对路径。**不得假设是 `<root>/.git`** —— linked worktree 下它是文件。 */
   gitDir: string;
   /** 工作区根目录绝对路径。A / B 档的递归 watch 建在它上面。 */
   repoRoot: string;
@@ -51,8 +51,8 @@ export interface WatcherOptions {
   /**
    * 轮询探针:返回一份「变没变」的快照。
    *
-   * **必须是 §5.2 主查询 `git status --porcelain=v2 --branch -uall -z` 的逐字复用**,
-   * 由调用方注入(注入点在 http/server.ts,git 子进程只许出现在 server/git,§5.0
+   * **必须是主查询 `git status --porcelain=v2 --branch -uall -z` 的逐字复用**,
+   * 由调用方注入(注入点在 http/server.ts,git 子进程只许出现在 server/git,
    * 不变式 1)。裁剪参数的后果是静默的:漏 `-uall` 时 git 把未跟踪目录折成一行
    * `dir/`,于是在一个**已存在的**未跟踪目录里新增文件根本不改变输出,轮询判定
    * 「无变化」、页面不刷新 —— 而那正是 agent 边跑边生成文件时最常见的形态。
@@ -64,7 +64,7 @@ export interface WatcherOptions {
   /**
    * **落到轮询兜底**时调用一次(A / B 档的 watch 失败:ENOSPC / ENOSYS / 网络盘 /
    * Docker 卷)。调用方据此把 `WatchState.mode` 翻成 `polling` **并推一个 `change`**
-   * —— 前端无从自己推断降级这件事(§5.12),不推事件的话它要等到下一次变更才会
+   * —— 前端无从自己推断降级这件事,不推事件的话它要等到下一次变更才会
    * 重取 `/api/state`,而那期间页面上标着的是「原生监听」。
    *
    * C 档不走这里:它的轮询是既定形态而不是降级,`initialMode` 已经把 `mode` 给成
@@ -89,7 +89,7 @@ export interface WatchHandle {
    * 「工作区没了但 `.git` 还在」是同一个 1,而这两种情况的补救完全不同。
    */
   readonly size: number;
-  /** 工作区通路当前的形态(§5.12 的 `WatchState.mode`)。 */
+  /** 工作区通路当前的形态(`WatchState.mode`)。 */
   readonly mode: WatchState['mode'];
 }
 
@@ -98,7 +98,7 @@ export interface WatchHandle {
  *
  * **一律是目录,绝不是单个文件**:Linux / macOS 上 watch 绑的是 inode,而 git 写
  * `HEAD` / `index` 走的是「写临时文件 + 原子 rename」,新文件是新 inode,对文件建的
- * watch 从此静默失效(spec §5.7)。
+ * watch 从此静默失效。
  *
  * **绝不递归、更绝不进 `objects`**:一次 gc 就是几万个条目,既是配额灾难,也会把
  * 与展示无关的写入变成事件风暴。清单之所以短得像不够用,是因为主力其实是 `gitDir`
@@ -124,10 +124,10 @@ export function gitWatchDirs(gitDir: string): string[] {
 /**
  * `fs.watch` 的 `ignore` 选项(Node ≥ 24.14.0)。
  *
- * `@types/node` 钉在运行时下限 22 那条线上(§5.1),而那个版本还没有这个选项 ——
+ * `@types/node` 钉在运行时下限 22 那条线上,而那个版本还没有这个选项 ——
  * 类型里因此没有它。声明成本地类型而不是 `as any`:写错选项名的话(`ignores`)
  * TS 照样通过,而 Node 会把未知选项**静默忽略**,于是 A 档在 Linux 上退化成
- * 一个没有过滤的递归 watch —— 正是 §5.7 判档要防的那件事。
+ * 一个没有过滤的递归 watch —— 正是判档要防的那件事。
  */
 type IgnoringWatchOptions = {
   recursive: true;
@@ -139,7 +139,7 @@ type IgnoringWatchOptions = {
  * 起监听。
  *
  * 关于「我们自己会不会把自己触发起来」:不会,而且这件事全靠封装层那条
- * `GIT_OPTIONAL_LOCKS=0`(§5.2 红线)。不设它的话 `git status` 会把 stat 缓存写回
+ * `GIT_OPTIONAL_LOCKS=0`(红线)。不设它的话 `git status` 会把 stat 缓存写回
  * `.git/index`,于是每次刷新都写一次 index、每次写 index 都触发一次刷新 —— 一个不报错、
  * 只是 CPU 常年 1% 的自激循环,而 status 的输出从头到尾都是对的。轮询那条路上这
  * 一点更要命:它每 1.5s 主动跑一次 status。
@@ -182,7 +182,7 @@ export function createWatcher(options: WatcherOptions): WatchHandle {
       timer = null;
       onChange();
     }, debounceMs);
-    // 监听绝不该是进程活着的理由 —— 那是 HTTP server 的职责(§5.8 的空闲退出)
+    // 监听绝不该是进程活着的理由 —— 那是 HTTP server 的职责(空闲退出)
     timer.unref();
   };
 
@@ -274,7 +274,7 @@ export function createWatcher(options: WatcherOptions): WatchHandle {
     usePolling(null);
   } else {
     /**
-     * 原生档的低频安全轮询(§5.7)。**直接起循环而不经 `usePolling`**:那个闩一合上
+     * 原生档的低频安全轮询。**直接起循环而不经 `usePolling`**:那个闩一合上
      * 就意味着「已降级」,而这里没有任何东西坏掉 —— `mode` 必须还是 `native`,
      * 否则页面会把一次完全正常的运行标成降级。首拍照例只建立基线。
      */
@@ -295,8 +295,8 @@ export function createWatcher(options: WatcherOptions): WatchHandle {
        * **不传 `recursive`**(见 gitWatchDirs 的注释);`persistent: false` 是说
        * 监听不吊住事件循环。
        *
-       * **filename 一概不看**。它可能为 null(§5.7),而这几个目录里的任何写入都
-       * 值得刷新一次:非递归就是真的非递归 —— macOS 已实测(2026-08-11,见 spec §10),
+       * **filename 一概不看**。它可能为 null,而这几个目录里的任何写入都
+       * 值得刷新一次:非递归就是真的非递归 —— macOS 已实测(2026-08-11),
        * Linux 的 inotify 与 Windows 的 `bWatchSubtree=FALSE` 按机制如此 —— 于是
        * `objects/` 的海量写入根本到不了这里,没有需要按名字排除的东西。曾按
        * 「macOS 会漏过来」加过一个顶层段过滤,那是把**建流窗口的补报**(建流前一刻的
@@ -326,7 +326,7 @@ export function createWatcher(options: WatcherOptions): WatchHandle {
   }
 
   /**
-   * 工作区侧,按档位分(§5.7 的三档表)。
+   * 工作区侧,按档位分。
    *
    * **C 档一个递归 watch 都不建**:Node 在 Linux 上的递归实现是用户态遍历,对遍历到的
    * 每个**普通文件**也注册一个 inotify watch,monorepo 下足以耗尽
@@ -337,14 +337,14 @@ export function createWatcher(options: WatcherOptions): WatchHandle {
     try {
       const handler = (_event: string, filename: string | Buffer | null) => {
         /**
-         * **B 档的过滤必须在这里,也就是合并窗口之前**(§5.7 红线)。放在窗口之后
+         * **B 档的过滤必须在这里,也就是合并窗口之前**(红线)。放在窗口之后
          * 等于让 `node_modules` 的写入噪声照样把窗口顶开、触发无谓刷新 —— 而
-         * §6 那条「`node_modules` 的嵌套子目录里批量写文件不触发刷新」正是钉这件事。
+         * 那条「`node_modules` 的嵌套子目录里批量写文件不触发刷新」正是钉这件事。
          *
          * A 档不在这里过滤:`ignore` 已经过滤过了(Linux 上还是**注册前跳过**,
          * 那才是配额问题的解法)。
          *
-         * `filename` 可能为 null(§5.7,Node 文档载明即便在支持的平台上也不保证提供),
+         * `filename` 可能为 null(Node 文档载明即便在支持的平台上也不保证提供),
          * 那时**放行**:漏刷一次比多刷一次糟得多。
          */
         if (tier === 'B' && typeof filename === 'string' && isIgnored(filename)) return;

@@ -1,4 +1,4 @@
-// 布局派生状态(spec §5.5 的 `outputFormat` 那条)。
+// 布局派生状态(`outputFormat` 那条)。
 //
 // 不放进 `store.ts`:那份装的是仓库状态,抬头那条不变式说的是「前端不内联任何 git
 // 知识」;面板宽度不是仓库的事,是页面自己的量。
@@ -7,7 +7,7 @@ import { computed, signal } from '@preact/signals';
 import type { DiffOutputFormat } from '../diff/render';
 
 /**
- * 低于这个宽度就不并排(spec §5.5)。
+ * 低于这个宽度就不并排。
  *
  * **量的是 diff 面板自己的宽度,不是视口宽度**:App 的外壳里侧栏固定 `w-80`(320px)
  * 且 `shrink-0`,面板宽度恒等于「视口 − 320」。按视口判等于把这个常数在 CSS 之外再写
@@ -16,7 +16,7 @@ import type { DiffOutputFormat } from '../diff/render';
  *
  * **1024 这个数是算出来的,不是抄 Tailwind 的 `lg`**(两者数值相同纯属巧合 —— 那是视口
  * 断点,这里是面板宽度)。diff2html 的表是 13px Menlo,并排每侧留 `9em` 给行号槽
- * (`.d2h-code-side-line{padding:0 4.5em}`)、逐行留 `8em`(实测,见 `decisions.md` §10)。
+ * (`.d2h-code-side-line{padding:0 4.5em}`)、逐行留 `8em`(实测)。
  * 于是面板 1024 时并排每侧只剩 `1024/2 − 117 ≈ 395px`(约 50 个等宽字符),而同一宽度下
  * 逐行有 `1024 − 104 = 920px`(约 118 个)。50 列是绝大多数源码行开始需要横向滚动的地方,
  * 阈值就落在这里。要改它,回来重算这两行,别凭手感调。

@@ -1,7 +1,7 @@
-// 标签页标题(spec §5.4)。
+// 标签页标题。
 //
 // **能自动化的是格式与那条 wiring,压不到的是「压窄之后先没哪半」** —— 截断是浏览器
-// 的排版行为,happy-dom 上没有标签栏可量。那半归 `acceptance.md` §6 的肉眼项。
+// 的排版行为,happy-dom 上没有标签栏可量。那半归的肉眼项。
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { RepoState } from '../../../src/server/shared/protocol';

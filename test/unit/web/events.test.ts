@@ -1,4 +1,4 @@
-// SSE 订阅(src/web/state/events.ts)的单测(spec §5.8)。
+// SSE 订阅(src/web/state/events.ts)的单测。
 //
 // 用替身而不是 happy-dom 自带的 EventSource:要断言的东西全在**连接的开关时机**上
 // (什么时候新建、什么时候不新建),而真 EventSource 要真起一条 HTTP 连接才有
@@ -25,7 +25,7 @@ class FakeEventSource {
   readonly url: string;
 
   // 参数属性(`constructor(readonly url)`)在 erasableSyntaxOnly 下不可用 ——
-  // 那是本项目「TS 只做类型擦除」这条(§5.11)的直接后果,不是风格选择
+  // 那是本项目「TS 只做类型擦除」这条的直接后果,不是风格选择
   constructor(url: string) {
     this.url = url;
     sources.push(this);
@@ -106,7 +106,7 @@ beforeEach(() => {
 describe('connectEvents', () => {
   test('挂载即连上 /api/events,且不带任何 token', async () => {
     // token 在生产下是 HttpOnly cookie、dev 下由代理注入,前端完全不接触它 ——
-    // 它一旦落到 JS 能读的地方,HttpOnly 就白设了(§5.9)
+    // 它一旦落到 JS 能读的地方,HttpOnly 就白设了
     stubFetch();
     connect();
 
@@ -126,7 +126,7 @@ describe('connectEvents', () => {
   });
 
   test('连接一直活着时,切回标签页既不重连也不补取', async () => {
-    // 重连:每次都是一条新的 HTTP 连接,而 §5.8 的空闲退出以连接数为判据 ——
+    // 重连:每次都是一条新的 HTTP 连接,而空闲退出以连接数为判据 ——
     // 白白开关一轮等于让后端在「有人」和「没人」之间抖一下。
     // 补取:连接活着就说明期间每个 change 都推到过了,而它取的可能是一份数 MB 的
     // diff —— 切标签又正是这个工具最频繁的动作

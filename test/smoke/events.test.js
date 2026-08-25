@@ -1,4 +1,4 @@
-// SSE 通道与档位环境变量,**跑的是 dist/ 产物**(spec §5.7 / §5.8 / §5.12)。
+// SSE 通道与档位环境变量,**跑的是 dist/ 产物**。
 //
 // 与 test/unit/server/{sse,watch}.test.ts 的分工:那边钉通道与 watcher 各自的行为,
 // 这边钉「它们真的被接在了一起,而且在三个平台上都成立」—— 一条 `git checkout -b`
@@ -23,7 +23,7 @@ import {
   waitUntil,
 } from './helpers.js';
 
-/** 档位强制指定用的内部环境变量(spec §5.7)。 */
+/** 档位强制指定用的内部环境变量。 */
 const TIER_ENV = 'DIFFTAB_WATCH_TIER';
 
 let workdir;
@@ -97,7 +97,7 @@ test('仓库里 git 写操作之后,SSE 推出一个 change 事件', async () =>
     /**
      * **对 fixture 仓库的 git 写操作属「开发流程的 git」**(CLAUDE.md 第 1 节):
      * 受「零写操作」约束的是产品代码,不是测试。这里要的就是一次真实的 `.git` 写入,
-     * 而 `git checkout -b` 写的正是 HEAD —— §5.7 点名要盯住的那个文件。
+     * 而 `git checkout -b` 写的正是 HEAD —— 点名要盯住的那个文件。
      */
     const branch = spawnSync('git', ['checkout', '-b', 'difftab-probe'], {
       cwd: repos.staged,
@@ -142,7 +142,7 @@ test(`${TIER_ENV}=C:工作区改动经轮询推出 change,且已存在的未跟�
   await setup();
   /**
    * C 档(Node < 24.14 × Linux)**不建任何递归 watch**,工作区改动只能靠 1.5s 轮询
-   * 发现(§5.7)。这条用例同时钉住两件会静默出错的事:
+   * 发现。这条用例同时钉住两件会静默出错的事:
    *
    * 1. 轮询这条通路真的接上了 —— 断了的话页面只是「不刷新」,不报任何错
    * 2. 轮询用的是**逐字复用**的主查询。写入落在一个**已存在的**未跟踪目录里:

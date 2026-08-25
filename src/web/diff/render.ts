@@ -1,4 +1,4 @@
-// diff2html 渲染(spec §5.5)。
+// diff2html 渲染。
 //
 // `html()` 本身不做语法高亮 —— 高亮在 `Diff2HtmlUI.highlightCode()`,它依赖
 // highlight.js-helpers 的 closeTags / nodeStream / mergeStreams / getLanguage:
@@ -32,7 +32,7 @@ export type DiffOutputFormat = OutputFormatType;
  * 把一段 unified diff 渲染进 target 并高亮。
  *
  * 调用方必须在 Preact 的 ref/effect 之后调用 —— `draw()` 内部是 `innerHTML` 赋值
- * 加命令式事件绑定,不能与 vdom 争夺同一棵子树(spec §5.5)。
+ * 加命令式事件绑定,不能与 vdom 争夺同一棵子树。
  */
 export function renderDiff(target: HTMLElement, patch: string, format: DiffOutputFormat): void {
   const ui = new Diff2HtmlUI(
@@ -47,13 +47,13 @@ export function renderDiff(target: HTMLElement, patch: string, format: DiffOutpu
       highlight: true,
       drawFileList: false,
       /**
-       * **由调用方给,且必填、不给默认值**(spec §5.5)。漏传时要的是 `tsc` 当场报错,
+       * **由调用方给,且必填、不给默认值**。漏传时要的是 `tsc` 当场报错,
        * 而不是静默退回并排 —— 后者的症状是「这个视图怎么不跟着窗口变」,与漏传一个
        * 参数毫无相似之处。判据本身(阈值、量哪个盒)不在这里,归 `state/layout.ts`。
        */
       outputFormat: format,
       /**
-       * **必须是 'light',不能是 'auto'**(spec §5.6 / §5.5)。
+       * **必须是 'light',不能是 'auto'**。
        *
        * 这不是"只支持浅色"—— 恰恰相反,它是深色能按 VS Code 取值出来的前提。
        * diff2html 的深色配色由容器上的 class 门控:'auto' 输出 `.d2h-auto-color-scheme`,

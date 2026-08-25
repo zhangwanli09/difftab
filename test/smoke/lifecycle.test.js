@@ -1,4 +1,4 @@
-// 进程生命周期与单实例(spec §5.8),**跑的是 dist/ 产物**。
+// 进程生命周期与单实例,**跑的是 dist/ 产物**。
 //
 // 与 test/unit/server/{idle,probe}.test.ts 的分工:那边用假时钟与假对端钉住两个
 // 模块各自的判断,这边钉「它们真的被接在了一起,而且在三个平台上都成立」——
@@ -6,7 +6,7 @@
 // 两侧全绿而中间没接上是完全可能的:touch 忘了挂在断连上、探活忘了带 token,
 // 都不报错。
 //
-// **宽限期一律用 `DIFFTAB_IDLE_MS` 压到秒级**(§5.8 给它的用途就是这个):
+// **宽限期一律用 `DIFFTAB_IDLE_MS` 压到秒级**(它的用途就是这个):
 // 真等 45 秒的用例没人会跑第二次。
 
 import assert from 'node:assert/strict';
@@ -27,7 +27,7 @@ import {
   waitForExit,
 } from './helpers.js';
 
-/** 空闲宽限期的内部环境变量(spec §5.8)。 */
+/** 空闲宽限期的内部环境变量。 */
 const IDLE_ENV = 'DIFFTAB_IDLE_MS';
 
 let workdir;
@@ -40,7 +40,7 @@ const setup = once(async () => {
   repos = makeFixtures(join(workdir, 'repos'), ['staged']);
 });
 
-/** `os.tmpdir()` 下记着这个端口的注册表条目(spec §5.8 要求写在这里,不在仓库里)。 */
+/** `os.tmpdir()` 下记着这个端口的注册表条目(写在这里,不在仓库里)。 */
 function registryEntriesFor(port) {
   const dir = join(tmpdir(), 'difftab');
   let names;
@@ -73,7 +73,7 @@ function statusSnapshot(cwd) {
 
 test('没有任何客户端时,宽限期一到就自己退 —— 不留后台常驻进程', async () => {
   await setup();
-  // 宽限期**从启动那一刻就开始计**,不等第一个客户端(§5.8):等第一个客户端才
+  // 宽限期**从启动那一刻就开始计**,不等第一个客户端:等第一个客户端才
   // 起计时的话,「浏览器压根没拉起来」(headless、无 xdg-open、--no-open 之后
   // 用户改了主意)这一整类情形留下的就是一个永久常驻的后台进程
   const server = await startDifftab({ cwd: repos.staged, env: { [IDLE_ENV]: '1500' } });
@@ -81,7 +81,7 @@ test('没有任何客户端时,宽限期一到就自己退 —— 不留后台�
   assert.equal(await waitForExit(server), 0, '空闲退出应当是正常退出,不是异常码');
   // 这句提示同时是「它是自己走的、不是被谁 kill 的」的判据。走 writeSync 是必需的:
   // process.stdout.write 写到管道时在 Windows 上是异步的,紧跟着的 process.exit()
-  // 会把整条消息丢掉,症状是 stdout 里什么都没有(spec §5.8 / §5.1)
+  // 会把整条消息丢掉,症状是 stdout 里什么都没有
   assert.match(server.stdout, /no tabs left/);
 });
 
@@ -94,7 +94,7 @@ test('stdout 的读端先走了(`| head -1`),空闲退出仍是干净的 0', asy
    * 1. 紧跟 URL 的那句「read-only view…」(普通的 `process.stdout.write`)。
    *    **在 Windows 上管道写是异步的**,失败以 `'error'` 事件到达,零监听器的流收到
    *    它就是整个进程带裸栈以 1 退出 —— 已在 CI 的 windows × Node 24 档实测到,
-   *    而 macOS / Linux 上同一条路一声不响(spec §10);
+   *    而 macOS / Linux 上同一条路一声不响;
    * 2. 宽限期走满时那句告别(`writeSync`,**同步抛** EPIPE)。抛在定时器回调里时
    *    退出闩已经合上,`server.close()` 不再执行,同样以 1 退出。
    *
@@ -156,7 +156,7 @@ test('注册表条目写在 os.tmpdir(),退出时被清掉', async () => {
   assert.equal(entries.length, 1, `os.tmpdir()/difftab 下没找到本次实例的条目`);
   assert.equal(entries[0].token, server.token);
   assert.equal(entries[0].pid, server.child.pid);
-  // 仓库目录内无任何新增文件(§6)—— 注册表写进 .git/ 或工作区既污染 git status,
+  // 仓库目录内无任何新增文件—— 注册表写进 .git/ 或工作区既污染 git status,
   // 也实质违背零写操作承诺
   assert.equal(statusSnapshot(repos.staged), before);
 
@@ -207,7 +207,7 @@ test('陈旧条目(实例被 SIGKILL,来不及清理)不会挡住下一次启动
   const fresh = await startDifftab({ cwd: repos.staged, env: { [IDLE_ENV]: '30000' } });
   try {
     // **判据是 token 不同,不是端口不同**:内核完全可能把刚释放的端口再分配一次,
-    // 而 token 每次启动都重新随机(§5.9)
+    // 而 token 每次启动都重新随机
     assert.notEqual(fresh.token, dead.token, '复用了一个已经死掉的实例');
     assert.doesNotMatch(fresh.stdout, /reusing/);
     const state = await authedGet(fresh.port, fresh.token, '/api/state');
@@ -228,9 +228,9 @@ test('探活端点答的是本仓库的身份,且同样过三道校验', async (
     // 路径可能经符号链接归一(macOS 的 /var → /private/var),只断言尾段
     assert.match(info.repoRoot.replace(/\\/g, '/'), /\/staged$/);
 
-    // 没有 token 一律 403 —— 「所有端点统一校验,无例外」(§5.9 第 4 条)。
+    // 没有 token 一律 403 —— 「所有端点统一校验,无例外」。
     // 这个端点是探活唯一的消费者,给它开个不校验的口子是最容易顺手做的事,
-    // 而那正好把 §5.9 说的「任何一个不校验 token 的端点」摆到了 rebinding 面前
+    // 而那正好把说的「任何一个不校验 token 的端点」摆到了 rebinding 面前
     const anonymous = await authedGet(server.port, 'wrong-token', '/api/instance');
     assert.equal(anonymous.status, 403);
   } finally {

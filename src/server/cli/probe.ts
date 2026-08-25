@@ -1,9 +1,8 @@
-// 单实例的**探活复用**(spec §5.8):注册表里记着一个端口,那头还活着吗、还是
+// 单实例的**探活复用**:注册表里记着一个端口,那头还活着吗、还是
 // 同一个仓库吗?
 //
 // 与 registry.ts 的分工:那边是文件(写入、清理、键归一化),这边是那一次 HTTP 请求。
-// **判活绝不用 pid**——pid 会被系统复用,误判会把用户带到一个指向别人进程的页面
-// (§5.8 / §10)。
+// **判活绝不用 pid**——pid 会被系统复用,误判会把用户带到一个指向别人进程的页面。
 
 import { request } from 'node:http';
 import { BIND_HOST, cookieName, sessionUrl } from '../http/security.ts';
@@ -11,9 +10,9 @@ import type { InstanceInfo } from '../http/server.ts';
 import { normalizeRepoKey, type RegistryEntry, readRegistry } from './registry.ts';
 
 /**
- * 探活超时。**不取更短**(spec §5.8)。
+ * 探活超时。**不取更短**。
  *
- * 被探的实例可能正卡在 §5.7 那趟用户态递归遍历里(Linux 大仓库上几百毫秒到数秒),
+ * 被探的实例可能正卡在那趟用户态递归遍历里(Linux 大仓库上几百毫秒到数秒),
  * 超时过短的代价不是慢一点,而是**给同一个仓库起了第二个进程**——正是本模块要防的
  * 那件事。反过来这 1.5s 平时根本走不到:注册表不存在时压根不探(常态,冷启动门禁
  * 不受影响),端口已死时 localhost 上的 `ECONNREFUSED` 是立即返回的。
@@ -39,7 +38,7 @@ export interface LiveInstance {
 /**
  * 向记录的端口要一份 `InstanceInfo`。任何不顺利一律返回 null(= 按陈旧处理)。
  *
- * **带上 token 与合规的 `Host`**:§5.9 的三道校验一视同仁,探活不是例外 ——
+ * **带上 token 与合规的 `Host`**:三道校验一视同仁,探活不是例外 ——
  * 那也正是「端口已经归了另一个仓库的 difftab」这种情形的判据:它那份 token
  * 不是我们记下的这个,于是 403、判陈旧,正确。
  */
@@ -138,7 +137,7 @@ export async function findLiveInstance(
   if (!info) return null;
 
   /**
-   * **200 还不够,路径也得对得上**(spec §5.8)。
+   * **200 还不够,路径也得对得上**。
    *
    * 这一条挡的是「注册表条目还在,而那个端口已经被系统回收给了别的东西」——
    * 它恰好也认得这份 token 的概率不高,但代价是把用户带到别人的页面,而这类判断

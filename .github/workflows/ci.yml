@@ -6,7 +6,7 @@ on:
   pull_request:
   workflow_dispatch:
 
-# CI 分两层(spec §5.11):
+# CI 分两层:
 #   build   —— tsdown 要求 Node ^22.18 || >=24.11、Vite 8 要求 >=22.12,均高于
 #              产品运行时下限 22.0.0,所以工具链只跑在一档较新的 Node 上;
 #   matrix  —— 测的是**用户真正拿到的产物**,三平台 × Node 22.0.x / 24 / 26,
@@ -43,7 +43,7 @@ jobs:
         env:
           LEFTHOOK: '1'
 
-      # allowBuilds 白名单生效的验收,两条一起看(spec §5.11 / §6):
+      # allowBuilds 白名单生效的验收,两条一起看:
       #   1. 直接问 pnpm 自己忽略了谁 —— 漏列白名单时**安装本身是成功的**,
       #      只是构建脚本被静默跳过,所以不能以「安装没报错」为准;
       #   2. 钩子文件实际存在 —— 证的是脚本不仅跑了,还真干了活。
@@ -56,7 +56,7 @@ jobs:
       - name: lefthook hooks 已写入 .git/hooks
         run: test -f .git/hooks/pre-commit && test -f .git/hooks/pre-push
 
-      # pnpm 设置写在正确的文件里:pnpm 11 对写错位置的设置是静默忽略(spec §6)
+      # pnpm 设置写在正确的文件里:pnpm 11 对写错位置的设置是静默忽略
       - name: pnpm 设置不在 package.json / .npmrc 里
         run: |
           node -e "if ('pnpm' in require('./package.json')) { console.error('package.json 里出现了 pnpm 字段 —— pnpm 11 不再读取它'); process.exit(1) }"
@@ -76,13 +76,13 @@ jobs:
       # 再跑 9 遍不增加任何覆盖,却引入一个本不存在的方差面:gzip 的输出长度取决于
       # 各 Node 大版本自带的 zlib,贴着预算的行会只在某一个 Node 上红,看起来像平台
       # 问题而其实不是。matrix 档该跑的是真有平台维度的东西(冒烟、冷启动)。
-      - name: 产物体积门禁(spec §5.5)
+      - name: 产物体积门禁
         run: pnpm run size
 
-      - name: 样式层叠方案生效(spec §5.6)
+      - name: 样式层叠方案生效
         run: pnpm run check:css
 
-      - name: 发布产物内容干净(spec §8)
+      - name: 发布产物内容干净
         run: pnpm run check:pack
 
       - uses: actions/upload-artifact@v7
@@ -116,7 +116,7 @@ jobs:
 
       # `node --test` 在一个用例都没匹配上时是 **0 用例、exit 0** —— 一次改名、
       # 一次目录搬迁,或某个平台上的引号行为不同,就会把「只读承诺的唯一自动化保护」
-      # (S1 起 §5.10 的主门禁就落在 test/smoke/)变成一个什么都没跑的绿勾。
+      # (S1 起主门禁就落在 test/smoke/)变成一个什么都没跑的绿勾。
       # 先数一遍,数不到就响亮地失败。
       - name: 冒烟用例确实被发现了
         shell: bash
@@ -125,7 +125,7 @@ jobs:
           const { readdirSync } = require('node:fs');
           const files = readdirSync('test/smoke').filter((f) => f.endsWith('.test.js'));
           if (files.length === 0) { console.error('test/smoke/ 下没有任何 *.test.js —— node --test 会静默跑 0 个用例'); process.exit(1); }
-          // §5.10 的两层只读验证是 4.1「零写操作」承诺在开发期唯一的自动化护栏。
+          // 两层只读验证是 4.1「零写操作」承诺在开发期唯一的自动化护栏。
           // 按文件名点名一次:改名、搬走、误删都会在这里响亮地失败,而不是变成
           // 一次「少跑了一个文件」的绿勾。
           for (const required of ['readonly.test.js', 'readonly-git-dir.test.js']) {
@@ -135,22 +135,22 @@ jobs:
           "
 
       # 本档**完全不执行安装、也不需要 pnpm**:它的全部意义就是只跑用户真正拿到的
-      # dist/ 产物。一旦装了东西,测的就不再是那个东西(spec §5.11 / §10)。
+      # dist/ 产物。一旦装了东西,测的就不再是那个东西。
       # 因此直接 node --test 打到冒烟套件文件,不经 package.json 的 script。
       #
       # 套件自带 fixture 生成(test/fixtures/make.mjs,零依赖纯 JS),所以这里除了
-      # runner 自带的 git 之外不需要任何前置步骤;§5.10 的主门禁也在其中。
+      # runner 自带的 git 之外不需要任何前置步骤;主门禁也在其中。
       - name: 冒烟测试(跑 dist/ 产物)
         run: node --test "test/smoke/*.test.js"
 
-      - name: 冷启动测量(spec §6,≤300ms)
+      - name: 冷启动测量(≤300ms)
         run: node scripts/bench-startup.mjs
 
-  # 压低 inotify 配额验降级(spec §6 的那条 Linux 验收项)。
+  # 压低 inotify 配额验降级(那条 Linux 验收项)。
   #
   # **另起一档的理由是它动的是全机器共享的 sysctl**:`node --test` 按文件并行跑,
   # 混进冒烟套件等于在别的监听用例跑到一半时把配额抽掉。GitHub 的 ubuntu runner
-  # 自带免密 sudo,这正是"CI runner 就是真机"那条口径里最实在的一条(§6 开头)。
+  # 自带免密 sudo,这正是"CI runner 就是真机"那条口径里最实在的一条。
   #
   # Node 24 一档:配额耗尽这件事只对**建递归 watch 的档位**(A)有意义,Node 22 在
   # Linux 上判到 C 档、一个递归 watch 都不建。
@@ -172,9 +172,9 @@ jobs:
 
       - run: node scripts/check-inotify-degrade.mjs
 
-  # `npm i -g` 三端验收(spec §6)。
+  # `npm i -g` 三端验收。
   #
-  # **另起一档而不是塞进 matrix**:那一档"完全不装依赖"是 §5.11 的红线,而这里要做的
+  # **另起一档而不是塞进 matrix**:那一档"完全不装依赖"是红线,而这里要做的
   # 恰好是装东西 —— 装的是产品自己(零依赖,所以"装了什么"本身就是一条断言)。混在
   # 一起跑的话,冒烟绿的时候没人说得清测的是哪个 difftab。
   #
@@ -209,9 +209,9 @@ jobs:
   # 在 22+ 上文件早已解析成功,守卫必然执行,那条路径永远测不到。冒烟里那条
   # 「不含 ?. / ?? / 顶层 await / #私有字段 / ||=」的正则清单是它的替身:替身按
   # 5 个具体语法逐条列举,而 catch {}、对象展开、class 静态块、** 等一律漏网,
-  # 后果正是 §6 禁止的「用户看到 SyntaxError 而不是友好提示」。这一档直接断言那句话。
+  # 后果正是禁止的「用户看到 SyntaxError 而不是友好提示」。这一档直接断言那句话。
   #
-  # 三个平台各跑一次(S5):守卫里那句提示要经 `writeSync(2, …)` 出来,而 §5.8 那条
+  # 三个平台各跑一次(S5):守卫里那句提示要经 `writeSync(2, …)` 出来,而那条
   # 红线说的正是"`process.stderr.write` + `process.exit` 在 Windows 上写管道时是异步的、
   # 整条消息会被丢掉"—— 那种失效只在 Windows 上看得见。**写法本身另有一条静态断言
   # 罩着**(冒烟里的「退出前的报错一律 writeSync(2, …)」,连动态 import 失败那个出口
@@ -238,7 +238,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          # **stderr 必须经管道取回,不能重定向到文件**:这条断言同时守着 §5.8 那条
+          # **stderr 必须经管道取回,不能重定向到文件**:这条断言同时守着那条
           # 「退出前一律 writeSync(2, …)」—— `process.stderr.write` + `process.exit()`
           # 只在写**管道**时才会在 Windows 上丢消息,写文件是同步的、照样能收到。
           # 用文件的话这一档在 Windows 上恒绿,而真实用户(任何以 stdio: 'pipe' 起它的

@@ -1,4 +1,4 @@
-// 监听档位判定(spec §5.7)。
+// 监听档位判定。
 //
 // **档位按 `process.versions.node` 做 semver 比对,禁用特性探测**:任何探测写法
 // (给 `fs.watch` 传一个 `ignore` 看它报不报错、或看选项对象有没有被读过)都要依赖
@@ -12,11 +12,11 @@ import type { WatchState } from '../shared/protocol.ts';
 
 export type WatchTier = 'A' | 'B' | 'C';
 
-/** `fs.watch` 的 `ignore` 选项自此版本可用(spec §5.7)。 */
+/** `fs.watch` 的 `ignore` 选项自此版本可用。 */
 const IGNORE_SINCE = { major: 24, minor: 14, patch: 0 };
 
 /**
- * 强制指定档位的**内部**环境变量(spec §7:S3b1 的首个交付物)。
+ * 强制指定档位的**内部**环境变量(S3b1 的首个交付物)。
  *
  * 没有它,S3b2 的六条档位验收项在单机上一条都无从自查 —— 一台机器只有一个 Node
  * 版本、一个平台,而三档正是按这两者分的。它不是给用户的开关,README 不写它。
@@ -70,7 +70,7 @@ export function supportsIgnoreOption(nodeVersion: string): boolean {
 }
 
 /**
- * 档位判定(spec §5.7 的三档表)。
+ * 档位判定。
  *
  * - **A**:有 `ignore`,三端通用 —— Linux 上是注册前跳过,正是配额问题的官方解法
  * - **B**:没有 `ignore`,但在 macOS / Windows 上走原生 FSEvents / `ReadDirectoryChangesW`,
@@ -109,7 +109,7 @@ export function resolveTier(
 }
 
 /**
- * 该档位下**工作区通路**的既定形态(spec §5.12 的 `WatchState.mode`)。
+ * 该档位下**工作区通路**的既定形态(`WatchState.mode`)。
  *
  * C 档一开始就以轮询为工作区通路,A / B 档则是原生监听。**它只是「还没起监听时
  * 答什么」**:监听懒起(见 http/server.ts),起了之后真实取值由 `WatchHandle.mode`
@@ -122,7 +122,7 @@ export function initialMode(tier: WatchTier): WatchState['mode'] {
 /**
  * 强制指定 A 档、但这个 Node 根本没有 `ignore` 时的一句提醒(没有则返回 null)。
  *
- * **不是报错**:「三档均可通过内部环境变量强制指定」是 §6 已经勾掉的验收项,
+ * **不是报错**:「三档均可通过内部环境变量强制指定」是已经勾掉的验收项,
  * 在 Node 22 上拒绝启动会把它推翻,而 macOS / Windows 上强制 A 档去看别的行为
  * 也是正当用法。但沉默同样不行 —— Node 对未知选项是**静默忽略**,于是这次
  * 「A 档」跑的是一个**没有任何过滤的递归 watch**:在 Linux 上那正是耗尽

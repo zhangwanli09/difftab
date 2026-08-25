@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// bin/difftab.js 以 100755 入库,且未被构建管线触碰(spec §5.1 / §6 / §10)。
+// bin/difftab.js 以 100755 入库,且未被构建管线触碰。
 //
 // 为什么这条要有门禁:一旦它进了构建管线,就可能被注入超出 Node 22 的语法、
 // 或被合并进主模块,低于下限的用户拿到的将是解析期 SyntaxError —— 版本守卫
@@ -28,13 +28,13 @@ const GUARD_MARKER = 'difftab: requires Node.js ';
 const hash = (buf) => createHash('sha256').update(buf).digest('hex');
 
 /**
- * 断言 bin/difftab.js 以 100755 入库(spec §5.1)。
+ * 断言 bin/difftab.js 以 100755 入库。
  *
  * 为什么这条要有门禁:npm 装 bin 时的 fixBin 会把 bin 目标 chmod 0755。在**本仓库目录里**
  * 跑 `npx difftab` 时,npm exec 认出 cwd 的 package.json 自己就叫 difftab、带同名 bin,
  * 于是装的是一条指回工作区的 `file:` 链接 —— 被 chmod 的就是仓库里这个真文件。工作区因此
  * 冒出一个「内容零差异」的纯 mode 变更;把它 discard 掉,可执行位就没了,下一次执行是
- * `sh: …/.bin/difftab: Permission denied`(2026-08-20 实测,见 decisions.md §10)。
+ * `sh: …/.bin/difftab: Permission denied`(2026-08-20 实测)。
  *
  * 已有的门禁一条都看不见它:本脚本另外两项比的是**内容字节**(mode 不是内容),
  * check:pack / check:global 走的是 tarball —— 而 pnpm pack 会把 bin 归一成 0755,
@@ -49,7 +49,7 @@ function readGitMode(args, what) {
   const r = spawnSync('git', args, { cwd: repoRoot, encoding: 'utf8' });
   // 拿不到记录一律 FAIL,不得跳过 —— 否则 mode 断言会对着一个空字符串静默通过
   // (`git ls-files -s` 对未跟踪路径就是 exit 0 + 空 stdout),
-  // 与 spec §5.10 要求门禁自带「确实记到了东西」的正面断言是同一条道理。
+  // 与主门禁自带「确实记到了东西」的正面断言是同一条道理。
   if (r.status !== 0 || typeof r.stdout !== 'string' || r.stdout.trim() === '') {
     // git 压根起不来时 status / stdout / stderr 全是 null,病因只在 r.error 里 ——
     // 不带上它,报错会长成"读不到 index 记录",把人支去查一个根本不缺的条目。
@@ -74,7 +74,7 @@ function assertExecutableBit() {
 
   const staged = headMode !== '100755' && indexMode === '100755';
   console.error(
-    `FAIL  bin/difftab.js 缺可执行位(HEAD=${headMode} / index=${indexMode},spec §5.1)。\n` +
+    `FAIL bin/difftab.js 缺可执行位(HEAD=${headMode} / index=${indexMode})。\n` +
       '      在本仓库目录里跑 `npx difftab` 时,npm 会 chmod 工作区里的这个文件,\n' +
       '      于是冒出一个内容零差异的变更;把它 discard 掉,下一次执行就是 Permission denied。\n' +
       (staged
@@ -107,7 +107,7 @@ if (build.status !== 0) {
 
 const after = readFileSync(binPath);
 if (hash(before) !== hash(after)) {
-  console.error('FAIL  构建改动了 bin/difftab.js —— 它进了构建管线,版本守卫已不可信(spec §5.1)。');
+  console.error('FAIL 构建改动了 bin/difftab.js —— 它进了构建管线,版本守卫已不可信。');
   process.exit(1);
 }
 console.log('PASS  构建前后 bin/difftab.js 逐字节一致');
@@ -120,7 +120,7 @@ const leaked = readdirSync(distDir, { withFileTypes: true, recursive: true })
 if (leaked.length > 0) {
   console.error(
     `FAIL  守卫代码出现在构建产物里:${leaked.map((f) => relative(repoRoot, f)).join(', ')}\n` +
-      '      说明 bin/difftab.js 被当作了打包入口或被合并进主模块(spec §5.1)。',
+      '      说明 bin/difftab.js 被当作了打包入口或被合并进主模块。',
   );
   process.exit(1);
 }

@@ -1,4 +1,4 @@
-// 三档共用的忽略判据(src/server/watch/ignore.ts,spec §5.7)。
+// 三档共用的忽略判据(src/server/watch/ignore.ts)。
 //
 // 这里钉的是**两种字符串写法各自的失效形态**:整份判据是纯函数,而它要替代的东西
 // (`ignore: 'node_modules'` / `'node_modules/**'`)在某些平台上碰巧也能工作,
@@ -8,11 +8,11 @@
 import { describe, expect, test } from 'vitest';
 import { createIsIgnored, isIgnored } from '../../../src/server/watch/ignore.ts';
 
-describe('isIgnored 是逐段匹配(§5.7)', () => {
+describe('isIgnored 是逐段匹配', () => {
   test('嵌套路径命中 —— basename 模式正是在这里失效的', () => {
     // macOS / Windows 的原生 watcher 交给匹配器的是**事件的相对路径**,
     // 而 minimatch 的 matchBase 只把单段模式与 basename 比:`node_modules/.bin/foo`
-    // 的 basename 是 `foo`,模式 `node_modules` 匹配不上,事件照常放行(§10)
+    // 的 basename 是 `foo`,模式 `node_modules` 匹配不上,事件照常放行
     expect(isIgnored('node_modules/.bin/foo')).toBe(true);
     expect(isIgnored('node_modules/pkg/lib/index.js')).toBe(true);
     // monorepo 里的嵌套依赖 —— `node_modules/**` 这类含斜杠的模式在这里也落空
@@ -46,7 +46,7 @@ describe('isIgnored 是逐段匹配(§5.7)', () => {
   });
 });
 
-describe('大小写按平台归一(§5.7)', () => {
+describe('大小写按平台归一', () => {
   test('macOS / Windows 归一,对齐 ignore 内部的 nocase', () => {
     for (const platform of ['darwin', 'win32']) {
       expect(createIsIgnored(platform)('Node_Modules/pkg/x.js')).toBe(true);

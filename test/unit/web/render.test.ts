@@ -1,7 +1,7 @@
-// diff2html 渲染路径的回归测试(spec §5.5 / §5.6)。
+// diff2html 渲染路径的回归测试。
 //
 // **这三条是本文件存在的理由,它们全都"违反后不报错、只是静默出错"**,在
-// happy-dom 进来之前(spec §5.11「DOM 测试环境」)一条都没有自动化覆盖:
+// happy-dom 进来之前一条都没有自动化覆盖:
 //
 // 1. `draw()` 之后**不得**再补一次 `highlightCode()` —— 第二遍的 `nodeStream()` 拿到的
 //    已是第一遍插入的 hljs span,`mergeStreams` 把两份流交织进同一行,产出**嵌套重复**
@@ -11,9 +11,9 @@
 //    调用方,**炸的是整个 diff 视图**,不是那一个文件;
 // 3. `colorScheme` 必须是 `'light'` —— 传 `'auto'` 会让 `.d2h-auto-color-scheme` 前缀
 //    规则(特异性 0,2,0)压过基础规则、读回 diff2html 自带的 `--d2h-dark-*`,
-//    vscode-theme.css 覆写的那 23 个变量在深色下一条都不生效(spec §5.6)。
+//    vscode-theme.css 覆写的那 23 个变量在深色下一条都不生效。
 //
-// 4. `outputFormat` 由调用方按 diff 面板宽度给(spec §5.5)。两种版式的判据是一对正反计数:
+// 4. `outputFormat` 由调用方按 diff 面板宽度给。两种版式的判据是一对正反计数:
 //    并排下一个文件是**两张** `.d2h-diff-table`(各裹在一个 `.d2h-file-side-diff` 里),
 //    逐行下是**一张**且 `.d2h-file-side-diff` 一个都没有。传错时页面照常渲染,只是版式不对。
 //
@@ -23,7 +23,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { renderDiff } from '../../../src/web/diff/render';
 
-// **一条 happy-dom 的坑,决定了下面的补丁必须带上下文行**(实测 20.11.2,见 spec §10):
+// **一条 happy-dom 的坑,决定了下面的补丁必须带上下文行**(实测 20.11.2):
 // 它的 `Attr.nodeName` 返回**空字符串**(`name` / `localName` 正常),而 diff2html 的
 // `mergeStreams.open()` 恰好用 `attr.nodeName` 重新序列化属性。于是凡是走过 mergeStreams
 // 的行 —— 带 `<del>` / `<ins>` 词级标记的增删行 —— `class="hljs-keyword"` 会先变成
@@ -52,7 +52,7 @@ index 1111111..2222222 100644
 
 /**
  * 重命名的补丁,**逐字取自 `git diff HEAD -M -- <新> <旧>` 的真实输出**(fixture
- * `renames` 仓库)。头四行是只有传了两个路径才拿得到的那几行(§5.2):少传一个,
+ * `renames` 仓库)。头四行是只有传了两个路径才拿得到的那几行:少传一个,
  * git 给的是 `new file mode` + `--- /dev/null`,页面上看起来只是"一个全新增文件"。
  */
 const RENAME_PATCH = `diff --git a/src/kept.txt b/src/kept-renamed.txt
@@ -69,7 +69,7 @@ index af8a489..3d3aa51 100644
  line 4
 `;
 
-/** 无扩展名的文件 —— diff2html 会把语言改写成字面量 'plaintext'(§5.5)。 */
+/** 无扩展名的文件 —— diff2html 会把语言改写成字面量 'plaintext'。 */
 const LICENSE_PATCH = `diff --git a/LICENSE b/LICENSE
 index 1111111..2222222 100644
 --- a/LICENSE
@@ -106,7 +106,7 @@ describe('renderDiff', () => {
     // 在 `draw()` 后补一次 `highlightCode()`(即被禁的那个写法)时,**先炸的是这一条**:
     // 第二遍让上下文行也走一次 mergeStreams,于是连它的类名都被写坏(机制见文件头),
     // span 数从 20+ 掉到 0 —— 已把那一行真加回 render.ts 验证过。
-    // 真实浏览器里表现是 spec §5.5 说的"嵌套重复 span",由下面那条字符串判据接住。
+    // 真实浏览器里表现是说的"嵌套重复 span",由下面那条字符串判据接住。
     expect(hljsSpanCount()).toBeGreaterThan(3);
 
     // 嵌套判据按**字符串**写而不是遍历 DOM,正是为了同时盖住上面那两种形态:
@@ -131,7 +131,7 @@ describe('renderDiff', () => {
     expect(host.textContent).toContain('MIT License');
   });
 
-  it('重命名的补丁画成一个文件、新旧两个名字都在(§6:不退化成全新增)', () => {
+  it('重命名的补丁画成一个文件、新旧两个名字都在(不退化成全新增)', () => {
     renderDiff(host, RENAME_PATCH, 'side-by-side');
 
     // 一个文件而不是两个:diff2html 把 `rename from/to` 认成同一个文件的两侧
@@ -153,7 +153,7 @@ describe('renderDiff', () => {
     expect(host.querySelector('.d2h-light-color-scheme')).not.toBeNull();
 
     // 这两个一旦出现,vscode-theme.css 里 23 个 --d2h-* 覆写在深色下会被整块旁路,
-    // 而页面只是"深色不太像 VS Code",测试和 CI 都不会红 —— 所以钉在这里(§5.6)
+    // 而页面只是"深色不太像 VS Code",测试和 CI 都不会红 —— 所以钉在这里
     expect(host.querySelectorAll('.d2h-auto-color-scheme')).toHaveLength(0);
     expect(host.querySelectorAll('.d2h-dark-color-scheme')).toHaveLength(0);
   });

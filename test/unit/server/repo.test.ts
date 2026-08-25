@@ -1,4 +1,4 @@
-// 前置检查里的纯解析部分(spec §5.2)。
+// 前置检查里的纯解析部分。
 
 import { expect, test } from 'vitest';
 import { parseGitVersion } from '../../../src/server/git/repo.ts';

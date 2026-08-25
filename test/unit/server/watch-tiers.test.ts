@@ -1,4 +1,4 @@
-// 三档各自**注册了什么**、以及轮询与降级(src/server/watch/watcher.ts,spec §5.7)。
+// 三档各自**注册了什么**、以及轮询与降级(src/server/watch/watcher.ts)。
 //
 // 单独一个文件,理由同 watch-error.test.ts:它把 `node:fs` 的 `watch` 换成替身。
 // 这份 mock 一旦生效,watch.test.ts 里那些真跑文件系统的用例会整片被架空成永远绿的,
@@ -106,7 +106,7 @@ function start(options: StartOptions): WatchHandle {
 /** 工作区侧那条(递归的那一条)。三档里只有 A / B 有。 */
 const recursiveCalls = () => calls.filter((call) => call.options?.recursive === true);
 
-describe('工作区侧:每档注册了什么(§5.7 三档表)', () => {
+describe('工作区侧:每档注册了什么', () => {
   test('A 档:一条递归 watch,`ignore` 传的是**函数**', () => {
     start({ tier: 'A' });
 
@@ -114,7 +114,7 @@ describe('工作区侧:每档注册了什么(§5.7 三档表)', () => {
     expect(recursive).toHaveLength(1);
     const { options } = recursive[0] as WatchCall;
     // 字符串模式在 macOS / Windows 上形同虚设(basename 比对匹配不上事件的相对
-    // 路径,§10),而那是静默的:watch 照建、事件照来、过滤全不生效
+    // 路径),而那是静默的:watch 照建、事件照来、过滤全不生效
     expect(typeof options?.ignore).toBe('function');
 
     // 传的确实是那份逐段匹配器 —— 光断言「是个函数」的话,传一个 `() => false`
@@ -163,7 +163,7 @@ describe('工作区侧:每档注册了什么(§5.7 三档表)', () => {
   });
 });
 
-describe('B 档的过滤在合并窗口之前(§5.7 红线)', () => {
+describe('B 档的过滤在合并窗口之前(红线)', () => {
   /** 拿到工作区那条 watch 的回调 —— 原生 watcher 就是这样调它的。 */
   const workspaceListener = () =>
     (recursiveCalls()[0] as WatchCall).listener as (event: string, filename: string | null) => void;
@@ -185,7 +185,7 @@ describe('B 档的过滤在合并窗口之前(§5.7 红线)', () => {
   });
 
   test('filename 为 null 时放行 —— 漏刷一次比多刷一次糟得多', async () => {
-    // Node 文档载明 filename 可能为 null,即便在支持的平台上也不保证提供(§5.7)
+    // Node 文档载明 filename 可能为 null,即便在支持的平台上也不保证提供
     const changes: number[] = [];
     start({ tier: 'B', onChange: () => changes.push(Date.now()), debounceMs: 20 });
 
@@ -194,7 +194,7 @@ describe('B 档的过滤在合并窗口之前(§5.7 红线)', () => {
   });
 });
 
-describe('轮询(§5.7 的 1.5s 兜底)', () => {
+describe('轮询(1.5s 兜底)', () => {
   test('快照变了才触发,首拍只建立基线', async () => {
     const changes: number[] = [];
     let snapshot = 'A';
@@ -261,10 +261,10 @@ describe('轮询(§5.7 的 1.5s 兜底)', () => {
   });
 });
 
-describe('原生档的低频安全轮询(§5.7)', () => {
+describe('原生档的低频安全轮询', () => {
   /**
    * 补的是一个**没有任何信号**的缺口:Linux 上 inotify 配额在遍历途中耗尽时 Node
-   * 一次都不 emit(实测,见 §10),没轮上注册的目录里改一个已有文件从此静默丢失。
+   * 一次都不 emit(实测),没轮上注册的目录里改一个已有文件从此静默丢失。
    * 判据只能是"拿 status 输出本身去比",所以这几条全用假探针驱动 —— 真去耗配额
    * 是 `scripts/check-inotify-degrade.mjs` 在 CI 上干的事。
    */
@@ -341,7 +341,7 @@ describe('原生档的低频安全轮询(§5.7)', () => {
   });
 });
 
-describe('降级为轮询(§5.7 的兜底)', () => {
+describe('降级为轮询(兜底)', () => {
   test('工作区 watch 出错 → mode 翻成 polling,轮询接上,只上报一次', async () => {
     const degrades: Error[] = [];
     const changes: number[] = [];
@@ -358,7 +358,7 @@ describe('降级为轮询(§5.7 的兜底)', () => {
     expect(handle.mode).toBe('native');
     (recursiveCalls()[0] as WatchCall).watcher.emit('error', new Error('ENOSPC'));
 
-    // mode 是前端唯一的判据(§5.12):不翻的话页面会一直标着「原生监听」,
+    // mode 是前端唯一的判据:不翻的话页面会一直标着「原生监听」,
     // 而它自己无从推断降级这件事
     expect(handle.mode).toBe('polling');
     expect(degrades.map((e) => e.message)).toEqual(['ENOSPC']);

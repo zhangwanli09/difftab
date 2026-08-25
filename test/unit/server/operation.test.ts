@@ -1,4 +1,4 @@
-// 进行中的多步操作的判据表(spec §5.3 的 `readOperation`)。
+// 进行中的多步操作的判据表(`readOperation`)。
 //
 // 与 git-integration.test.ts 的分工:那边钉的是「git 真的会留下这些痕迹」(merge 与
 // rebase 两个 fixture 是真跑出来的冲突),这边钉的是**判据表本身** —— 优先级,以及
@@ -67,7 +67,7 @@ describe('readOperation', () => {
 
   test('rebase-apply/ 里有 rebasing → rebase,没有 → am', async () => {
     // 两者共用同一个目录,`rebasing` 是唯一的区分。合并成一个标注等于对着一个
-    // 正在 `git am` 的用户说他在变基(§5.3)
+    // 正在 `git am` 的用户说他在变基
     touch('rebase-apply/rebasing');
     await expect(readOperation(gitDir)).resolves.toBe('rebase');
 
@@ -77,7 +77,7 @@ describe('readOperation', () => {
 
   test('rebase 的痕迹与 merge 的痕迹同时在时,报的是 rebase', async () => {
     // 这不是假想的组合:rebase 冲突停下时 git 目录里就是同时躺着 `rebase-merge/`
-    // 与 merge 的那几个文件(已实测,§10)。判据表按序取第一个命中,调换两行
+    // 与 merge 的那几个文件(已实测)。判据表按序取第一个命中,调换两行
     // 不会报错 —— 只会把用户正在做的事说错
     mkdir('rebase-merge');
     touch('MERGE_HEAD');

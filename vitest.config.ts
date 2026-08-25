@@ -4,7 +4,7 @@ import { preactJsx } from './vite.config.ts';
 
 // 单独一份配置,不复用 vite.config.ts —— 后者的 root 是 src/web(前端产物的根),
 // 直接被 vitest 继承会让它只在前端目录里找测试。
-// 单元/集成测试直接跑 TS 源码(spec §5.11 的 build 作业);
+// 单元/集成测试直接跑 TS 源码(build 作业);
 // 跑 dist/ 产物的冒烟测试是纯 JS + node:test,不经这里。
 const root = fileURLToPath(new URL('.', import.meta.url));
 
@@ -12,8 +12,8 @@ const root = fileURLToPath(new URL('.', import.meta.url));
 // preactJsx 注释)。**不能省掉**:vitest 不读 vite.config.ts,缺了它组件用例会去解析
 // react/jsx-dev-runtime 而整个文件加载失败。
 
-// 环境按目录分(spec §5.11「DOM 测试环境」):`src/web` 的渲染路径要真实 DOM 才断言
-// 得了(§5.5 那几条静默约束),而后端用例不该被套上一层 DOM 全局 —— 那是把「前端拿不到
+// 环境按目录分:`src/web` 的渲染路径要真实 DOM 才断言
+// 得了(diff2html 与 hljs 那几条静默约束),而后端用例不该被套上一层 DOM 全局 —— 那是把「前端拿不到
 // 也不该拿到 Node API」那条边界反向捅一刀。
 //
 // 落地方式必须是 `projects`:`environmentMatchGlobs` 在 Vitest 4 已被移除。

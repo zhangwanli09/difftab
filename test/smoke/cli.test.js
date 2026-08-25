@@ -1,4 +1,4 @@
-// 冒烟测试:纯 JS,跑 dist/ 产物(spec §5.11 CI 分层)。
+// 冒烟测试:纯 JS,跑 dist/ 产物(CI 分层)。
 //
 // 由 CI 的 matrix 作业用 `node --test test/smoke/` 直接打到本文件 ——
 // 那一档完全不执行安装、也没有 pnpm,因此这里不得 import 任何依赖。
@@ -79,7 +79,7 @@ test('后端产物只 import 标准库 —— dependencies 为空这条在产物
   assert.deepEqual(
     external,
     [],
-    `dist/server/main.js 引用了非标准库模块:${external.join(', ')}。后端只用标准库(CLAUDE.md §5 红线)`,
+    `dist/server/main.js 引用了非标准库模块:${external.join(', ')}。后端只用标准库(CLAUDE.md 红线)`,
   );
 });
 
@@ -87,7 +87,7 @@ let workdir;
 cleanupOnExit(() => workdir);
 
 test('bare 仓库:一句话说清没有工作区,而不是 Node 异常栈', () => {
-  // §6 的 `[S4b]`。**必须在产物上端到端验**:`rev-parse --show-toplevel` 在 bare 下
+  // **必须在产物上端到端验**:`rev-parse --show-toplevel` 在 bare 下
   // 以 128 退出(已实测),而「128 退出」既可能被收成这句话,也可能一路冒成一屏栈 ——
   // 单测里那条 `rejects.toMatchObject({ code: 'bare-repo' })` 证到的是前一半
   workdir = mkdtempSync(join(tmpdir(), 'difftab-bare-'));
@@ -120,7 +120,7 @@ function codeLines(source) {
 
 test('bin/difftab.js 退出前的报错一律 writeSync(2, …)', () => {
   /**
-   * spec §5.8 的红线:`process.stderr.write` + `process.exit()` 在 Windows 上写**管道**
+   * 红线:`process.stderr.write` + `process.exit()` 在 Windows 上写**管道**
    * 时是异步的,整条消息会被丢掉,症状是 stderr 全空。
    *
    * **静态扫描而不是跑一遍**:本文件里两个出口(版本守卫、动态 import 失败)只有前者
@@ -136,7 +136,7 @@ test('bin/difftab.js 退出前的报错一律 writeSync(2, …)', () => {
 
 test('bin/difftab.js 保持保守语法:不含守卫之后才安全的语法', () => {
   const source = codeLines(readFileSync(BIN, 'utf8'));
-  // 逐条对应 spec §5.1:守卫与新语法同处一个模块时,低于下限的用户拿到的是
+  // 逐条对应 :守卫与新语法同处一个模块时,低于下限的用户拿到的是
   // 解析期 SyntaxError,守卫根本来不及执行
   const forbidden = [
     [/\?\./, '可选链 ?.'],

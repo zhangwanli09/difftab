@@ -1,31 +1,31 @@
-// §5.10 的**第二层**:证明产品跑完一遍完整流程后,`.git` 里一个字节都没变。
+// **第二层**:证明产品跑完一遍完整流程后,`.git` 里一个字节都没变。
 //
 // 与第一层(readonly.test.js 的 GIT_TRACE 白名单)互补而非重复:白名单只看
 // 「执行了哪些子命令」,而 `git status` 默认会把刷新过的 stat 缓存写回 `.git/index`
 // —— 那是一次货真价实的写操作,子命令却仍然叫 `status`,白名单看不见;
 // 「前后 git status 比对」同样看不见(输出根本不变)。
 //
-// 本层由**两半**组成,缺一不可 —— 这与 spec §5.10 只写了 `chmod -R a-w .git` 一句
-// 不同,原因是那一句单独不成立(2026-08-08 实测,已回填 spec §10):
+// 本层由**两半**组成,缺一不可 —— 这与只写了 `chmod -R a-w .git` 一句
+// 不同,原因是那一句单独不成立(2026-08-08 实测,已回填):
 //
 //   A. **只读 `.git` 跑通**:锁死 `.git` 再跑完整流程,凡是**会报错**的写尝试
 //      (创建对象、写 lock 文件、意外触发 gc)当场暴露。
 //   B. **`.git` 逐字节不变**:A 挡不住的那一类在这里暴露。git 把 index 回写当作
 //      best-effort:`.git` 只读时它**静默跳过,exit 0、stderr 全空**(已实测)。
-//      于是漏掉 `GIT_OPTIONAL_LOCKS=0` 时 A 照样全绿 —— 而那正是 §5.10 点名要这
+//      于是漏掉 `GIT_OPTIONAL_LOCKS=0` 时 A 照样全绿 —— 而那正是点名要这
 //      一层去保护的东西。B 在**可写**的 `.git` 上跑,前后各拍一次快照做逐字节比对。
 //
 //   B 自带一条**正面对照**:同一个仓库上直接跑一条不带 `GIT_OPTIONAL_LOCKS=0` 的
 //   `git status`,断言 `.git` 这次**确实变了**。没有它,B 会在「仓库本来就不会
-//   触发 index 回写」时对着一个恒为真的断言通过 —— 与 §5.10 要求主门禁必须有一条
+//   触发 index 回写」时对着一个恒为真的断言通过 —— 与主门禁必须有一条
 //   「确实记到了东西」是同一个道理。
 //
-// 本层保护的是 **S1 就已落地**的封装层(server/git/run.ts 的 `GIT_OPTIONAL_LOCKS=0`),
-// 按 spec §7 的总原则「门禁不得晚于它所保护的代码」排在 S2 开头而非 S2 末尾。
+// 本层保护的是封装层(server/git/run.ts 的 `GIT_OPTIONAL_LOCKS=0`)——按总原则
+// 「门禁不得晚于它所保护的代码」,它与封装层同期建立。
 //
 // Windows:`chmod` 挡不住写入(Node 在 Windows 上只映射只读属性,对目录无效),
-// A 半改用 `icacls` 的拒绝 ACL;拿不到 ACL 时**显式跳过并打印原因**,不静默通过
-// (spec §7)。B 半与权限无关,三端一律照跑。
+// A 半改用 `icacls` 的拒绝 ACL;拿不到 ACL 时**显式跳过并打印原因**,不静默通过。
+// B 半与权限无关,三端一律照跑。
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -105,7 +105,7 @@ function restoreWrites(gitDir) {
  *
  * 少了这一条,A 半就靠「chmod 一定生效」这个假设活着 —— 而 root 用户、某些容器
  * 挂载、Windows 上的 chmod 全都不生效。那时用例照常变绿却什么都没验证,
- * 而假绿的只读门禁比没有门禁更糟(spec §5.10)。
+ * 而假绿的只读门禁比没有门禁更糟。
  */
 function writesAreBlocked(gitDir) {
   const probe = join(gitDir, 'difftab-write-probe');
@@ -296,7 +296,7 @@ test('B · 完整流程跑完,.git 逐字节未变', async () => {
 test('B · 正面对照:不设 GIT_OPTIONAL_LOCKS 的同一条 status 确实改了 .git', async () => {
   const { byControl } = await snapshotRun();
   // 这条红了不代表产品有问题,而是**上一条失去了意义**:仓库没能触发 index 回写,
-  // 于是「产品没改 .git」是一句对谁都成立的空话(spec §5.10 的「确实记到了东西」)
+  // 于是「产品没改 .git」是一句对谁都成立的空话 —— 与主门禁那条「确实记到了东西」同理
   assert.notDeepEqual(
     byControl,
     [],
