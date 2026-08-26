@@ -21,15 +21,12 @@
 
 ### 0.1.0（2026-08-20）
 
-首个版本发到 npm，GitHub Release 建在 tag `v0.1.0`。发布前 CI 在该提交上 18 个作业全绿。四件咬人的事：
+首个版本发到 npm，GitHub Release 建在 tag `v0.1.0`。发布前 CI 在该提交上 18 个作业全绿。**四件咬人的事，判据与实测数据都在 [`decisions.md`](decisions.md)、发布时照着做的那份在 [`../RELEASING.md`](../RELEASING.md)，这里只记当天是怎么撞上的**：
 
-- **pnpm 的登录态，而它的报错完全不像认证问题。** `npm login` 已登录、`npm whoami` 有回应、`~/.npmrc` 里有 token，`pnpm publish` 仍回 `[E404] 404 Not Found - PUT …/difftab`——**npm 对「不允许的写」在包还不存在时回 404 而不是 403**，于是错误长得像「包找不到」，而包名确实还没被占，两件事叠在一起足以把人往「名字有问题」上带。**判据是 `pnpm whoami`：pnpm 不认 npm CLI 的登录态，要单独 `pnpm login`。** 认证补上之后错误立刻换成 `ERR_PNPM_OTP_NON_INTERACTIVE`——那条才说实话，也反过来确认了 404 的病因。
-- **2FA 决定了这一步没法非交互跑。** 账号的 `two-factor auth` 是 `auth-and-writes`，每次发布都要一个六位 OTP，必须在真终端里跑或 `--otp=<code>` 传进去，码约 30 秒过期。
-- **manifest obfuscation 的范围比想象的窄。** pnpm 剥掉的只有 `packageManager` 与 `prepublishOnly`，其余 14 条 `scripts` 与 `devDependencies` 原样发布。
-- **`bin/difftab.js` 一直以 `100644` 入库**，病根在仓库里而不在发布产物里。症状分两幕，中间隔着一次「顺手把变更 discard 掉」：在本仓库目录里跑 `npx difftab`，冒出一个**内容零差异**的 `bin/difftab.js` 变更；discard 之后再跑得到 `Permission denied`。原因是 npx 压根没去 registry 取包——cwd 的 `package.json` 自己就叫 `difftab` 且带同名 `bin`，npm exec 装了一条指回工作区的 `file:` 链接，它的 `fixBin` 把 bin 目标 chmod 0755，改的就是仓库本体。**registry 上那份是好的**，所以没为它单独发版。**三道门禁齐刷刷看不见它**：`check:bin` 当时比的是内容字节而 mode 不是内容，`check:pack` / `check:global` 查的是已被 pnpm 归一成 0755 的 tarball，CI 每次全新 checkout 也不保留本地 chmod——**一件只在开发者本机可见、且在 CI 上永远绿的事**。
-
-  补法是 `git update-index --chmod=+x` 入库 + 一条钉 mode 的断言。**这条断言的第一版只查 index，是 `/code-review` 抓出来的**：`--chmod=+x` 只写暂存区，而别人 clone 到的是 HEAD，于是「chmod 过、看见 PASS、那次改动却始终没进提交」的本机会假绿，而 CI 上 index 恒等于 HEAD——**只查 index 的门禁恰好在它唯一要保护的地方最弱**。改成两侧都查。另外那半「拿不到记录一律 FAIL」也单独验了：`git ls-files -s` 对未跟踪路径是 exit 0 + 空 stdout，不把空输出判死，这条断言就会对着空字符串静默通过。
-- 顺带记一条已经过期、但判据没过期的事实：开发机的 `~/.npmrc` 当时指向镜像源，后来改指 npmjs。**`publishConfig.registry` 无论 `~/.npmrc` 怎么写都钉死目标，而判据（pnpm 自己打印的 `📦 name@version → <registry>` 那一行）照旧管用**——这正是把「看那一行」写成发布步骤而不是写成一句叮嘱的价值：前提过期了，步骤还在。
+- **pnpm 的登录态**堵住了第一次 publish 尝试。npm CLI 那侧一切正常，pnpm 却回一个长得像「包找不到」的 404，而包名当时确实还没被占——两件事叠在一起，足以把人往「名字有问题」上带一程。
+- **2FA 是 `auth-and-writes`**，于是这一步从一开始就不可能非交互跑，只能在真终端里敲那六位码。
+- **manifest obfuscation 的范围比想象的窄**，核对产物时才量清楚被剥掉的到底是哪两项。
+- **`bin/difftab.js` 一直以 `100644` 入库**，而病根在仓库里、不在发布产物里：在本仓库目录里跑 `npx difftab` 冒出一个**内容零差异**的变更，discard 掉之后再跑就是 `Permission denied`。**registry 上那份是好的**，所以没为它单独发版。补法是 `git update-index --chmod=+x` 入库加一条钉 mode 的断言，而**那条断言的第一版只查 index，是 `/code-review` 抓出来的**——它恰好在自己唯一要保护的地方（开发者本机）最弱。
 
 ## Windows 真机验收（2026-08-22）
 
@@ -39,6 +36,6 @@
 
 ## 改名 gitglance → difftab（2026-08-20）
 
-**不是重构，是一条被推翻的结论。** 文档从 2026-07-28 起记着「`gitglance` npm 未被占用」，两次复核也确实都返回 404——但**查的是精确名**。npm 的重名校验先把包名小写化、去掉 `-` `_` `.` 再与已有包比对，`gitglance` 归一后与他人已发布的 `git-glance` v1.0.1（同域）完全相同，发布时会被 registry 以 “too similar to existing package” 拒掉。**这个错误不会在任何门禁里响，只会在第一次 `npm publish` 那一刻响**，而那时改名的成本比事先高得多。
+**不是重构，是一条被推翻的结论。** 文档从 2026-07-28 起记着「`gitglance` npm 未被占用」，两次复核也确实都返回 404，而那个判据从头到尾是错的——重名要按归一化后的名字查，依据见 [`decisions.md`](decisions.md)。**它不会在任何门禁里响，只会在第一次 `npm publish` 那一刻响**，而那时改名的成本比事先高得多。
 
-新名 `difftab` 连同 `diff-tab` / `diff_tab` / `diff.tab` 四个归一变体逐个核过均为 404。去掉 `git` 前缀同时避开了 Git 商标政策的建议与 npm 上极拥挤的 `git*` 命名空间。改名面 242 处 / 62 个文件，其中只有三类不是机械替换：两条结论本身要重写、围绕旧名写的英文双关文案（换名后是病句）、以及 `README.zh-CN.md`（**它不是自动生成的**，只改英文那份不会有任何门禁变红）。产品行为零变化。
+改名面 242 处 / 62 个文件，其中只有三类不是机械替换：两条结论本身要重写、围绕旧名写的英文双关文案（换名后是病句）、以及 `README.zh-CN.md`（**它不是自动生成的**，只改英文那份不会有任何门禁变红）。产品行为零变化。
