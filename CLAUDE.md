@@ -56,6 +56,7 @@
 | 新增模块/文件、目录归属、依赖方向、只读性验证、构建与 CI、pnpm 设置 | `docs/design/build.md` |
 | 门禁挡什么、fixture 契约、发布产物约定 | `docs/gates.md` |
 | 产品范围与 Non-goals | `docs/spec.md` |
+| 改 `docs/` 里任何文件、改 CLAUDE.md 本身 | `docs/README.md`（写作约定 + 内容落哪份） |
 
 ## 5. 红线
 
