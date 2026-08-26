@@ -118,12 +118,12 @@ body {
   color: var(--color-editor-foreground);
 }
 
-/* 这两条是本文件里**唯二**用选择器去动 d2h 元素的规则,也是"只能改 --d2h-*"那条
- * 红线之外仅有的两条 —— 那条红线管的是**配色**,而这里改的是字体与显不显示,
- * 47 个 --d2h-* 变量实测全是颜色,这两样一个都覆不到。
+/* 这三条是本文件里**唯三**用选择器去动 d2h 元素的规则,也是"只能改 --d2h-*"那条
+ * 红线之外仅有的三条 —— 那条红线管的是**配色**,而这里改的是字体、显不显示、
+ * 有没有那个盒子与它底下那截留白,47 个 --d2h-* 变量实测全是颜色,这几样一个都覆不到。
  *
  * 也不能改用 Tailwind 工具类:工具类在 @layer utilities 里,压不过无层的 d2h 规则。
- * 两条与 d2h 自己的同名规则同为 (0,1,0),靠**排在后面**取胜 —— 这又回到本文件
+ * 三条与 d2h 自己的同名规则同为 (0,1,0),靠**排在后面**取胜 —— 这又回到本文件
  * 必须 unlayered 且引在 diff2html.min.css 之后。 */
 
 /* 代码区的等宽字体。d2h 把它写死成 `Menlo,Consolas,monospace`(装不到就一路回退) */
@@ -150,4 +150,29 @@ body {
  * 比对,少一个就红。它们不是死代码,是那条断言的一部分。 */
 .d2h-file-header {
   display: none;
+}
+
+/* diff2html 裹在整份补丁外面的那个盒子整条去掉 —— 它自带
+ * `border:1px solid var(--d2h-border-color)`、`border-radius:3px` 与 `margin-bottom:1em`。
+ *
+ * 文件头藏掉之后这个盒子只剩副作用:上边紧贴 DiffView 那行文件名标题的 border-b、
+ * 画出第二条平行线,左边紧贴侧栏的 border-r,右边在横向滚动时停在盒子边界上。
+ *
+ * **不写成 `--d2h-border-color: transparent`**,尽管那样看着更守上面那条红线:
+ * 透明边框仍占 1px 布局;那个变量还被 .d2h-lines-added / .d2h-lines-deleted(长在文件头里)
+ * 与 .d2h-file-list > li(drawFileList: false,那份列表从没画过)读到,谁把文件头或文件
+ * 列表放回来就会连带静默失色;而这里要的是"没有这个盒子"不是"这个盒子的颜色"。
+ * 上面映射块里那条 --d2h-border-color 因此保持指向 --color-panel-border ——
+ * 它同样是 check:css 覆盖率断言的一部分,删不得。
+ *
+ * margin-bottom 一起去掉:上游留它是为了在"一次画多个文件"时分隔相邻补丁,而我们
+ * 一次只画一个(drawFileList: false + 单文件容器),于是它只剩滚到底时补丁最后一行
+ * 与面板底边之间一段没有来由的空白。写 margin-bottom 而不是 margin:d2h 只设了
+ * 这一边,其余三边归 preflight 的 `*{margin:0}`,写成 margin 会让人以为另有三边要压。
+ *
+ * border-radius 不跟着删:没有边框也没有背景时它不可见,删它只是多一条不产生
+ * 任何差别的声明。 */
+.d2h-file-wrapper {
+  border: none;
+  margin-bottom: 0;
 }

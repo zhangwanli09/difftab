@@ -133,11 +133,19 @@ diff2html **没有**关掉自带文件头（`.d2h-file-header`）的配置项（
 
 **深色那半是 delta，于是「声明侧」也有同一形状的静默失效**：`@media (prefers-color-scheme: dark)` 里只列与浅色不同的 token，名字**写错一个字符不会有任何症状**——上面那条查的是**引用**侧，而一条 `--color-git-modifed: …` 在语法上就是个合法的新自定义属性，连「无定义」都算不上（它反而给 `defined` 集合添了一个成员）。故 `check:css` 再增一条：**产物里凡在深色媒体条件内声明的 `--color-*`，都必须在深色条件之外也有声明**。反向不查——浅色有而深色没有，正是「深浅共用同一取值」的正常写法。
 
-### 两条选择器规则的例外
+### 三条选择器规则的例外
 
-`vscode-theme.css` 末尾那两条在「只能改 `--d2h-*`」这条约束之外，**且只有这两条**：`.d2h-diff-table { font-family }` 与 `.d2h-file-header { display: none }`。47 个 `--d2h-*` 实测全是颜色，**字体与显不显示都没有变量可覆**，而那条约束管的是配色。两条与 diff2html 自己的同名规则特异性同为 (0,1,0)，胜出与那 23 条变量覆写同理——**靠本文件排在 `diff2html.min.css` 之后**。
+`vscode-theme.css` 末尾那三条在「只能改 `--d2h-*`」这条约束之外，**且只有这三条**：`.d2h-diff-table { font-family }`、`.d2h-file-header { display: none }` 与 `.d2h-file-wrapper { border: none; margin-bottom: 0 }`。47 个 `--d2h-*` 实测全是颜色，**字体、显不显示、有没有这个盒子、它底下那截留白都没有变量可覆**，而那条约束管的是配色。三条与 diff2html 自己的同名规则特异性同为 (0,1,0)，胜出与那 23 条变量覆写同理——**靠本文件排在 `diff2html.min.css` 之后**（preflight 的 `*{border:0 solid}` 在 `@layer base`，三条都压不过）。
 
 文件头不显示之后，`--d2h-file-header-bg-color` / `--d2h-file-header-border-color` 两条映射**仍要留在映射块里**：`check:css` 的覆盖率断言是从 diff2html 自己那块推导出全部无前缀变量名再逐一比对的，删掉即红——它们不是死代码，是那条断言的一部分。**不为 `display: none` 另加断言**：它失效的症状是文件头又出现在页面上，肉眼可见，不属于门禁要防的那类静默故障。
+
+**补丁外框与它底下那截留白一起去掉。** `.d2h-file-wrapper` 自带 `border: 1px solid var(--d2h-border-color); border-radius: 3px; margin-bottom: 1em`，把整份补丁圈在一个圆角盒里、底下再垫一截留白。文件头藏掉之后这个盒子只剩副作用：上边紧贴 `DiffView` 那行文件名标题的 `border-b`、画出第二条平行线，左边紧贴侧栏的 `border-r`，右边在横向滚动时停在盒子边界上。
+
+- **不写成 `--d2h-border-color: transparent`**，尽管那样看着更守「只能改 `--d2h-*`」那条规矩。三个理由：透明边框**仍占 1px 布局**；那个变量还被 `.d2h-lines-added` / `.d2h-lines-deleted`（长在文件头里）与 `.d2h-file-list > li`（`drawFileList: false`，那份列表从没画过）读到，谁把文件头或文件列表放回来就会连带静默失色；而这里要的是「没有这个盒子」而不是「这个盒子的颜色」，写进配色映射表等于把一个版式决定藏在颜色里。
+- **映射块里那条 `--d2h-border-color: var(--color-panel-border)` 因此保持不动**，与上面 `--d2h-file-header-*` 两条同一道理：覆盖率断言少一个即红。
+- **`margin-bottom: 1em` 一并去掉**：上游留它是为了在「一次画多个文件」时分隔相邻补丁，而 difftab 一次只画一个（`drawFileList: false` + 单文件容器），于是它只剩滚到底时补丁最后一行与面板底边之间一段没有来由的空白。写 `margin-bottom: 0` 而不是 `margin: 0`——diff2html 只设了这一边，其余三边归 preflight 的 `*{margin:0}`，写成 `margin: 0` 会让人以为另有三边要压。
+- **`border-radius: 3px` 仍然不动**：没有边框也没有背景时它不可见，删它只是多一条不产生任何差别的声明。
+- **同样不加断言**：失效的症状是框或那截留白又出现在页面上，肉眼可见，不属于门禁要防的那类静默故障。
 
 ### 行号列需要一个 positioned 祖先
 
