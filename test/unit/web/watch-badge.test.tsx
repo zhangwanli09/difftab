@@ -58,11 +58,12 @@ describe('WatchBadge', () => {
   });
 });
 
-describe('App 的 header', () => {
-  it('降级标注真的挂在 header 上,且跟着 state 变', async () => {
+describe('App 的状态条', () => {
+  it('降级标注真的挂在状态条上,且跟着 state 变', async () => {
     // 组件本身全绿、却压根没被挂进 App —— 单测组件的用例一条都盖不到这种失效
     render(<App />, container);
-    const header = container.querySelector('header');
+    // 状态条随第一份 state 一起出现,故每次断言都重新取
+    const footer = () => container.querySelector('footer');
 
     repoState.value = {
       repoName: 'demo',
@@ -70,8 +71,8 @@ describe('App 的 header', () => {
       files: [],
       watch: { mode: 'native', tier: 'A' },
     };
-    await vi.waitFor(() => expect(textOf(header)).toContain('main'), { interval: 5 });
-    expect(textOf(header)).not.toContain('Polling');
+    await vi.waitFor(() => expect(textOf(footer())).toContain('main'), { interval: 5 });
+    expect(textOf(footer())).not.toContain('Polling');
 
     // 降级是**运行中**发生的:后端在降级时推一个 change,前端重取 /api/state 才
     // 看得见。这里模拟的就是那次重取的结果
@@ -81,6 +82,6 @@ describe('App 的 header', () => {
       files: [],
       watch: { mode: 'polling', tier: 'A' },
     };
-    await vi.waitFor(() => expect(textOf(header)).toContain('Polling'), { interval: 5 });
+    await vi.waitFor(() => expect(textOf(footer())).toContain('Polling'), { interval: 5 });
   });
 });

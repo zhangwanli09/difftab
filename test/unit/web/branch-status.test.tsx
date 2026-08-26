@@ -168,18 +168,17 @@ describe('BranchStatus 的降级标注', () => {
   });
 });
 
-describe('App 的 header', () => {
+describe('App 的状态条', () => {
   it('拿到 state 之后才画分支,且画的是 state 里的那一份', async () => {
     // 组件本身全绿、却压根没被挂进 App —— 这是上面四条一条都盖不到的失效方式。
     // **只挂载一次,之后只写 signal**:App 在渲染体里读 `repoState`,状态一变自己就
     // 重画;手动补一次 `render()` 会把「状态变了会不会重画」替它做掉(同 diff-view.test.tsx)
     render(<App />, container);
-    const header = container.querySelector('header');
 
-    // 判据是 header 里**只有**标题,而不是「没出现『无上游』」那类写法:后者与文案
+    // 判据是**整条状态条都还没有**,而不是「没出现『无上游』」那类写法:后者与文案
     // 字面量耦合,改一次文案就永远真空通过 —— 而这条恰恰是来防「先画一个占位分支」的,
     // 写死 main、画成 0/0、画成「未知分支」都是同一种退化,这里一次全盖住
-    expect(textOf(header)).toBe('difftab');
+    expect(container.querySelector('footer')).toBe(null);
 
     repoState.value = {
       repoName: 'demo',
@@ -187,8 +186,9 @@ describe('App 的 header', () => {
       files: [],
       watch: { mode: 'native', tier: 'A' },
     };
+    // 状态条是随 state 一起出现的,故每次都重新取 —— 首帧那个 null 存不下来
     await waitFor(() => {
-      const text = textOf(header);
+      const text = textOf(container.querySelector('footer'));
       expect(text).toContain('release/1.0');
       expect(text).toContain('↑3');
       expect(text).toContain('↓0');
