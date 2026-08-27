@@ -95,6 +95,7 @@
 | 把两份 hljs 主题 CSS 平铺 import | 两者都是无条件的 `.hljs { … }`、自身零 `@media`，后引入者无条件覆盖前者，浅色主题直接失效 |
 | `outputFormat` 按**视口**宽度判（`matchMedia`） | 面板宽度恒等于「视口 − 320」，按视口判等于把侧栏宽度这个常数在 CSS 之外再写一遍；侧栏一改阈值就静默错位 |
 | 量面板的 content box（`contentRect` / `contentBoxSize`）判阈值 | **滚动条是从 content box 里扣的**：换格式改变内容高度 → 滚动条进出 → content box 宽度抖十几像素，阈值落在抖动区间里时两种格式来回重画；border box 不随它进出而变 |
+| 选中文件从列表里消失后仍留着最后那份 diff | 把「用户刚才在读的东西还在」摆在了「左栏刚断言过这些改动不存在」之前，工作区变干净时两栏直接互相矛盾；且那份 diff 此后再也不会被刷新（`refresh` 走不到 `loadDiff`），留得越久越旧 |
 | 给用户加一个 side-by-side / line-by-line 手动开关 | 自动判据已覆盖「放不放得下」这个唯一的真实诉求，而加开关要引入一份需跨会话保持的用户偏好。首版不做，不是长期不做 |
 | 未跟踪文件用 `git diff --no-index` | 依赖 `/dev/null` 作对比端，Windows 上不可移植 |
 | 空树哈希用 `git hash-object -t tree /dev/null` | 同上，`/dev/null` 不可移植；`git mktree` 则会写对象库，违反只读承诺 |

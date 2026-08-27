@@ -27,6 +27,15 @@ const file = (partial: Partial<FileEntry> & { path: string }): FileEntry => ({
 const byId = (files: readonly FileEntry[]) =>
   Object.fromEntries(groupFiles(files).map((g) => [g.id, g.files.map((f) => f.path)]));
 
+/** 请求 URL 里的 query —— 断言参数而不是断言字符串拼法。 */
+const query = (url: string) => new URLSearchParams(url.slice(url.indexOf('?')));
+
+/** 记下来的那串调用里那一次 `/api/diff` 的 query。没打过就是 `null`,断言会说清是哪种失败。 */
+const diffQuery = (calls: readonly string[]): URLSearchParams | null => {
+  const call = calls.find((url) => url.startsWith('/api/diff?'));
+  return call === undefined ? null : query(call);
+};
+
 /**
  * 把 fetch 换成一个只回这一份正文的桩,并把它收到的 URL 全部记下来。
  *
@@ -222,9 +231,6 @@ describe('loadState', () => {
 describe('loadDiff(按文件懒加载)', () => {
   const text: DiffPayload = { kind: 'text', patch: 'diff --git a/a.txt b/a.txt\n' };
 
-  /** 请求 URL 里的 query —— 断言参数而不是断言字符串拼法。 */
-  const query = (url: string) => new URLSearchParams(url.slice(url.indexOf('?')));
-
   beforeEach(() => {
     // selectedPath 由 diffState 派生,清掉后者即可
     diffState.value = null;
@@ -385,15 +391,22 @@ describe('refresh(一次 SSE change 之后要重取什么)', () => {
     watch: { mode: 'native', tier: 'A' },
   });
 
-  /** 按路径分派的 fetch 桩:refresh 会连着打两个不同的端点。 */
-  function stubEndpoints(state: RepoState, diff: DiffPayload): string[] {
+  /**
+   * 按路径分派的 fetch 桩:refresh 会连着打两个不同的端点。
+   *
+   * `gate` 卡住的只有 diff 那一侧 —— 「在途的 diff 还没回来」是这里唯一需要摆布的
+   * 时序,而 state 那侧照常立刻回,`refresh` 才走得下去。
+   */
+  function stubEndpoints(state: RepoState, diff: DiffPayload, gate?: Promise<void>): string[] {
     const calls: string[] = [];
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string) => {
         calls.push(url);
-        const body = url.startsWith('/api/state') ? state : diff;
-        return new Response(JSON.stringify(body), { status: 200 });
+        if (url.startsWith('/api/state'))
+          return new Response(JSON.stringify(state), { status: 200 });
+        if (gate) await gate;
+        return new Response(JSON.stringify(diff), { status: 200 });
       }),
     );
     return calls;
@@ -437,26 +450,64 @@ describe('refresh(一次 SSE change 之后要重取什么)', () => {
     );
 
     await refresh();
-    const diffCall = calls.find((url) => url.startsWith('/api/diff?')) ?? '';
-    expect(new URLSearchParams(diffCall.slice(diffCall.indexOf('?'))).get('oldPath')).toBe(
-      'renamed-again.ts',
-    );
+    expect(diffQuery(calls)?.get('oldPath')).toBe('renamed-again.ts');
   });
 
-  test('选中的文件从列表里消失了就不去取它,右侧保留最后那份 diff', async () => {
-    // 改动被撤销或被 commit 掉了。把右侧突然清空比留着更让人困惑,而且合成一个
-    // 不带 oldPath 的条目去取,正好是「重命名退化成全新增」那条路
+  test('选中的文件被改名了 —— 跟着重命名走,不当成消失', async () => {
+    // 改名后选中的路径成了新列表里那一行的 `oldPath`,只按 `path` 找必然扑空 ——
+    // 而那一行还在左栏列着,此时清空右侧,「左栏正断言这些改动不存在」根本不成立
+    diffState.value = { status: 'ready', path: 'old.ts', rename: null, payload: text };
+    const calls = stubEndpoints(
+      stateWith([file({ path: 'new.ts', oldPath: 'old.ts', staged: 'R', renameScore: 100 })]),
+      fresh,
+    );
+
+    await refresh();
+    // 双路径都得带上,否则重命名退化成全新增
+    expect(diffQuery(calls)?.get('path')).toBe('new.ts');
+    expect(diffQuery(calls)?.get('oldPath')).toBe('old.ts');
+    // 选中态跟着落到新路径上(`selectedPath` 由 path 派生,不单独断言)
+    expect(diffState.value).toEqual({
+      status: 'ready',
+      path: 'new.ts',
+      rename: { oldPath: 'old.ts', score: 100 },
+      payload: fresh,
+    });
+  });
+
+  test('选中的文件从列表里消失了 —— 不去取它,并把右侧连同选中态一起清空', async () => {
+    // 改动被撤销或被 commit 掉了。留着最后那份 diff 时,左栏正断言这些改动不存在、
+    // 右栏还展示着其中一份。也不能合成一个不带 oldPath 的条目去重取 —— 那正好是
+    // 「重命名退化成全新增」那条路
     diffState.value = { status: 'ready', path: 'gone.txt', rename: null, payload: text };
     const calls = stubEndpoints(stateWith([file({ path: 'other.txt', unstaged: 'M' })]), fresh);
 
     await refresh();
     expect(calls).toEqual(['/api/state']);
-    expect(diffState.value).toEqual({
-      status: 'ready',
-      path: 'gone.txt',
-      rename: null,
-      payload: text,
+    // 选中态一并没了 —— `selectedPath` 由 `diffState` 派生,清空即两者同时成立
+    expect(diffState.value).toBeNull();
+  });
+
+  test('清空之后,在途的那次取 diff 不许把右侧写回来', async () => {
+    /**
+     * 点开 X 之后、响应回来之前 X 从列表里没了。不作废那次在途请求的话,它回来
+     * 照旧写成 `ready`,右侧刚清掉又长回来 —— **不报错**,而复现要正好卡在一次
+     * 请求的往返窗口里,肉眼几乎撞不上。
+     */
+    let releaseDiff!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      releaseDiff = resolve;
     });
+    stubEndpoints(stateWith([file({ path: 'other.txt', unstaged: 'M' })]), fresh, pending);
+
+    const inFlight = loadDiff(file({ path: 'gone.txt', unstaged: 'M' }));
+    expect(diffState.value?.status).toBe('loading');
+    await refresh();
+    expect(diffState.value).toBeNull();
+
+    releaseDiff();
+    await inFlight;
+    expect(diffState.value).toBeNull();
   });
 
   test('列表取不到时不去取 diff —— 手上那份列表已经是过期的了', async () => {

@@ -16,7 +16,7 @@ import { useEffect, useRef } from 'preact/hooks';
 import type { DiffPayload } from '../../server/shared/protocol';
 import { renderDiff } from '../diff/render';
 import { diffOutputFormat } from '../state/layout';
-import { diffState, type RenameInfo } from '../state/store';
+import { diffState, type RenameInfo, repoState } from '../state/store';
 
 /** 提示行的统一外观 —— 空态、加载中、错误、二进制、超大文件共用。 */
 function Notice({ children }: { children: ComponentChildren }) {
@@ -117,7 +117,19 @@ export function DiffView() {
   // `diffState` 一个来源说清「选了谁」与「取到没有」:`selectedPath` 由它派生,
   // 两者不可能错位,组件因此不需要一条防错位的分支(见 store.ts)
   const state = diffState.value;
-  if (state === null) return <Notice>Select a file on the left.</Notice>;
+  // 没选文件时是**两句话**:「没得选」与「还没选」是两件事 —— 工作区干净时
+  // 「Select a file on the left」指着的是一个空列表,等于让用户去点一个不存在的
+  // 东西。与左栏那句刻意不逐字相同:一句说的是列表,一句说的是面板。第一份 state
+  // 还没到(`repoState` 为 `null`)时走「还没选」那句 —— 左栏此时写的正是 Loading…
+  if (state === null) {
+    return (
+      <Notice>
+        {repoState.value?.files.length === 0
+          ? 'Working tree clean — nothing to show.'
+          : 'Select a file on the left.'}
+      </Notice>
+    );
+  }
 
   return (
     <div>

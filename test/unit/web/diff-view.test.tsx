@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DiffPayload } from '../../../src/server/shared/protocol';
 import { DiffView } from '../../../src/web/components/DiffView';
 import { diffPanelWidth, SIDE_BY_SIDE_MIN_WIDTH } from '../../../src/web/state/layout';
-import { diffState, type RenameInfo } from '../../../src/web/state/store';
+import { diffState, type RenameInfo, repoState } from '../../../src/web/state/store';
 
 /**
  * **那行上下文(`export const keep`)不是凑数的**:happy-dom 的 `Attr.nodeName` 返回空串
@@ -61,8 +61,10 @@ beforeEach(() => {
   document.body.appendChild(container);
   diffState.value = null;
   // 面板宽度也要复位:它是模块级 signal,上一个用例写进去的值会跨用例串味,
-  // 而串味的表现是「某条用例单跑绿、整档跑红」
+  // 而串味的表现是「某条用例单跑绿、整档跑红」。`repoState` 同理 —— 空态那两句
+  // 里有一句要读它
   diffPanelWidth.value = SIDE_BY_SIDE_MIN_WIDTH;
+  repoState.value = null;
   // 只挂载一次,之后各用例只写 state。**别在用例里补 render()**:DiffView 在渲染体里
   // 订阅 diffState,状态一变自己就重画 —— 手动补一次 render 会把"状态变了会不会重画"
   // 这件事替它做掉,而下面最后两条用例正是要证这个,补了就等于自己把断言绕过去。
@@ -73,6 +75,7 @@ afterEach(() => {
   render(null, container);
   diffState.value = null;
   diffPanelWidth.value = SIDE_BY_SIDE_MIN_WIDTH;
+  repoState.value = null;
 });
 
 describe('DiffView', () => {
@@ -80,6 +83,20 @@ describe('DiffView', () => {
     await waitFor(() => expect(container.textContent).toContain('Select a file on the left'));
 
     expect(container.querySelector('.d2h-file-wrapper')).toBeNull();
+  });
+
+  it('工作区干净时换一句 —— 「点左边一个文件」指着的是一个空列表', async () => {
+    // 「没得选」与「还没选」是两件事。上一条用例的 repoState 是 null(第一份 state
+    // 还没到),走的正是「还没选」那句 —— 两条合起来才钉住这个分叉
+    repoState.value = {
+      repoName: 'demo',
+      branch: { head: 'main', detached: false, upstream: null },
+      files: [],
+      watch: { mode: 'native', tier: 'A' },
+    };
+
+    await waitFor(() => expect(container.textContent).toContain('Working tree clean'));
+    expect(container.textContent).not.toContain('Select a file on the left');
   });
 
   it('text / untracked-text 都走 diff2html', async () => {

@@ -27,10 +27,11 @@ export const loadError = signal<string | null>(null);
 /**
  * 这次请求指向的条目是不是重命名来的,以及相似度(`null` = git 没给)。
  *
- * **它跟着请求走,不是在渲染时去列表里现找**:重命名要标注在打开的 diff 上,
- * 而选中的文件随时可能从下一份列表里消失(改动被撤销、被 commit 掉)。那时右侧
- * 刻意留着最后那份 diff(见 `refresh`),现找的写法会让标注**单独**消失,
- * 于是页面上是一份带 `rename from/to` 的补丁配着「这是个普通文件」的标题。
+ * **它跟着请求走,不是在渲染时去列表里现找**:三态各自带着 `path` 与 `rename`,
+ * 于是「这份标注属于正在显示的这份补丁」由结构保证。现找的写法多一份来源,而
+ * 两份错位的窗口是真实存在的 —— `refresh` 先换上新列表、`loadDiff` 还没回来的
+ * 那一段里,右侧显示的仍是旧补丁,照新列表现找就成了一份带 `rename from/to` 的
+ * 补丁配着「这是个普通文件」的标题。
  */
 export interface RenameInfo {
   oldPath: string;
@@ -191,6 +192,19 @@ export async function loadState(): Promise<boolean> {
 let latestDiffRequest = 0;
 
 /**
+ * 清空右侧:置空 + **作废在途的那一次取 diff**。两件必须同时发生。
+ *
+ * 成对写在这里而不是在调用方展开:序号是 `loadDiff` 的取票协议,漏掉作废那一半的
+ * 症状是「清空偶尔不生效」—— 点开 X 之后、响应回来之前 X 从列表里没了,那次请求
+ * 回来照旧写成 `ready`,右侧刚清掉又长回来,而复现要正好卡在一次请求的往返窗口里。
+ * 同 `getJson` 那条:必须只有一处实现,拷贝里被顺手简化掉的那份照样是绿的。
+ */
+function clearDiff(): void {
+  latestDiffRequest++;
+  diffState.value = null;
+}
+
+/**
  * 取**一个**文件的 diff(按文件懒加载)。
  *
  * 两处不能省的细节:
@@ -264,14 +278,28 @@ export function selectFile(entry: FileEntry): void {
  *   快照,照着它找条目取 diff,恰好就是上面那句要避免的事 —— 而它不报错,只是
  *   `oldPath` 过期(重命名退化成全新增)。被后一次 `refresh` 顶掉时同理:那一次
  *   自己会接着取,这一次没有理由再拿旧列表补一枪
- * - **选中的文件从列表里消失了就不动它**(改动被撤销、或被 commit 掉了)。留着最后
- *   那份 diff,比把右侧突然清空更接近用户的心智 —— 他刚才在读的东西还在,只是
- *   左侧不再高亮。切换文件自然会把它换掉
+ * - **选中的文件从列表里消失了(改动被撤销、或被 commit 掉了),就连选中态一起清空**。
+ *   判据是**左栏此刻正在断言这些改动不存在,而右栏还在展示其中一份** —— 工作区
+ *   整个变干净时最刺眼:左边写着 Working tree clean,右边配着一份完整补丁。合成
+ *   一个不带 `oldPath` 的条目去重取也不行,那正是「重命名退化成全新增」那条路
+ * - **重命名不算消失**:改名后选中的路径成了新列表里那一行的 `oldPath`,先按 `path`
+ *   找、再按 `oldPath` 找一次,命中就跟着它走到新路径上 —— 那一行还在左栏列着,
+ *   此时清空右侧,判据本身就不成立了
  */
 export async function refresh(): Promise<void> {
   if (!(await loadState())) return;
   const path = selectedPath.value;
   if (path === null) return;
-  const entry = repoState.value?.files.find((file) => file.path === path);
-  if (entry) await loadDiff(entry);
+  const files = repoState.value?.files ?? [];
+  // 第二次 find 是**跟着重命名走**:改名之后,选中的那个路径成了新列表里那一行的
+  // `oldPath`(`2 R. … R100 <新>\0<旧>`),按 `path` 找必然扑空 —— 而改动并没有
+  // 消失,只是换了个名字,此时左栏那一行还明晃晃地列着。拿到的是**新条目**,双路径
+  // 齐全,不会走到「重命名退化成全新增」那条路;选中态随之落到新路径上。
+  // **两趟而不是一趟带 `||` 的谓词**:全表按 `path` 优先。A→B 改名之后又在 A 位置
+  // 新建一个文件时,两条都能命中同一个 `path`,而该选的是**路径就是 A 的那条**,
+  // 不是把 A 记作 `oldPath` 的 B —— 一趟谓词只能按列表顺序碰运气
+  const entry =
+    files.find((file) => file.path === path) ?? files.find((file) => file.oldPath === path);
+  if (entry === undefined) return clearDiff();
+  await loadDiff(entry);
 }
