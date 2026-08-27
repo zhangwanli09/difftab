@@ -51,7 +51,9 @@
 |---|---|
 | git 封装层、status/diff 解析、二进制与体积闸、git 异常状态 | `docs/design/git.md` |
 | 文件监听、三档策略、自动刷新、轮询兜底 | `docs/design/watch.md` |
-| 前端组件与 signals、diff 渲染、hljs 清单、样式与主题 | `docs/design/web.md` |
+| 前端组件与 signals、界面文案、页面骨架、变更列表、标签页标题 | `docs/design/web.md` |
+| diff2html 渲染、hljs 清单、版式切换、产物体积 | `docs/design/diff-render.md` |
+| Tailwind token、样式层叠与主题、`--d2h-*` 覆写 | `docs/design/style.md` |
 | CLI 入口与 Node 下限、进程生命周期与单实例、HTTP/SSE 协议、token 与 CSP | `docs/design/server.md` |
 | 新增模块/文件、目录归属、依赖方向、只读性验证、构建与 CI、pnpm 设置 | `docs/design/build.md` |
 | 门禁挡什么、fixture 契约、发布产物约定 | `docs/gates.md` |
@@ -99,7 +101,7 @@
 - 降级轮询必须复用**逐字相同**的那条 `git status --porcelain=v2 --branch -uall -z`，禁裁剪参数——漏 `-uall` 让已有目录里的新增文件静默不刷新
 - 绝不对单个文件建 watch
 
-### 前端与样式（`design/web.md`）
+### 前端与样式（`design/` 下 `web.md` / `diff-render.md` / `style.md`）
 
 - 禁用三个 diff2html 预构建 UI bundle（深导入 `diff2html/lib-esm/ui/js/diff2html-ui-base.js` 是允许且推荐的）；禁止自行重写它的高亮切分逻辑
 - **`highlight: true` 时 `draw()` 内部已经调过 `highlightCode()`，不得在 `draw()` 后再补一次**——第二遍产生嵌套重复的 span，开销也翻倍

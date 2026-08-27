@@ -9,7 +9,9 @@
 | 产品范围、Non-goals、分发口径 | [`spec.md`](spec.md) |
 | git 封装层、status/diff 解析、二进制与体积闸、git 异常状态 | [`design/git.md`](design/git.md) |
 | 文件监听、三档策略、自动刷新、轮询兜底 | [`design/watch.md`](design/watch.md) |
-| 前端组件与 signals、diff2html 渲染、hljs 清单、样式层叠与主题 | [`design/web.md`](design/web.md) |
+| 前端组件与 signals、界面文案、页面骨架、变更列表、标签页标题 | [`design/web.md`](design/web.md) |
+| diff2html 渲染、hljs 清单、版式切换、产物体积 | [`design/diff-render.md`](design/diff-render.md) |
+| Tailwind token、样式层叠与主题、`--d2h-*` 覆写 | [`design/style.md`](design/style.md) |
 | CLI 入口与 Node 下限、进程生命周期与单实例、本地安全、HTTP/SSE 协议 | [`design/server.md`](design/server.md) |
 | 新增模块/目录归属/依赖方向、只读性验证、构建与 CI 分层、pnpm 设置 | [`design/build.md`](design/build.md) |
 | 门禁挡的是什么、测试数据契约、发布产物约定 | [`gates.md`](gates.md) |
@@ -29,7 +31,7 @@
 
 两条结构上的约定：
 
-- **`design/` 按领域分文件，一份撑到约 15k 字符就再拆**（当前最大的是 `design/web.md`）。拆分的全部意义是让「只读用得着的那份」在工具层面真的只付一份的代价——读取的最小单位是文件，一份长回四五万字符，路由表就退化成一句安慰。
+- **`design/` 按领域分文件，一份撑到约 15k 字符就再拆**（当前最大的是 `design/build.md`）。拆分的全部意义是让「只读用得着的那份」在工具层面真的只付一份的代价——读取的最小单位是文件，一份长回四五万字符，路由表就退化成一句安慰。
 - **不重建逐条勾选的验收清单与阶段排期。** 阶段推进已经结束，「怎么验」由 `gates.md` 以「门禁 → 挡住哪条静默故障」的形式承接；再开一份带 `[x]` 的清单，等于把一个没有读者的东西重新养起来。
 
 ## 两条写作约定
