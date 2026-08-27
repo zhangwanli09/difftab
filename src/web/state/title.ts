@@ -10,12 +10,17 @@ import { computed, effect } from '@preact/signals';
 import { repoState } from './store';
 
 /**
- * 拿不到仓库名时的标题。
+ * 拿不到仓库名时的标题,**也是顶栏在同一情形下的兜底**(见 `components/App.tsx`)。
  *
  * 与 `index.html` 里那个 `<title>` 是同一串 —— 那一份是 JS 跑起来之前的兜底,
- * 两者对不上的症状是首帧标题闪一下换成另一个词。
+ * 两者对不上的症状是首帧标题闪一下换成另一个词。导出而不是让顶栏再写一份字面量:
+ * 两处对不上时页面与标签页各说一个名字,而没有任何东西会响。
+ *
+ * **共用到这一串为止,「空串退回它」那一步两边各写一次** —— 这是取舍不是漏手:
+ * 两处的组合本就不同(标题要拼 `<仓库名> · difftab`,顶栏就是那个名字本身),
+ * 合成一个函数只会让 `titleFor` 为了非空那一支绕道去调它。
  */
-const PRODUCT_NAME = 'difftab';
+export const PRODUCT_NAME = 'difftab';
 
 /**
  * `<仓库名> · difftab`。

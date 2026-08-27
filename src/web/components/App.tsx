@@ -1,6 +1,6 @@
 // 应用外壳:左栏一列(顶栏、错误条、变更列表、状态条),右边是 diff 容器。
 //
-// 顶栏与状态条都归左栏、不横跨全屏:两处画的都是「这个仓库现在怎么样」(产品名、
+// 顶栏与状态条都归左栏、不横跨全屏:两处画的都是「这个仓库现在怎么样」(项目名、
 // 分支、监听档位),与右边看的是哪个文件无关,横跨等于在 diff 面板顶上切一条与 diff
 // 无关的横杠。
 //
@@ -10,6 +10,7 @@
 import { useEffect, useRef } from 'preact/hooks';
 import { observeDiffPanel } from '../state/layout';
 import { loadError, repoState } from '../state/store';
+import { PRODUCT_NAME } from '../state/title';
 import { BranchStatus } from './BranchStatus';
 import { ChangeList } from './ChangeList';
 import { DiffView } from './DiffView';
@@ -36,8 +37,12 @@ export function App() {
     <div class="flex h-screen bg-editor-background text-editor-foreground">
       {/* 左栏自己是一列:顶栏、错误条与状态条都 shrink-0 钉住,中间那层列表独自滚 */}
       <aside class="flex w-80 shrink-0 flex-col border-r border-panel-border bg-side-bar-background">
-        <header class="shrink-0 border-b border-panel-border bg-title-bar-background px-3 py-2 text-sm font-medium">
-          difftab
+        {/* 顶栏写的是项目名(工作区根目录名),不是产品名 —— 这一栏回答的是「我在看哪个
+            项目」。`truncate` 不是可选的:产品名长度恒定,目录名可以任意长。左栏是定尺寸
+            (`w-80` 钳住它的自动最小尺寸),所以撑宽的不是顶栏而是文字自己 —— 不带断点的
+            长名漫过右边框压到 diff 面板上,带连字符的则折成第二行把顶栏撑高 */}
+        <header class="shrink-0 truncate border-b border-panel-border bg-title-bar-background px-3 py-2 text-sm font-medium">
+          {state?.repoName || PRODUCT_NAME}
         </header>
 
         {/* break-words 是搬进 320px 之后才需要的:这条文案是 git 的原话,经 sanitize
