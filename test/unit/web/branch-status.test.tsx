@@ -2,7 +2,7 @@
 //
 // 守的是一件**不会报错、只会说假话**的事:无上游的分支不输出 `# branch.ab` 行
 // (已实测),后端因此把 `upstream` 给成 `null`;而 `upstream?.ahead ?? 0`
-// 这种写法会把它画成「↑0 ↓0」,页面上看起来一切正常,只是把「没有可比对象」
+// 这种写法会把它画成「0↓ 0↑」,页面上看起来一切正常,只是把「没有可比对象」
 // 说成了「与上游同步」。
 //
 // **两个方向都要断言**:只断言「无上游那份里没有箭头」时,组件整个画空也是绿的;
@@ -72,19 +72,22 @@ describe('BranchStatus', () => {
     const text = textOf(container);
 
     expect(text).toContain('main');
-    expect(text).toContain('↑2');
-    expect(text).toContain('↓1');
+    expect(text).toContain('2↑');
+    expect(text).toContain('1↓');
     expect(text).not.toContain('no upstream');
+    // 顺序与写法(behind 在前、数字在箭头前)照 VS Code status bar。上面三条都与顺序
+    // 无关,只对调两个 span 一条都不会红;这条正则拿两个不同的数一次钉住两者
+    expect(text).toMatch(/1↓\s*2↑/);
   });
 
-  it('有上游且已同步时展示 ↑0 ↓0,两个 0 都不省', () => {
+  it('有上游且已同步时展示 0↓ 0↑,两个 0 都不省', () => {
     render(<BranchStatus branch={branch({ upstream: { ahead: 0, behind: 0 } })} />, container);
     const text = textOf(container);
 
     // 这一条与第一条合起来才是那条验收项:两种状态画成同一个样子(都成 0/0、
     // 都说「无上游」、或把 0 省掉变回一片空白)必然先让其中一条红
-    expect(text).toContain('↑0');
-    expect(text).toContain('↓0');
+    expect(text).toContain('0↑');
+    expect(text).toContain('0↓');
     expect(text).not.toContain('no upstream');
   });
 
@@ -122,8 +125,8 @@ describe('BranchStatus 的降级标注', () => {
       container,
     );
     const text = textOf(container);
-    expect(text).toContain('↑1');
-    expect(text).toContain('↓2');
+    expect(text).toContain('1↑');
+    expect(text).toContain('2↓');
   });
 
   it.each([
@@ -190,8 +193,8 @@ describe('App 的状态条', () => {
     await waitFor(() => {
       const text = textOf(container.querySelector('footer'));
       expect(text).toContain('release/1.0');
-      expect(text).toContain('↑3');
-      expect(text).toContain('↓0');
+      expect(text).toContain('3↑');
+      expect(text).toContain('0↓');
     });
   });
 });

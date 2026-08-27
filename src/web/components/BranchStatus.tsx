@@ -25,7 +25,12 @@ const commits = (n: number) => `${n} commit${n === 1 ? '' : 's'}`;
  * **两个数一律都画出来,包括 0** —— 验收口径是「与 `git status` 结果一致」,而
  * `# branch.ab +0 -0` 本身就是 git 对「有上游且已同步」的表述。为 0 的那个只减淡,
  * 不隐藏:隐藏之后「已同步」与「无上游」在页面上又变成同一个样子,而把这两者
- * 分开正是本组件存在的理由。
+ * 分开正是本组件存在的理由。(VS Code 那侧两个数都为 0 时只留一个同步图标,这一条
+ * 刻意不跟。)
+ *
+ * **排版照 VS Code status bar 的 `${behind}↓ ${ahead}↑`**:behind 在前、数字在箭头前。
+ * 同「术语跟 git 自己的用词走」一条理由 —— 用户是拿这一栏对照另一个窗口看的,
+ * 两边的两个数一左一右反过来,每看一眼都要在心里翻一次。
  */
 function Upstream({ upstream }: { upstream: BranchState['upstream'] }) {
   if (upstream === null) {
@@ -36,21 +41,21 @@ function Upstream({ upstream }: { upstream: BranchState['upstream'] }) {
     );
   }
   // 两个数直接做父级 flex 行的子项,不包一层 wrapper:包一层就要把父级的
-  // `flex items-baseline gap-2` 抄一遍,而以后改父级的 gap 时,「名字↔箭头」与
-  // 「↑↔↓」两处间距会静默分家
+  // `flex items-baseline gap-2` 抄一遍,而以后改父级的 gap 时,「名字↔计数」与
+  // 「↓↔↑」两处间距会静默分家
   return (
     <>
-      <span
-        class={`font-mono ${dim(upstream.ahead)}`}
-        title={`${commits(upstream.ahead)} ahead of upstream`}
-      >
-        ↑{upstream.ahead}
-      </span>
       <span
         class={`font-mono ${dim(upstream.behind)}`}
         title={`${commits(upstream.behind)} behind upstream`}
       >
-        ↓{upstream.behind}
+        {upstream.behind}↓
+      </span>
+      <span
+        class={`font-mono ${dim(upstream.ahead)}`}
+        title={`${commits(upstream.ahead)} ahead of upstream`}
+      >
+        {upstream.ahead}↑
       </span>
     </>
   );
