@@ -45,9 +45,9 @@ difftab 刻意只是个查看器：不编辑、不看历史、不做 blame、不
 
 不是「尽量」：difftab 只发只读的 git 命令——不 stage、不 commit、不 discard、不 pull / push、不建分支、不 stash。两道门禁在每次改动上守着：一道是覆盖每一次 git 调用的 `GIT_TRACE` 命令白名单，另一道是 `.git` 前后逐字节比对。后端也支持手工审计：`dist/server/main.js` 不压缩不混淆发布。
 
-## 全程留在本机
+## 全程不外传
 
-服务只绑 `127.0.0.1`，端口由内核随机分配，且没有任何东西离开这台机器：difftab 发出的唯一一个 HTTP 请求是打到 localhost 上的，用来确认这个仓库是不是已经有实例在跑。无遥测、无账号、无云端。
+服务只绑 `127.0.0.1`，端口由内核随机分配，而 difftab 发出的唯一一个 HTTP 请求是打到 localhost 上的，用来确认这个仓库是不是已经有实例在跑。无遥测、无账号、无云端。
 
 每次会话生成一个随机 token，先经 URL 交给浏览器，随后落进 `HttpOnly; SameSite=Strict` 的 cookie，并把 URL 上的 query 重定向掉。每个请求都校验 `Host` 头与 `Origin`——`Host` 那道才是 DNS rebinding 的正面防御，光靠 token 挡不住；页面跑在 `default-src 'none'` 的 CSP 之下，被嵌 iframe、`<base>` 改写相对 URL 与表单外发也一并挡掉。后端没有任何开发用的后门：不存在放宽这几道校验的环境变量。
 

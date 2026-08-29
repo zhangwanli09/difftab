@@ -56,11 +56,11 @@ discard, pull, push, branch or stash. Two gates enforce it on every change: a `G
 allowlist over every git invocation, and a byte-for-byte comparison of `.git` before and
 after. And `dist/server/main.js` ships unminified, so you can audit it by hand.
 
-## Stays on your machine
+## Nothing leaves your machine
 
-The server binds `127.0.0.1` on a port the kernel picks, and nothing leaves your machine:
-the only HTTP request difftab makes is to localhost, to see whether an instance is already
-running for this repository. No telemetry, no account, no cloud.
+The server binds `127.0.0.1` on a port the kernel picks, and the only HTTP request difftab
+makes is to localhost, to see whether an instance is already running for this repository.
+No telemetry, no account, no cloud.
 
 Each session gets a random token, handed to the browser once through the URL and then kept
 in an `HttpOnly; SameSite=Strict` cookie while the URL is redirected clean. Every request
