@@ -1,6 +1,6 @@
 # 自动刷新：三档监听 + 轮询兜底
 
-> 门禁见 [`../gates.md`](../gates.md)，源码核对与实测数据见 [`../decisions.md`](../decisions.md)。
+> 门禁见 [`../gates.md`](../gates.md)，源码核对与实测数据见 [`../decisions.md` 的「文件监听」](../decisions.md#文件监听)。
 
 ## 要规避的风险
 

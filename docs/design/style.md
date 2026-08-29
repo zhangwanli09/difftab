@@ -1,6 +1,6 @@
 # 样式：Tailwind v4 + 层叠隔离
 
-> 设计 token、diff2html 配色覆写，以及「谁压得过谁」这件事的全部机制。组件与骨架在 [`web.md`](web.md)，diff 渲染在 [`diff-render.md`](diff-render.md)，选型与被排除的做法见 [`../decisions.md`](../decisions.md)，门禁见 [`../gates.md`](../gates.md)。
+> 设计 token、diff2html 配色覆写，以及「谁压得过谁」这件事的全部机制。组件与骨架在 [`web.md`](web.md)，diff 渲染在 [`diff-render.md`](diff-render.md)，选型与被排除的做法见 [`../decisions.md` 的「样式层叠」](../decisions.md#样式层叠)，门禁见 [`../gates.md`](../gates.md)。
 
 **Tailwind v4（CSS-first，`@tailwindcss/vite`）。** 设计 token 写进 `@theme` 块，命名与数值参照 VS Code 颜色 token（如 `editor.background`），复刻 Dark+/Light+ 主题观感，轻量优先于视觉还原度。
 

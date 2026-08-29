@@ -1,6 +1,6 @@
 # 运行时、进程生命周期、本地安全与接口契约
 
-> 描述**产品运行时**的约束（用户机器上实际执行的东西）。工具链见 [`build.md`](build.md)，被排除的做法见 [`../decisions.md`](../decisions.md)。
+> 描述**产品运行时**的约束（用户机器上实际执行的东西）。工具链见 [`build.md`](build.md)，被排除的做法见 `../decisions.md` 的[「Node 运行时与进程」](../decisions.md#node-运行时与进程)与[「只读性验证与本地安全」](../decisions.md#只读性验证与本地安全)两节。
 
 ## 运行时与后端
 
@@ -74,7 +74,7 @@
 | `GET /api/events` | SSE | 事件 `change` / `heartbeat`；空闲退出以本端点的连接数判定 |
 | `GET /api/instance` | `{ repoRoot, pid }` | 探活复用**唯一**的消费者（不是给前端的） |
 
-**协议类型**：
+**协议类型**（各字段背后的 git 判据在 [`git.md`](git.md)）：
 
 - `FileEntry { path; oldPath?; kind: 'tracked' | 'untracked'; staged; unstaged; renameScore?; conflicted? }`——`staged` / `unstaged` 承载 `porcelain=v2` 的双状态位，`oldPath` + `renameScore` 来自 `2 ` 记录。
   - **`conflicted` 是「这条来自 `u` 记录」这一事实本身**，不是从状态位推出来的：`DD` / `AA` 两位都不是 `U`，而「未合并」恰恰是那三个分组谓词唯一无法从 XY 读出来的东西。归属留给前端等于让它自己重写一遍 porcelain 的记录类型。

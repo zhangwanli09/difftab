@@ -1,6 +1,6 @@
 # git 交互与异常状态
 
-> 产品运行时在**用户仓库**里执行的 git 命令，全程只读。门禁见 [`../gates.md`](../gates.md)，实测证据见 [`../decisions.md`](../decisions.md)。
+> 产品运行时在**用户仓库**里执行的 git 命令，全程只读。门禁见 [`../gates.md`](../gates.md)，实测证据见 [`../decisions.md` 的「git 行为」](../decisions.md#git-行为)。
 
 ## 基准与数据源
 
