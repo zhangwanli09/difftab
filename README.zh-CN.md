@@ -36,6 +36,7 @@ npx difftab
   merge / cherry-pick / revert / bisect / `git am`。
 - **自动刷新**——文件监听经 SSE 推到前端；递归监听会耗尽 inotify 配额的场合改用轮询，并在界面上标注。
 - **自己退出**——最后一个标签页关掉 45 秒后自动退。
+- **跑起来很轻**——从启动到端口就绪约 30ms，远在 CI 每次提交都验的 300ms 预算之内（九个 Node × 平台组合各跑一遍）；打包后的 JS gzip 68KB。
 
 空仓库、停在中途的 rebase、linked worktree、submodule、二进制与超过 5MB 的文件、重命名，以及带空格、引号、中日韩文字或 emoji 的路径，都是被显式处理的。
 
