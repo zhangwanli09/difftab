@@ -55,9 +55,11 @@
 | diff2html 渲染、hljs 清单、版式切换、产物体积 | `docs/design/diff-render.md` |
 | Tailwind token、样式层叠与主题、`--d2h-*` 覆写 | `docs/design/style.md` |
 | CLI 入口与 Node 下限、进程生命周期与单实例、HTTP/SSE 协议、token 与 CSP | `docs/design/server.md` |
-| 新增模块/文件、目录归属、依赖方向、只读性验证、构建与 CI、pnpm 设置 | `docs/design/build.md` |
+| 新增模块与目录归属、依赖方向、只读性验证、构建与 CI 分层、pnpm 设置 | `docs/design/build.md` |
 | 门禁挡什么、fixture 契约、发布产物约定 | `docs/gates.md` |
-| 产品范围与 Non-goals | `docs/spec.md` |
+| 产品范围、Non-goals、分发口径 | `docs/spec.md` |
+| 「为什么不那样做」、实测输出与源码核对 | `docs/decisions.md` **的对应小节**（按域分节，链锚点、别整份读） |
+| 发布踩过的坑、真机验收结论、未完事项 | `docs/history.md` |
 | 改 `docs/` 里任何文件、改 CLAUDE.md 本身 | `docs/README.md`（写作约定 + 内容落哪份） |
 
 ## 5. 红线
