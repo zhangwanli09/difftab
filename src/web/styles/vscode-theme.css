@@ -157,3 +157,29 @@ body {
   border: none;
   margin-bottom: 0;
 }
+
+/* 最左那列行号的左边框不画。
+ *
+ * d2h 给四个行号类都写了 `border-width: 0 1px`,而 --d2h-line-border-color 与侧栏那条
+ * border-r 同指 --color-panel-border —— 最左那列的**左**边框于是与侧栏那条同色贴在
+ * 一起、叠成一条 2px,而补丁表格底下那段只有侧栏那条,同一条分隔线上粗下细,读起来
+ * 像"边框有两条"。上面那条 .d2h-file-wrapper 收掉的是外框紧贴侧栏的那一半,行号列
+ * 自己这条是接替它的那一半。
+ *
+ * **只关最左那一列**:另外三条竖线都还有用 —— 右边框分隔行号与代码,并排视图里第二栏
+ * 的左边框就是两栏之间那条分隔线。故不能去动 --d2h-line-border-color(一改就是左右
+ * 两条一起没,它也仍是 check:css 覆盖率断言的一部分)。
+ *
+ * 两半各自成立:.d2h-code-linenumber 只出现在 unified 模板里(并排用的是 -side-),
+ * 裸类选择器已经足够精确,与上面三条同样靠**排在 diff2html.min.css 之后**赢下 (0,1,0)
+ * 的平局;并排那半的 .d2h-files-diff 底下**恒定**是左旧右新两个 .d2h-file-side-diff、
+ * 没有别的兄弟节点,:first-child 因此就是贴着侧栏那一栏。
+ *
+ * **写 border-left 而不是 border-left-color: transparent** —— 理由与上面那条正相反:
+ * 行号列是 box-sizing:border-box + 固定宽度(unified 7.5em / 并排 4em),去掉左边框不改
+ * 外框宽度、右边框原地不动,数字又是右对齐(direction:rtl + text-align:right),页面上
+ * 零位移。这里要的就是"这一条不画",不是"留着它但看不见"。 */
+.d2h-code-linenumber,
+.d2h-files-diff .d2h-file-side-diff:first-child .d2h-code-side-linenumber {
+  border-left: none;
+}

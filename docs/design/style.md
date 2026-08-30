@@ -75,14 +75,16 @@
 
 取而代之的是**「把深色值写回媒体查询」**：那样写不报错，浅色也对，只有手动档对它无效——用户切到 Light 时那一个颜色仍是深的。故 `check:css` 把旧断言反过来：**产物里凡在 `@media (prefers-color-scheme: dark)` 内声明的 `--color-*` / `--hljs-*` 一律判红**。diff2html 自己那块声明的是 `--d2h-dark-*`，不受影响；Lightning CSS 降级 `light-dark()` 时补进媒体查询的是 `--lightningcss-*`，也不受影响。
 
-## 三条选择器规则的例外
+## 四条选择器规则的例外
 
-`vscode-theme.css` 末尾那三条在「只能改 `--d2h-*`」这条约束之外，**且只有这三条**：`.d2h-diff-table { font-family }`、`.d2h-file-header { display: none }` 与 `.d2h-file-wrapper { border: none; margin-bottom: 0 }`。47 个 `--d2h-*` 实测全是颜色，**字体、显不显示、有没有这个盒子、它底下那截留白都没有变量可覆**，而那条约束管的是配色。三条与 diff2html 自己的同名规则特异性同为 (0,1,0)，胜出与那 23 条变量覆写同理——**靠本文件排在 `diff2html.min.css` 之后**（preflight 的 `*{border:0 solid}` 在 `@layer base`，三条都压不过）。藏掉文件头的理由见 [`diff-render.md`](diff-render.md) 的「文件头整条不显示」。
+`vscode-theme.css` 末尾那四条在「只能改 `--d2h-*`」这条约束之外，**且只有这四条**：`.d2h-diff-table { font-family }`、`.d2h-file-header { display: none }`、`.d2h-file-wrapper { border: none; margin-bottom: 0 }` 与最左那列行号的 `border-left: none`。47 个 `--d2h-*` 实测全是颜色，**字体、显不显示、有没有这个盒子、它底下那截留白、某一条边框画不画都没有变量可覆**，而那条约束管的是配色（第四条尤其：`--d2h-line-border-color` 一改就是行号列左右两条一起变，而这里要关的只有最左那一条）。四条与 diff2html 自己的同名规则特异性同为 (0,1,0)——第四条并排那半带祖先限定、(0,4,0) 更高——胜出与那 23 条变量覆写同理，**靠本文件排在 `diff2html.min.css` 之后**（preflight 的 `*{border:0 solid}` 在 `@layer base`，四条都压不过）。藏掉文件头的理由见 [`diff-render.md`](diff-render.md) 的「文件头整条不显示」。
 
-- **被这三条架空的那几个变量仍要留在映射块里**：`--d2h-file-header-bg-color` / `--d2h-file-header-border-color`（文件头已不显示）与 `--d2h-border-color`（外框已去掉）都照旧映射。`check:css` 的覆盖率断言是从 diff2html 那块推导出全部无前缀变量名再逐一比对的，删掉即红——它们不是死代码，是那条断言的一部分。
-- **补丁外框与它底下那截留白一起去掉。** `.d2h-file-wrapper` 自带 `border` + `border-radius` + `margin-bottom: 1em`。文件头藏掉之后这个盒子只剩副作用——上边与 `DiffView` 那行标题的 `border-b` 画出第二条平行线，左边紧贴侧栏的 `border-r`；那截留白则是为「一次画多个文件」分隔相邻补丁准备的，而 difftab 一次只画一个。
+- **被前三条架空的那几个变量仍要留在映射块里**：`--d2h-file-header-bg-color` / `--d2h-file-header-border-color`（文件头已不显示）与 `--d2h-border-color`（外框已去掉）都照旧映射。`check:css` 的覆盖率断言是从 diff2html 那块推导出全部无前缀变量名再逐一比对的，删掉即红——它们不是死代码，是那条断言的一部分。
+- **补丁外框与它底下那截留白一起去掉。** `.d2h-file-wrapper` 自带 `border` + `border-radius` + `margin-bottom: 1em`。文件头藏掉之后这个盒子只剩副作用——上边与 `DiffView` 那行标题的 `border-b` 画出第二条平行线，左边紧贴侧栏的 `border-r`；那截留白则是为「一次画多个文件」分隔相邻补丁准备的，而 difftab 一次只画一个。**「紧贴侧栏」这半没有被这条收干净**：外框退场后接替那个位置的是行号列自己的左边框，见下面第四条。
 - **写法上的三处讲究**：不写成 `--d2h-border-color: transparent`，尽管那样看着更守「只能改 `--d2h-*`」的规矩——透明边框**仍占 1px 布局**，那个变量还被文件头与文件列表里的规则读到（谁把它们放回来就会连带静默失色），而这里要的是「没有这个盒子」不是「这个盒子的颜色」，写进配色映射表等于把一个版式决定藏在颜色里。写 `margin-bottom: 0` 而不是 `margin: 0`——diff2html 只设了这一边，写全会让人以为另有三边要压。`border-radius` 不动——没有边框也没有背景时它不可见，删它只是多一条不产生任何差别的声明。
-- **三条都不加断言**：失效的症状是文件头、外框或那截留白又出现在页面上，肉眼可见，不属于门禁要防的那类静默故障。
+- **最左那列行号的左边框不画。** diff2html 给四个行号类都写了 `border-width: 0 1px`，而 `--d2h-line-border-color` 与侧栏 `border-r` 同指 `--color-panel-border`，于是最左那列的**左**边框与侧栏那条同色贴在一起、叠成一条 2px；补丁表格底下那段只有侧栏那条，同一条分隔线因此上粗下细，读起来像「边框有两条」（实测见 [`../decisions.md` 的「样式层叠」](../decisions.md#样式层叠)）。**只关最左那一列**：右边框分隔行号与代码、并排视图里第二栏的左边框就是两栏之间那条分隔线，都还有用，所以不能去动 `--d2h-line-border-color`（它也仍是 `check:css` 覆盖率断言的一部分）。
+- **第四条的两半各自成立**：`.d2h-code-linenumber` 只出现在 unified 模板里（并排用的是 `-side-`），裸类选择器已经足够精确；并排那半靠 `.d2h-files-diff .d2h-file-side-diff:first-child`，`side-by-side-file-diff` 模板底下**恒定**是左旧右新两个 `.d2h-file-side-diff`、没有别的兄弟节点。写 `border-left` 而不是 `border-left-color: transparent`——**这里的理由与上一条正相反**：行号列是 `box-sizing: border-box` + 固定宽度（unified `7.5em` / 并排 `4em`），去掉左边框不改外框宽度、右边框原地不动，数字又是右对齐（`direction: rtl` + `text-align: right`），页面上零位移；要的就是「这一条不画」，而不是「留着它但看不见」。
+- **四条都不加断言**：失效的症状是文件头、外框、那截留白又出现在页面上，或左沿那条线重新变粗，肉眼可见，不属于门禁要防的那类静默故障。
 
 ## 行号列需要一个 positioned 祖先
 
