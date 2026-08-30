@@ -18,11 +18,15 @@ same list is a second place to forget.
 ## Before releasing
 
 - [ ] The `ci` workflow is green on the release commit — **every job**, not just `build`.
-      `gh run list --commit "$(git rev-parse HEAD)"` finds the run and
-      `gh run view <run-id>` lists every job in it. The long tail is
-      what matters here: the three-platform × Node 22/24/26 smoke matrix, `inotify-quota`,
-      `global-install`, and `old-node-guard` are where cross-platform regressions surface,
-      and `build` going green says nothing about any of them.
+      `gh run list --commit "$(git rev-parse HEAD)"` finds the run and `gh run view
+      <run-id>` lists every job in it. The long tail is what matters here: the
+      three-platform × Node 22/24/26 smoke matrix, `inotify-quota`, `global-install`, and
+      `old-node-guard` are where cross-platform regressions surface, and `build` going
+      green says nothing about any of them.
+      **`--commit` answers `[]` for a minute or so after the push, while the run is
+      already going** — an empty answer there looks exactly like "CI did not trigger".
+      `gh run list --branch main` sees the run immediately; `gh run watch <run-id>
+      --exit-status` then blocks until it lands.
 - [ ] Every gate in `docs/gates.md` is green, and anything left unverified is written
       down in `docs/history.md` under the open items.
 - [ ] `pnpm check:pack` — the tarball is `bin/`, `dist/`, both READMEs, LICENSE and
