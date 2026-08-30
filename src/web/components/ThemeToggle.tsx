@@ -20,16 +20,21 @@ const LABELS: Record<ThemePreference, string> = {
   dark: 'Theme: dark',
 };
 
-// 三个图标各画一档:显示器 / 太阳 / 月亮。内联 SVG 而不是图标库 —— 为三个 16px 的
-// 形状引一套资源要顶产物体积门禁,而这三个各自只有一两条路径。
+// 三个图标各画一档:显示器 / 太阳 / 月亮。图形取自 **Heroicons v2 的 24/outline**
+// (`computer-desktop` / `sun` / `moon`,MIT,Copyright Tailwind Labs) —— 署名就落在这里,
+// 照 `styles/hljs-theme.css` 顶部记 hljs 主题来源的同一种做法,不另建 NOTICE 文件。
+//
+// **复制 path 数据而不装包**:包里是逐图标的组件或 SVG 文件,而这里要的只是下面三条
+// 字符串。三个图标在上游各自都是单条 `<path>`,于是「一档一条 d」这个结构原样成立。
 //
 // 一律 `currentColor` + `stroke`:按钮自己的文字色由 token 给,于是图标跟着深浅翻,
 // 不必在这里再写一遍配色(也就没有「加了浅色忘了深色」那一半)。
 const ICON_PATHS: Record<ThemePreference, string> = {
-  system: 'M3 5.5h14v8H3z M7.5 17h5 M10 13.5V17',
+  system:
+    'M9 17.25v1.007a3 3 0 0 1-.879 2.122L7.5 21h9l-.621-.621A3 3 0 0 1 15 18.257V17.25m6-12V15a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 15V5.25m18 0A2.25 2.25 0 0 0 18.75 3H5.25A2.25 2.25 0 0 0 3 5.25m18 0V12a2.25 2.25 0 0 1-2.25 2.25H5.25A2.25 2.25 0 0 1 3 12V5.25',
   light:
-    'M10 6.25a3.75 3.75 0 100 7.5 3.75 3.75 0 000-7.5z M10 2v2 M10 16v2 M2 10h2 M16 10h2 M4.2 4.2l1.4 1.4 M14.4 14.4l1.4 1.4 M15.8 4.2l-1.4 1.4 M5.6 14.4l-1.4 1.4',
-  dark: 'M16 11.7A6.5 6.5 0 018.3 4a6.5 6.5 0 107.7 7.7z',
+    'M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z',
+  dark: 'M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z',
 };
 
 // preflight 清掉了 UA 默认焦点环,键盘可达性得自己画回来。用的 token 与变更列表那行
@@ -56,12 +61,12 @@ export function ThemeToggle() {
       {/* aria-hidden:名字已经由 aria-label 给了,图标再报一遍就是同一个按钮读两次 */}
       <svg
         aria-hidden="true"
-        viewBox="0 0 20 20"
+        viewBox="0 0 24 24"
         width="16"
         height="16"
         fill="none"
         stroke="currentColor"
-        stroke-width="1.4"
+        stroke-width="1.5"
         stroke-linecap="round"
         stroke-linejoin="round"
       >

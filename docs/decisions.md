@@ -102,6 +102,7 @@
 | 给用户加一个 side-by-side / line-by-line 手动开关 | 自动判据已覆盖「放不放得下」这个唯一的真实诉求。**「要引入一份跨会话偏好」这半条已经不成立**——明暗开关把那套机制建起来了（`state/theme.ts`），别拿它当反例；剩下的理由只有前半条。首版不做，不是长期不做 |
 | 明暗开关只做「亮 / 暗」两档 | 点过一次就再也回不到「跟随系统」，而跟随系统恰恰是加开关之前唯一的行为——不该被一次点击永久换掉。三档的代价只是循环里多一格 |
 | 监听 `storage` 事件做多标签页同步 | difftab 一个仓库只跑一个实例、正常只有一个标签页，为此接一条跨标签通道是给一个不存在的场景付代价 |
+| 为顶栏那三个图标装 `heroicons` / `@heroicons/react` | 包里是逐图标的组件或 SVG 文件，而这里要的只是三条 path 字符串；Heroicons 是 MIT，复制 path 的成本只有一行署名注释。**被排除的是装包，不是用它的图形**——`ThemeToggle` 的三个图标正是从 `24/outline` 的 `computer-desktop` / `sun` / `moon` 逐字抄来的。体积也不构成理由：三条 path 合计约 500 字节，是 JS 明文余量（实测 205 KB / 门禁 350 KB）的 0.25% |
 
 ## 样式层叠
 
@@ -176,3 +177,4 @@
 - [MDN：CSS Cascade Layers——无层声明与层内声明的优先级](https://developer.mozilla.org/en-US/docs/Web/CSS/@layer)
 - [pnpm v10 → v11 迁移指南：`allowBuilds`、配置文件位置变更](https://pnpm.io/migration)
 - [pnpm/pnpm#11536：pnpm 11 静默忽略 `package.json` 的 `pnpm` 字段](https://github.com/pnpm/pnpm/issues/11536)
+- [Heroicons：`24/outline` 的 SVG 源文件（MIT，Copyright Tailwind Labs）](https://github.com/tailwindlabs/heroicons/tree/master/optimized/24/outline)
