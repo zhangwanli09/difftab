@@ -79,7 +79,7 @@
 
 - **深导入 diff2html 的 UI 层源码是合法且够用的**：`html()` 本身不含语法高亮，高亮由 `Diff2HtmlUI.highlightCode()` 完成，依赖 `./highlight.js-helpers` 的 `closeTags` / `nodeStream` / `mergeStreams` / `getLanguage`；四个模块明文体积合计约 35 KB，而 diff2html 的 `package.json` **无 `exports` 字段**，深导入不受限制。作为对照，三个预构建 UI bundle（diff2html 3.4.56 / highlight.js 11.11.1）分别是 1,048,945 / 301,714 / 90,167 B，`diff2html.min.css` 17,331 B。
 - **hljs 的语言子集是体积大头，也是唯一值得再砍的地方**：22 个 `es/languages/*.js` 明文**合计 225,598 B**（最大的五个是 swift 22,517 / typescript 21,359 / scss 19,468 / css 18,884 / javascript 17,756 B），压缩后约 130 KB / gzip 约 40 KB。另：`es/languages/{jsx,tsx,toml}.js` 实测均 **404**——它们是别名（`ini.js` 里 `aliases: ['toml']`、`javascript.js` 含 `jsx`、`typescript.js` 含 `tsx`），注册主模块即生效。
-- **hljs 主题 CSS 是必需的**：`diff2html.min.css` 中含 hljs 的规则数为 **0**，预构建 slim 包也只含 hljs 运行时与语言定义、不含配色。体积微不足道（`github.min.css` 1,309 B、`github-dark.min.css` 1,315 B，合计约 2.6 KB）。
+- **hljs 主题 CSS 是必需的**：`diff2html.min.css` 中含 hljs 的规则数为 **0**，预构建 slim 包也只含 hljs 运行时与语言定义、不含配色。上游那两份体积微不足道（`github.min.css` 1,309 B、`github-dark.min.css` 1,315 B，合计约 2.6 KB），现已合成我们自己的 `hljs-theme.css`（理由见「样式层叠」）。
 - **文件头里的增删统计得自己画，`RenameNotice` 也不能省**（3.4.56）：`.d2h-file-header` 的全部内容是 `d2h-icon` + `d2h-file-name` + `d2h-tag` + `d2h-file-collapse` 四样、**没有任何数字**——三个统计类只出现在 `d2h-file-list-line` 那份模板里（我们传 `drawFileList: false`）；两份 diff 模板又把 `.d2h-file-header` 无条件写在 `.d2h-file-wrapper` 的第一个子节点上，**没有任何配置项能关掉它**。它对重命名给的是紧凑形式 `src/{kept.txt → kept-renamed.txt}`，替代不了带完整旧路径与相似度的 `RenameNotice`。
 - **严格 CSP 不需要 `'unsafe-inline'`**：diff2html 模板中的内联 `style=` 出现 **0** 次，`draw()` 改样式走 CSSOM（`el.style.display = …`）。
 - **两种 `outputFormat` 在 DOM 上的分界**（3.4.56）：同一份补丁 `side-by-side` 输出 **2 张** `.d2h-diff-table`（各裹在一个 `.d2h-file-side-diff` 里）、`line-by-line` 输出 **1 张**且 `.d2h-file-side-diff` 出现 **0** 次——这对正反计数就是单测里区分两种格式的判据。只被并排选择器读到的是 `--d2h-change-*` 与 `--d2h-empty-placeholder-*`，逐行下**失效而非缺失**，故两种格式共用同一套映射即可。
@@ -99,20 +99,29 @@
 | `outputFormat` 按**视口**宽度判（`matchMedia`） | 面板宽度恒等于「视口 − 320」，按视口判等于把侧栏宽度这个常数在 CSS 之外再写一遍；侧栏一改阈值就静默错位 |
 | 量面板的 content box（`contentRect` / `contentBoxSize`）判阈值 | **滚动条是从 content box 里扣的**：换格式改变内容高度 → 滚动条进出 → content box 宽度抖十几像素，阈值落在抖动区间里时两种格式来回重画；border box 不随它进出而变 |
 | 选中文件从列表里消失后仍留着最后那份 diff | 把「用户刚才在读的东西还在」摆在了「左栏刚断言过这些改动不存在」之前，工作区变干净时两栏直接互相矛盾；且那份 diff 此后再也不会被刷新（`refresh` 走不到 `loadDiff`），留得越久越旧 |
-| 给用户加一个 side-by-side / line-by-line 手动开关 | 自动判据已覆盖「放不放得下」这个唯一的真实诉求，而加开关要引入一份需跨会话保持的用户偏好。首版不做，不是长期不做 |
+| 给用户加一个 side-by-side / line-by-line 手动开关 | 自动判据已覆盖「放不放得下」这个唯一的真实诉求。**「要引入一份跨会话偏好」这半条已经不成立**——明暗开关把那套机制建起来了（`state/theme.ts`），别拿它当反例；剩下的理由只有前半条。首版不做，不是长期不做 |
+| 明暗开关只做「亮 / 暗」两档 | 点过一次就再也回不到「跟随系统」，而跟随系统恰恰是加开关之前唯一的行为——不该被一次点击永久换掉。三档的代价只是循环里多一格 |
+| 监听 `storage` 事件做多标签页同步 | difftab 一个仓库只跑一个实例、正常只有一个标签页，为此接一条跨标签通道是给一个不存在的场景付代价 |
 
 ## 样式层叠
 
 - **Tailwind preflight 与 diff2html 的冲突面几乎为零**：preflight 的 `*{box-sizing:border-box;margin:0;padding:0;border:0 solid}`、`table{border-collapse:collapse}` 等重置，在 `diff2html.min.css`（3.4.56）里全部**自带**——`.d2h-diff-table{border-collapse:collapse}`、四个行号类均含 `box-sizing:border-box`、边框写作 `border:solid var(--d2h-line-border-color);border-width:0 1px`（类选择器 0,1,0 稳压通配的 0,0,0）。**唯一实质差异是 `<td>` 的 1px UA 默认 padding 被清零，反使跨浏览器渲染更一致**。
-- **深色只能由我们自己接管：`colorScheme` 传 `'light'`，再覆写那 23 个无前缀变量**（就 3.4.56 的 `diff2html.min.css` 逐条实测）：整份 CSS 只有 **1 个** `@media`，即 `(prefers-color-scheme:dark)`，里面 29 条规则清一色以 `.d2h-auto-color-scheme` 前缀开头、只读 `--d2h-dark-*`。`:host,:root` 里声明了 **47** 个变量（23 个无前缀 + 24 个 `--d2h-dark-*`），所有颜色声明都写成 `prop:硬编码; prop:var(--d2h-…)` 双写、**没有任何一条只有硬编码值**——覆写无前缀那 23 个即可完全接管配色。hljs 那两份主题同理需要我们加媒体条件：`styles/github.css` 与 `styles/github-dark.css` 实测 `@media` 均为 **0** 次，都是无条件的 `.hljs { … }` 规则。
+- **深色只能由我们自己接管：`colorScheme` 传 `'light'`，再覆写那 23 个无前缀变量**（就 3.4.56 的 `diff2html.min.css` 逐条实测）：整份 CSS 只有 **1 个** `@media`，即 `(prefers-color-scheme:dark)`，里面 **30 条**规则：29 条以 `.d2h-auto-color-scheme` 前缀开头，另有 1 条 `.d2h-dark-color-scheme .d2h-deleted`，一律只读 `--d2h-dark-*`。**两个前缀 class 我们都不挂**，故整块是死的——`check:css` 那条「深色媒体条件里不许有我们自己的规则」正是照这两个前缀写的例外清单。`:host,:root` 里声明了 **47** 个变量（23 个无前缀 + 24 个 `--d2h-dark-*`），所有颜色声明都写成 `prop:硬编码; prop:var(--d2h-…)` 双写、**没有任何一条只有硬编码值**——覆写无前缀那 23 个即可完全接管配色。hljs 那两份主题自身 `@media` 实测均为 **0** 次、都是无条件的 `.hljs { … }` 规则，这正是它们切不出手动档、最终被合成我们自己那份的原因（下一条）。
 - **行号列的包含块只能由我们提供**（就 3.4.56 的 `diff2html.min.css` 实测）：`.d2h-code-linenumber` 与 `.d2h-code-side-linenumber` 均声明 `position:absolute`、偏移量全是 `auto`，而整份 CSS 里**除 `.d2h-file-header.d2h-sticky-header`（我们传 `stickyFileHeaders:false`）之外再无任何 `position` 声明**——diff2html 自己不提供包含块，我们这侧在此之前也没有（产物里唯一的 `position:relative` 来自 preflight 的 `sub,sup`）。Chrome 实测：宿主 div 为 `relative` 时行号格与所在 `tr` 的 `top` 差恒为 0，改回 `static` 后竖滚 3000 / 7500 的差就等于滚动量（整列钉死）。**`<section>` 那种放法没有实测过**。
+- **两份上游 hljs 主题可以无歧义地合成一份**（github / github-dark，highlight.js 11.11.1 逐条比对）：两份各 **18 条**规则，选择器串**逐条相同**、顺序也相同，差别只在色值；两侧各 18 处颜色声明，去重后是 **13 个**浅色值对 **15 个**深色值，配成 **15 组**——即 15 个 token。多出来的两个正是**浅色下与别的语义同值、深色下分叉**的那两处：`markup-heading` 浅色 `#005cc5` 与 constant 相同而深色是 `#1f6feb`（constant 为 `#79c0ff`），`markup-inserted` 浅色 `#22863a` 与 entity-tag 相同而深色是 `#aff5b4`（entity-tag 为 `#7ee787`）。**按浅色就近复用这两个会让深色悄悄错色**，而浅色下看不出任何差别。另有一条规则体为空、带 6 个选择器（上游注为 `purposely ignored`），照抄保留。
+- **Lightning CSS 会把 `light-dark()` 降级掉，且它逐选择器跟踪 `color-scheme`**（Tailwind 4.3.3 + Vite 8.2.1 构建实测）：产物里搜不到 `light-dark(` 字面量，值被改写成 space-toggle 变量对 `var(--lightningcss-light,浅)var(--lightningcss-dark,深)`；同时它为**每一条**带 `color-scheme` 的规则补出对应的开关声明——源码里写 `:root{color-scheme:light dark}` + `:root[data-theme="light"]{color-scheme:light}` + `:root[data-theme="dark"]{color-scheme:dark}`，产物得到 `:root{--lightningcss-light:initial;--lightningcss-dark: ;…}`、`@media (prefers-color-scheme:dark){:root{…翻…}}` 与两条 `[data-theme]` 规则各自带一份开关。**手动档因此在不支持 `light-dark()` 的浏览器上照样生效**，`[data-theme]` 的 (0,2,0) 也稳压媒体查询里那条 (0,1,0)。代价有两处：一是双值 token 的值成了一段 token 流而非合法 `<color>`，套上 Tailwind 的不透明度修饰符（`bg-x/50` → `color-mix()`）会整条声明作废、属性静默变 unset；二是**体积**——那些 token 流比原来的字面量长得多，整套改造后 `dist/web/app.css` 从 30,072 B 增至 30,994 B（**+922 B**），即「少引一份 hljs 主题」省下的没抵住降级的开销。40 KB 预算下仍余 9 KB。**这笔开销几乎只在明文上**：34 条双值声明共 2,947 B，比原生 `light-dark()` 写法多 1,495 B 明文，而 gzip 只多 **59 B**（5,989 vs 5,930——`var(--lightningcss-light,` 重复 38 次，压得极好）。故「提高 `build.cssTarget` 换回原生 `light-dark()`」不划算：拿回的是 1.5 KB 明文预算，线上只省 59 B，代价是放弃 Chrome<123 / Safari<17.5。
 - **`@theme` 里没人引用的 token 会被裁掉，而 `@theme static` 撑不起 40 KB 预算**（Tailwind 4.3.3 + Vite 8 构建实测）：在 `@theme` 里放三个探针 token，只被 `var()` 从我们自己的 CSS 引用的那个**出现在产物里**，谁都没引用的那个**被裁掉**；`@theme` 的产出落在 **`@layer theme`** 内（故写在 `vscode-theme.css` 里的 unlayered 深色覆写天然压得住浅色取值）。改用 `@theme static` 会把 Tailwind 默认主题的全部变量一并吐出。
 
 ### 被排除的做法
 
 | 做法 | 排除原因 |
 |---|---|
-| 把两份 hljs 主题 CSS 平铺 import | 两者都是无条件的 `.hljs { … }`、自身零 `@media`，后引入者无条件覆盖前者，浅色主题直接失效 |
+| 直接 import 上游两份 hljs 主题（无论平铺还是给深色那份加媒体条件） | 平铺时后引入者无条件覆盖前者、浅色直接失效；加媒体条件能修好这一半，但**媒体条件切不出手动档**——顶栏开关切到 Light 时代码高亮仍是深色那套 |
+| 在构建期给上游 hljs 主题的选择器批量加作用域前缀 | 这是让上游 CSS 跟着 `data-theme` 走的唯一办法，也正是当初否掉手动开关的那个理由：为一份配色引一套构建期机器。合成我们自己那份主题是同一效果的零机器版本 |
+| 深色取值写成 `@media (prefers-color-scheme: dark)` + `:root[data-theme="dark"]` 两个块 | 媒体查询切不出手动档、属性选择器切不出跟随系统，两者都要就得在两个块里逐字重复同一批声明；改一处漏一处不报错，症状只是某一个颜色在某一档下不翻。`light-dark()` 把两半合成一条声明 |
+| 为消除首帧闪烁在 `index.html` 里放 pre-paint 内联脚本 | CSP 是 `script-src 'self'`，要么开 `'unsafe-inline'`、要么维护一份脚本 hash。代价侧只是**显式选过档且与系统相反**的人看到一帧底色 |
+| 用 Tailwind 的 `dark:` 变体 / `@custom-variant dark` 做明暗 | 这是 Tailwind v4 最主流的答案，但比 `light-dark()` **更浅**：分叉点从 token 挪到每一个使用点，每个元素都要再写一遍；而且它只作用于我们自己写的类名，**对 diff2html 与 hljs 渲染出的那两片 DOM 完全无效**——而那两片恰恰是页面主体 |
+| 把 `--hljs-bg` 映射到 `--color-editor-background` | 代码区底色会从 GitHub 的 `#0d1117` 变成 VS Code 的 `#1f1f1f`。合并两份上游主题这件事本身应当零行为差，而这是一次观感改动；想让代码区底色跟编辑器底色走是另一个决定，该单独提 |
 | 用 Tailwind 工具类覆盖 diff2html 渲染出的内部元素 | diff2html 的 CSS 是 unlayered，在层叠中胜过 `@layer utilities`，工具类写了不生效；改配色只能覆写 `--d2h-*` |
 | 把 hljs 主题或 `diff2html.min.css` 放进 `@layer` | 一旦入层就与 preflight 同处层叠体系，「无层胜有层」这层结构性保障随即失效，退回逐条比特异性的脆弱状态 |
 

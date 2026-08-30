@@ -1,62 +1,43 @@
-/* 深色取值 + `--d2h-*` 的映射(spec §5.6)。
+/* 明暗开关的三条 color-scheme 规则 + `--d2h-*` 的映射(spec §5.6)。
  *
  * 本文件必须保持 unlayered —— 由 app.css 在 diff2html.min.css 之后无层引入。
  * 入层会同时拆掉两件事:diff2html 的 CSS 是 unlayered 的,它的 `:host,:root` 里
  * 那 47 个 --d2h-* 默认值会重新压过下面的映射,配色悄悄退回 GitHub 那套。
  *
  * 改 diff2html 的配色只能覆写 --d2h-*,不得用 Tailwind 工具类去压。
- * 首版不做页面内的明暗手动开关,统一由 prefers-color-scheme 切换。
  */
 
+/* 下面这三条**就是顶栏那个明暗开关的全部机制**。
+ *
+ * 所有深浅不同的取值都写成 @theme / hljs-theme.css 里的 light-dark(浅, 深) 单条声明,
+ * 而 light-dark() 选中哪一半只看元素上生效的 color-scheme —— 于是「切主题」这件事在
+ * CSS 这侧就只剩「把 :root 的 color-scheme 换个值」,token 侧一个字都不用分叉。
+ *
+ * data-theme 属性由 state/theme.ts 写在 <html> 上,**缺省(属性不存在)即跟随系统**:
+ * 不写 data-theme="system",那样等于给「跟随」也造一个要维护的取值和第四条规则。
+ *
+ * 顺带把原生控件(滚动条、表单、默认焦点环)也带上了 —— 它们跟的正是 color-scheme
+ * 而不是媒体查询,少了下面两条,手动切到深色时页面翻了而滚动条还是浅的。
+ *
+ * 少任何一条都**不报错**:按钮照常切档、data-theme 照常变,只是页面一动不动。
+ * check:css 逐条查这三个选择器、查它们的值、并查它们没进 @layer。 */
 :root {
-  /* 让原生控件(滚动条、表单、默认焦点环)跟着系统深浅走 */
   color-scheme: light dark;
 }
 
-/* 深色取值改的是 **token 本身**,不是某个具体元素的属性。
- *
- * 反面写法是在这里再写一遍 `body { background-color: #1f1f1f }`:那样 body 看着
- * 是对的,而 --color-editor-background 在深色下仍是浅色值 —— 任何别的地方读这个
- * token 都会拿到错的颜色(包括下面整块 --d2h-* 映射),并且每加一个 token 就得在
- * 第二个块里配一条平行的硬编码。
- *
- * 这里只列**与浅色不同**的那些;app.css 里带注释说明"深浅共用"的(六个 diff
- * 底色与边框 + 两个字体栈)刻意不出现在本块。 */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-editor-background: #1f1f1f;
-    --color-editor-foreground: #cccccc;
-    --color-side-bar-background: #181818;
-    --color-side-bar-section-header-background: #202020;
-    --color-title-bar-background: #181818;
-    --color-panel-border: #2b2b2b;
-    --color-description-foreground: #9d9d9d;
-    --color-focus-border: #0078d4;
-    --color-text-link-foreground: #4daafc;
+:root[data-theme="light"] {
+  color-scheme: light;
+}
 
-    --color-list-hover-background: #2a2d2e;
-    --color-list-active-selection-background: #04395e;
-    --color-list-active-selection-foreground: #ffffff;
-
-    /* 告警条只翻底色:边框那个 #b89500 深浅共用(见 app.css),写在这里就是
-     * 一条与浅色逐字节相同的 delta —— 下一个人会以为它变了。 */
-    --color-warning-background: #352a05;
-
-    --color-git-modified: #e2c08d;
-    --color-git-deleted: #c74e39;
-    --color-git-added: #81b88b;
-    --color-git-untracked: #73c991;
-    --color-git-conflicting: #e4676b;
-
-    --color-diff-diagonal-fill: rgb(255 255 255 / 0.06);
-  }
+:root[data-theme="dark"] {
+  color-scheme: dark;
 }
 
 /* diff2html 的配色(spec §5.6)。
  *
- * **深浅只声明一次**:每一条都指向上面那些 VS Code token,而 CSS 变量是在**使用时**
- * 解析的 —— 间接引用拿到的是当时生效的取值,所以深色那半由媒体查询里的 token 自动
- * 带出来,不存在"加了浅色忘了深色"这一半。
+ * **深浅只声明一次**:每一条都指向 @theme 里那些 VS Code token,而 CSS 变量是在
+ * **使用时**解析的 —— 间接引用拿到的是当时生效的取值,所以深色那半由 token 自己的
+ * light-dark() 带出来,不存在"加了浅色忘了深色"这一半。
  *
  * 覆的是**无 `dark` 前缀**的那 23 个。diff2html 另有一整套 --d2h-dark-*,但它只被
  * `.d2h-auto-color-scheme` / `.d2h-dark-color-scheme` 前缀的规则读到,而那两个 class

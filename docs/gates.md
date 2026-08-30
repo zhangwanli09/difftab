@@ -29,7 +29,7 @@
 | 子进程单点断言 | git 子进程跑出了 `server/git`、或拉起浏览器跑出了 `server/cli`。**查的是相等而非「没有多余的」**——只查多出来的一半时，两处调用点双双改名会让白名单静默变成空表 | matrix |
 | `pnpm size` | 产物体积超预算。**不进 matrix**：同一份 `dist/` 再跑 9 遍不增加覆盖，反而因各 Node 自带 zlib 不同而引入方差 | build |
 | `pnpm bench:startup` | 冷启动超 300ms。口径是「监听成功并打印 URL」，首次 `git status` 交由第一个 HTTP 请求惰性执行、不计入——否则指标会随被测仓库规模漂移 | matrix |
-| `pnpm check:css` | CSS 层叠的四类静默失效：块进了 `@layer`、hljs 排到了 diff2html 之后、`--d2h-*` 覆写排到了 diff2html 之前或漏了几个、产物里有无定义的 `var()`、深色 delta 里的 token 名写错 | build |
+| `pnpm check:css` | CSS 层叠与主题的静默失效：块进了 `@layer`、hljs 排到了 diff2html 之后、`--d2h-*` 覆写排到了 diff2html 之前或漏了几个、产物里有无定义的 `var()`、三条 `color-scheme` 规则丢了或值写错（开关点了没反应）、深色媒体条件里出现了我们自己的规则（`dark:` 变体、手写媒体查询、深色值写回去——手动档一律翻不动它）、双值 token 被塞进 `color-mix()`（不透明度修饰符，整条声明作废）、JS 写的 `data-theme` 与 CSS 读的漂开了、hljs 规则里出现硬编码颜色或有 `--hljs-*` 没被引用 | build |
 | `pnpm check:pack` | 发布产物混进了 `src/` / 配置 / 测试，或 `dependencies` 不再为空。**只查发布文件清单是查不出加依赖的**，所以它同时查 manifest 的三个依赖字段 | build |
 | `pnpm check:bin` | `bin/difftab.js` 丢了可执行位（HEAD 与 index 两侧都查），或被构建管线碰过 | build |
 | `pnpm check:global` | `npm i -g` 之后用 PATH 上那个名字跑不通，或全局目录下冒出了传递依赖。**要求全局尚未装着 difftab，否则脚本直接拒跑** | 专用作业（三平台） |

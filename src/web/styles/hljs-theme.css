@@ -1,0 +1,144 @@
+/* 语法高亮的配色。
+ *
+ * 这份是**我们自己的**,不是 highlight.js 的 styles/github.css —— 色值抄自上游那两份
+ * (github / github-dark),选择器逐条照抄,但深浅合成了 light-dark() 的单份规则。
+ *
+ * 为什么不直接引上游:那两份都是无条件的 `.hljs { … }`、自身零 @media,平铺引入时后者
+ * 无条件覆盖前者、浅色直接失效;给深色那份的 @import 加媒体条件能修好这一半,但
+ * **媒体条件切不出顶栏那个手动档**。要让上游 CSS 跟着 <html> 上的 data-theme 走,只能
+ * 在构建期给它的选择器批量加作用域前缀 —— 合成这一份是同一效果的零机器版本。
+ *
+ * 代价明码标价:这 15 组色值此后不随 highlight.js 升级。
+ *
+ * 本文件必须保持 unlayered,且由 app.css 引在 diff2html.min.css **之前**。
+ */
+
+/* 15 个 token,与上游注释里的 prettylights-syntax-* 语义一一对应。
+ *
+ * 13 个浅色值配出 15 个 token,多出来的两个是**浅色下与别的语义同值、深色下才分叉**的
+ * 那两处:heading 浅色与 constant 同为 #005cc5、深色分别是 #1f6feb / #79c0ff;
+ * inserted 浅色与 entity-tag 同为 #22863a、深色分别是 #aff5b4 / #7ee787。
+ * **按浅色就近复用这两个,深色下就是错色,而浅色下看不出任何差别。**
+ *
+ * bg 保持上游取值,没有映射到 --color-editor-background:合成主题这件事本身不该顺手
+ * 改观感,想让代码区底色跟编辑器底色走是另一个决定。 */
+:root {
+  --hljs-fg: light-dark(#24292e, #c9d1d9);
+  --hljs-bg: light-dark(#ffffff, #0d1117);
+  --hljs-keyword: light-dark(#d73a49, #ff7b72);
+  --hljs-entity: light-dark(#6f42c1, #d2a8ff);
+  --hljs-constant: light-dark(#005cc5, #79c0ff);
+  --hljs-string: light-dark(#032f62, #a5d6ff);
+  --hljs-variable: light-dark(#e36209, #ffa657);
+  --hljs-comment: light-dark(#6a737d, #8b949e);
+  --hljs-entity-tag: light-dark(#22863a, #7ee787);
+  --hljs-heading: light-dark(#005cc5, #1f6feb);
+  --hljs-list: light-dark(#735c0f, #f2cc60);
+  --hljs-inserted: light-dark(#22863a, #aff5b4);
+  --hljs-inserted-bg: light-dark(#f0fff4, #033a16);
+  --hljs-deleted: light-dark(#b31d28, #ffdcd7);
+  --hljs-deleted-bg: light-dark(#ffeef0, #67060c);
+}
+
+/* 以下 15 条规则的选择器与顺序逐条照抄上游,只把颜色换成 var()。
+ *
+ * 上游 18 条里有 3 条没抄进来,都不是漏:
+ *   - `code.hljs` 与 `pre code.hljs`(两条 padding)—— diff2html **整包零个 `<code>`
+ *     元素**(已实测),它把 `hljs` 类加在行容器上,这两条一条都命不中。抄进来还会撞
+ *     biome 的 noDescendingSpecificity(上游把高特异性那条排在前面),得为两条死规则
+ *     换一次序;
+ *   - 一条**空规则**(`.hljs-char.escape_, .hljs-link, .hljs-params, .hljs-property,
+ *     .hljs-punctuation, .hljs-tag`,上游注为 purposely ignored)—— 它没有任何声明,
+ *     那几类词刻意不上色。记在这里而不是抄一个空块。 */
+
+.hljs {
+  color: var(--hljs-fg);
+  background: var(--hljs-bg);
+}
+
+.hljs-doctag,
+.hljs-keyword,
+.hljs-meta .hljs-keyword,
+.hljs-template-tag,
+.hljs-template-variable,
+.hljs-type,
+.hljs-variable.language_ {
+  color: var(--hljs-keyword);
+}
+
+.hljs-title,
+.hljs-title.class_,
+.hljs-title.class_.inherited__,
+.hljs-title.function_ {
+  color: var(--hljs-entity);
+}
+
+.hljs-attr,
+.hljs-attribute,
+.hljs-literal,
+.hljs-meta,
+.hljs-number,
+.hljs-operator,
+.hljs-variable,
+.hljs-selector-attr,
+.hljs-selector-class,
+.hljs-selector-id {
+  color: var(--hljs-constant);
+}
+
+.hljs-regexp,
+.hljs-string,
+.hljs-meta .hljs-string {
+  color: var(--hljs-string);
+}
+
+.hljs-built_in,
+.hljs-symbol {
+  color: var(--hljs-variable);
+}
+
+.hljs-comment,
+.hljs-code,
+.hljs-formula {
+  color: var(--hljs-comment);
+}
+
+.hljs-name,
+.hljs-quote,
+.hljs-selector-tag,
+.hljs-selector-pseudo {
+  color: var(--hljs-entity-tag);
+}
+
+.hljs-subst {
+  color: var(--hljs-fg);
+}
+
+.hljs-section {
+  color: var(--hljs-heading);
+  font-weight: bold;
+}
+
+.hljs-bullet {
+  color: var(--hljs-list);
+}
+
+.hljs-emphasis {
+  color: var(--hljs-fg);
+  font-style: italic;
+}
+
+.hljs-strong {
+  color: var(--hljs-fg);
+  font-weight: bold;
+}
+
+.hljs-addition {
+  color: var(--hljs-inserted);
+  background-color: var(--hljs-inserted-bg);
+}
+
+.hljs-deletion {
+  color: var(--hljs-deleted);
+  background-color: var(--hljs-deleted-bg);
+}

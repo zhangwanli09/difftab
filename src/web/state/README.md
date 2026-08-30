@@ -13,7 +13,13 @@ SSE 刷新须在不丢失当前选中文件与滚动位置的前提下更新列�
 - `layout.ts` 只有一件事:**diff 面板宽度 → 用哪种 diff2html 版式**。量的是
   面板自身的 border box 而非视口,阈值与两条「不能改成那样写」的理由都在文件里;
   `App.tsx` 那个 `ResizeObserver` 是它唯一的写入方
-- `title.ts` 是这里唯一**反方向**的一个:别的文件都是「外面 → 状态」的写入适配器,
-  它是「状态 → DOM」的读出适配器,自己不持有任何 signal(标签页标题)。
-  放在本目录是排除法的结果——它既不是仓库状态(不进 `store.ts`)、也不是组件树的
-  产出(不挂 `useEffect`);判据是它只依赖 signals,除此之外与页面结构无关
+- `title.ts` 与 `theme.ts` 是这里**反方向**的两个:别的文件都是「外面 → 状态」的写入
+  适配器,这两个是「状态 → DOM」的读出适配器。放在本目录是排除法的结果——它们既不是
+  仓库状态(不进 `store.ts`)、也不是组件树的产出(不挂 `useEffect`,`document.title`
+  与 `<html>` 上的属性都不该跟着某个组件的生命周期走);判据是只依赖 signals、
+  除此之外与页面结构无关
+- 两者的差别在于**持有不持有 signal**:`title.ts` 纯派生(标签页标题从 `repoState`
+  算出来),`theme.ts` 自己持有 `themePreference` —— 它是仓库里第一份跨会话的用户偏好。
+  上次的选择由 `syncDocumentTheme()` **在接线时**读进来,不在模块顶层读:import 期保持
+  干净(与 `title.ts` 一致),首帧时机不受影响(`main.tsx` 在 `render()` 前调它)。
+  读写各自 `try/catch`

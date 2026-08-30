@@ -1,15 +1,20 @@
-// 前端入口。挂载 + 拉第一份状态 + 订阅变更 + 把标题接上,别的都不做。
+// 前端入口。接上主题 + 挂载 + 拉第一份状态 + 订阅变更 + 把标题接上,别的都不做。
 
 import { render } from 'preact';
 
 import { App } from './components/App';
 import { connectEvents } from './state/events';
 import { loadState } from './state/store';
+import { syncDocumentTheme } from './state/theme';
 import { syncDocumentTitle } from './state/title';
 import './styles/app.css';
 
 const root = document.getElementById('app');
 if (root) {
+  // **排在 render 之前**,让 <html> 上那个 data-theme 尽早落下去。首帧仍可能闪一下
+  // 系统色:CSP 是 `script-src 'self'`,页面里塞不了那段惯用的 pre-paint 内联脚本 ——
+  // 代价只落在显式选过档、且选的与系统相反的人身上,闪的是一帧底色
+  syncDocumentTheme();
   render(<App />, root);
   // 挂载之后再发请求:首屏先出骨架,数据到了 signals 自己会把列表补上。
   // 「浏览器侧首屏 ≤1s」口径也是渲染,不是数据齐备

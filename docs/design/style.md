@@ -11,17 +11,43 @@
 ```css
 /* src/web/app.css */
 @import "tailwindcss";                              /* preflight → @layer base；utilities → @layer utilities */
-@import "highlight.js/styles/github.css";           /* unlayered，且必须排在 d2h 之前 */
-@import "highlight.js/styles/github-dark.css" (prefers-color-scheme: dark);
+@import "./hljs-theme.css";                         /* unlayered，且必须排在 d2h 之前 */
 @import "diff2html/bundles/css/diff2html.min.css";  /* unlayered → 结构上不可能被 preflight 压过 */
 @import "./vscode-theme.css";                       /* unlayered，覆写 --d2h-* 与 VS Code token */
 ```
 
 - **hljs 主题 CSS 必须排在 `diff2html.min.css` 之前**（diff2html 官方 README 的要求），否则配色被覆盖。`diff2html.min.css` 里**没有任何 hljs 配色规则**，只引 hljs 运行时与语言定义不会出颜色。
-- **深色主题的 `@import` 必须带媒体条件**：两份 hljs 主题都是无条件的 `.hljs { … }` 规则、自身不含任何 `@media`，平铺引入的结果是 `github-dark` 无条件覆盖 `github`、浅色主题直接失效。媒体条件不引入层叠层，unlayered 保障不受影响。
+- **hljs 主题是我们自己那份**（`hljs-theme.css`），不再直接引上游的 `github.css` / `github-dark.css`，理由见下面的「hljs 主题为什么变成我们自己那份」。
 - **hljs 主题与 `diff2html.min.css` 不得放进任何 `@layer`**，一旦放进去就把这层保障拆掉了。
 - **diff2html 渲染出的内部元素只能通过覆写 `--d2h-*` 改配色，不得用 Tailwind 工具类去压**——无层的 diff2html CSS 同样会胜过 `@layer utilities`，写了也不生效。
-- **首版不做页面内的明暗手动开关**：那需要为 hljs 主题 CSS 在构建期加作用域前缀，与「轻量优先」的取向不符。深浅统一由 `prefers-color-scheme` 切换。
+
+## 明暗切换：只翻 `color-scheme` 一处
+
+**页面顶栏有一个三档开关（跟随系统 / 亮 / 暗），但整个切换机制只有三条规则**，写在 `vscode-theme.css` 顶部：
+
+```css
+:root                      { color-scheme: light dark; }  /* 缺省：跟随系统 */
+:root[data-theme="light"]  { color-scheme: light; }
+:root[data-theme="dark"]   { color-scheme: dark; }
+```
+
+`<html>` 上有没有 `data-theme` 属性由 `state/theme.ts` 写（见 [`web.md`](web.md)），**缺省即跟随系统**——不写 `data-theme="system"`，那样等于给「跟随」也造一个需要维护的取值。
+
+- **token 侧一个字都不用分叉**：所有深浅不同的取值写成 `light-dark(浅, 深)` 的单条声明，由上面那三条规则里的 `color-scheme` 选中哪一半。这取代了旧的写法——`@theme` 里写浅色、`vscode-theme.css` 的 `@media (prefers-color-scheme: dark)` 里再写一份 delta。旧写法在有手动档之后**必然要双写**：媒体查询切不出手动档，`[data-theme="dark"]` 又切不出跟随系统，两个块里逐字重复 19 条声明，改一处漏一处不会报错。
+- **顺带修好原生控件**：滚动条、表单与默认焦点环跟的是 `color-scheme` 而不是媒体查询，手动切深色时它们会跟着翻。这不是附赠品——不翻的话深色页面上会出现一条浅色滚动条。
+- **`light-dark()` 在产物里不是字面量**：Lightning CSS（Vite 8 的 CSS 处理器）按构建目标把它降级成 space-toggle 变量对 `var(--lightningcss-light,浅) var(--lightningcss-dark,深)`，并**逐选择器**为每条 `color-scheme` 声明补一份开关。上面三条规则因此在产物里各自带着那对变量，手动档在不支持 `light-dark()` 的浏览器上照样生效。查产物时**搜不到 `light-dark(`，这是正常的**，`check:css` 的断言因此两种形状都认。
+- **双值 token 不能带不透明度修饰符**：降级后它的值是一段 token 流而不是一个合法的 `<color>`，`bg-editor-background/50` 这类写法会让 Tailwind 把它塞进 `color-mix()`，整条声明在解析期作废——属性静默变 unset。当前全库零使用。
+
+## hljs 主题为什么变成我们自己那份
+
+**上游那两份主题切不出手动档。** `github.css` 与 `github-dark.css` 都是无条件的 `.hljs { … }` 规则、自身不含任何 `@media`，平铺引入的结果是后者无条件覆盖前者、浅色直接失效；旧方案给深色那份的 `@import` 加媒体条件绕开了这一点，而**媒体条件切不出手动档**。要让上游 CSS 跟着 `data-theme` 走，只能在构建期给它的选择器批量加作用域前缀——那份构建期机器正是当初否掉手动开关的理由。
+
+于是把它收进与 `--d2h-*` **完全相同**的机制：`hljs-theme.css` 里 15 个 `--hljs-*` token 各写一条 `light-dark(浅, 深)`，15 条规则的选择器与顺序逐条照抄上游，颜色一律写成 `var(--hljs-…)`。上游 18 条里有 3 条没抄：一条是空规则（`purposely ignored`，那几类词刻意不上色），另两条是 `code.hljs` / `pre code.hljs`——**diff2html 整包零个 `<code>` 元素**（已实测），它把 `hljs` 类加在行容器上，那两条一条都命不中。两份上游主题的选择器串实测逐条相同、顺序也相同，合并没有歧义。
+
+- **代价是那两套色值抄进了仓库**，此后不随 highlight.js 升级。这是明码标价的取舍：换来的是零构建期机器，以及与 `--d2h-*` 同一套心智。**体积上是小幅净增而不是净减**（+922 B，见下条）：省下的一份主题抵不过 Lightning CSS 降级后那些冗长的 token 流。
+- **有两个 token 在浅色下与别的同值、深色下才分叉**（`markup-heading` 之于 constant、`markup-inserted` 之于 entity-tag），**必须各自独立成 token**。照浅色就近复用会让深色悄悄错色，而浅色下看不出任何差别——13 个浅色值配出 15 个 token，多的就是这两个。
+- **`--hljs-bg` 保持上游取值**（`#ffffff` / `#0d1117`），没有映射到 `--color-editor-background`。合并主题这件事本身不该顺手改观感；想让代码区底色跟编辑器底色是另一个决定。
+- **门禁只能证明「都走了 `var()`」，证明不了「抄对了颜色」**：`check:css` 断言 hljs 规则里不许出现硬编码颜色、每个 `--hljs-*` 都是双值且都被引用到，但色值本身抄错只能靠人逐条对。
 
 ## 为什么 `colorScheme` 传 `'light'`
 
@@ -29,7 +55,7 @@
 
 - 传 `'light'` 输出 `.d2h-light-color-scheme`，而这个 class 在 diff2html 的 CSS 里**一条规则都没有**，于是全部配色都落在无前缀的基础规则上，深浅切换完全由我们覆写的同一套 `--d2h-*` 承担。**这不是「只支持浅色」**，恰恰相反——它是深色能按 VS Code 取值出来的前提。
 - 传 `'auto'` 的后果是静默的：`.d2h-auto-color-scheme .d2h-xxx` 特异性 (0,2,0) 稳压基础规则 (0,1,0)，深色下读回 GitHub 那套取值，我们的 VS Code 深色一条都不生效，而页面看上去只是「深色不太像 VS Code」，不像出错。（auto 那块自己还漏了 `.d2h-deleted`，即走它的方案仍要自己补规则，收益为负。）
-- 换来的好处是**深浅只声明一次**：23 个无前缀 `--d2h-*` 一律写成 `var(--color-…)` 指向 VS Code token，token 自己在 `prefers-color-scheme` 里翻。CSS 变量在**使用时**解析，因此不存在「加了浅色忘了深色」这一半。
+- 换来的好处是**深浅只声明一次**：23 个无前缀 `--d2h-*` 一律写成 `var(--color-…)` 指向 VS Code token，token 自己在 `light-dark()` 里翻。CSS 变量在**使用时**解析，因此不存在「加了浅色忘了深色」这一半。
 - 但**并排视图那对「改动行」不跟着无脑映射**：diff2html 为 `.d2h-del.d2h-change` / `.d2h-ins.d2h-change` 另留了 `--d2h-change-del-color` / `--d2h-change-ins-color`（默认是琥珀与浅绿，与纯增删不同色系），而 **VS Code 的 diff 编辑器没有这一档区分**。故这两个变量**刻意指向与纯增删相同的 token**，主动放弃上游那档琥珀。**这是取舍不是遗漏，注释里必须这么写**：写成「比纯增删淡一档」会让下一个人以为区分还在。
 
 ## 覆写生效的两个条件
@@ -45,7 +71,9 @@
 
 **Tailwind v4 会裁掉没被引用的 `@theme` 变量**：被工具类用到、或被我们自己的 CSS 以 `var()` 引用到的都会输出，两者都没有的会被丢掉。「`--d2h-*` 一律指向 VS Code token」因此是安全的——那就是一次 `var()` 引用。但**引用名写错时没有任何报错**：引用侧留下一个无定义的 `var()`，该属性变为 unset，颜色悄悄没了。故 `check:css` 断言：产物中每个不带 fallback 的 `var(--…)` 引用都必须在产物里找得到定义（`--tw-*` 除外，它们由 `@property` 声明）。
 
-**深色那半是 delta，于是「声明侧」也有同一形状的静默失效**：`@media (prefers-color-scheme: dark)` 里只列与浅色不同的 token，名字**写错一个字符不会有任何症状**——上面那条查的是**引用**侧，而一条 `--color-git-modifed: …` 在语法上就是个合法的新自定义属性，连「无定义」都算不上（它反而给 `defined` 集合添了一个成员）。故 `check:css` 再增一条：**产物里凡在深色媒体条件内声明的 `--color-*`，都必须在深色条件之外也有声明**。反向不查——浅色有而深色没有，正是「深浅共用同一取值」的正常写法。
+**「声明侧」的静默失效换了个形状。** 深色曾经是写在 `@media (prefers-color-scheme: dark)` 里的一份 delta，那时的坑是 delta 里的 token 名写错一个字符——上面那条查的是**引用**侧，而一条 `--color-git-modifed: …` 在语法上就是个合法的新自定义属性，连「无定义」都算不上（它反而给 `defined` 集合添了一个成员）。改用 `light-dark()` 之后这个坑整个消失了：深浅同住一条声明，没有第二个名字可写错。
+
+取而代之的是**「把深色值写回媒体查询」**：那样写不报错，浅色也对，只有手动档对它无效——用户切到 Light 时那一个颜色仍是深的。故 `check:css` 把旧断言反过来：**产物里凡在 `@media (prefers-color-scheme: dark)` 内声明的 `--color-*` / `--hljs-*` 一律判红**。diff2html 自己那块声明的是 `--d2h-dark-*`，不受影响；Lightning CSS 降级 `light-dark()` 时补进媒体查询的是 `--lightningcss-*`，也不受影响。
 
 ## 三条选择器规则的例外
 

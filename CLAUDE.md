@@ -109,7 +109,8 @@
 - **`highlight: true` 时 `draw()` 内部已经调过 `highlightCode()`，不得在 `draw()` 后再补一次**——第二遍产生嵌套重复的 span，开销也翻倍
 - **`plaintext` 必须与 22 个语言模块一起注册**——漏注册时炸的是**整个 diff 视图**不是那一个文件（diff 里出现 `LICENSE`/`Dockerfile`/`.txt` 即触发）
 - hljs 别名 `jsx`/`tsx`/`toml`/`html` 不是模块、不可单独 import
-- hljs 主题 CSS 必须排在 `diff2html.min.css` **之前**，深色那份必须带 `(prefers-color-scheme: dark)`；两者保持 unlayered、禁入 `@layer`
+- hljs 主题是**我们自己那份** `hljs-theme.css`（禁直接引上游两份——媒体条件切不出手动档）；必须排在 `diff2html.min.css` **之前**，两者保持 unlayered、禁入 `@layer`
+- **hljs 规则里禁硬编码颜色**，一律 `var(--hljs-*)`；漏一条的症状是另一档下那一处静默停在错的颜色上（`check:css` 拦）
 - 改 diff2html 配色只能覆写 `--d2h-*`，禁用 Tailwind 工具类去压
 - **我们自己那块 `--d2h-*` 映射同样禁入 `@layer`**——入层会被 diff2html 的 unlayered 默认值压回去，配色整片退回 GitHub 那套
 - **且必须排在 diff2html 之后**：特异性同为 (0,1,0)，胜出纯靠源码顺序，挪到前面会让 23 条覆写整片静默失效（两半都由 `check:css` 拦）
@@ -120,6 +121,10 @@
 - **`Diff2HtmlUI` 的 `colorScheme` 必须传 `'light'`**——传 `'auto'` 会让深色一条都不生效，而页面只是「深色不太像 VS Code」
 - **界面文案一律英文**（`docs/`、代码注释、测试名仍中文）——冒烟里那条「前端产物 CJK 计数为 0」拦得住，但**后端那侧拦不到**（`sendError` 与各 `*Error` 的字面量）
 - **`@theme` 里没人引用的 token 会被 Tailwind 裁掉**，引用名写错则产物里留下无定义的 `var()`、属性静默变 unset（两者都由 `check:css` 拦）
+- **深浅两套取值一律写成 `light-dark(浅, 深)` 的单条声明**；**禁**把任何 `--color-*` / `--hljs-*` 的深色值写回 `@media (prefers-color-scheme: dark)`——那样手动档对它无效，只是「切到 Light 时那一个颜色还是深的」（`check:css` 拦）
+- **双值 token 禁带不透明度修饰符**（`bg-editor-background/50`）——降级后的值不是合法 `<color>`，塞进 `color-mix()` 会让整条声明作废、属性静默变 unset
+- **`vscode-theme.css` 顶部那三条 `color-scheme` 规则是整个明暗开关的全部机制**，必须 unlayered 且进产物——丢了按钮照常有反应，只是页面不变（`check:css` 拦）
+- **「跟随系统」是 `data-theme` 属性不存在，不写 `"system"`**——写成 `"system"` 时页面看着正常，而 CSS 那两条属性选择器一条都不命中（`localStorage` 的 try/catch 不进红线：漏了是整页白屏，响得很大声，且 `theme.test.ts` 有断言）
 
 ### 包管理器（pnpm 11，`design/build.md`）
 
@@ -173,6 +178,7 @@
 - **发布步骤照 `RELEASING.md` 走，不凭记忆敲**——里面钉着七件会咬人的事（pnpm 要单独登录、2FA 的 OTP、镜像源、`publishBranch`、manifest obfuscation、`prepublishOnly`、别在本仓库目录里用 `npx` 验收），产物约定在 `docs/gates.md`，踩坑记录在 `docs/history.md`
 - **semver：0.x 保留破坏性余地（尤其 CLI 参数与端口/token 行为），1.0.0 是结论不是起点**——等验收全通过且三端真机验过再发
 - **不建 `CHANGELOG.md`**：GitHub Releases 的 notes 就是变更日志
-- **改产品行为要同步改两份 README**：`README.zh-CN.md` **不是自动生成的**，只改英文那份不会有任何门禁变红
+- **README 的特性列表只收差异点，不是功能清单**——加了新功能默认**不动** README，除非它本身就是个卖点；功能的事实来源是 `docs/spec.md` 的功能范围表，机制在 `docs/design/`
+- **真要改 README 则两份一起改**：`README.zh-CN.md` **不是自动生成的**，只改英文那份不会有任何门禁变红
 - **贡献者规范在 `CONTRIBUTING.md` 与 `.github/`**，产品承诺（只读、Non-goals）在那里也写了一遍给外部读者——改第 6 节时要跟着改
 - **未完事项见 `docs/history.md`**（两件都等首个真实 Linux 桌面，都不阻塞发布）
