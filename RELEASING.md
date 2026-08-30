@@ -23,10 +23,10 @@ same list is a second place to forget.
       three-platform × Node 22/24/26 smoke matrix, `inotify-quota`, `global-install`, and
       `old-node-guard` are where cross-platform regressions surface, and `build` going
       green says nothing about any of them.
-      **`--commit` answers `[]` for a minute or so after the push, while the run is
-      already going** — an empty answer there looks exactly like "CI did not trigger".
-      `gh run list --branch main` sees the run immediately; `gh run watch <run-id>
-      --exit-status` then blocks until it lands.
+      **`--commit` matches `head_sha` exactly, so keep the `$(git rev-parse HEAD)`** — hand
+      it the short SHA you read off `git log` and it answers `[]` while the run is going,
+      which looks exactly like "CI did not trigger". `gh run watch <run-id> --exit-status`
+      then blocks until the run lands.
 - [ ] Every gate in `docs/gates.md` is green, and anything left unverified is written
       down in `docs/history.md` under the open items.
 - [ ] `pnpm check:pack` — the tarball is `bin/`, `dist/`, both READMEs, LICENSE and

@@ -16,7 +16,7 @@
 ### 0.1.3（2026-08-30）
 
 - **两条 feat 收进 patch 号，判据是改动全落在界面层**：页面内的明暗开关与并排视图的横向滚动同步都不碰 CLI 参数、HTTP 接口与只读承诺，`dependencies` 依旧为空。0.x 下把 minor 留给会让人重新读一遍 `--help` 的那类改动，这一版不是。
-- **`gh run list --commit <sha>` 在推送之后有一段索引延迟**：run 其实已经在跑，按 commit 查却回一个空数组，同一刻按 `--branch main` 查看得见。清单要求发布提交本身先绿，而它写的恰好是按 commit 查那条，于是得到一次「CI 没触发」的假象——空数组和「工作流没触发」长得一模一样，且两者都不报错。改法是走 branch 拿 run id、再 `gh run watch <id> --exit-status`，已补进 [`../RELEASING.md`](../RELEASING.md) 的同一条。
+- **`gh run list --commit` 按 `head_sha` 精确匹配，短 SHA 一律回空数组**：run 其实已经在跑，`git log` 上抄来的那七位却查不到任何东西，而空数组与「工作流压根没触发」长得一模一样、两者都不报错。清单里原本写的是 `--commit "$(git rev-parse HEAD)"`，本来就对；这一版是照着它临时改敲了短 SHA 才踩上，一度被误读成推送后的索引延迟。判据是同一刻用全 SHA 查得到、用短 SHA 查不到，已把「别把那个 `rev-parse` 换成短 SHA」补进 [`../RELEASING.md`](../RELEASING.md) 的同一条。
 - **除此之外没撞新坑**：`npm rm -g difftab` → `pnpm check:global` 那条隔版因果第二次照清单走通，发布后四条验收（`npm view`、全局安装无传递依赖、在别的仓库里 `npx`、Release 页）一次过。**这一版唯一的新机制不记在这里**——页面内明暗开关是一条被推翻的结论，记在下面的「加页面内的明暗开关」一节。
 
 ### 0.1.2（2026-08-27）
