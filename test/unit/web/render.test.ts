@@ -17,6 +17,9 @@
 //    并排下一个文件是**两张** `.d2h-diff-table`(各裹在一个 `.d2h-file-side-diff` 里),
 //    逐行下是**一张**且 `.d2h-file-side-diff` 一个都没有。传错时页面照常渲染,只是版式不对。
 //
+// 5. **并排两侧的横向联动**(`synchronisedScroll`)。关掉时两半各滚各的 —— 横向拖一侧去看
+//    长行,另一侧原地不动,同一行的新旧内容错开成两个列位置,而页面照常渲染、不报错。
+//
 // **每条否定式断言都配一条正面断言**:容器空着的时候,"没有重复 span""没有 auto class"
 // 全都自动成立。所以每个用例都先确认 diff 真的画出来了、色真的上了。
 
@@ -170,6 +173,29 @@ describe('renderDiff', () => {
     expect(host.querySelectorAll('.d2h-diff-table')).toHaveLength(tables);
     expect(host.querySelectorAll('.d2h-file-side-diff')).toHaveLength(sideDiffs);
     expect(host.textContent).toContain('const prefix');
+  });
+
+  it('并排两侧横向联动 —— 滚一侧,另一侧跟到同一个 scrollLeft', () => {
+    renderDiff(host, TS_PATCH, 'side-by-side');
+
+    const sides = [...host.querySelectorAll('.d2h-file-side-diff')];
+    // 正面断言:两个滚动容器真的画出来了。少了它,下面那条 toEqual 在一个空数组上
+    // 同样通过,而这个用例要盯的恰恰是「联动没接上」
+    expect(sides).toHaveLength(2);
+
+    // 两个方向各来一次:diff2html 给两侧各绑一个监听器,只绑一侧的症状是
+    // 「拖左边管用、拖右边不管用」。
+    //
+    // happy-dom 的 `scrollLeft` 是纯属性 —— 赋值既不派发 scroll 事件也不做 clamp,
+    // 所以这里手工派发一次浏览器本来会派发的那个事件,断言也因此不受布局影响
+    // (那侧没有布局引擎,真实的滚动与两侧上限不等时的回弹都只能上真机看)。
+    for (const [index, from] of sides.entries()) {
+      const scrollLeft = 40 * (index + 1);
+      from.scrollLeft = scrollLeft;
+      from.dispatchEvent(new Event('scroll'));
+
+      expect(sides.map((side) => side.scrollLeft)).toEqual([scrollLeft, scrollLeft]);
+    }
   });
 
   it('同一个容器重画一次不会叠加两份 diff', () => {

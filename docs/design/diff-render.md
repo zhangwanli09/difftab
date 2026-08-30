@@ -9,13 +9,18 @@
 - `import { html } from 'diff2html'`——只引入 unified diff parser 与 renderer，其余由 tree-shaking 移除。
 - **`html()` 不做语法高亮**，高亮在 `Diff2HtmlUI.highlightCode()`：先把整个文件的代码合起来交给 hljs，再按 diff 的行边界切回、补齐跨行未闭合的标签。**被排除的是三个预构建 bundle，不是 UI 层的源码**——深导入 ESM 模块 `diff2html/lib-esm/ui/js/diff2html-ui-base.js` 参与 tree-shaking、hljs 实例由我们注入，是允许且推荐的。自行重写这段切分逻辑不在本项目要解决的问题之列。
 - `draw()` 内部是 `innerHTML` 赋值 + 命令式绑定事件，**必须放在 Preact 的 ref/effect 之后**，不与 vdom 争夺同一棵子树（列表由 Preact 管，单文件 diff 容器由 `Diff2HtmlUI` 管）。
-- 用不到的开关一律关掉：`synchronisedScroll` / `fileListToggle` / `fileContentToggle` / `stickyFileHeaders` 全部 `false`，只留 `highlight: true`。
+- 用不到的开关一律关掉：`fileListToggle` / `fileContentToggle` / `stickyFileHeaders` 全部 `false`；打开的是 `highlight` 与 `synchronisedScroll`。
+- **`synchronisedScroll: true` 管的是并排两侧的横向联动。** 两半各是一个独立的滚动容器（`.d2h-file-side-diff{overflow-x:scroll;overflow-y:hidden;width:50%}`），不联动时横向拖一侧去看长行、另一侧原地不动，同一行的新旧内容错开成两个列位置——并排存在的理由（同一行左右对照）正好在需要横滚时失效。
+  - 实现是 `draw()` 里按 `.d2h-file-wrapper` 取出那对 `.d2h-file-side-diff`，两侧的 `scroll` 事件互相回写 `scrollLeft` / `scrollTop`（竖向恒为 0——两侧都是 `overflow-y: hidden`，整页的竖滚归外面那个面板）。
+  - **逐行版式下 `.d2h-file-side-diff` 一个都没有，这一步是空操作**：两种版式共用同一份配置，不必按 `outputFormat` 分叉。
+  - **监听器绑在 `draw()` 刚写出来的节点上，而每次 `draw()` 整片覆盖 `innerHTML`**：旧节点连同监听器一并被丢掉，重画不叠加，也不需要自己解绑。
+  - **已知取舍：两侧滚动上限不等时，边界处会顿一下。** 上限由各自最长行决定，通常不等；越过窄侧上限的那一下，窄侧被夹住后仍冒出一次 `scroll` 事件，把宽侧回写到窄侧的上限，之后继续正常滚。（新增文件那种「左侧全是空占位、上限为 0」的情况反而没事：左侧写不动，不产生事件，也就不回写。）换掉它要自研一份带回声抑制的联动，排除理由见 [`../decisions.md` 的「前端渲染与体积」](../decisions.md#前端渲染与体积)。
 - **`highlight: true` 时 `draw()` 内部已经调过 `highlightCode()`，不要在 `draw()` 后再手工调一次**：第二遍读到的 `textContent` 仍是纯文本，但 `nodeStream(line)` 拿到的已是第一遍插入的 `hljs-*` span，`mergeStreams` 把两份流交织进同一行——结果是嵌套重复的 span，且高亮开销白付一倍。二选一：要么只 `draw()`，要么 `highlight: false` + 手工调。
 - **`colorScheme` 传 `'light'`，不传 `'auto'`**——深浅切换由我们覆写的 `--d2h-*` 承担，理由见 [`style.md`](style.md) 的「为什么 `colorScheme` 传 `'light'`」。**顶栏那个明暗开关不改这一条**，也不进 `draw()` 的依赖数组：主题整个发生在 CSS 变量上，diff2html 不参与，为它重跑一次 `draw()` 是白付一次全量高亮。
 
 ## 文件头整条不显示
 
-diff2html **没有**关掉自带文件头（`.d2h-file-header`）的配置项（上面那四个开关管的是同步滚动、文件列表折叠与吸顶，头照画），这件事只能落在样式那侧的一条 `display: none`（规则本身与它的三处讲究在 [`style.md`](style.md) 的「四条选择器规则的例外」）。
+diff2html **没有**关掉自带文件头（`.d2h-file-header`）的配置项（上面那三个关掉的开关管的是文件列表折叠、文件内容折叠与吸顶，头照画），这件事只能落在样式那侧的一条 `display: none`（规则本身与它的三处讲究在 [`style.md`](style.md) 的「四条选择器规则的例外」）。
 
 - 头里只有四样：文件图标、文件名、`CHANGED` / `RENAMED` 之类的标签、一个在 `fileContentToggle: false` 下已经是死的「Viewed」折叠复选框。前两样与 `DiffView` 自己那行标题重复，第三样里唯一有信息量的重命名已由 `RenameNotice` 说得更全（带完整旧路径与相似度）——**四样合起来，藏掉它页面上不掉任何信息**。
 - **`+N` / `-M` 那对增删统计不在这条头里**：它属于文件列表模板，而我们传 `drawFileList: false`，那份列表从来没画过。特意写下这条是因为它太容易被想当然（GitHub 的文件头上就有那对数字）——藏掉文件头**不等于**放弃了统计，difftab 至今就没在页面上给过增删行数。

@@ -39,13 +39,27 @@ export function renderDiff(target: HTMLElement, patch: string, format: DiffOutpu
     target,
     patch,
     {
-      // 用不到的开关一律关掉,只留 highlight
-      synchronisedScroll: false,
+      // 用不到的开关一律关掉,留下的是 highlight 与紧随其后那条 synchronisedScroll
       fileListToggle: false,
       fileContentToggle: false,
       stickyFileHeaders: false,
       highlight: true,
       drawFileList: false,
+      /**
+       * **并排两侧的横向联动**。两半各是一个独立的滚动容器(`.d2h-file-side-diff` 自带
+       * `overflow-x: scroll`),关掉这一条时横向拖一侧去看长行、另一侧原地不动,同一行的
+       * 新旧内容错开成两个列位置 —— 并排存在的理由正好在需要横滚时失效。
+       *
+       * 逐行版式下 `.d2h-file-side-diff` 一个都没有,这一步是空操作,两种版式因此共用
+       * 同一份配置。绑定发生在 `draw()` 刚写出来的节点上,而 `draw()` 整片覆盖
+       * `innerHTML`,旧节点连同监听器一并被丢掉 —— 重画不叠加,也不必自己解绑。
+       *
+       * **已知取舍**:互相回写 `scrollLeft` 时分不出「用户滚的」与「回写引起的」。两侧
+       * 滚动上限由各自最长行决定、通常不等,于是越过窄侧上限的那一下,窄侧被夹住后仍冒出
+       * 一次事件、把宽侧拽回窄侧的上限 —— 边界处顿一下,之后继续正常滚。上限为 0 的那一侧
+       * (新增文件的左半边全是空占位)反倒不受影响:写不动就不产生事件。
+       */
+      synchronisedScroll: true,
       /**
        * **由调用方给,且必填、不给默认值**。漏传时要的是 `tsc` 当场报错,
        * 而不是静默退回并排 —— 后者的症状是「这个视图怎么不跟着窗口变」,与漏传一个
