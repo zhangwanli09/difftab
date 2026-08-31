@@ -400,10 +400,10 @@ if (js && !js.includes(THEME_ATTR)) {
 // 一条 `dark:bg-editor-background` 工具类、或手写的
 // `@media (prefers-color-scheme:dark){ .x{background:#111} }` 都不声明自定义属性、
 // 一路绿,而失效机制与它挡的那条逐字相同 —— 而 `dark:` 变体恰恰是 Tailwind v4 的
-// 主流答案(已列进 decisions.md 的被排除做法),是下一个人最容易顺手写出来的形状。
+// 主流答案,也是下一个人最容易顺手写出来的形状。
 //
 // 于是先整体断言:深色媒体条件里的每一条规则都必须属于两个**已知的、不是我们写的**
-// 例外,其余一律判红。两个例外已逐条实测(见 decisions.md 的「样式层叠」):
+// 例外,其余一律判红。两个例外已逐条实测:
 //   - diff2html 自带那块,29 条以 `.d2h-auto-color-scheme` 开头、另有 1 条以
 //     `.d2h-dark-color-scheme` 开头(3.4.56 实测)。**两个 class 我们都不挂**
 //     (render.ts 传 colorScheme:'light'),故它整块是死的;

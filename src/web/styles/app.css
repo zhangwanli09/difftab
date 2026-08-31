@@ -1,8 +1,8 @@
-/* 样式入口(spec §5.6)。
+/* 样式入口。
  *
  * 层叠方案:无层(unlayered)样式在层叠中永远胜过有层样式,与特异性无关,
  * 而 Tailwind v4 把 preflight 放在 @layer base、工具类放在 @layer utilities、
- * 本文件 @theme 的产出放在 @layer theme(三者均已实测,见 spec §10)。
+ * 本文件 @theme 的产出放在 @layer theme(三者均已实测)。
  * 因此把 hljs 主题与 diff2html 的 CSS 以 unlayered 形式引在其后,
  * 结构上就不可能被 preflight 压过。
  *
@@ -26,7 +26,7 @@
  * 显式给出比赌它探对更省事。路径相对本文件所在目录。 */
 @source "../";
 
-/* 设计 token(spec §5.6)。
+/* 设计 token。
  *
  * 命名照搬 VS Code 的颜色 token(`editor.background` → `--color-editor-background`),
  * 取值复刻 Light Modern / Dark Modern 的观感 —— **轻量优先于视觉还原度**,所以是
@@ -44,7 +44,7 @@
  * light-dark() 降级成一段 token 流而不是一个合法 <color>,塞进 color-mix() 整条声明作废。
  *
  * **别在这里加"以后可能用得上"的 token**:Tailwind v4 会把既没被工具类、也没被
- * 我们自己的 CSS 以 var() 引用的 @theme 变量整个裁掉(已实测,见 spec §10),
+ * 我们自己的 CSS 以 var() 引用的 @theme 变量整个裁掉(已实测),
  * 于是它在产物里根本不存在 —— 留着只会让人以为页面在用它。
  */
 @theme {

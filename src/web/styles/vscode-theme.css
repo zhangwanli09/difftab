@@ -1,4 +1,4 @@
-/* 明暗开关的三条 color-scheme 规则 + `--d2h-*` 的映射(spec §5.6)。
+/* 明暗开关的三条 color-scheme 规则 + `--d2h-*` 的映射。
  *
  * 本文件必须保持 unlayered —— 由 app.css 在 diff2html.min.css 之后无层引入。
  * 入层会同时拆掉两件事:diff2html 的 CSS 是 unlayered 的,它的 `:host,:root` 里
@@ -33,7 +33,7 @@
   color-scheme: dark;
 }
 
-/* diff2html 的配色(spec §5.6)。
+/* diff2html 的配色。
  *
  * **深浅只声明一次**:每一条都指向 @theme 里那些 VS Code token,而 CSS 变量是在
  * **使用时**解析的 —— 间接引用拿到的是当时生效的取值,所以深色那半由 token 自己的
@@ -41,7 +41,7 @@
  *
  * 覆的是**无 `dark` 前缀**的那 23 个。diff2html 另有一整套 --d2h-dark-*,但它只被
  * `.d2h-auto-color-scheme` / `.d2h-dark-color-scheme` 前缀的规则读到,而那两个 class
- * 我们不挂(render.ts 传 `colorScheme: 'light'`,理由见那里与 spec §5.6)。
+ * 我们不挂(render.ts 传 `colorScheme: 'light'`,理由见那里)。
  * 谁把 colorScheme 改回 'auto',下面这一整块在深色下就会被静默旁路 ——
  * test/unit/web/render.test.ts 有一条断言钉着容器上不许出现那两个 class。 */
 :root {
@@ -112,10 +112,10 @@ body {
   font-family: var(--font-mono);
 }
 
-/* diff2html 自带的那条文件头整条不显示(spec §5.5)。
+/* diff2html 自带的那条文件头整条不显示。
  *
  * 它里面只有四样:文件图标、文件名、`CHANGED`/`RENAMED` 之类的标签、一个"Viewed"
- * 折叠复选框(2026-08-23 实测,见 decisions.md §10)。文件名与 `DiffView` 自己那行
+ * 折叠复选框(2026-08-23 对 3.4.56 实测)。文件名与 `DiffView` 自己那行
  * 标题重复,重命名已由 `RenameNotice` 说得更全(带完整旧路径与相似度),折叠复选框在
  * `fileContentToggle: false` 下是死的 —— 藏掉它页面上不掉任何信息。
  *
