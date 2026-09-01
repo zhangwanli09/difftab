@@ -107,9 +107,8 @@ describe('parseStatus', () => {
   });
 
   test('`u` 记录一律带 conflicted,`DD` 这种两位都不是 U 的也不例外', () => {
-    // **判据是「这条来自 `u` 段」,不是状态位**:`DD`(双方都删)与
-    // `AA`(双方都新增)两位里一个 `U` 都没有,靠状态位认的实现会把它们漏掉,
-    // 于是它们同时落进「已暂存」与「未暂存」两组 —— 而两组都不是它们的处境
+    // **判据是「这条来自 `u` 段」,不是状态位**:`DD`(双方都删)与 `AA`(双方都新增)两位里一个
+    // `U` 都没有,靠状态位认的实现会把它们漏掉,于是它们同时落进两组 —— 而两组都不是它们的处境
     const raw = z(
       '# branch.head main',
       'u DD N... 100644 100644 100644 100644 aaaa bbbb cccc both-deleted.txt',
@@ -119,8 +118,7 @@ describe('parseStatus', () => {
     const { files } = parseStatus(raw);
     const conflicted = files.filter((f) => f.conflicted);
     expect(conflicted.map((f) => f.path)).toEqual(['both-deleted.txt', 'both-added.txt']);
-    // 反面:普通记录**不带**这个字段(而不是带一个 false)—— 判据只有「有没有」
-    // 一种形态,响应体里也就不会多出一堆 `conflicted: false`
+    // 反面:普通记录**不带**这个字段(而不是带一个 false),判据只有「有没有」一种形态
     expect(files.find((f) => f.path === 'plain.txt')).not.toHaveProperty('conflicted');
   });
 
@@ -133,7 +131,7 @@ describe('parseStatus', () => {
 });
 
 test('主查询的参数逐字固定 —— S3b 的降级轮询要复用同一条', () => {
-  // 漏 `-uall` 会让已存在的未跟踪目录里新增文件静默不刷新;漏 `--branch` 会丢掉
-  // 提交与切分支的检测。钉死在这里,改的人至少会看到红
+  // 漏 `-uall` 会让已存在的未跟踪目录里新增文件静默不刷新;漏 `--branch` 会丢掉提交与切分支的检
+  // 测。钉死在这里,改的人至少会看到红
   expect([...STATUS_ARGS]).toEqual(['status', '--porcelain=v2', '--branch', '-uall', '-z']);
 });

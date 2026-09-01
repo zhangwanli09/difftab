@@ -1,15 +1,13 @@
 #!/usr/bin/env node
-// 冷启动测量(CLI 侧:进程 ready 并打印 URL)。
+// 冷启动测量(CLI 侧:进程 ready 并打印 URL)。零依赖纯 JS,可由
+// `node scripts/bench-startup.mjs` 直接执行 —— 它要在没有 pnpm、没有 node_modules 的 CI
+// matrix 机器上跑,package.json 里的 `bench:startup` 只是别名。
 //
-// 零依赖纯 JS,可由 `node scripts/bench-startup.mjs` 直接执行 —— 它要在没有 pnpm、
-// 没有 node_modules 的 CI matrix 机器上跑,package.json 里的 `bench:startup` 只是别名。
-//
-// 「ready」的口径:**监听成功并打印 URL**。首次 `git status` 交由第一个 HTTP 请求
-// 惰性执行、不计入 —— 否则该指标会随被测仓库规模漂移,失去回归意义。
-//
-// 判据由**后端的输出契约**承担:cli/start.ts 在 listen 成功后打印的第一行是且只是
-// URL,因此 READY_PATTERN 只认 URL 这一种形态。不要放宽成「以 difftab: 开头的行」
-// —— 那会匹配上启动横幅、警告、降级提示,于是量到一个没有意义的数字却显示绿色。
+// 「ready」的口径:**监听成功并打印 URL**。首次 `git status` 交由第一个 HTTP 请求惰性执行、
+// 不计入 —— 否则该指标会随被测仓库规模漂移,失去回归意义。判据由**后端的输出契约**承担:
+// cli/start.ts 在 listen 成功后打印的第一行是且只是 URL,因此 READY_PATTERN 只认 URL 这一种
+// 形态。不要放宽成「以 difftab: 开头的行」—— 那会匹配上启动横幅、警告、降级提示,于是量到一
+// 个没有意义的数字却显示绿色。
 
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -22,9 +20,9 @@ const entry = join(repoRoot, 'bin', 'difftab.js');
 const BUDGET_MS = 300;
 const RUNS = 7;
 const READY_PATTERN = /^http:\/\/127\.0\.0\.1:\d+\//;
-// S1 起被测进程是常驻 HTTP server:它不会退出,ready 行没出现时 'exit' 也就永远不来。
-// 没有这道超时,单次测量会挂死,而这一步在 9 个 matrix 组合里都跑 —— 结果不是失败,
-// 是 job 一直烧到 GitHub 的 6 小时上限。取门禁的 20 倍,正常路径够宽、异常路径够快。
+// 被测进程是常驻 HTTP server:它不会退出,ready 行没出现时 'exit' 也就永远不来。没有这道超时,
+// 单次测量会挂死,而这一步在 9 个 matrix 组合里都跑 —— 结果不是失败,是 job 一直烧到 GitHub
+// 的 6 小时上限。取门禁的 20 倍,正常路径够宽、异常路径够快。
 const HANG_TIMEOUT_MS = BUDGET_MS * 20;
 
 if (!existsSync(join(repoRoot, 'dist', 'server', 'main.js'))) {
@@ -47,17 +45,16 @@ function measureOnce(cwd) {
     let elapsed = null;
     let error = null;
 
-    // 「只结算一次」集中在这一个函数里,任何结束路径都必须经过它 —— 否则计时器
-    // 不会被清、子进程不会被杀。散成 settled / done / finish / fail 四件互相牵扯
-    // 的东西时,加第五条路径的人得先读懂全部四件才知道该调哪个。
+    // 「只结算一次」集中在这一个函数里,任何结束路径都必须经过它 —— 否则计时器不会被清、子进
+    // 程不会被杀。散成四件互相牵扯的东西时,加第五条路径的人得先读懂全部四件才知道该调哪个。
     const settle = (err) => {
       if (elapsed !== null || error !== null) return;
       if (err) error = err;
       else elapsed = Number(process.hrtime.bigint() - started) / 1e6;
       clearTimeout(timer);
-      // 这里只 kill,不 resolve:要等 'close',确保子进程真的退干净了再开下一轮。
-      // 否则第 N 轮的收尾(S1 起是关 socket、删 os.tmpdir() 里的注册表项)会与
-      // 第 N+1 轮的启动重叠,而被测的正是那次启动 —— 门禁刚开始变得重要就变吵。
+      // 这里只 kill,不 resolve:要等 'close',确保子进程真的退干净了再开下一轮 —— 否则第 N
+      // 轮的收尾(关 socket、删 os.tmpdir() 里的注册表项)会与第 N+1 轮的启动重叠,而被测的正
+      // 是那次启动。
       child.kill();
     };
 
@@ -83,9 +80,8 @@ function measureOnce(cwd) {
       stderr += chunk;
     });
 
-    // 用 'close' 而非 'exit':'exit' 在进程终止时就触发,此时 stdio 未必读干净,
-    // 快速退出的子进程可能让失败路径抢在最后一个 'data' 之前(Windows 管道的
-    // 时序与 POSIX 不同)。'close' 保证所有 stdio 已关闭、进程已回收。
+    // 用 'close' 而非 'exit':后者在进程终止时就触发,此时 stdio 未必读干净,快速退出的子进程
+    // 可能让失败路径抢在最后一个 'data' 之前(Windows 管道的时序与 POSIX 不同)。
     child.on('close', (code) => {
       clearTimeout(timer);
       if (elapsed !== null) resolvePromise(elapsed);

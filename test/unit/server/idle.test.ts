@@ -23,9 +23,8 @@ describe('resolveIdleMs', () => {
   });
 
   test('取值不合法即抛,不退回默认的 45s', () => {
-    // 退回默认的话,手滑写错的那次照样启动成功、照样跑出一个看着合理的行为,
-    // 于是「我验过空闲退出了」建立在一次根本没生效的强制指定上 —— 而症状是
-    // 那条用例等满 45 秒后超时,读起来像产品坏了(同 WATCH_TIER)
+    // 退回默认的话,手滑写错的那次照样启动成功、照样跑出一个看着合理的行为,于是「我验过空闲退出
+    // 了」建立在一次根本没生效的强制指定上 —— 而症状是那条用例等满 45 秒后超时,读起来像产品坏了
     for (const raw of ['abc', '0', '-5', 'NaN', '1e999x']) {
       expect(() => resolveIdleMs({ [IDLE_ENV]: raw }), raw).toThrow(IdleConfigError);
     }
@@ -121,8 +120,7 @@ describe('createIdleWatchdog', () => {
   });
 
   test('只喊一声就完了 —— 之后不再自己续期', () => {
-    // 调用方拿到这一声就去 close + exit 了;要是这里还留着一个循环定时器,
-    // 关服务路上会再喊一次,而那时 close() 正跑到一半
+    // 调用方拿到这一声就去 close + exit 了;这里还留着循环定时器的话,关服务路上会再喊一次
     const { state, watchdog } = setup();
     watchdog.touch();
     vi.advanceTimersByTime(10_000);

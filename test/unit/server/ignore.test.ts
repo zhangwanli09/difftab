@@ -10,9 +10,8 @@ import { createIsIgnored, isIgnored } from '../../../src/server/watch/ignore.ts'
 
 describe('isIgnored 是逐段匹配', () => {
   test('嵌套路径命中 —— basename 模式正是在这里失效的', () => {
-    // macOS / Windows 的原生 watcher 交给匹配器的是**事件的相对路径**,
-    // 而 minimatch 的 matchBase 只把单段模式与 basename 比:`node_modules/.bin/foo`
-    // 的 basename 是 `foo`,模式 `node_modules` 匹配不上,事件照常放行
+    // macOS / Windows 的原生 watcher 交给匹配器的是**事件的相对路径**,而 minimatch 的 matchBase
+    // 只把单段模式与 basename 比:`node_modules/.bin/foo` 的 basename 是 `foo`,匹配不上,照常放行
     expect(isIgnored('node_modules/.bin/foo')).toBe(true);
     expect(isIgnored('node_modules/pkg/lib/index.js')).toBe(true);
     // monorepo 里的嵌套依赖 —— `node_modules/**` 这类含斜杠的模式在这里也落空
@@ -25,8 +24,7 @@ describe('isIgnored 是逐段匹配', () => {
     for (const path of ['dist/main.js', 'a/b/target/debug/x', '.next/cache/y', 'web/build/z']) {
       expect(isIgnored(path)).toBe(true);
     }
-    // `.git` 与档位无关地被排除:工作区那条递归 watch 绝不能进去(一次 gc 就是
-    // 几万个条目),`.git` 侧另有目录级非递归 watch 盯着
+    // `.git` 与档位无关地被排除:工作区那条递归 watch 绝不能进去(一次 gc 就是几万个条目)
     expect(isIgnored('.git/objects/ab/cdef')).toBe(true);
   });
 
@@ -36,8 +34,7 @@ describe('isIgnored 是逐段匹配', () => {
   });
 
   test('只匹配整段,不匹配前缀 —— 否则会误伤用户自己的文件', () => {
-    // 「包含 node_modules 就忽略」这种写法会把这几个也吞掉,而它们是真实的仓库内容,
-    // 症状是「改了这个文件页面死活不刷新」
+    // 「包含 node_modules 就忽略」会把这几个真实的仓库内容也吞掉,症状是「改了这个文件死活不刷新」
     expect(isIgnored('src/node_modules_shim.ts')).toBe(false);
     expect(isIgnored('src/distribute.ts')).toBe(false);
     expect(isIgnored('my-build/x.ts')).toBe(false);

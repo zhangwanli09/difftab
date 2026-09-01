@@ -1,26 +1,20 @@
 /* 明暗开关的三条 color-scheme 规则 + `--d2h-*` 的映射。
  *
- * 本文件必须保持 unlayered —— 由 app.css 在 diff2html.min.css 之后无层引入。
- * 入层会同时拆掉两件事:diff2html 的 CSS 是 unlayered 的,它的 `:host,:root` 里
- * 那 47 个 --d2h-* 默认值会重新压过下面的映射,配色悄悄退回 GitHub 那套。
- *
- * 改 diff2html 的配色只能覆写 --d2h-*,不得用 Tailwind 工具类去压。
+ * 本文件必须保持 unlayered —— 由 app.css 在 diff2html.min.css 之后无层引入。入层会让
+ * diff2html `:host,:root` 里那 47 个 --d2h-* 默认值重新压过下面的映射,配色悄悄退回 GitHub
+ * 那套。改 diff2html 的配色只能覆写 --d2h-*,不得用 Tailwind 工具类去压。
  */
 
 /* 下面这三条**就是顶栏那个明暗开关的全部机制**。
  *
- * 所有深浅不同的取值都写成 @theme / hljs-theme.css 里的 light-dark(浅, 深) 单条声明,
- * 而 light-dark() 选中哪一半只看元素上生效的 color-scheme —— 于是「切主题」这件事在
- * CSS 这侧就只剩「把 :root 的 color-scheme 换个值」,token 侧一个字都不用分叉。
+ * 所有深浅不同的取值都写成 light-dark(浅, 深) 的单条声明,而 light-dark() 选中哪一半只看元素
+ * 上生效的 color-scheme —— 于是「切主题」在 CSS 这侧就只剩「把 :root 的 color-scheme 换个
+ * 值」,token 侧一个字都不用分叉。data-theme 属性由 state/theme.ts 写在 <html> 上,**缺省
+ * (属性不存在)即跟随系统**。
  *
- * data-theme 属性由 state/theme.ts 写在 <html> 上,**缺省(属性不存在)即跟随系统**:
- * 不写 data-theme="system",那样等于给「跟随」也造一个要维护的取值和第四条规则。
- *
- * 顺带把原生控件(滚动条、表单、默认焦点环)也带上了 —— 它们跟的正是 color-scheme
- * 而不是媒体查询,少了下面两条,手动切到深色时页面翻了而滚动条还是浅的。
- *
- * 少任何一条都**不报错**:按钮照常切档、data-theme 照常变,只是页面一动不动。
- * check:css 逐条查这三个选择器、查它们的值、并查它们没进 @layer。 */
+ * 顺带把原生控件(滚动条、表单、默认焦点环)也带上了 —— 它们跟的正是 color-scheme 而不是媒体
+ * 查询。少任何一条都**不报错**:按钮照常切档,只是页面一动不动(check:css 逐条查这三个选择
+ * 器、查它们的值、并查它们没进 @layer)。 */
 :root {
   color-scheme: light dark;
 }
@@ -33,21 +27,17 @@
   color-scheme: dark;
 }
 
-/* diff2html 的配色。
- *
- * **深浅只声明一次**:每一条都指向 @theme 里那些 VS Code token,而 CSS 变量是在
- * **使用时**解析的 —— 间接引用拿到的是当时生效的取值,所以深色那半由 token 自己的
- * light-dark() 带出来,不存在"加了浅色忘了深色"这一半。
+/* diff2html 的配色。**深浅只声明一次**:每一条都指向 @theme 里那些 VS Code token,而 CSS 变
+ * 量是在**使用时**解析的,深色那半由 token 自己的 light-dark() 带出来,不存在"加了浅色忘了
+ * 深色"这一半。
  *
  * 覆的是**无 `dark` 前缀**的那 23 个。diff2html 另有一整套 --d2h-dark-*,但它只被
- * `.d2h-auto-color-scheme` / `.d2h-dark-color-scheme` 前缀的规则读到,而那两个 class
- * 我们不挂(render.ts 传 `colorScheme: 'light'`,理由见那里)。
- * 谁把 colorScheme 改回 'auto',下面这一整块在深色下就会被静默旁路 ——
- * test/unit/web/render.test.ts 有一条断言钉着容器上不许出现那两个 class。 */
+ * `.d2h-auto-color-scheme` / `.d2h-dark-color-scheme` 前缀的规则读到,而那两个 class 我们不挂
+ * (render.ts 传 `colorScheme: 'light'`)—— 谁把它改回 'auto',下面这一整块在深色下就会被静默
+ * 旁路,render.test.ts 有一条断言钉着容器上不许出现那两个 class。 */
 :root {
-  /* 哨兵:`pnpm check:css` 靠它认出"这块是我们的映射"(而不是 diff2html 自己那份
-   * 默认值),据此断言本块 unlayered、排在 d2h 之后、且覆盖了全部 23 个无前缀变量。
-   * 删掉这行门禁会红 —— 它是身份标记,不是样式。 */
+  /* 哨兵:`pnpm check:css` 靠它认出"这块是我们的映射",据此断言本块 unlayered、排在 d2h 之
+   * 后、且覆盖了全部 23 个无前缀变量。删掉这行门禁会红 —— 它是身份标记,不是样式。 */
   --gg-d2h-map: 1;
 
   --d2h-bg-color: var(--color-editor-background);
@@ -55,8 +45,7 @@
   --d2h-dim-color: var(--color-description-foreground);
   --d2h-line-border-color: var(--color-panel-border);
 
-  /* 文件头与 hunk 头(`@@ … @@` 那行)—— 与侧边栏同一档灰,让它读起来是"外壳"
-   * 而不是内容 */
+  /* 文件头与 hunk 头(`@@ … @@` 那行)—— 与侧边栏同一档灰,读起来是"外壳"而不是内容 */
   --d2h-file-header-bg-color: var(--color-side-bar-section-header-background);
   --d2h-file-header-border-color: var(--color-panel-border);
   --d2h-info-bg-color: var(--color-side-bar-background);
@@ -78,34 +67,28 @@
   --d2h-del-border-color: var(--color-diff-removed-border);
   --d2h-del-label-color: var(--color-git-deleted);
 
-  /* 并排视图里"改动"那一对(左删右插):diff2html 给它单独留了两个变量,默认取值
-   * 是琥珀 #fdf2d0 / 浅绿 #ded —— 与纯增删的 #fee8e9 / #dfd **不同色系**,成对修改
-   * 因此看上去自成一档。这里**刻意指向与纯增删相同的 token,主动放弃那档琥珀**:
-   * VS Code 的 diff 编辑器没有这个区分,成对修改的两侧用的就是
-   * diffEditor.insertedTextBackground / removedTextBackground。
-   * 是取舍不是漏映射 —— 想要那档区分,得先在 @theme 里加一对新 token。 */
+  /* 并排视图里"改动"那一对(左删右插):diff2html 默认给的是琥珀 #fdf2d0 / 浅绿 #ded,与纯增
+   * 删的 #fee8e9 / #dfd **不同色系**。这里**刻意指向与纯增删相同的 token,主动放弃那档琥
+   * 珀**:VS Code 的 diff 编辑器没有这个区分。是取舍不是漏映射。 */
   --d2h-change-del-color: var(--color-diff-removed-background);
   --d2h-change-ins-color: var(--color-diff-inserted-background);
   --d2h-change-label-color: var(--color-git-modified);
   --d2h-moved-label-color: var(--color-text-link-foreground);
 }
 
-/* 页面底色。挂在 body 而不是只靠 App 根节点的工具类:挂载完成前(以及 diff 面板
- * 比视口短时)露出来的是 body,浅色底上闪一下深色页面很难看。
- * 字体不在这里写 —— app.css 的 --font-sans 已经经 Tailwind 的 --default-font-family
- * 落到 html 上了,再写一遍就是第二份事实来源。 */
+/* 页面底色。挂在 body 而不是只靠 App 根节点的工具类:挂载完成前(以及 diff 面板比视口短时)
+ * 露出来的是 body,浅色底上闪一下深色页面很难看。字体不在这里写 —— app.css 的 --font-sans
+ * 已经经 Tailwind 的 --default-font-family 落到 html 上了,再写一遍就是第二份事实来源。 */
 body {
   background-color: var(--color-editor-background);
   color: var(--color-editor-foreground);
 }
 
-/* 这三条是本文件里**唯三**用选择器去动 d2h 元素的规则,也是"只能改 --d2h-*"那条
- * 红线之外仅有的三条 —— 那条红线管的是**配色**,而这里改的是字体、显不显示、
- * 有没有那个盒子与它底下那截留白,47 个 --d2h-* 变量实测全是颜色,这几样一个都覆不到。
- *
- * 也不能改用 Tailwind 工具类:工具类在 @layer utilities 里,压不过无层的 d2h 规则。
- * 三条与 d2h 自己的同名规则同为 (0,1,0),靠**排在后面**取胜 —— 这又回到本文件
- * 必须 unlayered 且引在 diff2html.min.css 之后。 */
+/* 这三条是本文件里**唯三**用选择器去动 d2h 元素的规则,也是"只能改 --d2h-*"那条红线之外仅
+ * 有的三条 —— 那条红线管的是**配色**,而这里改的是字体、显不显示、有没有那个盒子与它底下那
+ * 截留白,47 个 --d2h-* 实测全是颜色,这几样一个都覆不到。也不能改用 Tailwind 工具类:工具类
+ * 在 @layer utilities 里,压不过无层的 d2h 规则。三条与 d2h 自己的同名规则同为 (0,1,0),靠
+ * **排在后面**取胜 —— 这又回到本文件必须 unlayered 且引在 diff2html.min.css 之后。 */
 
 /* 代码区的等宽字体。d2h 把它写死成 `Menlo,Consolas,monospace`(装不到就一路回退) */
 .d2h-diff-table {
@@ -114,45 +97,31 @@ body {
 
 /* diff2html 自带的那条文件头整条不显示。
  *
- * 它里面只有四样:文件图标、文件名、`CHANGED`/`RENAMED` 之类的标签、一个"Viewed"
- * 折叠复选框(2026-08-23 对 3.4.56 实测)。文件名与 `DiffView` 自己那行
- * 标题重复,重命名已由 `RenameNotice` 说得更全(带完整旧路径与相似度),折叠复选框在
- * `fileContentToggle: false` 下是死的 —— 藏掉它页面上不掉任何信息。
+ * 它里面只有四样:文件图标、文件名、`CHANGED`/`RENAMED` 之类的标签、一个"Viewed"折叠复选框。
+ * 文件名与 `DiffView` 自己那行标题重复,重命名已由 `RenameNotice` 说得更全(带完整旧路径与相
+ * 似度),折叠复选框在 `fileContentToggle: false` 下是死的 —— 藏掉它页面上不掉任何信息。
+ * **`+N`/`-M` 那对统计不在这条头里**:它在文件列表模板里,而我们传 `drawFileList: false`。
+ * 只能走 CSS:d2h 的两份 file-diff 模板都把这个头无条件写成 `.d2h-file-wrapper` 的第一个子
+ * 节点,没有任何配置项关得掉它。
  *
- * **`+N`/`-M` 那对统计不在这条头里**:它在文件列表模板(`.d2h-file-stats`)里,
- * 而我们传 `drawFileList: false`,那份列表从来没画过。别把这条当成"为了藏头
- * 牺牲了统计"—— difftab 至今就没在页面上给过增删行数。
- *
- * 只能走 CSS:d2h 的两份 file-diff 模板都把这个头无条件写成 `.d2h-file-wrapper`
- * 的第一个子节点,没有任何配置项关得掉它。
- *
- * **上面映射块里的 --d2h-file-header-bg-color / --d2h-file-header-border-color
- * 不要跟着删**:`check:css` 的覆盖率断言从 d2h 自己那块推导出全部无前缀变量名逐一
- * 比对,少一个就红。它们不是死代码,是那条断言的一部分。 */
+ * **上面映射块里的 --d2h-file-header-bg-color / --d2h-file-header-border-color 不要跟着删**:
+ * `check:css` 的覆盖率断言逐一比对全部无前缀变量名,少一个就红。 */
 .d2h-file-header {
   display: none;
 }
 
-/* diff2html 裹在整份补丁外面的那个盒子整条去掉 —— 它自带
- * `border:1px solid var(--d2h-border-color)`、`border-radius:3px` 与 `margin-bottom:1em`。
+/* diff2html 裹在整份补丁外面的那个盒子整条去掉 —— 它自带 `border`、`border-radius:3px` 与
+ * `margin-bottom:1em`。文件头藏掉之后这个盒子只剩副作用:上边紧贴 DiffView 那行文件名标题的
+ * border-b 画出第二条平行线,左边紧贴侧栏的 border-r。
  *
- * 文件头藏掉之后这个盒子只剩副作用:上边紧贴 DiffView 那行文件名标题的 border-b、
- * 画出第二条平行线,左边紧贴侧栏的 border-r,右边在横向滚动时停在盒子边界上。
+ * **不写成 `--d2h-border-color: transparent`**,尽管那样看着更守上面那条红线:透明边框仍占
+ * 1px 布局;那个变量还被 .d2h-lines-added / .d2h-file-list > li 读到,谁把文件头或文件列表放
+ * 回来就会连带静默失色;而这里要的是"没有这个盒子"不是"这个盒子的颜色"。
  *
- * **不写成 `--d2h-border-color: transparent`**,尽管那样看着更守上面那条红线:
- * 透明边框仍占 1px 布局;那个变量还被 .d2h-lines-added / .d2h-lines-deleted(长在文件头里)
- * 与 .d2h-file-list > li(drawFileList: false,那份列表从没画过)读到,谁把文件头或文件
- * 列表放回来就会连带静默失色;而这里要的是"没有这个盒子"不是"这个盒子的颜色"。
- * 上面映射块里那条 --d2h-border-color 因此保持指向 --color-panel-border ——
- * 它同样是 check:css 覆盖率断言的一部分,删不得。
- *
- * margin-bottom 一起去掉:上游留它是为了在"一次画多个文件"时分隔相邻补丁,而我们
- * 一次只画一个(drawFileList: false + 单文件容器),于是它只剩滚到底时补丁最后一行
- * 与面板底边之间一段没有来由的空白。写 margin-bottom 而不是 margin:d2h 只设了
- * 这一边,其余三边归 preflight 的 `*{margin:0}`,写成 margin 会让人以为另有三边要压。
- *
- * border-radius 不跟着删:没有边框也没有背景时它不可见,删它只是多一条不产生
- * 任何差别的声明。 */
+ * margin-bottom 一起去掉:上游留它是为了分隔相邻补丁,而我们一次只画一个,于是它只剩滚到底时
+ * 补丁最后一行与面板底边之间一段没有来由的空白。写 margin-bottom 而不是 margin:d2h 只设了这
+ * 一边,写成 margin 会让人以为另有三边要压。border-radius 不跟着删:没有边框也没有背景时它不
+ * 可见。 */
 .d2h-file-wrapper {
   border: none;
   margin-bottom: 0;
@@ -160,25 +129,18 @@ body {
 
 /* 最左那列行号的左边框不画。
  *
- * d2h 给四个行号类都写了 `border-width: 0 1px`,而 --d2h-line-border-color 与侧栏那条
- * border-r 同指 --color-panel-border —— 最左那列的**左**边框于是与侧栏那条同色贴在
- * 一起、叠成一条 2px,而补丁表格底下那段只有侧栏那条,同一条分隔线上粗下细,读起来
- * 像"边框有两条"。上面那条 .d2h-file-wrapper 收掉的是外框紧贴侧栏的那一半,行号列
- * 自己这条是接替它的那一半。
+ * d2h 给四个行号类都写了 `border-width: 0 1px`,而 --d2h-line-border-color 与侧栏那条 border-r
+ * 同指 --color-panel-border —— 最左那列的**左**边框于是与侧栏那条同色叠成一条 2px,而补丁表格
+ * 底下那段只有侧栏那条,同一条分隔线上粗下细。**只关最左那一列**:另外三条竖线都还有用(右边
+ * 框分隔行号与代码,并排视图里第二栏的左边框是两栏之间那条分隔线),故不能去动
+ * --d2h-line-border-color。
  *
- * **只关最左那一列**:另外三条竖线都还有用 —— 右边框分隔行号与代码,并排视图里第二栏
- * 的左边框就是两栏之间那条分隔线。故不能去动 --d2h-line-border-color(一改就是左右
- * 两条一起没,它也仍是 check:css 覆盖率断言的一部分)。
+ * 两半各自成立:.d2h-code-linenumber 只出现在 unified 模板里,裸类选择器已经足够精确,与上面
+ * 三条同样靠**排在 diff2html.min.css 之后**赢下 (0,1,0) 的平局;并排那半的 .d2h-files-diff 底
+ * 下**恒定**是左旧右新两个 .d2h-file-side-diff,:first-child 因此就是贴着侧栏那一栏。
  *
- * 两半各自成立:.d2h-code-linenumber 只出现在 unified 模板里(并排用的是 -side-),
- * 裸类选择器已经足够精确,与上面三条同样靠**排在 diff2html.min.css 之后**赢下 (0,1,0)
- * 的平局;并排那半的 .d2h-files-diff 底下**恒定**是左旧右新两个 .d2h-file-side-diff、
- * 没有别的兄弟节点,:first-child 因此就是贴着侧栏那一栏。
- *
- * **写 border-left 而不是 border-left-color: transparent** —— 理由与上面那条正相反:
- * 行号列是 box-sizing:border-box + 固定宽度(unified 7.5em / 并排 4em),去掉左边框不改
- * 外框宽度、右边框原地不动,数字又是右对齐(direction:rtl + text-align:right),页面上
- * 零位移。这里要的就是"这一条不画",不是"留着它但看不见"。 */
+ * **写 border-left 而不是 border-left-color: transparent**:行号列是 border-box + 固定宽度,
+ * 去掉左边框不改外框宽度、右边框原地不动,数字又是右对齐,页面上零位移。 */
 .d2h-code-linenumber,
 .d2h-files-diff .d2h-file-side-diff:first-child .d2h-code-side-linenumber {
   border-left: none;

@@ -1,31 +1,23 @@
 // **第二层**:证明产品跑完一遍完整流程后,`.git` 里一个字节都没变。
 //
-// 与第一层(readonly.test.js 的 GIT_TRACE 白名单)互补而非重复:白名单只看
-// 「执行了哪些子命令」,而 `git status` 默认会把刷新过的 stat 缓存写回 `.git/index`
-// —— 那是一次货真价实的写操作,子命令却仍然叫 `status`,白名单看不见;
-// 「前后 git status 比对」同样看不见(输出根本不变)。
+// 与第一层(readonly.test.js 的 GIT_TRACE 白名单)互补而非重复:白名单只看「执行了哪些子命
+// 令」,而 `git status` 默认会把刷新过的 stat 缓存写回 `.git/index` —— 那是一次货真价实的写操
+// 作,子命令却仍然叫 `status`,白名单看不见;「前后 git status 比对」同样看不见(输出根本不变)。
 //
-// 本层由**两半**组成,缺一不可 —— 这与只写了 `chmod -R a-w .git` 一句
-// 不同,原因是那一句单独不成立(2026-08-08 实测,已回填):
+// 本层由**两半**组成,缺一不可 —— 只写 `chmod -R a-w .git` 一句是不成立的:
 //
-//   A. **只读 `.git` 跑通**:锁死 `.git` 再跑完整流程,凡是**会报错**的写尝试
-//      (创建对象、写 lock 文件、意外触发 gc)当场暴露。
-//   B. **`.git` 逐字节不变**:A 挡不住的那一类在这里暴露。git 把 index 回写当作
-//      best-effort:`.git` 只读时它**静默跳过,exit 0、stderr 全空**(已实测)。
-//      于是漏掉 `GIT_OPTIONAL_LOCKS=0` 时 A 照样全绿 —— 而那正是点名要这
-//      一层去保护的东西。B 在**可写**的 `.git` 上跑,前后各拍一次快照做逐字节比对。
+//   A. **只读 `.git` 跑通**:锁死 `.git` 再跑完整流程,凡是**会报错**的写尝试(创建对象、写
+//      lock 文件、意外触发 gc)当场暴露。
+//   B. **`.git` 逐字节不变**:A 挡不住的那一类在这里暴露 —— git 把 index 回写当作 best-effort,
+//      `.git` 只读时它**静默跳过,exit 0、stderr 全空**,于是漏掉 `GIT_OPTIONAL_LOCKS=0` 时 A
+//      照样全绿。B 在**可写**的 `.git` 上跑,前后各拍一次快照做逐字节比对。
 //
-//   B 自带一条**正面对照**:同一个仓库上直接跑一条不带 `GIT_OPTIONAL_LOCKS=0` 的
-//   `git status`,断言 `.git` 这次**确实变了**。没有它,B 会在「仓库本来就不会
-//   触发 index 回写」时对着一个恒为真的断言通过 —— 与主门禁必须有一条
-//   「确实记到了东西」是同一个道理。
+//   B 自带一条**正面对照**:同一个仓库上直接跑一条不带 `GIT_OPTIONAL_LOCKS=0` 的 `git status`,
+//   断言 `.git` 这次**确实变了** —— 没有它,B 会在「仓库本来就不会触发 index 回写」时对着一个恒
+//   为真的断言通过。
 //
-// 本层保护的是封装层(server/git/run.ts 的 `GIT_OPTIONAL_LOCKS=0`)——按总原则
-// 「门禁不得晚于它所保护的代码」,它与封装层同期建立。
-//
-// Windows:`chmod` 挡不住写入(Node 在 Windows 上只映射只读属性,对目录无效),
-// A 半改用 `icacls` 的拒绝 ACL;拿不到 ACL 时**显式跳过并打印原因**,不静默通过。
-// B 半与权限无关,三端一律照跑。
+// Windows:`chmod` 挡不住写入(Node 在 Windows 上只映射只读属性,对目录无效),A 半改用
+// `icacls` 的拒绝 ACL;拿不到 ACL 时**显式跳过并打印原因**,不静默通过。B 半三端一律照跑。
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -72,11 +64,8 @@ function icacls(...args) {
 }
 
 /**
- * 让 `.git` 整棵不可写。
- *
- * **不返回成败**:命令退出码不是判据 —— icacls 可以 exit 0 而 ACL 不生效,chmod 对
- * root 恒成功却挡不住任何写。唯一的判据是下面 `writesAreBlocked` 那个探针。
- * 留两条通道只会让人以为它们互补,其实后者完全覆盖前者。
+ * 让 `.git` 整棵不可写。**不返回成败**:命令退出码不是判据 —— icacls 可以 exit 0 而 ACL 不生
+ * 效,chmod 对 root 恒成功却挡不住任何写。唯一的判据是下面 `writesAreBlocked` 那个探针。
  */
 function denyWrites(gitDir) {
   locked.add(gitDir);
@@ -95,17 +84,13 @@ function restoreWrites(gitDir) {
     icacls(gitDir, '/remove:d', EVERYONE, '/T', '/C', '/Q');
     return;
   }
-  // 后序同样可行:改文件 mode 要的是属主身份而非父目录写权限,而 0o555 仍带 x,
-  // 遍历读得下去
+  // 后序同样可行:改文件 mode 要的是属主身份而非父目录写权限,而 0o555 仍带 x,遍历读得下去
   walkFiles(gitDir, (path, isDir) => chmodSync(path, isDir ? 0o755 : 0o644));
 }
 
 /**
- * **正面验证**:锁真的锁上了。
- *
- * 少了这一条,A 半就靠「chmod 一定生效」这个假设活着 —— 而 root 用户、某些容器
- * 挂载、Windows 上的 chmod 全都不生效。那时用例照常变绿却什么都没验证,
- * 而假绿的只读门禁比没有门禁更糟。
+ * **正面验证**:锁真的锁上了。少了这一条,A 半就靠「chmod 一定生效」这个假设活着 —— 而 root 用
+ * 户、某些容器挂载、Windows 上的 chmod 全都不生效,那时用例照常变绿却什么都没验证。
  */
 function writesAreBlocked(gitDir) {
   const probe = join(gitDir, 'difftab-write-probe');
@@ -119,11 +104,8 @@ function writesAreBlocked(gitDir) {
 }
 
 /**
- * `.git` 里每个文件的 mtime + 内容摘要。
- *
- * 递归交给 `readdirSync` 自己做 —— 这里只要「每个文件」,不像 chmod 那条路还依赖
- * 后序与目录本身。不记 size:sha256 相同时 size 不可能不同,记了只是把两个信号
- * 摆成三个。
+ * `.git` 里每个文件的 mtime + 内容摘要。递归交给 `readdirSync` 自己做 —— 这里只要「每个文件」。
+ * 不记 size:sha256 相同时 size 不可能不同,记了只是把两个信号摆成三个。
  */
 function snapshotGitDir(gitDir) {
   const out = new Map();
@@ -146,8 +128,8 @@ function changedEntries(before, after) {
 }
 
 let workdir;
-// 注册顺序即执行顺序:解锁必须排在 cleanupOnExit 的 rmSync 之前,
-// 否则不可写的 .git 会让整个临时目录删不掉
+// 注册顺序即执行顺序:解锁必须排在 cleanupOnExit 的 rmSync 之前,否则不可写的 .git 会让临时目录
+// 删不掉
 process.on('exit', () => {
   for (const gitDir of [...locked]) {
     try {
@@ -160,8 +142,8 @@ process.on('exit', () => {
 cleanupOnExit(() => workdir);
 
 /**
- * fixture 只建一次,两半共用。**不用 `before()`**:下限档 Node 22.0.0 的 runner
- * 不等它就开跑用例(理由与复现见 helpers.js 的 `once()`)。
+ * fixture 只建一次,两半共用。**不用 `before()`**:下限档 Node 22.0.0 的 runner 不等它就开跑用
+ * 例(理由与复现见 helpers.js 的 `once()`)。
  */
 const fixtures = once(async () => {
   workdir = mkdtempSync(join(tmpdir(), 'difftab-ro-gitdir-'));
@@ -171,9 +153,8 @@ const fixtures = once(async () => {
 /** A 半:锁死 `.git` 跑完整流程。 */
 const lockedRun = once(async () => {
   const repos = await fixtures();
-  // 两个仓库覆盖两段不同的代码:unicodePaths 走「已跟踪取 git diff + 未跟踪读磁盘」,
-  // empty 走「HEAD 不存在 → 空树基准」那条 rev-parse 探测。后者尤其该锁着跑一遍 ——
-  // 探测失败时最顺手的补救是让 git 自己去算点什么,而那多半要写 .git
+  // 两个仓库覆盖两段不同的代码:unicodePaths 走「已跟踪取 git diff + 未跟踪读磁盘」,empty 走
+  // 「HEAD 不存在 → 空树基准」—— 后者尤其该锁着跑一遍,探测失败时最顺手的补救多半要写 .git
   const cwds = [repos.unicodePaths, repos.empty];
   for (const cwd of cwds) denyWrites(join(cwd, '.git'));
 
@@ -192,12 +173,9 @@ const lockedRun = once(async () => {
 });
 
 /**
- * B 半:**可写**的 `.git` 上前后拍快照。
- *
- * 先把两个「内容与 index 一致、只是 stat 过期」的文件的 mtime 改到很久以前 ——
- * 这正是 git 会去刷新 stat 缓存并回写 index 的场景。不制造它的话,`.git` 本来就
- * 不会变,断言恒为真(下面那条正面对照就是用来证明它不恒为真的)。
- * 改工作区文件的 mtime 属测试准备,不是 git 操作。
+ * B 半:**可写**的 `.git` 上前后拍快照。先把两个「内容与 index 一致、只是 stat 过期」的文件的
+ * mtime 改到很久以前 —— 这正是 git 会去刷新 stat 缓存并回写 index 的场景。不制造它的话,`.git`
+ * 本来就不会变,断言恒为真(下面那条正面对照就是用来证明它不恒为真的)。
  */
 const snapshotRun = once(async () => {
   const repos = await fixtures();
@@ -211,9 +189,8 @@ const snapshotRun = once(async () => {
   const result = await runFullFlow(cwd);
   const afterProduct = snapshotGitDir(gitDir);
 
-  // 正面对照:同一个仓库、同一条 status 命令,但**不设** GIT_OPTIONAL_LOCKS=0。
-  // 它必须把 .git 改掉 —— 否则说明这个仓库根本不会触发 index 回写,上面那条
-  // 「产品没改动 .git」就是一句空话
+  // 正面对照:同一个仓库、同一条 status 命令,但**不设** GIT_OPTIONAL_LOCKS=0。它必须把 .git 改掉
+  // —— 否则说明这个仓库根本不会触发 index 回写,上面那条「产品没改动 .git」就是一句空话
   spawnSync('git', ['status', '--porcelain=v2', '--branch', '-uall', '-z'], {
     cwd,
     encoding: 'utf8',
@@ -269,8 +246,7 @@ test('A · 报错里不出现 index.lock / 权限失败', async (t) => {
   const { skip, results } = await lockedRun();
   if (!ensureCovered(t, skip)) return;
 
-  // 会**报错**的那类写尝试(创建对象、写 lock 文件)在这里被指名。
-  // 静默跳过的那类(index 回写)A 半看不见,交给 B 半
+  // 会**报错**的那类写尝试(创建对象、写 lock 文件)在这里被指名;静默跳过的那类交给 B 半
   for (const { cwd, stderr, state, diffs } of results) {
     const text = [stderr, state.body, ...diffs.map((d) => d.body)].join('\n');
     assert.doesNotMatch(

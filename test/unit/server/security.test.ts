@@ -87,8 +87,7 @@ describe('第 3 道:token', () => {
 
 test('CSP 的三个不回退指令都显式写了', () => {
   const csp = SECURITY_HEADERS['Content-Security-Policy'] ?? '';
-  // frame-ancestors / base-uri / form-action 均**不回退到 default-src**,
-  // 不显式写就等于没设
+  // frame-ancestors / base-uri / form-action 均**不回退到 default-src**,不显式写就等于没设
   expect(csp).toContain("frame-ancestors 'none'");
   expect(csp).toContain("base-uri 'none'");
   expect(csp).toContain("form-action 'none'");

@@ -14,13 +14,10 @@ export const BIN = resolve(REPO_ROOT, 'bin', 'difftab.js');
 /**
  * 一次性的懒初始化,**替代 `node:test` 的顶层 `before()`**。
  *
- * Node 22.0.0 —— 也就是本项目运行时下限、matrix 专门有一档跑它 —— 的 test runner
- * **不等顶层异步 `before()` 完成就开跑该文件的用例**(已在本机 22.0.0 复现:依赖
- * 共享 server 的用例全部在 1ms 内以 `undefined` 失败,而自己起进程的用例照常通过;
- * 24 / 26 上正常)。`after()` 同样会提早触发,清理撞上还在写的文件报 ENOTEMPTY。
- *
- * 所以不用钩子:把准备工作包成一个记忆化的 Promise,每个用例开头 `await` 它。
- * 语义完全等价,却不依赖 runner 的钩子时序——在哪个 Node 上都对。
+ * Node 22.0.0 —— 也就是本项目运行时下限、matrix 专门有一档跑它 —— 的 test runner **不等顶层异
+ * 步 `before()` 完成就开跑该文件的用例**(已在本机复现:依赖共享 server 的用例全部在 1ms 内以
+ * `undefined` 失败;24 / 26 上正常),`after()` 同样会提早触发,清理撞上还在写的文件报
+ * ENOTEMPTY。所以不用钩子:把准备工作包成一个记忆化的 Promise,每个用例开头 `await` 它。
  */
 export function once(factory) {
   let pending;
@@ -28,10 +25,8 @@ export function once(factory) {
 }
 
 /**
- * 进程真正退出时清理临时目录。
- *
- * 同样是绕开 `after()`:`process.on('exit')` 由 Node 自己保证时机,且必须是**同步**
- * 操作 —— `removeDir` 里那个 rmSync 正合适。
+ * 进程真正退出时清理临时目录。同样是绕开 `after()`:`process.on('exit')` 由 Node 自己保证时机,
+ * 且必须是**同步**操作 —— `removeDir` 里那个 rmSync 正合适。
  */
 export function cleanupOnExit(getDir) {
   process.on('exit', () => {
@@ -41,12 +36,9 @@ export function cleanupOnExit(getDir) {
 }
 
 /**
- * 还活着的被测进程。
- *
- * 不再有 `after()` 来收尾(见 `once()`),所以在这里兜底:退出时统一 kill,
- * 否则 runner 会被子进程的 stdio 句柄吊住,表现为「测试全过但命令不返回」。
- * 本文件先于各测试文件被 import,这个处理器因此也先注册、先执行 —— 排在
- * `cleanupOnExit` 删目录之前。
+ * 还活着的被测进程。不再有 `after()` 来收尾,所以在这里兜底:退出时统一 kill,否则 runner 会被
+ * 子进程的 stdio 句柄吊住,表现为「测试全过但命令不返回」。本文件先于各测试文件被 import,这个
+ * 处理器因此也先注册、先执行 —— 排在 `cleanupOnExit` 删目录之前。
  */
 const alive = new Set();
 process.on('exit', () => {
@@ -54,15 +46,13 @@ process.on('exit', () => {
 });
 
 /**
- * 拉起 CLI 并等到它打印出 URL。
+ * 拉起 CLI 并等到它打印出 URL。ready 的判据与 scripts/bench-startup.mjs 一致:**stdout 的第一行
+ * 是且只是 URL**。
  *
- * ready 的判据与 scripts/bench-startup.mjs 一致:**stdout 的第一行是且只是 URL**。
- *
- * `command` / `shell` 可覆盖,默认是 `node bin/difftab.js`。**加这两个参数是为了让
- * 全局安装那条门禁也走同一份 ready 判据** —— 它要起的是 PATH 上那个名字(Windows 上
- * 隔着一个 `.cmd` shim,只能经 shell 起),除此之外它需要的东西(超时、stdout/stderr
- * 累积、`stop()`、unref)与这里逐字相同。各写一份的结果是「第一行是 URL」这个判据
- * 有了第三个定义,而三处失败起来长得完全不一样。
+ * `command` / `shell` 可覆盖,默认是 `node bin/difftab.js`。**加这两个参数是为了让全局安装那条
+ * 门禁也走同一份 ready 判据** —— 它要起的是 PATH 上那个名字(Windows 上隔着一个 `.cmd` shim,
+ * 只能经 shell 起),除此之外它需要的东西与这里逐字相同。各写一份的结果是「第一行是 URL」这个
+ * 判据有了第三个定义,而三处失败起来长得完全不一样。
  */
 export function startDifftab({
   cwd,
@@ -105,10 +95,9 @@ export function startDifftab({
       if (!match || settled) return;
       settled = true;
       clearTimeout(timer);
-      // 被测进程不再吊住 runner 的事件循环:用例跑完 → 循环空 → 进程退出 →
-      // 上面那个 'exit' 处理器统一 kill。不 unref 的话,任何一个没被显式 stop 的
-      // server 都会让 `node --test` 跑完全部用例后**永远不返回**(已实测)。
-      // stop() 里会 ref 回来,否则 kill 之后等 'close' 时循环可能已经空了
+      // 被测进程不再吊住 runner 的事件循环:用例跑完 → 循环空 → 进程退出 → 上面那个 'exit' 处理
+      // 器统一 kill。不 unref 的话,任何一个没被显式 stop 的 server 都会让 `node --test` 跑完全部
+      // 用例后**永远不返回**。stop() 里会 ref 回来,否则 kill 之后等 'close' 时循环可能已经空了
       child.unref();
       child.stdout.unref();
       child.stderr.unref();
@@ -153,12 +142,9 @@ export function startDifftab({
 /**
  * 在 `cwd` 里拉起 CLI 并**期待它拒绝启动**(前置检查失败:不是仓库、bare、git 太老)。
  *
- * 「一句话友好报错、不是 Node 异常栈」这条契约有两个断言点(不是仓库、bare 仓库),
- * 两处各写一遍的结果已经出现过:一处用 `includes('    at ')`、另一处用正则,弱的
- * 那一份不会有任何东西提醒你它弱。放这里之后,加第三种拒绝形态只写一行调用。
- *
- * 只回 stderr:调用方要断言的只有那句话,而「退出码 1 / stdout 为空 / 不带栈」三条
- * 对每种拒绝形态都一样,在这里一次断完。
+ * 「一句话友好报错、不是 Node 异常栈」这条契约有两个断言点,两处各写一遍的结果已经出现过:一处
+ * 用 `includes('    at ')`、另一处用正则,弱的那一份不会有任何东西提醒你它弱。只回 stderr:调用
+ * 方要断言的只有那句话,而「退出码 1 / stdout 为空 / 不带栈」三条在这里一次断完。
  */
 export function expectStartupRefusal(assert, cwd) {
   const r = spawnSync(process.execPath, [BIN], {
@@ -180,11 +166,9 @@ export function expectStartupRefusal(assert, cwd) {
 export const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
 /**
- * 轮询等到 `predicate()` 为真;超时即抛。
- *
- * 判据压在**墙钟**上而不是「累加睡了多少毫秒」:后者在负载高的 runner 上会连本带利
- * 地欠着走(每拍实际睡的比要求的久),于是名义 10 秒的等待可能只等了 6 秒 —— 而那
- * 台机器恰恰是最需要多等一会儿的那台。
+ * 轮询等到 `predicate()` 为真;超时即抛。判据压在**墙钟**上而不是「累加睡了多少毫秒」:后者在负
+ * 载高的 runner 上会连本带利地欠着走,于是名义 10 秒的等待可能只等了 6 秒 —— 而那台机器恰恰是
+ * 最需要多等一会儿的那台。
  */
 export async function waitUntil(predicate, timeoutMs, what) {
   const deadline = Date.now() + timeoutMs;
@@ -198,17 +182,14 @@ export async function waitUntil(predicate, timeoutMs, what) {
 /**
  * 尽力删掉临时目录,删不掉只警告。
  *
- * **`maxRetries` 不是保险起见,是 Windows 上的必需品**(2026-08-09 实测,CI 的
- * windows × Node 22.0.x 档):Windows 不允许删除一个仍是某进程当前工作目录的
- * 文件夹,而被测进程正是以 fixture 仓库为 cwd 起来的。`child.kill()` 只是发出终止
- * 请求,返回时系统尚未回收进程,紧接着的 rmSync 就撞上
- * `EBUSY: resource busy or locked, rmdir …\repos\unicode-paths`。
- * rimraf 的重试是同步的(`Atomics.wait`),在退出钩子里也可用。
+ * **`maxRetries` 不是保险起见,是 Windows 上的必需品**:Windows 不允许删除一个仍是某进程当前工
+ * 作目录的文件夹,而被测进程正是以 fixture 仓库为 cwd 起来的 —— `child.kill()` 只是发出终止请
+ * 求,返回时系统尚未回收进程,紧接着的 rmSync 就撞上 `EBUSY`。rimraf 的重试是同步的,在退出钩
+ * 子里也可用。
  *
- * 重试用尽后**只警告不抛**,两个调用场景都需要这条:退出钩子里此时断言都跑完了,
- * 删不掉一个临时目录是收尾的事故而不是产品缺陷,让它把一整档 CI 变红只会淹掉真正的
- * 失败;门禁脚本则是在 `finally` 里删,从那儿抛出去会**顶掉正在报的那条真失败**。
- * 目录都在 `os.tmpdir()` 下,系统自己会回收。
+ * 重试用尽后**只警告不抛**,两个调用场景都需要这条:退出钩子里此时断言都跑完了,让它把一整档
+ * CI 变红只会淹掉真正的失败;门禁脚本则是在 `finally` 里删,从那儿抛出去会顶掉正在报的那条真
+ * 失败。目录都在 `os.tmpdir()` 下,系统自己会回收。
  */
 export function removeDir(dir) {
   try {
@@ -219,14 +200,12 @@ export function removeDir(dir) {
 }
 
 /**
- * 开一条 SSE 连接。**整个 test/smoke/ 里只此一处**,理由与下面 `cookieHeader` 那条
- * 完全相同:请求字面量(`Host` 头、cookie、`/api/events` 路径)与流的两个判据
- * (`: connected` 这行握手、`event: change` 这个事件名)都是与服务端的契约,各写一份
- * 的结果是改了服务端之后**只有一份变红**,另几份安静地数出 0 个事件 —— 而 0 在调用方
- * 那里往往读作「过滤生效了」,是假绿不是假红。
+ * 开一条 SSE 连接。**整个 test/smoke/ 里只此一处**,理由与下面 `cookieHeader` 那条完全相同:请
+ * 求字面量(`Host` 头、cookie、`/api/events` 路径)与流的两个判据(`: connected` 这行握手、
+ * `event: change` 这个事件名)都是与服务端的契约,各写一份的结果是改了服务端之后**只有一份变
+ * 红**,另几份安静地数出 0 个事件 —— 而 0 在调用方那里往往读作「过滤生效了」,是假绿不是假红。
  *
- * 一个原语覆盖此前四种用法:`connected` 等握手(拿响应头)、`count` 数事件、
- * `body` 看原文、`close()` 收工。
+ * 一个原语覆盖四种用法:`connected` 等握手、`count` 数事件、`body` 看原文、`close()` 收工。
  */
 export function openEvents(port, token, { timeoutMs = 15_000 } = {}) {
   let body = '';
@@ -252,9 +231,9 @@ export function openEvents(port, token, { timeoutMs = 15_000 } = {}) {
         res.setEncoding('utf8');
         res.on('data', (chunk) => {
           body += chunk;
-          // 服务端一连上就写一行 `: connected` 注释顶出响应头,不必等第一个事件。
-          // **必须等「连上」而不是等「请求发出去」**:空闲计时是服务端收到连接时才
-          // 解除的,抢在那之前开始数秒,数的是一段连接还不存在的时间
+          // 服务端一连上就写一行 `: connected` 注释顶出响应头,不必等第一个事件。**必须等「连上」
+          // 而不是等「请求发出去」**:空闲计时是服务端收到连接时才解除的,抢在那之前数的是一段连
+          // 接还不存在的时间
           if (body.includes(': connected')) {
             clearTimeout(timer);
             resolvePromise({ status: res.statusCode, headers: res.headers });
@@ -305,10 +284,8 @@ export function httpGet(port, path, headers = {}, method = 'GET') {
 }
 
 /**
- * 从 GIT_TRACE 日志里抽出每一次被执行的 git 命令(主门禁用)。
- *
- * 放在这里而不是测试文件里,是因为测试文件不该有 export(biome 的
- * `noExportsInTest`)—— 那条规则挡的是「测试文件顺手变成工具模块」。
+ * 从 GIT_TRACE 日志里抽出每一次被执行的 git 命令(主门禁用)。放在这里而不是测试文件里,是因为
+ * 测试文件不该有 export(biome 的 `noExportsInTest` 挡的是「测试文件顺手变成工具模块」)。
  */
 export function parseTrace(log) {
   const commands = [];
@@ -329,15 +306,13 @@ export function parseTrace(log) {
 /**
  * 跑一遍产品的**完整流程**:起进程 → `/api/state` → 给列表里每个文件取一次 diff → 退出。
  *
- * 放在 helpers 而不是各测试文件里,是因为两层门禁的全部价值都建立在「流程真的
- * 走到了被保护的那段代码」上。两份各自维护的流程定义意味着 S4a 新增的分支
- * (binary / too-large / 重命名双路径)接进其中一份、另一份静默漏掉,而两边都不会红。
+ * 放在 helpers 而不是各测试文件里,是因为两层门禁的全部价值都建立在「流程真的走到了被保护的那
+ * 段代码」上 —— 两份各自维护的流程定义意味着新增的分支(binary / too-large / 重命名双路径)接
+ * 进其中一份、另一份静默漏掉,而两边都不会红。
  *
- * diff 请求由 `/api/state` 的返回**推导**而不是手写清单:重命名条目自带 `oldPath`,
- * 手写时漏传它就会走进「退化成全新增文件」那条分支,读起来却像覆盖到了。
- *
- * 逐个串行发,不 `Promise.all`:每个请求在后端都是一次 git 子进程,而这个流程会被指到
- * 320 文件的仓库上。并发只会把它变成 320 个同时在跑的 git。
+ * diff 请求由 `/api/state` 的返回**推导**而不是手写清单:重命名条目自带 `oldPath`,手写时漏传
+ * 它就会走进「退化成全新增文件」那条分支,读起来却像覆盖到了。逐个串行发,不 `Promise.all`:每
+ * 个请求在后端都是一次 git 子进程,而这个流程会被指到 320 文件的仓库上。
  */
 export async function runFullFlow(cwd, { env } = {}) {
   const server = await startDifftab({ cwd, ...(env ? { env } : {}) });
@@ -362,11 +337,9 @@ export function authedGet(port, token, path, headers = {}, method = 'GET') {
 }
 
 /**
- * 会话 cookie 的头部值。**cookie 名的字面量在整个 test/smoke/ 里只此一处**。
- *
- * 冒烟跑的是 `dist/` 产物、不能 import `src/server/http/security.ts` 的 `cookieName`,
- * 所以这份重复是无法避免的边界;但边界应当只有一道 —— 各用例自己拼(SSE 那两处
- * 尤其容易顺手拼一份),格式一改就要满文件找,而漏掉的那处只会以 403 出现。
+ * 会话 cookie 的头部值。**cookie 名的字面量在整个 test/smoke/ 里只此一处**:冒烟跑的是 `dist/`
+ * 产物、不能 import `security.ts` 的 `cookieName`,所以这份重复是无法避免的边界;但边界应当只有
+ * 一道 —— 各用例自己拼时格式一改就要满文件找,而漏掉的那处只会以 403 出现。
  */
 export function cookieHeader(port, token) {
   return `difftab_token_${port}=${token}`;
@@ -375,10 +348,9 @@ export function cookieHeader(port, token) {
 /**
  * 等被测进程自己退出,返回退出码。
  *
- * **`ref()` 是必需的,而这件事只有本文件知道**:上面 ready 之后把子进程与它的 stdio
- * 都 unref 掉了(否则 `node --test` 跑完全部用例也不返回)。不 ref 回来的话,事件
- * 循环会先空掉、runner 直接结束,而这条 await 永远没有结果 —— 一个没有错误消息的
- * 失败。所以它跟 `stop()` 一样住在 unref 的旁边,而不是在用例文件里各写一份。
+ * **`ref()` 是必需的,而这件事只有本文件知道**:上面 ready 之后把子进程与它的 stdio 都 unref 掉
+ * 了。不 ref 回来的话,事件循环会先空掉、runner 直接结束,而这条 await 永远没有结果 —— 一个没
+ * 有错误消息的失败。所以它跟 `stop()` 一样住在 unref 的旁边。
  */
 export function waitForExit(server, timeoutMs = 30_000) {
   return new Promise((resolvePromise, rejectPromise) => {

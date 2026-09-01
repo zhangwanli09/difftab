@@ -98,8 +98,8 @@ describe('createSseChannel', () => {
   });
 
   test('一条连接写失败不影响其余连接', () => {
-    // 对端已经走了而 'close' 还没派发到的那个窗口。整条广播被一个异常打断的话,
-    // 排在后面的标签页就静默收不到这次变更
+    // 对端已经走了而 'close' 还没派发到的那个窗口。整条广播被一个异常打断的话,排在后面的标签页
+    // 就静默收不到这次变更
     const channel = createSseChannel();
     const dead = {
       write() {

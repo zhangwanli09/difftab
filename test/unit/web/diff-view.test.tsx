@@ -1,8 +1,8 @@
 // DiffView 的四个 payload 分支与容器所有权。
 //
-// store 那份用例盯的是「取 diff 时状态怎么转」,本文件盯的是「同一份状态渲染成什么」——
-// 两件事分开:S2b 那个坑(同一个文件重新取时回退 loading)在 store 层已经钉住了,
-// 但**回退之外还有一条同样丢滚动位置的路**:换 key 让子树卸载重挂。那只在 DOM 上看得见。
+// store 那份用例盯的是「取 diff 时状态怎么转」,本文件盯的是「同一份状态渲染成什么」—— 「同一个
+// 文件重新取时回退 loading」在 store 层已经钉住了,但**回退之外还有一条同样丢滚动位置的路**:换
+// key 让子树卸载重挂。那只在 DOM 上看得见。
 
 import { render } from 'preact';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -12,11 +12,10 @@ import { diffPanelWidth, SIDE_BY_SIDE_MIN_WIDTH } from '../../../src/web/state/l
 import { diffState, type RenameInfo, repoState } from '../../../src/web/state/store';
 
 /**
- * **那行上下文(`export const keep`)不是凑数的**:happy-dom 的 `Attr.nodeName` 返回空串
- * (实测,见 render.test.ts 与),于是凡是走过 diff2html `mergeStreams` 的行
- * —— 也就是带 `<del>` / `<ins>` 词级标记的增删行 —— 类名会被写坏。上下文行不走那条路,
- * 类名完好,所以"高亮出颜色"这条断言只能压在它身上。删掉它,断言会以一个与产品无关的
- * 理由变红。
+ * **那行上下文(`export const keep`)不是凑数的**:happy-dom 的 `Attr.nodeName` 返回空串(机制见
+ * render.test.ts 抬头),于是凡是走过 diff2html `mergeStreams` 的行 —— 也就是带 `<del>` /
+ * `<ins>` 词级标记的增删行 —— 类名会被写坏。上下文行不走那条路,类名完好,所以「高亮出颜色」这
+ * 条断言只能压在它身上。
  */
 const patchFor = (line: string) => `diff --git a/a.ts b/a.ts
 index 1111111..2222222 100644
@@ -31,20 +30,16 @@ index 1111111..2222222 100644
 let container: HTMLElement;
 
 /**
- * 等到"某个断言成立",而不是等一个固定的毫秒数。
+ * 等到「某个断言成立」,而不是等一个固定的毫秒数。
  *
- * 为什么要等:一个微任务不够 —— signals 触发重渲染是微任务,但 `useEffect` 里的
- * `renderDiff` 由 Preact 排到 `requestAnimationFrame`(happy-dom 实现成约 16ms 的
- * 定时器),另有一条 35ms 的 `RAF_TIMEOUT` 兜底(preact 10.29.8 的 `afterNextFrame`
- * 是 rAF 与 setTimeout 竞速)。等得不够只能看到 `<h2>` 那半个 DiffView、diff 容器还是空的。
+ * 为什么要等:一个微任务不够 —— signals 触发重渲染是微任务,但 `useEffect` 里的 `renderDiff` 由
+ * Preact 排到 `requestAnimationFrame`(happy-dom 实现成约 16ms 的定时器),另有一条 35ms 的兜底。
+ * 等得不够只能看到 `<h2>` 那半个 DiffView、diff 容器还是空的。
  *
- * 为什么不写死等 50ms:那样对 35ms 的兜底只剩 15ms 余量,CI worker 被压住时就会以
- * "渲染没发生"这个**误导性理由**变红 —— 正是 S1/S2a 那两次"下限档红,原因不在产品
- * 代码"的形状。`vi.waitFor` 轮询到成立为止,慢机器只是多等几轮。
- *
- * `interval` 必须调小:默认 50ms 的轮询格子比实际就绪时间(happy-dom 的 rAF 实测约
- * 1ms)粗得多,五个走 effect 的用例于是各睡满一格 —— 白等约 250ms,占 web 那档测试
- * 时间的一多半。调 interval 不动 `timeout`(仍是默认 1000ms),慢机器的余量分毫不减。
+ * 为什么不写死等 50ms:那样对 35ms 的兜底只剩 15ms 余量,CI worker 被压住时就会以「渲染没发生」
+ * 这个**误导性理由**变红。`interval` 必须调小:默认 50ms 的轮询格子比实际就绪时间(happy-dom 的
+ * rAF 实测约 1ms)粗得多,五个走 effect 的用例于是各睡满一格 —— 白等约 250ms。调 interval 不动
+ * `timeout`,慢机器的余量分毫不减。
  */
 const waitFor = (assert: () => void) => vi.waitFor(assert, { interval: 5 });
 
@@ -60,14 +55,13 @@ beforeEach(() => {
   container = document.createElement('div');
   document.body.appendChild(container);
   diffState.value = null;
-  // 面板宽度也要复位:它是模块级 signal,上一个用例写进去的值会跨用例串味,
-  // 而串味的表现是「某条用例单跑绿、整档跑红」。`repoState` 同理 —— 空态那两句
-  // 里有一句要读它
+  // 面板宽度也要复位:它是模块级 signal,上一个用例写进去的值会跨用例串味,而串味的表现是「某条
+  // 用例单跑绿、整档跑红」。`repoState` 同理 —— 空态那两句里有一句要读它
   diffPanelWidth.value = SIDE_BY_SIDE_MIN_WIDTH;
   repoState.value = null;
-  // 只挂载一次,之后各用例只写 state。**别在用例里补 render()**:DiffView 在渲染体里
-  // 订阅 diffState,状态一变自己就重画 —— 手动补一次 render 会把"状态变了会不会重画"
-  // 这件事替它做掉,而下面最后两条用例正是要证这个,补了就等于自己把断言绕过去。
+  // 只挂载一次,之后各用例只写 state。**别在用例里补 render()**:DiffView 在渲染体里订阅
+  // diffState,状态一变自己就重画 —— 手动补一次会把「状态变了会不会重画」替它做掉,而最后两条用
+  // 例正是要证这个
   render(<DiffView />, container);
 });
 
@@ -86,8 +80,7 @@ describe('DiffView', () => {
   });
 
   it('工作区干净时换一句 —— 「点左边一个文件」指着的是一个空列表', async () => {
-    // 「没得选」与「还没选」是两件事。上一条用例的 repoState 是 null(第一份 state
-    // 还没到),走的正是「还没选」那句 —— 两条合起来才钉住这个分叉
+    // 「没得选」与「还没选」是两件事:上一条用例的 repoState 是 null,走的正是「还没选」那句
     repoState.value = {
       repoName: 'demo',
       branch: { head: 'main', detached: false, upstream: null },
@@ -100,8 +93,8 @@ describe('DiffView', () => {
   });
 
   it('text / untracked-text 都走 diff2html', async () => {
-    // 两轮**换不同的 path**,并各等自己那行代码出现:同一个 path 的话,第二轮开头
-    // 容器与 hljs span 还是上一轮留下的,"渲染成功了"这条断言会立刻通过而什么都没验
+    // 两轮**换不同的 path**,并各等自己那行代码出现:同一个 path 的话,第二轮开头容器与 hljs span
+    // 还是上一轮留下的,「渲染成功了」会立刻通过而什么都没验
     for (const { path, marker, payload } of [
       {
         path: 'tracked.ts',
@@ -129,14 +122,11 @@ describe('DiffView', () => {
     ready('a.ts', { kind: 'text', patch: patchFor('const x = 1;') });
     await waitFor(() => expect(container.querySelector('.d2h-file-wrapper')).not.toBeNull());
 
-    // 少了这个包含块,右侧一滚整列行号就原地钉死、与代码行错开。
-    //
-    // **断言只能压在类名上**:happy-dom 没有排版引擎,"滚动后行号还对得上"在这里
-    // 不可判定,真布局由人工那步验;这条钉的是"那个类名还在",防的是有人把它
-    // 当成多余的工具类顺手删掉。等 diff2html 画完再断言不是白等 —— `draw()` 是往这个
-    // 元素上赋 `innerHTML`,顺带钉住它没把我们的 class 冲掉。
-    // 类名换成拼出来的(`cx('relative')` 之类)这条照样绿,而 Tailwind 扫不到字面量、
-    // 产物里就没有那条规则 —— 那一半由 `pnpm check:css` 直接查产物。
+    // 少了这个包含块,右侧一滚整列行号就原地钉死、与代码行错开。**断言只能压在类名上**:
+    // happy-dom 没有排版引擎,「滚动后行号还对得上」在这里不可判定,这条钉的是「那个类名还在」,
+    // 防的是有人把它当成多余的工具类顺手删掉。等 diff2html 画完再断言不是白等 —— `draw()` 是往这
+    // 个元素上赋 `innerHTML`,顺带钉住它没把我们的 class 冲掉。类名换成拼出来的这条照样绿,而
+    // Tailwind 扫不到字面量、产物里就没有那条规则 —— 那一半由 `pnpm check:css` 直接查产物
     expect(payloadNode()).toHaveProperty('className', 'relative');
   });
 
@@ -160,10 +150,9 @@ describe('DiffView', () => {
 
     expect(bySize).toContain('6.0 MB');
     expect(byLines).toContain('100 KB');
-    // 少了 reason(或 formatSize 选错量级)时,100 KB 那条会被说成「File too large
-    // to preview (0 MB)」。判据钉在"这条里根本不该出现 MB"上 —— 早先那版把标点也抄进
-    // 断言里(`'0 MB,'`),**一次都不可能失败**:模板里那两个字符之间还隔着别的东西。
-    // 文案换成英文之后这条更要紧了:抄标点的写法会随每一次措辞微调静默失效
+    // 少了 reason(或 formatSize 选错量级)时,100 KB 那条会被说成「File too large to preview
+    // (0 MB)」。判据钉在「这条里根本不该出现 MB」上 —— 早先那版把标点也抄进断言里(`'0 MB,'`),
+    // **一次都不可能失败**:模板里那两个字符之间还隔着别的东西
     expect(byLines).not.toContain('MB');
   });
 
@@ -194,8 +183,8 @@ describe('DiffView', () => {
   });
 
   it('体积取不到时(已删除的文件)不把 0 说成 1 KB —— 两个 reason 都是', async () => {
-    // 已被删除的文件在工作区没有体积可取,后端给的是 0。formatSize 的
-    // `Math.max(1, …)` 会把它说成「1 KB」—— 一个编出来的数
+    // 已被删除的文件在工作区没有体积,后端给的是 0;`Math.max(1, …)` 会把它说成「1 KB」—— 编出来
+    // 的一个数
     ready('gone.txt', { kind: 'too-large', size: 0, reason: 'lines' });
     await waitFor(() => expect(container.textContent).toContain('Too many lines'));
     expect(container.textContent).not.toContain('KB');
@@ -215,18 +204,15 @@ describe('DiffView', () => {
     await waitFor(() => expect(container.textContent).toContain('const second'));
 
     // 元素**同一个**是这条验收的全部内容:换成新元素就意味着 diff2html 画好的 DOM
-    // 连同滚动位置一起被丢掉,而要求刷新不丢这两样。S3b1 起每个 change 事件
-    // 都会走这条路
+    // 连同滚动位置一起被丢掉,而要求刷新不丢这两样 —— 每个 change 事件都会走这条路
     expect(payloadNode()).toBe(before);
     expect(container.textContent).not.toContain('const first');
   });
 
   it('面板变窄变宽:版式跟着换,容器仍留在原地', async () => {
-    // 这条钉的是那句「格式必须进 effect 的依赖数组」。漏了不报错、页面照常有
-    // diff,只是拖窗口时版式纹丝不动 —— 没有任何别的东西看得见。
-    //
-    // 走的是直接写 `diffPanelWidth`,不经 ResizeObserver:happy-dom 的 ResizeObserver
-    // 是个空壳、也没有布局引擎(见 layout.test.ts 抬头),那一段归肉眼项。
+    // 这条钉的是那句「格式必须进 effect 的依赖数组」。漏了不报错、页面照常有 diff,只是拖窗口时版
+    // 式纹丝不动。走的是直接写 `diffPanelWidth`,不经 ResizeObserver:happy-dom 的 ResizeObserver
+    // 是个空壳、也没有布局引擎,那一段归肉眼项
     diffPanelWidth.value = 700;
     ready('a.ts', { kind: 'text', patch: patchFor('const first = 1;') });
     await waitFor(() => expect(container.querySelectorAll('.d2h-diff-table')).toHaveLength(1));

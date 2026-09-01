@@ -7,17 +7,14 @@ import { GitError, runGit } from './run.ts';
 const MIN_GIT = { major: 2, minor: 11 };
 
 /**
- * 空树对象哈希。空仓库下 HEAD 不存在、`git diff HEAD` 直接 fatal,改用它作 diff 基准
- * 即可,不必为空仓库写一条特殊分支。
- *
+ * 空树对象哈希。空仓库下 HEAD 不存在、`git diff HEAD` 直接 fatal,改用它作 diff 基准即可。
  * 硬编码是**要求**而不是偷懒:`git hash-object -t tree /dev/null` 依赖 `/dev/null`,
  * Windows 上不可移植;`git mktree` 会写对象库,直接违反只读承诺。
  */
 const EMPTY_TREE = {
   sha1: '4b825dc642cb6eb9a060e54bf8d69288fbee4904',
-  // 两个常量**都是实测取来的**,不是凭记忆写的:写错的后果是空仓库下
-  // diff 基准无效,而症状与「空仓库不支持」难以区分。SHA-256 这个于 S4b 在
-  // `git init --object-format=sha256` 的仓库上取值,并验过它当基准确实出补丁
+  // 两个常量**都是实测取来的**:写错的后果是空仓库下 diff 基准无效,而症状与「空仓库
+  // 不支持」难以区分
   sha256: '6ef19b41225c5369f1c104d45d8d85efa9b057b53b14b4b9b939dd74decc5321',
 };
 
@@ -52,18 +49,14 @@ function tooOld(v: { major: number; minor: number }): boolean {
 }
 
 /**
- * 前置检查 + 定位,一次做完。
- *
- * 两条命令并发跑:串行等于把两次进程启动开销叠加进 300ms 冷启动预算,
- * 而它们之间没有依赖。失败路径上的额外一次 `rev-parse` 不计成本 —— 那条路径的
- * 终点是打印一行报错然后退出。
+ * 前置检查 + 定位,一次做完。两条命令并发跑:串行等于把两次进程启动开销叠加进 300ms
+ * 冷启动预算,而它们之间没有依赖。
  */
 export async function locateRepo(cwd: string): Promise<RepoInfo> {
   const [version, located] = await Promise.all([
     runGit(['--version'], cwd),
-    // **不问 `--is-bare-repository`**:成功那条路上它的答案必然是 false(bare 仓库
-    // 根本走不到这里),而失败那条路要靠它区分 bare 与「不是仓库」—— 那时再单独问
-    // 一次。跟着问一句从不读的输出,只会让下一个人以为这里读了它
+    // **不问 `--is-bare-repository`**:成功那条路上它的答案必然是 false,而失败那条路要
+    // 靠它区分 bare 与「不是仓库」—— 那时再单独问一次
     runGit(['rev-parse', '--show-toplevel', '--git-dir'], cwd),
   ]).catch((cause: unknown) => {
     if (cause instanceof GitError && cause.kind === 'missing') {
@@ -116,38 +109,30 @@ export async function locateRepo(cwd: string): Promise<RepoInfo> {
 /**
  * 工作区根目录名 —— 页面标题里的项目标识(`RepoState.repoName`)。
  *
- * **和 `root` 住在一起,不在消费者那边现切**:下面那条「用 `node:path` 不手写切分」
- * 的理由整个建立在 `root` 是怎么来的之上(`rev-parse --show-toplevel`),而那件事只有
- * 本文件知道。放在 `http/` 里的话,这里改一次 `root` 的产出方式,那边的论证就静默过期。
+ * **和 `root` 住在一起,不在消费者那边现切**:下面那条「用 `node:path` 不手写切分」的理由
+ * 整个建立在 `root` 是怎么来的之上(`rev-parse --show-toplevel`),而那件事只有本文件知道。
  *
  * **用 `node:path` 的 `basename`,不要自己切 `/`**:Windows 上 `--show-toplevel` 回的是
  * `C:/…` 正斜杠,而 win32 的 basename 两种分隔符都认;POSIX 上 `\` 是合法文件名字符,
- * posix 的 basename 不会误把它当分隔符。两个平台各有一半是手写切分挑不对的。
- *
- * 根目录没有 basename 时(`/`、Windows 盘符根)回空串,**不编一个名字出来** ——
- * 「取不到时显示什么」是展示决定,归消费者(见 `shared/protocol.ts`)。
+ * posix 的 basename 不会误把它当分隔符。根目录没有 basename 时回空串,**不编一个名字
+ * 出来** —— 「取不到时显示什么」是展示决定,归消费者。
  */
 export function repoNameOf(repo: RepoInfo): string {
   return basename(repo.root);
 }
 
 /**
- * diff 的基准。
- *
- * 正常仓库是 `HEAD`;空仓库(尚无任何提交)下 HEAD 不存在,`git diff HEAD` 会 fatal,
- * 降级为空树哈希。
- *
- * 不做缓存:`git checkout --orphan` 之后 HEAD 会重新变回未出生状态,缓存的正结果
- * 会让 diff 从此全部 fatal。这条只在取 diff 时调用,不落在冷启动路径上。
+ * diff 的基准。正常仓库是 `HEAD`;空仓库(尚无任何提交)下 HEAD 不存在、`git diff HEAD`
+ * 会 fatal,降级为空树哈希。不做缓存:`git checkout --orphan` 之后 HEAD 会重新变回未出生
+ * 状态,缓存的正结果会让 diff 从此全部 fatal。
  */
 export async function resolveDiffBase(root: string): Promise<string> {
   const head = await runGit(['rev-parse', '--verify', '--quiet', 'HEAD'], root);
   if (head.code === 0 && head.stdout.trim()) return 'HEAD';
 
   const format = await runGit(['rev-parse', '--show-object-format'], root);
-  // `--show-object-format` 随 SHA-256 支持(git 2.29 前后)才引入,高于
-  // 下限 2.11。**非零退出即按 SHA-1 处理** —— 那个区间的 git 根本造不出 SHA-256
-  // 仓库,降级无歧义,不得让它成为空仓库路径上的崩溃点。
+  // `--show-object-format` 随 SHA-256 支持(git 2.29 前后)才引入,高于下限 2.11。
+  // **非零退出即按 SHA-1 处理** —— 那个区间的 git 根本造不出 SHA-256 仓库,降级无歧义
   const name = format.code === 0 ? format.stdout.trim() : 'sha1';
   return name === 'sha256' ? EMPTY_TREE.sha256 : EMPTY_TREE.sha1;
 }

@@ -1,53 +1,31 @@
 #!/usr/bin/env node
-// 样式层叠方案的产物门禁。
+// 样式层叠方案的产物门禁。零依赖纯 JS,可由 `node scripts/check-css-cascade.mjs` 直接执行。
 //
-// 零依赖纯 JS,可由 `node scripts/check-css-cascade.mjs` 直接执行。
-//
-// 要证的事,每一条违反后都**不报错、只是静默出错**(编号跟着历史走、不连续,
-// 别按数量读 —— 写死一个「共几条」只会在下次加断言时过期,而没有任何东西会响):
-//   1. hljs 主题与 diff2html.min.css 在构建产物里仍是 unlayered ——
-//      无层样式在层叠中永远胜过有层样式,而 Tailwind v4 把 preflight 放在
-//      @layer base。一旦这两份 CSS 被裹进任何 @layer,这层结构性保障就没了。
-//      这正是列为 S0 前提验证第 1 项的东西:`@import "tailwindcss"` 展开后,
-//      后续 @import 的内容是否确实保持 unlayered。
-//   2. **每一条** hljs 规则都排在**第一条** d2h 规则之前(diff2html 官方 README
-//      的要求),否则 hljs 配色被 d2h 覆盖。断言取 max(hljs) < min(d2h) 而不是
-//      first < first:后者只要两份 CSS 的头部顺序对就放行,深色那整块跑到
-//      diff2html 之后也照样绿(已实测能骗过)。
-//   2b. **覆写 --d2h-* 的那些块自己也必须 unlayered**。第 1 条看的是 d2h 的规则,
-//      这条看的是变量定义:vscode-theme.css 里那 23 条映射一旦入层,就会被 diff2html
-//      自己 `:host,:root` 里的默认值(unlayered)压回去,配色整片退回 GitHub 那套。
-//      同一个失效机制的另一半,少了它第 1 条是绿的而页面是错的。
-//   2c. **而且要排在 d2h 的默认值之后、覆盖它的全部无前缀变量**。我们的 `:root` 与
-//      d2h 的 `:host,:root` 特异性同为 (0,1,0),胜出**纯靠源码顺序** —— 光"unlayered"
-//      不够。把 vscode-theme.css 的 @import 挪到 diff2html 之前,23 条覆写整片静默失效
-//      而 2b 照样绿。两侧都必须存在(缺一侧说明有一份 CSS 没打进来,顺序就对着空集合
-//      通过了),且 d2h 声明的每个无前缀 --d2h-* 都得在我们那块里出现 —— 删掉半张
-//      映射表同样是静默退色。哪块是"我们的"由 vscode-theme.css 里的哨兵声明认定,
-//      不按值的形状猜(理由见 MAP_SENTINEL 那段)。
-//   6. **明暗开关的三条 color-scheme 规则都在,且没人把深色值写回媒体查询。**
-//      深浅取值现在写成 `light-dark(浅, 深)` 的单条声明,选中哪一半全靠 :root 上的
-//      color-scheme —— 那三条规则(:root 跟随系统 / [data-theme=light] / [data-theme=dark])
-//      就是整个开关的全部机制,少一条的症状是**按钮照常有反应而页面不变**。
-//      6b 是同一件事的另一半,也是**旧断言的反转**:从前深色是写在
-//      @media (prefers-color-scheme: dark) 里的一份 delta,那时查的是"delta 里的名字
-//      在浅色侧也得有";现在凡把 --color-* / --hljs-* 声明进那个媒体条件的一律判红 ——
-//      那样写不报错、浅色也对,只有手动档对它无效(切到 Light 时那一个颜色还是深的)。
-//      diff2html 自己在那个媒体条件里声明的是 --d2h-dark-*,不受影响;Lightning CSS
-//      降级 light-dark() 时补进去的是 --lightningcss-*,也不受影响。
-//   5. **没有无定义的 var() 引用**。Tailwind v4 会裁掉既没被工具类、也没被我们自己的
-//      CSS 以 var() 引用的 @theme 变量(已实测),所以引用侧写错一个字符时
-//      产物里留下的是一个无定义的 var() —— 该属性变成 unset,颜色悄悄没了,没有任何
-//      报错。--tw-* 除外:它们由 @property 声明,不走 `--x:` 这个形状。
-//   3/4. **hljs 规则里没有硬编码颜色,且每个 --hljs-* 都被用到。**
-//      上游那两份主题(github / github-dark)已经合成我们自己的 hljs-theme.css:
-//      15 条规则照抄选择器(上游 18 条里的空规则与两条 code.hljs 没抄,理由在那个文件里),
-//      颜色一律 `var(--hljs-…)`,深浅由 token 的 light-dark() 翻。
-//      于是从前那条「深浅两套选择器集合必须相等」失去了对象 —— 现在只有一套规则。
-//      接手的是两条:规则里出现任何硬编码颜色,说明有一条漏了 token 化,症状是
-//      **另一档下那一处静默停在错的颜色上**;某个 --hljs-* 定义了却没被任何 hljs
-//      规则引用,说明抄漏了它对应的那条规则(第 5 条查不到 —— 它查的是引用侧)。
-//      色值本身抄没抄对不在门禁能力范围内,归人工逐条对。
+// 要证的事,每一条违反后都**不报错、只是静默出错**(编号跟着历史走、不连续,别按数量读):
+//   1. hljs 主题与 diff2html.min.css 在构建产物里仍是 unlayered —— 无层样式在层叠中永远胜过
+//      有层样式,而 Tailwind v4 把 preflight 放在 @layer base。一旦这两份 CSS 被裹进任何
+//      @layer,这层结构性保障就没了。
+//   2. **每一条** hljs 规则都排在**第一条** d2h 规则之前,否则 hljs 配色被 d2h 覆盖。断言取
+//      max(hljs) < min(d2h) 而不是 first < first:后者只要两份 CSS 的头部顺序对就放行,深色那
+//      整块跑到 diff2html 之后也照样绿(已实测能骗过)。
+//   2b. **覆写 --d2h-* 的那些块自己也必须 unlayered**:第 1 条看的是 d2h 的规则,这条看的是变
+//      量定义 —— 那 23 条映射一旦入层,就会被 diff2html `:host,:root` 里的默认值(unlayered)
+//      压回去,配色整片退回 GitHub 那套。少了它第 1 条是绿的而页面是错的。
+//   2c. **而且要排在 d2h 的默认值之后、覆盖它的全部无前缀变量**:两边特异性同为 (0,1,0),胜出
+//      **纯靠源码顺序**。两侧都必须存在(缺一侧说明有一份 CSS 没打进来,顺序就对着空集合通过
+//      了),且 d2h 声明的每个无前缀 --d2h-* 都得在我们那块里出现 —— 删掉半张映射表同样是静默
+//      退色。哪块是「我们的」由哨兵声明认定,不按值的形状猜。
+//   6. **明暗开关的三条 color-scheme 规则都在,且没人把深色值写回媒体查询。** 那三条就是整个
+//      开关的全部机制,少一条的症状是**按钮照常有反应而页面不变**;6b 是同一件事的另一半 ——
+//      凡把 --color-* / --hljs-* 声明进 prefers-color-scheme 的一律判红,那样写不报错、浅色也
+//      对,只有手动档对它无效。diff2html 自己声明的 --d2h-dark-* 与 Lightning CSS 补的
+//      --lightningcss-* 不受影响。
+//   5. **没有无定义的 var() 引用**。Tailwind v4 会裁掉既没被工具类、也没被我们自己的 CSS 引用
+//      的 @theme 变量,所以引用侧写错一个字符时,产物里留下的是一个无定义的 var() —— 该属性变
+//      成 unset,颜色悄悄没了。--tw-* 除外:它们由 @property 声明,不走 `--x:` 这个形状。
+//   3/4. **hljs 规则里没有硬编码颜色,且每个 --hljs-* 都被用到。** 前者漏一条的症状是另一档下
+//      那一处静默停在错的颜色上;后者说明抄漏了它对应的那条规则(第 5 条查的是引用侧)。色值
+//      本身抄没抄对不在门禁能力范围内,归人工逐条对。
 
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -123,10 +101,9 @@ const notes = [];
 // 「什么算 hljs / d2h 的一条规则」只定义一次 —— 下面三项断言全部由这两个集合驱动。
 // 分散成多份 filter 的后果是:改窄其中一份的匹配口径,另几项就在悄悄检查另一批规则。
 const isRule = (b) => !b.prelude.startsWith('@');
-// `.hljs` 不要求在选择器开头:上游主题里 `code.hljs` / `pre code.hljs` 两条正是长在
-// 别的类型选择器后面的。曾经写成 `(^|[\s,])\.hljs`,于是那两条**一条都不在集合里** ——
-// 顺序与 unlayered 那几项因此少查了两条,而「hljs 规则里不许有硬编码颜色」那条更是
-// 对着它们完全失效(往 `pre code.hljs` 里写死一个 background 能一路绿到底)。
+// `.hljs` 不要求在选择器开头:上游主题里 `code.hljs` / `pre code.hljs` 两条正是长在别的类型
+// 选择器后面的。曾经写成 `(^|[\s,])\.hljs`,于是那两条**一条都不在集合里**,而「hljs 规则里
+// 不许有硬编码颜色」那条对它们完全失效(往 `pre code.hljs` 里写死一个 background 能一路绿)
 const hljsRules = blocks.filter((b) => isRule(b) && /\.hljs(\b|-)/.test(b.prelude));
 const d2hRules = blocks.filter((b) => isRule(b) && /(^|[\s,])\.d2h-/.test(b.prelude));
 
@@ -135,9 +112,9 @@ const inLayer = (block) => block.ancestors.some((a) => a.startsWith('@layer'));
 const isDarkMedia = (a) => /@media\s*\(\s*prefers-color-scheme\s*:\s*dark\s*\)/.test(a);
 const inDarkMedia = (block) => block.ancestors.some(isDarkMedia);
 
-// blocks 由 scanBlocks 在遇到 `{` 时按序 push,因此**天然按 start 升序**,filter 也保序。
-// 下面取"最前/最后一条"一律用下标,不再各写一个 reduce 比较器 —— 那种写法两处只差
-// 一个 `>` / `<`,写反了在今天的产物上仍然通过。
+// blocks 由 scanBlocks 按序 push,因此**天然按 start 升序**,filter 也保序。下面取「最前/最后
+// 一条」一律用下标,不再各写一个 reduce 比较器 —— 那种写法两处只差一个 `>` / `<`,写反了在今
+// 天的产物上仍然通过。
 const firstOf = (list) => list[0];
 const lastOf = (list) => list[list.length - 1];
 
@@ -148,12 +125,11 @@ const textOf = (block) => {
 };
 
 /**
- * 「一条自定义属性声明」的匹配口径**只定义一次**(与上面 hljs / d2h 规则同一个道理):
- * 各调用点分头各写一遍正则时,改窄其中一处的口径,另几处就在悄悄检查另一批名字 ——
- * 而每一处都是为了抓静默失效才存在的。
+ * 「一条自定义属性声明」的匹配口径**只定义一次**(与上面 hljs / d2h 规则同一个道理):各调用点
+ * 分头各写一遍正则时,改窄其中一处的口径,另几处就在悄悄检查另一批名字。
  *
- * 要名字的用 `declaredNames`,要名字带值的(双值检查)用本函数,**共用同一条正则**:
- * 值那半写成 `[^;}]*`(可以为空),因此两者匹配到的名字集合逐条相同。
+ * 要名字的用 `declaredNames`,要名字带值的用本函数,**共用同一条正则**:值那半写成 `[^;}]*`
+ * (可以为空),因此两者匹配到的名字集合逐条相同。
  */
 const declarationsIn = (text, prefix = '--') => {
   const re = new RegExp(`(${prefix}[\\w-]+)\\s*:\\s*([^;}]*)`, 'g');
@@ -163,10 +139,9 @@ const declarationsIn = (text, prefix = '--') => {
 const declaredNames = (text, prefix = '--') => declarationsIn(text, prefix).map(([name]) => name);
 
 /**
- * 「一次 `var()` 引用」的匹配口径,与上面 `declarationsIn` 同一个理由收成一处。
- *
- * 第 5 条那处**刻意不用它**:那条只认**不带 fallback** 的引用(带 fallback 的写法本身
- * 就承认可能没定义,坏了也不是静默的),契约与这里不同,合并会悄悄放松它。
+ * 「一次 `var()` 引用」的匹配口径,与上面 `declarationsIn` 同一个理由收成一处。第 5 条那处
+ * **刻意不用它**:那条只认**不带 fallback** 的引用(带 fallback 的写法本身就承认可能没定义,
+ * 坏了也不是静默的),契约与这里不同,合并会悄悄放松它。
  */
 const varRefsIn = (text, prefix = '--') =>
   [...text.matchAll(new RegExp(`var\\(\\s*(${prefix}[\\w-]+)`, 'g'))].map((m) => m[1]);
@@ -208,13 +183,11 @@ if (hljsRules.length > 0 && d2hRules.length > 0) {
 }
 
 // --- 2b. 覆写 --d2h-* 的块必须 unlayered ----------------------------------
-// 判据落在「声明变量的那个块」上,而不是「用变量的那条规则」上:压回默认值这件事
-// 发生在变量层,规则层看不出来。
-// 两侧的身份判据是 vscode-theme.css 那块里的**哨兵声明** MAP_SENTINEL,不是"值长什么样"。
-// 曾经按"值里有没有 var(--color-…)"分,那是个会给出**误导性红**的代理:深色下给某个
-// --d2h-* 补一条字面量覆写(完全正当)就会被归到 diff2html 那一侧,于是顺序断言报
-// 「检查 @import 顺序」,而 @import 顺序根本没问题。哨兵由我们自己写、自己控制,
-// 值的形状怎么变都不影响分类,并且它不见了本身就是一条正面断言。
+// 判据落在「声明变量的那个块」上,而不是「用变量的那条规则」上:压回默认值这件事发生在变量层,
+// 规则层看不出来。两侧的身份判据是 vscode-theme.css 那块里的**哨兵声明** MAP_SENTINEL,不是
+// 「值长什么样」—— 曾经按「值里有没有 var(--color-…)」分,那是个会给出**误导性红**的代理:深色
+// 下给某个 --d2h-* 补一条字面量覆写(完全正当)就会被归到 diff2html 那一侧,于是顺序断言报
+// 「检查 @import 顺序」,而 @import 顺序根本没问题。
 const MAP_SENTINEL = '--gg-d2h-map';
 const D2H_DECL = /--d2h-[\w-]+\s*:/;
 const d2hVarBlocks = blocks.filter((b) => isRule(b) && D2H_DECL.test(textOf(b)));
@@ -284,10 +257,9 @@ if (ourBlocks.length === 0) {
 // 带 fallback 的 var(--x, …) 不算:那种写法本身就承认可能没定义,坏了也不是静默的。
 const defined = new Set(declaredNames(css));
 
-// `@property --x { … }` 也是一份声明,只是形状不是 `--x:`(Tailwind 用它注册
-// --tw-border-style 之类)。把它并进 defined,而**不是**按 `--tw-` 前缀豁免:
-// 前缀豁免是按名字给的,于是 var(--tw-写错了) 这种引用永久隐身,将来 Tailwind 换出
-// 一个没 @property 声明的 --tw-* 也一样查不到。判据统一成"它有一份声明"。
+// `@property --x { … }` 也是一份声明,只是形状不是 `--x:`(Tailwind 用它注册 --tw-border-style
+// 之类)。把它并进 defined,而**不是**按 `--tw-` 前缀豁免:前缀豁免是按名字给的,于是
+// var(--tw-写错了) 这种引用永久隐身。判据统一成「它有一份声明」
 for (const block of blocks) {
   const at = /^@property\s+(--[\w-]+)/.exec(block.prelude);
   if (at) defined.add(at[1]);
@@ -307,11 +279,10 @@ if (referenced.size === 0) {
 }
 
 // --- 5b. diff2html 行号列的包含块那条工具类确实在产物里 --------------------
-// `DiffView` 给 diff2html 的宿主 div 挂了 `relative`,补的是行号列(它们是
-// `position: absolute`)的包含块;没有它右侧一滚,整列行号原地钉死。
-// 这条查的是**产物**而不是源码:Tailwind 靠 @source 扫**字面量**生成工具类,类名一旦
-// 改成拼出来的(`cx('relative')`、模板串、别处 import 的常量),DOM 上的 className 还是
-// 'relative'、组件测试照常绿,而 CSS 里那条规则没了 —— 布局静默退回坏的样子。
+// `DiffView` 给 diff2html 的宿主 div 挂了 `relative`,补的是行号列(`position: absolute`)的包
+// 含块;没有它右侧一滚,整列行号原地钉死。这条查的是**产物**而不是源码:Tailwind 靠 @source 扫
+// **字面量**生成工具类,类名一旦改成拼出来的,DOM 上的 className 还是 'relative'、组件测试照
+// 常绿,而 CSS 里那条规则没了 —— 布局静默退回坏的样子
 if (!/(^|[\s,}])\.relative\s*\{[^}]*position\s*:\s*relative/.test(css)) {
   failures.push(
     '产物里没有 `.relative{position:relative}` —— diff2html 行号列少了包含块,右侧一滚整列行号会原地钉死、与代码行错开',
@@ -321,12 +292,10 @@ if (!/(^|[\s,}])\.relative\s*\{[^}]*position\s*:\s*relative/.test(css)) {
 }
 
 // --- 6. 明暗开关的三条 color-scheme 规则都在,且都 unlayered ---------------
-// 这三条就是整个开关:`data-theme` 属性由 state/theme.ts 写在 <html> 上,缺省(属性不
-// 存在)即跟随系统。丢了其中一条不报错 —— 按钮照常切档、`data-theme` 照常变,只是页面
-// 一动不动,而这恰恰是最像"没坏"的坏法。
-//
-// 值也一起查:把 [data-theme=dark] 那条写成 `light dark` 同样是"点了没反应",而选择器
-// 还在原地,只查规则在不在会放它过去。
+// 这三条就是整个开关:`data-theme` 属性由 state/theme.ts 写在 <html> 上,缺省(属性不存在)即
+// 跟随系统。丢了其中一条不报错 —— 按钮照常切档、`data-theme` 照常变,只是页面一动不动,而这
+// 恰恰是最像「没坏」的坏法。值也一起查:把 [data-theme=dark] 那条写成 `light dark` 同样是「点
+// 了没反应」,而选择器还在原地,只查规则在不在会放它过去。
 const ruleBlocks = blocks.filter(isRule);
 // 属性值的引号由压缩器决定(实测被剥掉),两种形状都要认得
 const normalizeSelector = (prelude) => normalize(prelude).replace(/["']/g, '');
@@ -370,13 +339,10 @@ for (const [selector, expected, label] of EXPECTED_SCHEMES) {
 }
 
 // --- 6e. JS 写的属性名与 CSS 读的是同一个 ---------------------------------
-// 开关的契约横跨两个产物:`state/theme.ts` 写 <html> 上的属性,`vscode-theme.css` 的
-// 两条选择器读它。上面 6a 只守 CSS 那一侧,`theme.test.ts` 只守 JS 那一侧,**两条断言
-// 各自钉在接缝的一端**:把属性改名时只改了 TS 与它的单测,两处都绿,而页面上按钮照常
-// 切档、什么都不变。
-//
-// 这是本脚本唯一读 CSS 以外产物的一条 —— 判据本身跨产物,拆到两个文件里就等于把它
-// 重新拆成两半。查的是字面量而不是行为:JS 那侧的行为归 `theme.test.ts`。
+// 开关的契约横跨两个产物:`state/theme.ts` 写 <html> 上的属性,`vscode-theme.css` 的两条选择器
+// 读它。上面 6a 只守 CSS 那一侧、`theme.test.ts` 只守 JS 那一侧,**两条断言各自钉在接缝的一
+// 端**:把属性改名时只改了 TS 与它的单测,两处都绿,而页面上按钮照常切档、什么都不变。这是本
+// 脚本唯一读 CSS 以外产物的一条 —— 判据本身跨产物,拆到两个文件里就等于把它重新拆成两半。
 const jsPath = join(repoRoot, 'dist', 'web', 'app.js');
 let js = '';
 try {
@@ -393,21 +359,18 @@ if (js && !js.includes(THEME_ATTR)) {
 }
 
 // --- 6b. 我们自己的 CSS 里没有任何 prefers-color-scheme 决策 --------------
-// 旧断言的反转。写回媒体查询不报错、浅色也对,只有手动档对它无效 —— 用户切到 Light
-// 时那一个颜色仍是深的,而页面上其余部分都跟着翻了,看上去像是那个颜色"本来就该这样"。
+// 旧断言的反转。写回媒体查询不报错、浅色也对,只有手动档对它无效 —— 用户切到 Light 时那一个颜
+// 色仍是深的,而页面上其余部分都跟着翻了,看上去像是那个颜色「本来就该这样」。
 //
-// 判据落在**「谁在决定明暗」**上,而不是"哪几个前缀的 token"。只查 token 前缀的话,
-// 一条 `dark:bg-editor-background` 工具类、或手写的
-// `@media (prefers-color-scheme:dark){ .x{background:#111} }` 都不声明自定义属性、
-// 一路绿,而失效机制与它挡的那条逐字相同 —— 而 `dark:` 变体恰恰是 Tailwind v4 的
-// 主流答案,也是下一个人最容易顺手写出来的形状。
+// 判据落在**「谁在决定明暗」**上,而不是「哪几个前缀的 token」:只查 token 前缀的话,一条
+// `dark:bg-editor-background` 工具类、或手写的 `@media (prefers-color-scheme:dark){ .x{…} }`
+// 都不声明自定义属性、一路绿,而失效机制与它挡的那条逐字相同 —— 而 `dark:` 变体恰恰是
+// Tailwind v4 的主流答案,也是下一个人最容易顺手写出来的形状。
 //
-// 于是先整体断言:深色媒体条件里的每一条规则都必须属于两个**已知的、不是我们写的**
-// 例外,其余一律判红。两个例外已逐条实测:
-//   - diff2html 自带那块,29 条以 `.d2h-auto-color-scheme` 开头、另有 1 条以
-//     `.d2h-dark-color-scheme` 开头(3.4.56 实测)。**两个 class 我们都不挂**
-//     (render.ts 传 colorScheme:'light'),故它整块是死的;
-//   - Lightning CSS 降级 light-dark() 时补的开关,只声明 `--lightningcss-*`。
+// 于是先整体断言:深色媒体条件里的每一条规则都必须属于两个**已知的、不是我们写的**例外,其余
+// 一律判红 —— diff2html 自带那块(29 条 `.d2h-auto-color-scheme` + 1 条
+// `.d2h-dark-color-scheme`,两个 class 我们都不挂,故整块是死的),以及 Lightning CSS 降级
+// light-dark() 时补的开关(只声明 `--lightningcss-*`)。
 const DARK_MEDIA_EXEMPT = [
   (block) => /(^|[\s,])\.d2h-(?:auto|dark)-color-scheme\b/.test(block.prelude),
   (block) => declaredNames(textOf(block), '--lightningcss-').length > 0,
@@ -428,11 +391,9 @@ if (darkRules.length === 0) {
   );
 }
 
-// 「哪几族属性算主题 token」与「它们声明在哪」都只写一次:下面 6b(深浅分侧)、
-// 6c(hljs 双值)、6d(color-mix)三条断言全部从 themedDecls 派生。
-//
-// 分头各扫一遍的后果是:这个前缀清单看着像唯一事实来源,其实只有 6b 读它 —— 将来纳入
-// 第三族前缀时 6b 会跟着扩,而 6c 与 6d 对新前缀一条都不查,且不报错。
+// 「哪几族属性算主题 token」与「它们声明在哪」都只写一次:下面 6b(深浅分侧)、6c(hljs 双
+// 值)、6d(color-mix)三条断言全部从 themedDecls 派生。分头各扫一遍的后果是:将来纳入第三族
+// 前缀时 6b 会跟着扩,而 6c 与 6d 对新前缀一条都不查,且不报错。
 const THEMED_PREFIX = '--(?:color|hljs)-';
 const themedDecls = [];
 for (const block of ruleBlocks) {
@@ -464,14 +425,12 @@ if (themedOutside.size === 0) {
 }
 
 // --- 6c. 深浅双值的 token 确实是双值 --------------------------------------
-// Lightning CSS 按构建目标把 light-dark() 降级成 space-toggle 变量对,产物里搜不到
-// 那个函数名(已实测)。**两种形状都得认**:今天是降级后的,构建目标一提就变回原生的,
-// 只认一种的话那天整条断言会以"一个双值 token 都没有"的形状假红。
+// Lightning CSS 按构建目标把 light-dark() 降级成 space-toggle 变量对,产物里搜不到那个函数名。
+// **两种形状都得认**:构建目标一提就变回原生的,只认一种的话整条断言会以「一个双值 token 都没
+// 有」的形状假红。
 const DUAL_VALUE = /light-dark\(|--lightningcss-light\b[\s\S]*--lightningcss-dark\b/;
-// 15 个 hljs token **全部**该是双值,这一点与 --color-* 不同(那边「深浅共用同一取值」
-// 是正当写法,故只统计不断言):它们逐一来自上游两份主题的同一处色值,而那两份实测
-// 逐条不同。哪天上游让某个语义两档同色,这条会红 —— 那时该改的是这条断言,不是去写
-// 一条两半逐字相同的 light-dark()。
+// 15 个 hljs token **全部**该是双值,这一点与 --color-* 不同(那边「深浅共用同一取值」是正当写
+// 法,故只统计不断言):它们逐一来自上游两份主题的同一处色值,而那两份实测逐条不同。
 const hljsDecls = themedDecls.filter((d) => d.name.startsWith('--hljs-'));
 const singleValued = hljsDecls.filter((d) => !DUAL_VALUE.test(d.value)).map((d) => d.name);
 if (hljsDecls.length === 0) {
@@ -491,11 +450,9 @@ notes.push(
 );
 
 // --- 6d. 双值 token 没有被塞进 color-mix() --------------------------------
-// 即 Tailwind 的不透明度修饰符(`bg-editor-background/50` → color-mix())。降级后的双值
-// 是一段 token 流而不是一个合法 <color>,进 color-mix() 整条声明在解析期作废、属性
-// 静默变 unset。名单直接用上面算好的 dualNames —— 单值 token 没有这个问题,
-// 按名字一刀切会把完全正当的 `bg-warning-border/50` 也拦下来。
-//
+// 即 Tailwind 的不透明度修饰符(`bg-editor-background/50` → color-mix())。降级后的双值是一段
+// token 流而不是一个合法 <color>,进 color-mix() 整条声明在解析期作废、属性静默变 unset。名单
+// 直接用上面算好的 dualNames —— 按名字一刀切会把完全正当的 `bg-warning-border/50` 也拦下来。
 // 结果按**声明序**输出(而不是产物里的出现序),报错信息才稳定。
 const mixedRefs = new Set([...css.matchAll(/color-mix\([^;{}]*/g)].flatMap((m) => varRefsIn(m[0])));
 const mixed = [...dualNames].filter((name) => mixedRefs.has(name));
@@ -508,8 +465,8 @@ if (mixed.length > 0) {
 }
 
 // --- 3/4. hljs 规则全部走 token,且每个 token 都被用到 ---------------------
-// 从前这里查的是"深浅两套选择器集合完全相等",那条随着两份上游主题被合成一份而失去
-// 对象。接手的两条各自盯着一种抄写事故。
+// 从前这里查的是「深浅两套选择器集合完全相等」,那条随着两份上游主题被合成一份而失去对象。
+// 接手的两条各自盯着一种抄写事故。
 const HARDCODED_COLOR = /#[0-9a-fA-F]{3,8}\b|\b(?:rgb|rgba|hsl|hsla|color-mix)\(/;
 const hardcoded = hljsRules.filter((b) => HARDCODED_COLOR.test(textOf(b)));
 if (hljsRules.length > 0) {

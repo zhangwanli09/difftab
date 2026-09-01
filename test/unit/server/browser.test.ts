@@ -15,8 +15,7 @@ describe('browserCommand', () => {
     expect(browserCommand('linux', URL_)).toEqual({ command: 'xdg-open', args: [URL_] });
     expect(browserCommand('win32', URL_)).toEqual({
       command: 'cmd',
-      // 空串是 `start` 的窗口标题占位。少了它,带引号的 URL 会被当作标题吞掉,
-      // 浏览器根本不开—— 而这是一个只在 Windows 上出现的静默失败
+      // 空串是 `start` 的窗口标题占位:少了它 URL 会被当成标题吞掉,浏览器根本不开(只在 Windows)
       args: ['/c', 'start', '', URL_],
     });
   });

@@ -63,8 +63,7 @@ function watcherOn(gitDir: string, onDegrade: (cause: Error) => void) {
 
 describe('createWatcher 的 error 事件', () => {
   test('出错的 watcher 从 size 里摘掉 —— 它已经不送事件了', () => {
-    // size 是「`.git` 侧还活着吗」的唯一依据。留着一个空壳不会报错,只是那个判据
-    // 从此对着它回答「还活着」
+    // size 是「`.git` 侧还活着吗」的唯一依据:留着一个空壳不报错,只是判据从此对着它答「还活着」
     const degrades: Error[] = [];
     const handle = watcherOn(fakeGitDir(), (cause) => degrades.push(cause));
     const before = handle.size;

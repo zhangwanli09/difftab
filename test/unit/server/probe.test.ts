@@ -85,16 +85,15 @@ describe('命中', () => {
     const live = await findLiveInstance(repo);
     expect(live).not.toBe(null);
     expect(live?.pid).toBe(4242);
-    // URL 必须与那个实例自己打印的完全相同 —— 少了 token 就是一个 403 的链接,
-    // 而这条路平时不走,谁也不会先注意到
+    // URL 必须与那个实例自己打印的完全相同 —— 少了 token 就是一个 403 的链接,而这条路平时不走
     expect(live?.url).toBe(
       `http://127.0.0.1:${instance.port}/?token=${encodeURIComponent(`${instance.port}.${TOKEN_SECRET}`)}`,
     );
   });
 
   test('探活自己也过三道校验:带合规的 Host 与注册表里的 token', async () => {
-    // 不带的话对端一律 403,于是**每一个**活着的实例都被判成陈旧 —— 而症状不是
-    // 报错,是「复用从来没生效过」,和功能没做一模一样
+    // 不带的话对端一律 403,于是**每一个**活着的实例都被判成陈旧 —— 症状不是报错,是「复用从来没
+    // 生效过」,和功能没做一模一样
     const repo = tempRepo();
     const instance = await fakeInstance(() => ({
       status: 200,
@@ -112,8 +111,8 @@ describe('命中', () => {
   });
 
   test('两侧路径写法不同也认得出 —— 归一化与注册表键同一份', async () => {
-    // macOS 的 /var → /private/var、Windows 的分隔符:两个活着的实例互不相认时,
-    // 同一个仓库就会开出第二个进程
+    // macOS 的 /var → /private/var、Windows 的分隔符:两个活着的实例互不相认时,同一个仓库就会开
+    // 出第二个进程
     const repo = tempRepo();
     const instance = await fakeInstance(() => ({
       status: 200,
@@ -152,8 +151,7 @@ describe('判为陈旧', () => {
   });
 
   test('**200 但路径不是这个仓库** —— 复用它等于把用户带到别人的页面', async () => {
-    // 这一条是 200 之后还要比路径的全部理由。少了它,判据退化成「端口上有人应答」,
-    // 而应答的可能是任何一个恰好认得这份 token 的进程
+    // 这一条是 200 之后还要比路径的全部理由:少了它,判据退化成「端口上有人应答」
     const repo = tempRepo();
     const other = tempRepo();
     const instance = await fakeInstance(() => ({
@@ -198,8 +196,8 @@ describe('判为陈旧', () => {
   });
 
   test('正文没完没了 —— 超过上限就断,同样得 settle', async () => {
-    // 端口归了别的服务时,`/api/instance` 可以是任何东西,包括一条无穷的流。
-    // 断了之后不自己 resolve 的话,后果与上一条相同
+    // 端口归了别的服务时,`/api/instance` 可以是任何东西,包括一条无穷的流;断了之后不自己
+    // resolve 的话,后果与上一条相同
     const repo = tempRepo();
     const instance = await rawInstance((_req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' });

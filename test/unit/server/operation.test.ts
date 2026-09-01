@@ -39,8 +39,7 @@ function mkdir(relative: string): void {
 
 describe('readOperation', () => {
   test('干净的 git 目录 → undefined,而不是某个默认值', async () => {
-    // 反面证据:恒返回一个操作的实现会让下面每一条都绿,而页面上是每个仓库
-    // 都挂着一个标签
+    // 反面证据:恒返回一个操作的实现会让下面每一条都绿,而页面上是每个仓库都挂着一个标签
     await expect(readOperation(gitDir)).resolves.toBeUndefined();
   });
 
@@ -76,17 +75,15 @@ describe('readOperation', () => {
   });
 
   test('rebase 的痕迹与 merge 的痕迹同时在时,报的是 rebase', async () => {
-    // 这不是假想的组合:rebase 冲突停下时 git 目录里就是同时躺着 `rebase-merge/`
-    // 与 merge 的那几个文件(已实测)。判据表按序取第一个命中,调换两行
-    // 不会报错 —— 只会把用户正在做的事说错
+    // 这不是假想的组合:rebase 冲突停下时 git 目录里就是同时躺着 `rebase-merge/` 与 merge 的那几个
+    // 文件。判据表按序取第一个命中,调换两行不会报错 —— 只会把用户正在做的事说错
     mkdir('rebase-merge');
     touch('MERGE_HEAD');
     await expect(readOperation(gitDir)).resolves.toBe('rebase');
   });
 
   test('cherry-pick 排在 revert 之前是稳定的 —— 两者的痕迹独立,不会互相顶掉', async () => {
-    // 一次 `git cherry-pick` 的中断不会留下 REVERT_HEAD,反之亦然;这条只是把
-    // 「两个判据各自独立」钉住,免得将来有人把它们合并成一个 `SEQUENCER` 判据
+    // 把「两个判据各自独立」钉住,免得将来有人把它们合并成一个 `SEQUENCER` 判据
     touch('REVERT_HEAD');
     await expect(readOperation(gitDir)).resolves.toBe('revert');
     touch('CHERRY_PICK_HEAD');

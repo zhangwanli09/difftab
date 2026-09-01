@@ -12,12 +12,9 @@ import { IdleConfigError } from './http/idle.ts';
 import { WatchTierError } from './watch/tier.ts';
 
 /**
- * 版本号只有 package.json 一个来源。
- *
- * 不把它硬编码在这里,也不在构建期 define 进去:硬编码会在第一次发版改号时
- * 静默漂移(`--version` 报旧号,没有任何东西会失败);构建期注入则让 `dist/` 与
- * 源码对不上、调试时更难看清。运行时读一次的代价只落在 `--version` 这条路径上。
- * dist/server/main.js → 包根的 package.json;`files` 之外 npm 总会带上它。
+ * 版本号只有 package.json 一个来源。不硬编码在这里,也不在构建期 define 进去:硬编码会在
+ * 第一次发版改号时静默漂移(`--version` 报旧号,没有任何东西会失败);构建期注入则让
+ * `dist/` 与源码对不上。运行时读一次的代价只落在 `--version` 这条路径上。
  */
 function readVersion(): string {
   const manifestPath = fileURLToPath(new URL('../../package.json', import.meta.url));
@@ -29,15 +26,11 @@ function readVersion(): string {
 
 /** 一句话友好报错,不是 Node 异常栈(启动前置检查)。 */
 function fail(message: string): never {
-  // **`writeSync` 而不是 `process.stderr.write`**:后者写到**管道**时在 Windows 上
-  // 是异步的,紧跟着 `process.exit()` 会把还在缓冲区里的内容整条丢掉 —— 而冒烟测试
-  // 正是用管道 spawn 去断言这句提示的。丢了之后的症状是 stderr 全空,跟真正的病因
-  // (退出太快)毫无相似之处。
-  //
-  // **裹 try/catch**:读端可能先走(`difftab 2>&1 | head -0`),那时 `writeSync`
-  // **同步抛** EPIPE —— 下面那两个 `ignoreBrokenPipe` 监听的是流上的 `'error'` 事件,
-  // 接不住这一种。抛出去的结果是「一句话友好报错」变成一屏 Node 栈,恰好推翻本函数
-  // 存在的理由。cli/start.ts 里那次 `writeSync(1, …)` 同理,两处写法必须一致。
+  // **`writeSync` 而不是 `process.stderr.write`**:后者写到**管道**时在 Windows 上是异步
+  // 的,紧跟着 `process.exit()` 会把还在缓冲区里的内容整条丢掉,而冒烟测试正是用管道 spawn
+  // 去断言这句提示的。**裹 try/catch**:读端可能先走(`difftab 2>&1 | head -0`),那时
+  // `writeSync` **同步抛** EPIPE,而下面那两个 `ignoreBrokenPipe` 监听的是流上的 `'error'`
+  // 事件、接不住这一种 —— 抛出去的结果是「一句话友好报错」变成一屏 Node 栈
   try {
     writeSync(2, `difftab: ${message}\n`);
   } catch {
@@ -47,16 +40,12 @@ function fail(message: string): never {
 }
 
 /**
- * 读端先走了不算错误(`difftab --no-open | head -1`:用户只想要那行 URL)。
+ * 读端先走了不算错误(`difftab --no-open | head -1`:用户只想要那行 URL)。之后每一次写都以
+ * EPIPE 失败,而**在 Windows 上管道写是异步的**(POSIX 上同步),失败因此以一个 `'error'`
+ * 事件到达 —— 零监听器的流收到 `'error'` 就是整个进程带着裸栈以 1 退出。
  *
- * 之后每一次写都以 EPIPE 失败,而**在 Windows 上管道写是异步的**(POSIX 上同步),
- * 失败因此以一个 `'error'` 事件到达 —— 零监听器的流收到 `'error'` 就是整个进程带着
- * 裸栈以 1 退出。已在 CI 的 windows × Node 24 档实测到:`head` 一退,紧接着那句
- * 「read-only view of this repository」就把服务打死了,而 macOS / Linux 上同一条路
- * 一声不响。
- *
- * 服务本身没坏 —— 浏览器照常用得上,45 秒没人连再自己退,所以这里只是把 EPIPE
- * 咽掉。**非 EPIPE 的错误照旧抛**:那是真出事了,不该借这条路一起被吞掉。
+ * 服务本身没坏(浏览器照常用得上),所以这里只是把 EPIPE 咽掉。**非 EPIPE 的错误照旧抛**:
+ * 那是真出事了,不该借这条路一起被吞掉。
  */
 function ignoreBrokenPipe(stream: NodeJS.WriteStream): void {
   stream.on('error', (cause: NodeJS.ErrnoException) => {
@@ -88,9 +77,8 @@ export async function main(argv: string[]): Promise<void> {
   try {
     await start({ cwd: process.cwd(), noOpen: options.noOpen });
   } catch (cause) {
-    // 三者都是「还没开始干活就发现参数不对」,收成同一句话友好报错。
-    // 后两个只可能来自内部环境变量写错,但它们同样不该甩一屏 Node 栈 —— 而且那种
-    // 场合下栈顶是 resolveTier / resolveIdleMs,读起来像产品坏了
+    // 三者都是「还没开始干活就发现参数不对」,收成同一句话友好报错。后两个只可能来自内部
+    // 环境变量写错,但那种场合下栈顶是 resolveTier / resolveIdleMs,读起来像产品坏了
     if (
       cause instanceof PreflightError ||
       cause instanceof WatchTierError ||

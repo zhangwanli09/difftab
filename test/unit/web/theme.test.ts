@@ -68,8 +68,7 @@ describe('落到 <html> 上', () => {
     themePreference.value = 'dark';
 
     themePreference.value = 'system';
-    // 留一个 data-theme="" 的话 CSS 那两条属性选择器都不命中,看着"像"是跟随系统了,
-    // 而下一个人会以为缺省档有自己的取值
+    // 留一个 data-theme="" 的话 CSS 那两条属性选择器都不命中,看着「像」是跟随系统了
     expect(document.documentElement.hasAttribute('data-theme')).toBe(false);
   });
 });

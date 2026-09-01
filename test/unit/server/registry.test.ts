@@ -36,9 +36,8 @@ afterEach(() => {
 describe('键归一化', () => {
   test('同一个目录的不同写法落到同一个文件', () => {
     const dir = tempRepo();
-    // 写入侧给的是 `git rev-parse --show-toplevel`,读取侧(dev proxy)给的是
-    // process.cwd() —— 两者指向同一个目录时字面量仍可能不同。这里用尾随分隔符与
-    // 一段 `./` 模拟那种差异:不归一的话 sha256 各算各的,dev proxy 永远找不到后端
+    // 写入侧给的是 `git rev-parse --show-toplevel`,读取侧(dev proxy)给的是 process.cwd() —— 两
+    // 者指向同一个目录时字面量仍可能不同。不归一的话 sha256 各算各的,dev proxy 永远找不到后端
     expect(registryPath(`${dir}${sep}`)).toBe(registryPath(dir));
     expect(registryPath(join(dir, '.'))).toBe(registryPath(dir));
   });
@@ -82,9 +81,8 @@ describe('清理', () => {
   });
 
   test('解析不出来的条目也留着 —— 解析失败不等于是自己的', () => {
-    // 回归点:守卫曾经是 `entry && entry.pid !== process.pid`,readRegistry 返回
-    // null(写到一半的截断 JSON、或将来换了格式)时会短路失败、直接删掉。
-    // 被删的那个实例还活着,只是从此没有记录,S3c 的探活复用会起第二个进程
+    // 回归点:守卫曾经是 `entry && entry.pid !== process.pid`,readRegistry 返回 null(写到一半的
+    // 截断 JSON、或将来换了格式)时会短路失败、直接删掉 —— 被删的那个实例还活着,只是没了记录
     const dir = tempRepo();
     const path = registryPath(dir);
     writeRegistry(entryFor(dir));

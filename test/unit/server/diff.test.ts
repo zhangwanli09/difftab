@@ -53,13 +53,9 @@ describe('parseNumstat(已跟踪那一侧的二进制与行数判定)', () => {
   });
 
   test('重命名记录占**三**段:后两段是新旧路径,不能再被当成记录去解析', () => {
-    // 实测形态:`1\t0\t\0<旧>\0<新>`,路径字段是空的,且顺序与
-    // porcelain 的 `2 ` 记录**相反**(那边新在前)。读反了不报错,只是标注里的
-    // 「重命名自」指着新名字。
-    //
-    // 「后两段必须整段吞掉」这件事,只有当路径**自己长得像一条记录**时才看得出来 ——
-    // 而那正是 `-z` 存在的理由:路径里除了 NUL 什么字节都可能有,包括制表符。
-    // 少吞两段时,下面这个旧路径会被解析成一条 `2+3` 行的记录凭空多出来
+    // 实测形态:`1\t0\t\0<旧>\0<新>`,路径字段是空的,且顺序与 porcelain 的 `2 ` 记录**相反**。读
+    // 反了不报错,只是标注里的「重命名自」指着新名字。「后两段必须整段吞掉」只有当路径**自己长得
+    // 像一条记录**时才看得出来 —— 少吞两段时,下面这个旧路径会被解析成一条记录凭空多出来
     const renamedWithTabs = ['1\t0\t', '2\t3\tweird name.txt', 'tidy name.txt', ''].join('\0');
     expect(parseNumstat(renamedWithTabs)).toEqual([
       { binary: false, lines: 1, path: 'tidy name.txt', oldPath: '2\t3\tweird name.txt' },
@@ -129,8 +125,7 @@ describe('untrackedDiff', () => {
     // 50,001 行、总共约 100 KB,远在 5MB 之下
     writeFileSync(join(root, 'many-lines.txt'), `${'x\n'.repeat(50_001)}`);
     const payload = await untrackedDiff(root, 'many-lines.txt');
-    // reason 必须是 lines 而不是 size:体积只有约 100 KB,前端若只拿到体积就会
-    // 显示「文件过大(0 MB)」这种自相矛盾的话
+    // reason 必须是 lines 而不是 size:体积只有约 100 KB,只拿到体积的前端会显示「文件过大(0 MB)」
     expect(payload).toEqual({ kind: 'too-large', size: 100_002, reason: 'lines' });
   });
 

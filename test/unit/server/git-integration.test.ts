@@ -1,7 +1,5 @@
-// 对**真实 git 输出**跑封装层。
-//
-// 与 status.test.ts 的分工:那边钉解析器对给定字节的行为,这边钉「git 真的会吐出
-// 那些字节」。少了这一半,把 `-z` 或 `core.quotePath=false` 删掉,单测照样全绿。
+// 对**真实 git 输出**跑封装层。与 status.test.ts 的分工:那边钉解析器对给定字节的行为,这边钉
+// 「git 真的会吐出那些字节」—— 少了这一半,把 `-z` 或 `core.quotePath=false` 删掉,单测照样全绿。
 
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -26,11 +24,9 @@ import {
 } from '../../fixtures/make.mjs';
 
 /**
- * 断言这是一份带补丁的 payload,并把补丁正文取出来。
- *
- * `(payload as { patch: string }).patch` 是**转型不是收窄**:S4a 之后 binary /
- * too-large 两个分支都真的会回来,那个写法会安静地给出 undefined,后面的 `toContain`
- * 断言随之报一句与真正原因无关的话。这里先按判别式收窄,再取字段。
+ * 断言这是一份带补丁的 payload,并把补丁正文取出来。`(payload as { patch: string }).patch` 是
+ * **转型不是收窄**:binary / too-large 两个分支都真的会回来,那个写法会安静地给出 undefined,后
+ * 面的 `toContain` 断言随之报一句与真正原因无关的话。
  */
 function patchOf(payload: DiffPayload): string {
   if (payload.kind !== 'text' && payload.kind !== 'untracked-text') {
@@ -42,14 +38,12 @@ function patchOf(payload: DiffPayload): string {
 /**
  * fixture 目录 → 一份状态。
  *
- * `readStatus` 收的是整个 `RepoInfo` 而不是一个路径:进行中的多步操作只能从
- * **git 目录**读,而它与工作区根在 linked worktree / submodule 下差得很远。
- * 于是每条用例走的都是「定位 → 读状态」这条完整的链,与产品里的顺序一致。
+ * `readStatus` 收的是整个 `RepoInfo` 而不是一个路径:进行中的多步操作只能从 **git 目录**读,而
+ * 它与工作区根在 linked worktree / submodule 下差得很远。于是每条用例走的都是「定位 → 读状态」
+ * 这条完整的链,与产品里的顺序一致。
  *
- * 定位结果按目录记一次:`locateRepo` 每次要起两个 git 进程,而 fixture 建好之后就
- * 不动了 —— 十几个调用点各定位一遍等于白付三十来次进程启动。**产品里也正是定位一次
- * 之后一直用**(`start()` → `startServer(repo)`),所以这不是为了测试省事而偏离真实
- * 用法。直接断言 `locateRepo` 本身的那几条不走这里,它们要的就是新鲜的一次调用。
+ * 定位结果按目录记一次:`locateRepo` 每次要起两个 git 进程,而**产品里也正是定位一次之后一直
+ * 用**,所以这不是为了测试省事而偏离真实用法。直接断言 `locateRepo` 本身的那几条不走这里。
  */
 const located = new Map<string, Promise<RepoInfo>>();
 const statusOf = (dir: string) => {
@@ -114,8 +108,7 @@ describe('路径是字面量而不是通配模式(GIT_LITERAL_PATHSPECS)', () =>
   });
 
   posixOnly('纯模式取不到任何东西 —— `*` 不该变成一份整仓 diff', async () => {
-    // 路径来自 URL query,是外部输入。`path=*` 在通配语义下会让 `git diff -- '*'`
-    // 回一份整仓 diff,直接撞上「禁止一次性获取全仓 diff」那条:
+    // 路径来自 URL query,是外部输入。`path=*` 在通配语义下会让 `git diff -- '*'` 回一份整仓 diff:
     // 300+ 文件的补丁一次性发给浏览器,主线程冻上数秒到数十秒
     await expect(readDiff(repos.unicodePaths, { path: '*' })).rejects.toThrow(DiffRequestError);
     await expect(readDiff(repos.unicodePaths, { path: 'docs/*' })).rejects.toThrow(
@@ -126,8 +119,7 @@ describe('路径是字面量而不是通配模式(GIT_LITERAL_PATHSPECS)', () =>
 
 describe('未跟踪(展开到文件粒度,不折叠成 `dir/`)', () => {
   test('整个目录未跟踪时,列表里是里面的每个文件', async () => {
-    // 这条钉的是 `-uall`。少了它,git 只报一行 `? 未跟踪目录/`,列表里就是一个
-    // 点不开的目录条目 —— 而 agent 新建一整个目录是最常见的形态之一
+    // 这条钉的是 `-uall`:少了它 git 只报一行 `? 未跟踪目录/`,列表里就是一个点不开的目录条目
     const { files } = await statusOf(repos.unicodePaths);
     const paths = files.map((f) => f.path);
     expect(paths).toContain('未跟踪目录/a.md');
@@ -158,20 +150,17 @@ describe('重命名', () => {
     expect(both).toHaveProperty('patch', expect.stringContaining('rename from src/kept.txt'));
     expect(both).toHaveProperty('patch', expect.stringContaining('similarity index'));
 
-    // 这条是**反面证据**:红线说的「重命名必须传新旧两个路径」不是风格偏好。
-    // 少传一个,git 看不到另一侧、无法配对,输出的是 new file mode
+    // **反面证据**:少传一个路径时 git 看不到另一侧、无法配对,输出的是 new file mode
     const onlyNew = await readDiff(repos.renames, { path: 'src/kept-renamed.txt' });
     expect(onlyNew).toHaveProperty('patch', expect.stringContaining('new file mode'));
     expect(onlyNew).toHaveProperty('patch', expect.not.stringContaining('rename from'));
   });
 
   test('status 说是重命名、diff 配不上对时,行数按两条记录**合计**算', async () => {
-    // `git mv` 之后把内容全部重写、留在工作区不 add:index 里仍是纯改名,status 照报
-    // `R100`,所以条目带着 oldPath;而 `diff -M` 比的是 HEAD → 工作区,配不上,
-    // 于是 numstat 拆成「删旧 20 行」+「增新 60,000 行」两条,**按路径排序**。
-    //
-    // 取 `[0]` 的写法在这里拿到的是那条 20 行的删除 —— 行数闸放行,一份 6 万行的
-    // 补丁照旧发给浏览器,而这正是本阶段存在的理由。判据只能压在合计上
+    // `git mv` 之后把内容全部重写、留在工作区不 add:index 里仍是纯改名,status 照报 `R100`,所
+    // 以条目带着 oldPath;而 `diff -M` 比的是 HEAD → 工作区,配不上,于是 numstat 拆成「删旧 20
+    // 行」+「增新 60,000 行」两条、**按路径排序**。取 `[0]` 的写法拿到的是那条 20 行的删除 ——
+    // 行数闸放行,一份 6 万行的补丁照旧发给浏览器。判据只能压在合计上
     const { files } = await statusOf(repos.renames);
     const entry = files.find((f) => f.path === 'src/unpaired-z.txt');
     expect(entry?.oldPath).toBe('src/unpaired-a.txt');
@@ -220,9 +209,8 @@ describe('删除与符号链接 —— 决定「已跟踪 / 未跟踪」的分�
   });
 
   test('已暂存的删除给出删除补丁 —— 它已不在 index 里,但仍是已跟踪文件', async () => {
-    // 回归点:分流判据曾经只查 `git ls-files`,而 `git rm` 之后它对这条路径输出为空,
-    // 于是文件被误判成未跟踪、进而去读磁盘,以「文件不存在」告终 —— 而它明明在
-    // 上一条断言的变更列表里点得到
+    // 回归点:分流判据曾经只查 `git ls-files`,而 `git rm` 之后它对这条路径输出为空,于是文件被误
+    // 判成未跟踪、去读磁盘,以「文件不存在」告终 —— 而它明明在上一条断言的变更列表里点得到
     const payload = await readDiff(repos.deletions, { path: 'staged-deleted.txt' });
     expect(payload.kind).toBe('text');
     expect(payload).toHaveProperty('patch', expect.stringContaining('deleted file mode'));
@@ -244,8 +232,7 @@ describe('删除与符号链接 —— 决定「已跟踪 / 未跟踪」的分�
 
       const payload = await readDiff(repos.deletions, { path: 'link-to-outside' });
       const patch = patchOf(payload);
-      // 这条是安全断言:读磁盘那条路一旦用回跟随链接的 stat,
-      // 仓库外那个文件的内容就会原样出现在补丁里
+      // 安全断言:读磁盘那条路一旦用回跟随链接的 stat,仓库外那个文件的内容就会原样进补丁
       expect(patch).not.toContain(OUTSIDE_SECRET);
       expect(patch).toContain('new file mode 120000');
       expect(patch).toContain('outside-secret.txt');
@@ -324,8 +311,7 @@ describe('仓库定位', () => {
 
 describe('diff 边界(二进制只提示、超大不预览、新文件展示为全新增)', () => {
   test('已跟踪的二进制变更只回 binary —— 判定来自 git 自己而不是我们探 NUL', async () => {
-    // 与未跟踪那条路的分工:已跟踪一律以 `--numstat` 的 `-\t-` 为准(git 自身含
-    // .gitattributes 的判定),NUL 探测只用于未跟踪
+    // 分工:已跟踪一律以 `--numstat` 的 `-\t-` 为准(git 自身含 .gitattributes),NUL 探测只管未跟踪
     const payload = await readDiff(repos.diffEdges, { path: 'assets/icon.bin' });
     expect(payload).toEqual({ kind: 'binary' });
   });
@@ -344,12 +330,10 @@ describe('diff 边界(二进制只提示、超大不预览、新文件展示为�
   });
 
   test('超限时以 overflow 收尾,而不是 kill 自己引发的那个错误', async () => {
-    // `too-large` 那条分支全靠 `kind === 'overflow'` 认路,而掐断 git 之后到达的
-    // 错误会把它盖成 `exit`(实测 CI run 31755485278 的 windows × Node 22.0.x 档)。
-    //
-    // **这条在 POSIX 上不论有没有那道 guard 都是绿的** —— 那里 `'error'` 根本不触发。
-    // 留着它有两个理由:CI 的三个 Windows 档会真的执行到;以及它把判据压在**封装层**
-    // 而不是 6MB 那条端到端用例上,坏掉时给的是「kind 不对」而不是「接口回了 500」
+    // `too-large` 那条分支全靠 `kind === 'overflow'` 认路,而掐断 git 之后到达的错误会把它盖成
+    // `exit`(实测于 windows × Node 22.0.x 档)。**这条在 POSIX 上不论有没有那道 guard 都是绿
+    // 的** —— 留着它是因为三个 Windows 档会真的执行到,以及它把判据压在**封装层**而不是那条端到
+    // 端用例上,坏掉时给的是「kind 不对」而不是「接口回了 500」
     const failure = await runGit(['diff', 'HEAD', '--', 'bulky.txt'], repos.diffEdges, {
       maxStdoutBytes: 1024,
     }).then(
@@ -361,8 +345,7 @@ describe('diff 边界(二进制只提示、超大不预览、新文件展示为�
   });
 
   test('6MB 的文件只改一行照样看得见 —— 卡的是补丁不是文件', async () => {
-    // 这条与上一条是同一道闸的两面:按「文件多大」拒绝的写法在这里会把一份几 KB 的
-    // 补丁挡掉,而 agent 改一行数据文件是常事(S4a 的代码评审提出)
+    // 与上一条是同一道闸的两面:按「文件多大」拒绝的写法会把一份几 KB 的补丁挡掉
     const payload = await readDiff(repos.diffEdges, { path: 'bulky.txt' });
     expect(payload.kind).toBe('text');
     const patch = patchOf(payload);
@@ -373,8 +356,7 @@ describe('diff 边界(二进制只提示、超大不预览、新文件展示为�
   });
 
   test('已跟踪的超多行文件按行数拒绝 —— 它的体积远不到 5MB', async () => {
-    // wide.txt 约 700KB:体积那道闸放它过去,只有行数拦得住。两个 reason 因此
-    // 必须都能被单独触发,否则前端拿到的 size 解释不了拒绝的原因
+    // wide.txt 约 700KB:体积那道闸放它过去,只有行数拦得住 —— 两个 reason 因此必须都能被单独触发
     const payload = await readDiff(repos.diffEdges, { path: 'wide.txt' });
     expect(payload).toMatchObject({ kind: 'too-large', reason: 'lines' });
     if (payload.kind === 'too-large') expect(payload.size).toBeLessThan(5 * 1024 * 1024);
@@ -417,9 +399,8 @@ describe('300+ 文件变更(列表列全,单个文件的 diff 及时)', () => {
   });
 
   test('取一个文件的 diff 就只回这一个文件 —— 懒加载的判据在补丁内容上', async () => {
-    // 「按文件懒加载」在前端是「一次点击一个请求」,在这里是「一个请求一个文件」。
-    // 少了这条,一个漏了 pathspec 的 `git diff` 会把 320 个文件的补丁一次性回给
-    // 浏览器:功能看起来完全正常,只是主线程冻上几秒
+    // 「按文件懒加载」在这里是「一个请求一个文件」。少了这条,一个漏了 pathspec 的 `git diff` 会把
+    // 320 个文件的补丁一次性回给浏览器:功能看起来完全正常,只是主线程冻上几秒
     const payload = await readDiff(repos.manyFiles, { path: 'pkg/mod001.ts' });
     expect(payload.kind).toBe('text');
     const patch = patchOf(payload);
@@ -431,20 +412,17 @@ describe('300+ 文件变更(列表列全,单个文件的 diff 及时)', () => {
 describe('git 异常状态', () => {
   test('detached HEAD:标成 detached,而分支名那一栏是 git 的字面量', async () => {
     const { branch, files } = await statusOf(repos.detachedHead);
-    // git 在 `# branch.head` 里给的就是这个字面量(已实测)。**解析器不替它编一个
-    // 名字出来**(`BranchState.head`):那是在事实来源这一层说假话,
-    // 「取不到分支名时画什么」是展示决定,归前端
+    // git 在 `# branch.head` 里给的就是这个字面量。**解析器不替它编一个名字出来**:那是在事实来源
+    // 这一层说假话,「取不到分支名时画什么」是展示决定,归前端
     expect(branch.detached).toBe(true);
     expect(branch.head).toBe('(detached)');
     expect(branch.upstream).toBe(null);
-    // 另一半:除了分支那一栏,别的照常 —— 验收项要的是「不崩溃 + 降级标注」,
-    // 而一个空列表同样满足「不崩溃」
+    // 另一半:除了分支那一栏别的照常 —— 一个空列表同样满足「不崩溃」
     expect(files.map((f) => f.path).sort()).toEqual(['a.txt', 'untracked-while-detached.txt']);
   });
 
   test('没有进行中的操作时,`operation` 这个字段压根不出现', async () => {
-    // 反面证据。少了它,一个恒返回 `'merge'` 的实现会让下面几条全绿 ——
-    // 而页面上是每个仓库都挂着「合并中」
+    // 反面证据:少了它,一个恒返回 `'merge'` 的实现会让下面几条全绿
     const { branch } = await statusOf(repos.staged);
     expect('operation' in branch).toBe(false);
   });
@@ -457,8 +435,7 @@ describe('git 异常状态', () => {
     expect(entry?.conflicted).toBe(true);
     expect(entry.staged).toBe('U');
     expect(entry.unstaged).toBe('U');
-    // 判据压在**谓词**上而不是状态位上:XY 两位都不是 `.`,按字面读的实现会让
-    // 这个文件同时出现在「已暂存」与「未暂存」里,而它哪一组都不属于
+    // 判据压在**谓词**上而不是状态位上:XY 两位都不是 `.`,按字面读会让这个文件同时进两组
     expect(hasStagedChange(entry)).toBe(false);
     expect(hasUnstagedChange(entry)).toBe(false);
     expect(isConflicted(entry)).toBe(true);
@@ -475,9 +452,8 @@ describe('git 异常状态', () => {
   });
 
   test('rebase 进行中:标成 rebase 而不是 merge,且此时同时是 detached', async () => {
-    // 这条钉的是判据表的**顺序**:rebase 停下时 git 目录里同时躺着 `rebase-merge/`
-    // 与 `MERGE_MSG` / `AUTO_MERGE`(已实测),先判 merge 的写法在这里会把
-    // 用户正在做的事说错 —— 而它不报错,只是标了个错的词
+    // 这条钉的是判据表的**顺序**:rebase 停下时 git 目录里同时躺着 `rebase-merge/` 与 `MERGE_MSG`
+    // / `AUTO_MERGE`,先判 merge 的写法会把用户正在做的事说错 —— 不报错,只是标了个错的词
     const { branch, files } = await statusOf(repos.rebaseInProgress);
     expect(branch.operation).toBe('rebase');
     // 两件事同时成立,不是二选一:rebase 期间 status 报的就是 `(detached)`
@@ -487,9 +463,8 @@ describe('git 异常状态', () => {
 
   test('linked worktree:gitDir 落在主仓库的 worktrees/ 下,列表照常', async () => {
     const repo = await locateRepo(repos.linkedWorktree);
-    // 判据是**末段**而不是与 fixture 路径逐字相等:macOS 的 `/var` 是指向
-    // `/private/var` 的符号链接,而 git 回的是解析后的那一份(注册表那条红线说的
-    // 「同一目录字面量未必相同」正是这件事)
+    // 判据是**末段**而不是与 fixture 路径逐字相等:macOS 的 `/var` 是指向 `/private/var` 的符号链
+    // 接,而 git 回的是解析后的那一份
     expect(repo.root.endsWith('worktree-linked')).toBe(true);
     // `.git` 在这里是**文件**不是目录,所以 gitDir 不可能是 `<root>/.git`
     expect(repo.gitDir).toContain(join('.git', 'worktrees'));

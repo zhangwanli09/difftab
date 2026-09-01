@@ -4,9 +4,8 @@
 // 常驻一个标签也是绿的(于是降级那一次淹在里面);只断言「原生时什么都没画」时,
 // 组件整个画空也是绿的。
 //
-// 第三条是判据本身:**降级与否只看 `mode`,不看 `tier`**。C 档的轮询是既定形态、
-// A/B 档的轮询是出过错,两者的区别属后端知识,前端拿 tier 去猜就是
-// 架构边界不变式 4 说的第二份实现 —— 而它不受任何门禁覆盖。
+// 第三条是判据本身:**降级与否只看 `mode`,不看 `tier`**。C 档的轮询是既定形态、A/B 档的轮询
+// 是出过错,两者的区别属后端知识,前端拿 tier 去猜就是第二份实现 —— 而它不受任何门禁覆盖。
 
 import { render } from 'preact';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -40,16 +39,15 @@ describe('WatchBadge', () => {
   });
 
   it('原生监听时什么都不画', () => {
-    // 三档表里 A / B 的「UI 标注」列就是「无」。反过来常驻一个「实时」标签,
-    // 等于让常态多出一块永远正确、因此永远不被读的字
+    // A / B 档的「UI 标注」列就是「无」。反过来常驻一个「实时」标签,等于让常态多出一块永远正确、
+    // 因此永远不被读的字
     render(<WatchBadge watch={{ mode: 'native', tier: 'A' }} />, container);
     expect(textOf(container)).toBe('');
   });
 
   it('判据是 mode 不是 tier', () => {
-    // 这两份的 tier 恰好与「常见搭配」相反:C 档不一定在轮询(强制指定 + 别的
-    // 平台),A 档也可能落到轮询兜底(ENOSPC / 网络盘)。按 tier 猜的写法会把
-    // 两份都判反,而页面上只是「标注偶尔不见 / 偶尔多出来」
+    // 这两份的 tier 恰好与「常见搭配」相反:C 档不一定在轮询(强制指定 + 别的平台),A 档也可能落
+    // 到轮询兜底。按 tier 猜的写法会把两份都判反,而页面上只是「标注偶尔不见 / 偶尔多出来」
     render(<WatchBadge watch={{ mode: 'native', tier: 'C' } as WatchState} />, container);
     expect(textOf(container)).toBe('');
 
@@ -74,8 +72,7 @@ describe('App 的状态条', () => {
     await vi.waitFor(() => expect(textOf(footer())).toContain('main'), { interval: 5 });
     expect(textOf(footer())).not.toContain('Polling');
 
-    // 降级是**运行中**发生的:后端在降级时推一个 change,前端重取 /api/state 才
-    // 看得见。这里模拟的就是那次重取的结果
+    // 降级是**运行中**发生的:后端推一个 change、前端重取 /api/state 才看得见,这里就是那次重取
     repoState.value = {
       repoName: 'demo',
       branch: { head: 'main', detached: false, upstream: null },

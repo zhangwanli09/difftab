@@ -15,7 +15,7 @@ import { gzipSync } from 'node:zlib';
 const repoRoot = resolve(import.meta.dirname, '..');
 const webDir = join(repoRoot, 'dist', 'web');
 
-/** 门禁。当前为预算值,S2 收口时回填实测。 */
+/** 门禁。 */
 const BUDGETS = [
   { name: '前端 JS(明文)', match: /\.js$/, metric: 'plain', limit: 350 * 1024 },
   { name: '前端 JS(gzip)', match: /\.js$/, metric: 'gzip', limit: 120 * 1024 },
@@ -28,8 +28,7 @@ const needsGzip = (path) => BUDGETS.some((b) => b.metric === 'gzip' && b.match.t
 function collect(dir) {
   let entries;
   try {
-    // 递归交给 readdirSync 自己做,不手写一份遍历;withFileTypes 下 parentPath
-    // 给出所在目录(Node 20.12+,下限 22.0.0 上可用)
+    // 递归交给 readdirSync 自己做,不手写一份遍历;withFileTypes 下 parentPath 给出所在目录
     entries = readdirSync(dir, { withFileTypes: true, recursive: true });
   } catch {
     console.error(`size: 找不到构建产物目录 ${dir}。先跑 \`pnpm build\`。`);

@@ -14,12 +14,10 @@ export interface StartOptions {
 
 export async function start(options: StartOptions): Promise<void> {
   /**
-   * 「可以看了」的唯一出口:**stdout 的第一行是且只是 URL**,随后一行说明,最后
-   * 拉起浏览器。
-   *
-   * 复用与新起两条路各写一遍的话,只有新起那条天天在跑 —— 改了第一行的形状
-   * (加前缀、换写法)会在复用那条上静默漂走,而 `scripts/bench-startup.mjs` 与
-   * 冒烟套件的 ready 判据都压在这一行上。
+   * 「可以看了」的唯一出口:**stdout 的第一行是且只是 URL**,随后一行说明,最后拉起浏览器。
+   * 复用与新起两条路各写一遍的话,只有新起那条天天在跑 —— 改了第一行的形状(加前缀、换写
+   * 法)会在复用那条上静默漂走,而 `scripts/bench-startup.mjs` 与冒烟套件的 ready 判据都
+   * 压在这一行上。
    */
   function announce(url: string, note: string): void {
     process.stdout.write(`${url}\n`);
@@ -32,11 +30,9 @@ export async function start(options: StartOptions): Promise<void> {
   const repo = await locateRepo(options.cwd);
 
   /**
-   * **同一个仓库已经有实例在跑,就把用户送去那一个**。
-   *
-   * 判活是 HTTP 探活而不是 pid —— 理由在 probe.ts。命中这条路之后**什么都不写**:
-   * 不写注册表(那条目属于对面那个进程)、不装信号与 exit 处理器(装了会在本进程
-   * 退出时替对面清理掉它的条目,虽然 removeRegistry 按 pid 又挡了一道)。
+   * **同一个仓库已经有实例在跑,就把用户送去那一个**。判活是 HTTP 探活而不是 pid。命中这
+   * 条路之后**什么都不写**:不写注册表(那条目属于对面那个进程)、不装信号与 exit 处理器
+   * (装了会在本进程退出时替对面清理掉它的条目)。
    */
   const existing = await findLiveInstance(repo.root);
   if (existing) {
@@ -65,23 +61,20 @@ export async function start(options: StartOptions): Promise<void> {
 
   let closing = false;
   /**
-   * 唯一的退出路径。信号与空闲退出共用它 —— 两者完全可能撞在一起(Ctrl+C 恰好
-   * 落在宽限期走满的同一拍),各写一份的话 `server.close()` 会跑两次,第二次撞上
-   * 已经 destroy 的 socket。
+   * 唯一的退出路径。信号与空闲退出共用它 —— 两者完全可能撞在一起(Ctrl+C 恰好落在宽限期
+   * 走满的同一拍),各写一份的话 `server.close()` 会跑两次,第二次撞上已经 destroy 的 socket。
    */
   const stop = (code: number, note?: string) => {
     if (closing) return;
     closing = true;
     /**
-     * **`writeSync` 而不是 `process.stdout.write`**:后者写到**管道**时在 Windows 上
-     * 是异步的,紧跟着的 `process.exit()` 会把还在缓冲区里的内容整条丢掉(与 main.ts
-     * 那条报错同一个规避手法)。而这句提示正是自动化验证「它是自己走的、不是被
-     * kill 的」的判据,丢了之后症状是 stdout 里什么都没有。
+     * **`writeSync` 而不是 `process.stdout.write`**:后者写到**管道**时在 Windows 上是异步
+     * 的,紧跟着的 `process.exit()` 会把还在缓冲区里的内容整条丢掉(与 main.ts 那条报错同
+     * 一个规避手法),而这句提示正是自动化验证「它是自己走的、不是被 kill 的」的判据。
      *
-     * **而它得能失败**:`writeSync` 与 `process.stdout.write` 不同,读端已经走了
-     * (`difftab --no-open | head -1`)时它**抛 EPIPE**。抛在这个定时器回调里,
-     * `closing` 已经合上,于是 `server.close()` 不再执行,进程带着一屏 Node 栈以 1
-     * 退出 —— 而这条路承诺的是干净的 0。提示没打出去不是错误,是没人在听。
+     * **而它得能失败**:读端已经走了(`difftab --no-open | head -1`)时 `writeSync` 抛
+     * EPIPE,抛在这个回调里时 `closing` 已经合上,于是 `server.close()` 不再执行,进程带着
+     * 一屏 Node 栈以 1 退出 —— 而这条路承诺的是干净的 0。
      */
     if (note) {
       try {

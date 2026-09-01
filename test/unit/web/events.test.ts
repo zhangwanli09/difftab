@@ -24,8 +24,8 @@ class FakeEventSource {
 
   readonly url: string;
 
-  // 参数属性(`constructor(readonly url)`)在 erasableSyntaxOnly 下不可用 ——
-  // 那是本项目「TS 只做类型擦除」这条的直接后果,不是风格选择
+  // 参数属性(`constructor(readonly url)`)在 erasableSyntaxOnly 下不可用 —— 那是「TS 只做类型擦
+  // 除」这条的直接后果,不是风格选择
   constructor(url: string) {
     this.url = url;
     sources.push(this);
@@ -105,8 +105,7 @@ beforeEach(() => {
 
 describe('connectEvents', () => {
   test('挂载即连上 /api/events,且不带任何 token', async () => {
-    // token 在生产下是 HttpOnly cookie、dev 下由代理注入,前端完全不接触它 ——
-    // 它一旦落到 JS 能读的地方,HttpOnly 就白设了
+    // token 在生产下是 HttpOnly cookie、dev 下由代理注入 —— 它一旦落到 JS 能读的地方就白设了
     stubFetch();
     connect();
 
@@ -119,17 +118,16 @@ describe('connectEvents', () => {
     connect();
 
     latest().emit('change');
-    // 等的是**状态真的换上了**,而不是请求发出去了 —— 后者在正文解析之前就成立,
-    // 于是这条断言会以「repoState 还是 null」失败,而产品一点毛病没有
+    // 等的是**状态真的换上了**,而不是请求发出去了 —— 后者在正文解析之前就成立,于是这条断言会
+    // 以「repoState 还是 null」失败,而产品一点毛病没有
     await vi.waitFor(() => expect(repoState.value).toEqual(state));
     expect(calls).toEqual(['/api/state']);
   });
 
   test('连接一直活着时,切回标签页既不重连也不补取', async () => {
-    // 重连:每次都是一条新的 HTTP 连接,而空闲退出以连接数为判据 ——
-    // 白白开关一轮等于让后端在「有人」和「没人」之间抖一下。
-    // 补取:连接活着就说明期间每个 change 都推到过了,而它取的可能是一份数 MB 的
-    // diff —— 切标签又正是这个工具最频繁的动作
+    // 重连:每次都是一条新的 HTTP 连接,而空闲退出以连接数为判据 —— 白白开关一轮等于让后端在「有
+    // 人」和「没人」之间抖一下。补取:连接活着就说明期间每个 change 都推到过了,而它取的可能是一
+    // 份数 MB 的 diff —— 切标签又正是这个工具最频繁的动作
     const calls = stubFetch();
     connect();
 
@@ -140,8 +138,8 @@ describe('connectEvents', () => {
   });
 
   test('连接已经死了时,切回标签页会重连', async () => {
-    // 系统休眠唤醒、Chrome 丢弃后台标签之后,这条连接可能已经死了而 error 事件
-    // 永远不会来。页面于是停在休眠前的那一屏,看上去只是「没有变更」
+    // 系统休眠唤醒、Chrome 丢弃后台标签之后连接可能已经死了而 error 永远不会来,页面于是停在休眠
+    // 前的那一屏,看上去只是「没有变更」
     stubFetch();
     connect();
     const first = latest();
@@ -187,8 +185,8 @@ describe('connectEvents', () => {
   });
 
   test('自己重连有上限,切回标签页重新武装', async () => {
-    // 端口是内核随机分配的,换端口重启的后端旧标签页永远敲不到 —— 不封顶就是
-    // 一个早该关掉的标签页每 3 秒敲一次,敲到浏览器关掉为止
+    // 端口是内核随机分配的,换端口重启的后端旧标签页永远敲不到 —— 不封顶就是每 3 秒敲一次,敲到
+    // 浏览器关掉为止
     vi.useFakeTimers();
     stubFetch();
     connect();
@@ -206,8 +204,7 @@ describe('connectEvents', () => {
   test('标签页被隐藏时什么都不做', async () => {
     const calls = stubFetch();
     connect();
-    // 直接改属性描述符,不用 spyOn:hidden 是原型上的 getter,而这条断言的成败
-    // 不该取决于替身库能不能翻到原型链上去
+    // 直接改属性描述符,不用 spyOn:hidden 是原型上的 getter,断言的成败不该取决于替身库
     Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
 
     document.dispatchEvent(new Event('visibilitychange'));

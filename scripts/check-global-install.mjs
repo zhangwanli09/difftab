@@ -1,14 +1,12 @@
 // `npm i -g difftab` 三端验收(全局安装项)。
 //
-// 打包 → 全局装 → **用装到 PATH 上的那个可执行文件**在一个真仓库里跑通 → 卸掉。
-// 三件事一起证:产物清单齐全(缺文件时这里才炸,`check:pack` 只看清单)、Windows 的
-// `.cmd` shim 起得来、以及全局目录里除了 difftab 自己什么都没多出来。
+// 打包 → 全局装 → **用装到 PATH 上的那个可执行文件**在一个真仓库里跑通 → 卸掉。三件事一起
+// 证:产物清单齐全(缺文件时这里才炸,`check:pack` 只看清单)、Windows 的 `.cmd` shim 起得
+// 来、以及全局目录里除了 difftab 自己什么都没多出来。
 //
-// **零依赖纯 JS,可由 `node scripts/check-global-install.mjs` 直接执行**:
-// 它要跑在 CI 上不装任何依赖的机器上。起进程与清理复用 `test/smoke/helpers.js`
-// (同样零依赖)—— 尤其是"第一行是 URL"那个 ready 判据,不在这里再定义一遍。
-// 前置条件只有两个 —— `dist/` 已就位(CI 里是下载的 artifact,本机需先 `pnpm build`),
-// 以及全局尚未装着 difftab。
+// **零依赖纯 JS**,要跑在 CI 上不装任何依赖的机器上。起进程与清理复用 `test/smoke/helpers.js`
+// —— 尤其是「第一行是 URL」那个 ready 判据,不在这里再定义一遍。前置条件只有两个:`dist/` 已
+// 就位,以及全局尚未装着 difftab。
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync } from 'node:fs';
@@ -27,11 +25,9 @@ function fail(message) {
 }
 
 /**
- * **必须 `shell: true`**:Windows 上 npm 是 `npm.cmd`,而 Node 自 CVE-2024-27980 起
- * 不再允许不经 shell 直接 spawn `.cmd`。
- *
- * 命令整条以字符串给出、**不传 args 数组**:`shell: true` 下 Node 只是把数组拼回
- * 一条命令行,还要为此打一行 DEP0190 弃用警告。拼接的活儿在这边做,引号由 `q()` 管。
+ * **必须 `shell: true`**:Windows 上 npm 是 `npm.cmd`,而 Node 自 CVE-2024-27980 起不再允许不
+ * 经 shell 直接 spawn `.cmd`。命令整条以字符串给出、**不传 args 数组**:`shell: true` 下 Node
+ * 只是把数组拼回一条命令行,还要为此打一行 DEP0190 弃用警告。
  */
 function run(commandLine, options = {}) {
   const r = spawnSync(commandLine, { encoding: 'utf8', shell: true, ...options });
@@ -40,9 +36,8 @@ function run(commandLine, options = {}) {
 }
 
 /**
- * 路径进 shell 前加引号。**不能用 `JSON.stringify`** —— 它会把 Windows 路径里的
- * `\` 转义成 `\\`,而 cmd 原样当两个反斜杠用。这些路径都来自 `os.tmpdir()`,
- * 不含引号,直接包一层双引号即可。
+ * 路径进 shell 前加引号。**不能用 `JSON.stringify`** —— 它会把 Windows 路径里的 `\` 转义成
+ * `\\`,而 cmd 原样当两个反斜杠用。这些路径都来自 `os.tmpdir()`,不含引号。
  */
 const q = (path) => `"${path}"`;
 
@@ -89,13 +84,10 @@ try {
   installed = true;
 
   /**
-   * **零传递依赖的正面判据,两条对应依赖的两种落法**:npm 默认把传递依赖**提升**到
-   * 全局根目录、与 difftab 平级(目录 diff 抓这一种),版本冲突时则**嵌套**进
-   * `difftab/node_modules`(第二条抓这一种)。只写目录 diff 会漏掉嵌套那种,
-   * 只看 `node_modules` 存不存在会漏掉提升那种 —— 而提升才是常态。
-   *
-   * manifest 那一侧另有 `check:pack` 盯着,与这里互补:manifest 干净而 `dist/` 里
-   * import 了外部包时,只有真装一次才看得见。
+   * **零传递依赖的正面判据,两条对应依赖的两种落法**:npm 默认把传递依赖**提升**到全局根目
+   * 录、与 difftab 平级(目录 diff 抓这一种),版本冲突时则**嵌套**进 `difftab/node_modules`
+   * (第二条抓这一种)。只写目录 diff 会漏掉嵌套那种,只看 `node_modules` 存不存在会漏掉提升
+   * 那种 —— 而提升才是常态。manifest 那一侧另有 `check:pack` 盯着,与这里互补。
    */
   const added = entriesOf(globalRoot).filter((name) => !before.includes(name));
   if (added.length !== 1 || added[0] !== manifest.name) {
@@ -113,12 +105,11 @@ try {
   }
 
   /**
-   * 真跑一次。**用的是 PATH 上那个名字**,不是 `node bin/difftab.js` —— Windows 上
-   * 两者差着一个 `.cmd` shim,而冒烟套件走的全是后者,shim 坏了没有任何东西会响。
+   * 真跑一次。**用的是 PATH 上那个名字**,不是 `node bin/difftab.js` —— Windows 上两者差着一
+   * 个 `.cmd` shim,而冒烟套件走的全是后者,shim 坏了没有任何东西会响。
    *
-   * 起进程与"第一行是 URL"这个 ready 判据都来自 `test/smoke/helpers.js`:自己再写一遍
-   * 就等于给那个判据加了第三个定义(另外两个在 helpers 与 `scripts/bench-startup.mjs`),
-   * 而 CLI 一旦在 URL 之前多打一行,三处会以三种完全不同的样子失败。
+   * 起进程与「第一行是 URL」这个 ready 判据都来自 `test/smoke/helpers.js`:自己再写一遍就等于
+   * 给那个判据加了第三个定义,而 CLI 一旦在 URL 之前多打一行,三处会以三种样子失败。
    */
   const repo = join(workdir, 'repo');
   mkdirSync(repo);
@@ -139,15 +130,12 @@ try {
   });
 
   /**
-   * **不用 `server.stop()`,也不等 `'close'`**(2026-08-18 实测,CI 的 ubuntu 与
-   * windows 两档):经 shell 起来时被 spawn 的是 shell,产品是它的**孙进程**,而
-   * `'close'` 要等所有 stdio 管道关闭 —— 孙进程还攥着管道,于是杀掉 shell 之后
-   * `'close'` 永远不来。症状是脚本停在这一行,Node 以「unsettled top-level await」
-   * 退出码 13 收场,与"全局安装坏了"毫无相似之处(macOS 上 shell 直接 exec 掉自己,
-   * 所以本机怎么跑都是绿的)。
-   *
-   * 改成等它自己按空闲退出、轮询 `exitCode`:`'exit'` 不依赖管道,而轮询的定时器
-   * 顺便把事件循环撑着(ready 之后 helpers 会 unref 掉子进程)。
+   * **不用 `server.stop()`,也不等 `'close'`**:经 shell 起来时被 spawn 的是 shell,产品是它
+   * 的**孙进程**,而 `'close'` 要等所有 stdio 管道关闭 —— 孙进程还攥着管道,于是杀掉 shell 之
+   * 后 `'close'` 永远不来。症状是脚本停在这一行,Node 以「unsettled top-level await」退出码
+   * 13 收场,与「全局安装坏了」毫无相似之处(macOS 上 shell 直接 exec 掉自己,本机怎么跑都
+   * 绿)。改成等它自己按空闲退出、轮询 `exitCode`:`'exit'` 不依赖管道,而轮询的定时器顺便把
+   * 事件循环撑着。
    */
   await waitUntil(() => server.child.exitCode !== null, 30_000, '全局装的那个 difftab 自行退出');
   if (server.child.exitCode !== 0) {
@@ -159,9 +147,8 @@ try {
   console.error(cause instanceof CheckFailed ? `FAIL ${cause.message}` : cause);
   process.exitCode = 1;
 } finally {
-  // 卸干净:本机跑完不该留下一个全局包,CI 上则是让「多出了什么」这条判断下次仍成立。
-  // **收尾的失败只警告**:`run()` 起不来会抛,而从 `finally` 抛出去会顶掉 catch 里
-  // 正在报的那条真失败,变成一句莫名其妙的「npm rm -g 起不来」
+  // 卸干净:本机跑完不该留下一个全局包,CI 上则是让「多出了什么」这条判断下次仍成立。**收尾
+  // 的失败只警告**:从 `finally` 抛出去会顶掉 catch 里正在报的那条真失败。
   try {
     if (installed) run(`npm rm -g ${manifest.name}`);
   } catch (cause) {

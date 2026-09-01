@@ -1,39 +1,34 @@
 // diff2html 渲染路径的回归测试。
 //
-// **这三条是本文件存在的理由,它们全都"违反后不报错、只是静默出错"**,在
-// happy-dom 进来之前一条都没有自动化覆盖:
+// **这几条是本文件存在的理由,它们全都「违反后不报错、只是静默出错」**:
 //
-// 1. `draw()` 之后**不得**再补一次 `highlightCode()` —— 第二遍的 `nodeStream()` 拿到的
-//    已是第一遍插入的 hljs span,`mergeStreams` 把两份流交织进同一行,产出**嵌套重复**
-//    的 span(开销也翻倍)。页面看上去只是颜色略怪,不报错;
-// 2. `plaintext` 兜底 —— 无扩展名文件(`LICENSE` / `Dockerfile`)会让 diff2html 把语言
-//    改写成字面量 `'plaintext'` 再无条件调 hljs。漏注册时异常从 `highlightCode()` 冒到
-//    调用方,**炸的是整个 diff 视图**,不是那一个文件;
-// 3. `colorScheme` 必须是 `'light'` —— 传 `'auto'` 会让 `.d2h-auto-color-scheme` 前缀
-//    规则(特异性 0,2,0)压过基础规则、读回 diff2html 自带的 `--d2h-dark-*`,
-//    vscode-theme.css 覆写的那 23 个变量在深色下一条都不生效。
+// 1. `draw()` 之后**不得**再补一次 `highlightCode()` —— 第二遍的 `nodeStream()` 拿到的已是第一
+//    遍插入的 hljs span,`mergeStreams` 把两份流交织进同一行,产出**嵌套重复**的 span(开销也翻
+//    倍),而页面看上去只是颜色略怪,不报错;
+// 2. `plaintext` 兜底 —— 无扩展名文件(`LICENSE` / `Dockerfile`)会让 diff2html 把语言改写成字面
+//    量 `'plaintext'` 再无条件调 hljs,漏注册时异常从 `highlightCode()` 冒到调用方,**炸的是整
+//    个 diff 视图**,不是那一个文件;
+// 3. `colorScheme` 必须是 `'light'` —— 传 `'auto'` 会让 `.d2h-auto-color-scheme` 前缀规则(特异
+//    性 0,2,0)压过基础规则、读回 diff2html 自带的 `--d2h-dark-*`,vscode-theme.css 覆写的那 23
+//    个变量在深色下一条都不生效;
+// 4. `outputFormat` 由调用方按 diff 面板宽度给。两种版式的判据是一对正反计数:并排下一个文件是
+//    **两张** `.d2h-diff-table`(各裹在一个 `.d2h-file-side-diff` 里),逐行下是**一张**且
+//    `.d2h-file-side-diff` 一个都没有。传错时页面照常渲染,只是版式不对;
+// 5. **并排两侧的横向联动**(`synchronisedScroll`)。关掉时两半各滚各的 —— 同一行的新旧内容错开
+//    成两个列位置,而页面照常渲染、不报错。
 //
-// 4. `outputFormat` 由调用方按 diff 面板宽度给。两种版式的判据是一对正反计数:
-//    并排下一个文件是**两张** `.d2h-diff-table`(各裹在一个 `.d2h-file-side-diff` 里),
-//    逐行下是**一张**且 `.d2h-file-side-diff` 一个都没有。传错时页面照常渲染,只是版式不对。
-//
-// 5. **并排两侧的横向联动**(`synchronisedScroll`)。关掉时两半各滚各的 —— 横向拖一侧去看
-//    长行,另一侧原地不动,同一行的新旧内容错开成两个列位置,而页面照常渲染、不报错。
-//
-// **每条否定式断言都配一条正面断言**:容器空着的时候,"没有重复 span""没有 auto class"
-// 全都自动成立。所以每个用例都先确认 diff 真的画出来了、色真的上了。
+// **每条否定式断言都配一条正面断言**:容器空着的时候,「没有重复 span」「没有 auto class」全都自
+// 动成立。所以每个用例都先确认 diff 真的画出来了、色真的上了。
 
 import { beforeEach, describe, expect, it } from 'vitest';
 import { renderDiff } from '../../../src/web/diff/render';
 
-// **一条 happy-dom 的坑,决定了下面的补丁必须带上下文行**(实测 20.11.2):
-// 它的 `Attr.nodeName` 返回**空字符串**(`name` / `localName` 正常),而 diff2html 的
-// `mergeStreams.open()` 恰好用 `attr.nodeName` 重新序列化属性。于是凡是走过 mergeStreams
-// 的行 —— 带 `<del>` / `<ins>` 词级标记的增删行 —— `class="hljs-keyword"` 会先变成
-// `="hljs-keyword"`、再被解析成裸属性 `hljs-keyword=""`,**类名丢了**。
-// 上下文行不经 mergeStreams,类名完好,所以"高亮出颜色"只能压在上下文行上。
-// 这纯粹是测试环境的问题:真实浏览器里 `nodeName` 就是 `class`,S2b 在真机上实测过
-// 177 个 hljs span / 12 类。
+// **一条 happy-dom 的坑,决定了下面的补丁必须带上下文行**:它的 `Attr.nodeName` 返回**空字符串**
+// (`name` / `localName` 正常),而 diff2html 的 `mergeStreams.open()` 恰好用 `attr.nodeName` 重
+// 新序列化属性。于是凡是走过 mergeStreams 的行 —— 带 `<del>` / `<ins>` 词级标记的增删行 ——
+// `class="hljs-keyword"` 会先变成 `="hljs-keyword"`、再被解析成裸属性,**类名丢了**。上下文行不
+// 经 mergeStreams,类名完好,所以「高亮出颜色」只能压在上下文行上。这纯粹是测试环境的问题:真实
+// 浏览器里 `nodeName` 就是 `class`,已在真机上实测过 177 个 hljs span / 12 类。
 
 /**
  * 一段真实形状的 TS 补丁。
@@ -106,19 +101,16 @@ describe('renderDiff', () => {
   it('高亮只做一遍 —— 没有一模一样的 span 套一层', () => {
     renderDiff(host, TS_PATCH, 'side-by-side');
 
-    // 在 `draw()` 后补一次 `highlightCode()`(即被禁的那个写法)时,**先炸的是这一条**:
-    // 第二遍让上下文行也走一次 mergeStreams,于是连它的类名都被写坏(机制见文件头),
-    // span 数从 20+ 掉到 0 —— 已把那一行真加回 render.ts 验证过。
-    // 真实浏览器里表现是说的"嵌套重复 span",由下面那条字符串判据接住。
+    // 在 `draw()` 后补一次 `highlightCode()`(即被禁的那个写法)时,**先炸的是这一条**:第二遍让
+    // 上下文行也走一次 mergeStreams,连它的类名都被写坏(机制见文件头),span 数从 20+ 掉到 0 ——
+    // 已把那一行真加回 render.ts 验证过。真实浏览器里的表现是嵌套重复 span,由下面那条判据接住
     expect(hljsSpanCount()).toBeGreaterThan(3);
 
-    // 嵌套判据按**字符串**写而不是遍历 DOM,正是为了同时盖住上面那两种形态:
-    // 浏览器下重复的是 `<span class="hljs-x"><span class="hljs-x">`,happy-dom 下是
-    // `<span hljs-x=""><span hljs-x="">`,而按 `[class*=hljs-]` 遍历在后者上找不到东西。
-    //
-    // 判据不能只是"存在嵌套 span":hljs 自身的语法嵌套本来就有(params > attr、
-    // string > subst,S2b 在真实 TS diff 上实测过)。重复的特征是**属性逐字相同**的
-    // 同名标签直接套一层 —— 那只可能来自两份 node stream 交织。
+    // 嵌套判据按**字符串**写而不是遍历 DOM,正是为了同时盖住上面那两种形态:浏览器下重复的是
+    // `<span class="hljs-x"><span class="hljs-x">`,happy-dom 下是 `<span hljs-x=""><span
+    // hljs-x="">`,而按 `[class*=hljs-]` 遍历在后者上找不到东西。判据也不能只是「存在嵌套 span」:
+    // hljs 自身的语法嵌套本来就有(params > attr、string > subst),重复的特征是**属性逐字相同**
+    // 的同名标签直接套一层 —— 那只可能来自两份 node stream 交织
     const doubled = /<span([^>]*)><span\1>/.exec(host.innerHTML);
     expect(doubled).toBeNull();
 
@@ -127,8 +119,7 @@ describe('renderDiff', () => {
   });
 
   it('无扩展名文件走 plaintext 兜底,不抛异常也不空白', () => {
-    // 漏注册 plaintext 时这里抛的是 `Unknown language: "plaintext"`,而整个 diff
-    // 视图(不只这个文件)都渲染不出来
+    // 漏注册 plaintext 时这里抛 `Unknown language: "plaintext"`,而整个 diff 视图都渲染不出来
     expect(() => renderDiff(host, LICENSE_PATCH, 'side-by-side')).not.toThrow();
     expect(host.querySelector('.d2h-diff-table')).not.toBeNull();
     expect(host.textContent).toContain('MIT License');
@@ -161,9 +152,8 @@ describe('renderDiff', () => {
     expect(host.querySelectorAll('.d2h-dark-color-scheme')).toHaveLength(0);
   });
 
-  // 两种版式的全部可断言差别就是这两个计数(其余断言两边同真,写了也不区分版式)。
-  // `.d2h-file-side-diff` 那列是否定式的一半,`.d2h-diff-table` 那列是配套的正面断言 ——
-  // 少了后者,一个什么都没画出来的容器同样能让「并排容器为 0」通过
+  // 两种版式的全部可断言差别就是这两个计数。`.d2h-file-side-diff` 那列是否定式的一半,
+  // `.d2h-diff-table` 那列是配套的正面断言 —— 少了后者,一个什么都没画出来的容器同样能让它通过
   it.each([
     ['side-by-side', 2, 2],
     ['line-by-line', 1, 0],
@@ -179,16 +169,13 @@ describe('renderDiff', () => {
     renderDiff(host, TS_PATCH, 'side-by-side');
 
     const sides = [...host.querySelectorAll('.d2h-file-side-diff')];
-    // 正面断言:两个滚动容器真的画出来了。少了它,下面那条 toEqual 在一个空数组上
-    // 同样通过,而这个用例要盯的恰恰是「联动没接上」
+    // 正面断言:两个滚动容器真的画出来了 —— 少了它,下面那条 toEqual 在一个空数组上同样通过
     expect(sides).toHaveLength(2);
 
-    // 两个方向各来一次:diff2html 给两侧各绑一个监听器,只绑一侧的症状是
-    // 「拖左边管用、拖右边不管用」。
-    //
-    // happy-dom 的 `scrollLeft` 是纯属性 —— 赋值既不派发 scroll 事件也不做 clamp,
-    // 所以这里手工派发一次浏览器本来会派发的那个事件,断言也因此不受布局影响
-    // (那侧没有布局引擎,真实的滚动与两侧上限不等时的回弹都只能上真机看)。
+    // 两个方向各来一次:diff2html 给两侧各绑一个监听器,只绑一侧的症状是「拖左边管用、拖右边不管
+    // 用」。happy-dom 的 `scrollLeft` 是纯属性 —— 赋值既不派发 scroll 事件也不做 clamp,所以这里
+    // 手工派发一次浏览器本来会派发的那个事件,断言也因此不受布局影响(真实的滚动与两侧上限不等时
+    // 的回弹都只能上真机看)
     for (const [index, from] of sides.entries()) {
       const scrollLeft = 40 * (index + 1);
       from.scrollLeft = scrollLeft;
@@ -199,13 +186,12 @@ describe('renderDiff', () => {
   });
 
   it('同一个容器重画一次不会叠加两份 diff', () => {
-    // S3b1 起同一个文件拿到新补丁就走这条路(DiffView 的 effect 按 [patch] 重跑),
-    // 靠的是 draw() 内部整片覆盖 innerHTML
+    // 同一个文件拿到新补丁时就走这条路(DiffView 的 effect 按 [patch] 重跑),靠的是 draw() 内部
+    // 整片覆盖 innerHTML
     renderDiff(host, TS_PATCH, 'side-by-side');
     renderDiff(host, TS_PATCH, 'side-by-side');
 
-    // 数的是「几个文件」而不是「几张表」:并排视图下一个文件本来就是左右两张
-    // `.d2h-diff-table`(实测),按表数会得到一个与叠加无关的 2
+    // 数的是「几个文件」而不是「几张表」:并排下一个文件本来就是左右两张表,按表数会得到 2
     expect(host.querySelectorAll('.d2h-file-wrapper')).toHaveLength(1);
     expect(host.textContent?.match(/const prefix/g) ?? []).toHaveLength(1);
   });

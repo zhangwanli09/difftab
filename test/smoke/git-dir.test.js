@@ -1,16 +1,13 @@
-// 状态文件按 `git rev-parse --git-dir` 找,而**那条路径在各平台上都拼得出来**
-// (红线,跑的是 dist/ 产物)。
+// 状态文件按 `git rev-parse --git-dir` 找,而**那条路径在各平台上都拼得出来**(红线,跑的是
+// dist/ 产物)。
 //
-// 为什么非要在冒烟里再来一遍:`test/unit/server/git-integration.test.ts` 已经有
-// linked worktree / submodule 两条用例,但 (a) 单测只在 CI 的 ubuntu 档跑,而这条红线
-// 说的正是**分隔符形态**,那是个平台维度的东西;(b) 那两条对操作标注的断言是
-// `expect('operation' in branch).toBe(false)` —— **负面断言分不清「找对了地方,那里没有
-// 状态文件」与「找错了地方,所以什么都没找到」**,而后者恰是这条红线要防的失效:
-// 按 `<root>/.git` 拼路径时,操作标注从此永远不出现,且不报任何错。
+// 为什么非要在冒烟里再来一遍:`test/unit/server/git-integration.test.ts` 已经有 linked worktree
+// / submodule 两条用例,但 (a) 单测只在 CI 的 ubuntu 档跑,而这条红线说的正是**分隔符形态**;
+// (b) 那两条对操作标注的断言是负面的 —— **负面断言分不清「找对了地方,那里没有状态文件」与「找
+// 错了地方,所以什么都没找到」**,而后者恰是这条红线要防的失效。
 //
-// 所以这里改成**正面**断言:往 `--git-dir` 回来的那个目录里放一个真的状态文件,
-// 要求页面把它标出来。两个 fixture 的 `<root>/.git` 都是**文件**不是目录,拼错的那份
-// 必然读不到 —— 判据因此是可证伪的。
+// 所以这里改成**正面**断言:往 `--git-dir` 回来的那个目录里放一个真的状态文件,要求页面把它标
+// 出来。两个 fixture 的 `<root>/.git` 都是**文件**不是目录,拼错的那份必然读不到。
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -32,10 +29,8 @@ const setup = once(async () => {
 });
 
 /**
- * 用**测试自己的** git 问出真正的 git 目录。
- *
- * 这是「开发流程的 git」,不受零写操作约束(CLAUDE.md 第 1 节);更要紧的是它与被测
- * 代码**互相独立** —— 拿产品自己回的 `gitDir` 去布置现场,等于用被测对象证明被测对象。
+ * 用**测试自己的** git 问出真正的 git 目录。这是「开发流程的 git」,不受零写操作约束;更要紧的
+ * 是它与被测代码**互相独立** —— 拿产品自己回的 `gitDir` 去布置现场,等于用被测对象证明被测对象。
  */
 function realGitDir(cwd) {
   const r = spawnSync('git', ['rev-parse', '--git-dir'], { cwd, encoding: 'utf8' });
@@ -45,19 +40,16 @@ function realGitDir(cwd) {
 }
 
 /**
- * 在 `gitDir` 里放一个 `MERGE_HEAD`,断言页面把操作标成 merge。
- *
- * **直接写文件而不是真跑一次冲突合并**,是因为被测的判据本身就是「这个文件在不在」
- * (`server/git/operation.ts` 的探针表按序 `exists()`)—— 这里要验的是**路径**,
- * 不是合并。真造一次冲突反而会把断言的失败原因摊薄成两种。
+ * 在 `gitDir` 里放一个 `MERGE_HEAD`,断言页面把操作标成 merge。**直接写文件而不是真跑一次冲突合
+ * 并**,是因为被测的判据本身就是「这个文件在不在」—— 这里要验的是**路径**,不是合并,真造一次
+ * 冲突反而会把断言的失败原因摊薄成两种。
  */
 async function expectMergeMarked(root, label) {
   const gitDir = realGitDir(root);
 
   /**
-   * 判据可证伪的前提:`<root>/.git` 是文件,于是 `<root>/.git/MERGE_HEAD` 根本
-   * 不可能存在 —— 拼错路径的实现在这里必然拿不到 merge。这一条不成立的话,
-   * 下面那条断言换成错误实现也照样绿。
+   * 判据可证伪的前提:`<root>/.git` 是文件,于是 `<root>/.git/MERGE_HEAD` 根本不可能存在 —— 拼
+   * 错路径的实现在这里必然拿不到 merge。这一条不成立的话,下面那条断言换成错误实现也照样绿。
    */
   assert.ok(
     statSync(join(root, '.git')).isFile(),

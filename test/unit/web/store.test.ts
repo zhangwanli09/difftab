@@ -1,7 +1,6 @@
-// 前端状态层(src/web/state/store.ts)的单测。
-//
-// 盯的是架构边界不变式 4 的落地:分组只读 `FileEntry` 的字段,不在前端重新推导
-// git 语义。这类回归不会让任何东西报错 —— 只是列表里少一类文件或多一类。
+// 前端状态层(src/web/state/store.ts)的单测。盯的是「前端不内联任何 git 知识」的落地:分组只读
+// `FileEntry` 的字段,不在前端重新推导 git 语义。这类回归不会让任何东西报错 —— 只是列表里少一类
+// 文件或多一类。
 
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import type { DiffPayload, FileEntry, RepoState } from '../../../src/server/shared/protocol';
@@ -90,16 +89,14 @@ describe('groupFiles', () => {
   });
 
   test('X=M Y=M 的文件同时出现在已暂存与未暂存里', () => {
-    // `git add` 之后再改一次。归一到一个桶等于替用户丢掉一半信息,而点名要求
-    // 「agent 执行过 git add 后,已暂存的改动仍能展示不遗漏」
+    // `git add` 之后再改一次:归一到一个桶等于替用户丢掉一半信息
     const groups = byId([file({ path: 'c.txt', staged: 'M', unstaged: 'M' })]);
     expect(groups.staged).toEqual(['c.txt']);
     expect(groups.unstaged).toEqual(['c.txt']);
   });
 
   test('未跟踪文件不会漏进「未暂存」—— 判据是 kind 而不是状态位', () => {
-    // 协议把未跟踪编码成 unstaged: '?'。若按「unstaged !== '.'」分组,
-    // 每个未跟踪文件都会在未暂存组里再出现一次
+    // 协议把未跟踪编码成 unstaged: '?';按「unstaged !== '.'」分组会让它在未暂存组里再出现一次
     expect(byId([file({ path: 'new.txt', kind: 'untracked', unstaged: '?' })])).toEqual({
       conflicted: [],
       staged: [],
@@ -109,10 +106,9 @@ describe('groupFiles', () => {
   });
 
   test('冲突条目自成一组,不同时进已暂存与未暂存', () => {
-    // `u` 记录的 XY 两位都不是 `.`,按字面判的实现会让它同时进两组 —— 而它哪一组
-    // 都不属于:那两组说的是「已经 add 了」与「改了还没 add」,冲突文件正等着
-    // 用户决定内容。`DD` 那条同时钉住「判据不是状态位」:两位里一个 `U`
-    // 都没有,靠 `staged === 'U'` 认的实现会把它漏回那两组里去
+    // `u` 记录的 XY 两位都不是 `.`,按字面判的实现会让它同时进两组 —— 而它哪一组都不属于。`DD` 那
+    // 条同时钉住「判据不是状态位」:两位里一个 `U` 都没有,靠 `staged === 'U'` 认的实现会把它漏回
+    // 那两组里去
     expect(
       byId([
         file({ path: 'both-modified.txt', staged: 'U', unstaged: 'U', conflicted: true }),
@@ -145,8 +141,7 @@ describe('groupFiles', () => {
   });
 
   test('保留后端给的顺序,不在前端再排一次', () => {
-    // 多一份排序意见就多一处与 `git status` 不一致的可能,而验收标准是「与
-    // git status 结果一致」
+    // 多一份排序意见就多一处与 `git status` 不一致的可能,而验收标准是「与 git status 结果一致」
     const paths = ['z.txt', 'a.txt', 'm.txt'];
     expect(byId(paths.map((path) => file({ path, unstaged: 'M' }))).unstaged).toEqual(paths);
   });
@@ -205,8 +200,8 @@ describe('loadState', () => {
   });
 
   test('两次请求重叠时,后发的赢 —— 旧快照不会盖掉新快照', async () => {
-    // S3b1 起每个 SSE change 事件都会调一次,agent 跑动期间事件密集。先发后到时
-    // 列表会停在过期状态直到下一次事件 —— 不报错,只是显示的东西不对
+    // 每个 SSE change 事件都会调一次,agent 跑动期间事件密集。先发后到时列表会停在过期状态直到下
+    // 一次事件 —— 不报错,只是显示的东西不对
     const stale: RepoState = { ...state, files: [file({ path: 'stale.txt', unstaged: 'M' })] };
     const fresh: RepoState = { ...state, files: [file({ path: 'fresh.txt', unstaged: 'M' })] };
     stubSlowThenFast(stale, fresh);
@@ -238,8 +233,7 @@ describe('loadDiff(按文件懒加载)', () => {
   });
 
   test('一次点击只发一个请求,且只带这一个文件的 path', async () => {
-    // 禁止预取整个列表:agent 单次改 300+ 文件是常态,全仓 diff 会冻结主线程数秒到
-    // 数十秒(300+ 文件验收项)
+    // 禁止预取整个列表:agent 单次改 300+ 文件是常态,全仓 diff 会冻结主线程数秒到数十秒
     const calls = stubJson(text);
     await loadDiff(file({ path: 'pkg/mod001.ts', unstaged: 'M' }));
 
@@ -250,8 +244,8 @@ describe('loadDiff(按文件懒加载)', () => {
   });
 
   test('重命名条目把 oldPath 一并传上 —— 漏传会退化成一个全新增文件', async () => {
-    // 只传新路径时 git 看不到另一侧、无法配对(已实测)。症状不是报错:
-    // 页面上是一个内容完整、只是没有 rename from/to 的 diff
+    // 只传新路径时 git 看不到另一侧、无法配对。症状不是报错:页面上是一个内容完整、只是没有
+    // rename from/to 的 diff
     const calls = stubJson(text);
     await loadDiff(file({ path: 'src/new.ts', oldPath: 'src/old.ts', staged: 'R' }));
 
@@ -269,8 +263,8 @@ describe('loadDiff(按文件懒加载)', () => {
   });
 
   test('payload 原样落进 diffState —— binary / too-large 不例外', async () => {
-    // 四个分支自 S4a 起后端都会真的返回(已跟踪那侧走 numstat,未跟踪那侧走 NUL
-    // 探测与体积),store 一律原样透传 —— 判别原因属后端知识(/ 架构边界不变式 4)
+    // 四个分支后端都会真的返回(已跟踪那侧走 numstat,未跟踪那侧走 NUL 探测与体积),store 一律原
+    // 样透传 —— 判别原因属后端知识
     for (const payload of [
       text,
       { kind: 'untracked-text', patch: '+new\n' },
@@ -286,9 +280,8 @@ describe('loadDiff(按文件懒加载)', () => {
   });
 
   test('重命名条目把旧路径与相似度一并带进状态,普通条目是 null', async () => {
-    // 标注跟着请求走,而不是渲染时回列表里现找:选中的文件随时可能从下一份列表里
-    // 消失(改动被撤销 / 被 commit),那时右侧刻意留着最后那份 diff,现找的写法会让
-    // 标注单独消失 —— 补丁里还带着 rename from/to,标题却说这是个普通文件
+    // 标注跟着请求走,而不是渲染时回列表里现找:选中的文件随时可能从下一份列表里消失,那时右侧刻
+    // 意留着最后那份 diff —— 现找的写法会让标注单独消失,补丁里还带着 rename from/to
     stubJson(text);
     await loadDiff(
       file({ path: 'src/new.ts', oldPath: 'src/old.ts', staged: 'R', renameScore: 87 }),
@@ -312,8 +305,7 @@ describe('loadDiff(按文件懒加载)', () => {
       loadDiff(file({ path: 'stale.txt', unstaged: 'M' })),
       loadDiff(file({ path: 'fresh.txt', unstaged: 'M' })),
     ]);
-    // 状态里的 path 与 payload 必须是同一个文件的:错位的症状是标题写着 A、
-    // 底下渲染的是 B
+    // 状态里的 path 与 payload 必须是同一个文件的:错位的症状是标题写着 A、底下渲染的是 B
     expect(diffState.value).toEqual({
       status: 'ready',
       path: 'fresh.txt',
@@ -346,8 +338,8 @@ describe('loadDiff(按文件懒加载)', () => {
   });
 
   test('同一个文件重新取时不回退到 loading —— 否则每次刷新都把画好的 diff 拆掉重画', async () => {
-    // 回退的代价不是闪一下:ready → loading 会让渲染 diff 的子树整个卸载,滚动位置
-    // 随之丢失。S3b1 起每个 SSE change 事件都会走这里,而要求刷新不丢滚动位置
+    // 回退的代价不是闪一下:ready → loading 会让渲染 diff 的子树整个卸载,滚动位置随之丢失。每个
+    // SSE change 事件都会走这里,而要求刷新不丢滚动位置
     diffState.value = { status: 'ready', path: 'a.txt', rename: null, payload: text };
     const fresh: DiffPayload = { kind: 'text', patch: 'updated\n' };
     stubJson(fresh);
@@ -476,9 +468,8 @@ describe('refresh(一次 SSE change 之后要重取什么)', () => {
   });
 
   test('选中的文件从列表里消失了 —— 不去取它,并把右侧连同选中态一起清空', async () => {
-    // 改动被撤销或被 commit 掉了。留着最后那份 diff 时,左栏正断言这些改动不存在、
-    // 右栏还展示着其中一份。也不能合成一个不带 oldPath 的条目去重取 —— 那正好是
-    // 「重命名退化成全新增」那条路
+    // 改动被撤销或被 commit 掉了。留着最后那份 diff 时,左栏正断言这些改动不存在、右栏还展示着其
+    // 中一份;也不能合成一个不带 oldPath 的条目去重取 —— 那正好是「重命名退化成全新增」那条路
     diffState.value = { status: 'ready', path: 'gone.txt', rename: null, payload: text };
     const calls = stubEndpoints(stateWith([file({ path: 'other.txt', unstaged: 'M' })]), fresh);
 

@@ -1,13 +1,11 @@
 // 三档各自**注册了什么**、以及轮询与降级(src/server/watch/watcher.ts)。
 //
-// 单独一个文件,理由同 watch-error.test.ts:它把 `node:fs` 的 `watch` 换成替身。
-// 这份 mock 一旦生效,watch.test.ts 里那些真跑文件系统的用例会整片被架空成永远绿的,
-// 所以两者不合并。
+// 单独一个文件,理由同 watch-error.test.ts:它把 `node:fs` 的 `watch` 换成替身,而这份 mock 一旦
+// 生效,watch.test.ts 里那些真跑文件系统的用例会整片被架空成永远绿的。
 //
-// **分工**:真实文件系统那边证「原生 watcher 交给匹配器的路径是什么形状」——
-// 那是 mock 说不上话的;这边证「C 档一个递归 watch 都不建」「A 档传的是函数不是
-// 字符串」「B 档的过滤在合并窗口之前」—— 那是真实文件系统上看不出来的
-// (跑在 macOS 上的用例证明不了 Linux 侧的注册行为,而 ENOSPC 正是在 Linux 上出)。
+// **分工**:真实文件系统那边证「原生 watcher 交给匹配器的路径是什么形状」—— 那是 mock 说不上话
+// 的;这边证「C 档一个递归 watch 都不建」「A 档传的是函数不是字符串」「B 档的过滤在合并窗口之
+// 前」—— 那是真实文件系统上看不出来的(跑在 macOS 上的用例证明不了 Linux 侧的注册行为)。
 
 import { EventEmitter } from 'node:events';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
@@ -33,11 +31,9 @@ class FakeWatcher extends EventEmitter {
 const calls: WatchCall[] = [];
 
 /**
- * 让 `watch()` 对某些路径**同步抛**。
- *
- * 建流那一刻就失败(ENOSPC / 网络盘)与建好之后才出错是两条不同的路径,而它们的
- * 区别只有在 `createWatcher` **执行期间**才看得出来 —— 事后往替身上 emit 一个
- * 'error' 是复现不了的。
+ * 让 `watch()` 对某些路径**同步抛**。建流那一刻就失败(ENOSPC / 网络盘)与建好之后才出错是两条
+ * 不同的路径,而它们的区别只有在 `createWatcher` **执行期间**才看得出来 —— 事后往替身上 emit 一
+ * 个 'error' 是复现不了的。
  */
 let failWatch: (path: string) => boolean = () => false;
 
@@ -113,12 +109,11 @@ describe('工作区侧:每档注册了什么', () => {
     const recursive = recursiveCalls();
     expect(recursive).toHaveLength(1);
     const { options } = recursive[0] as WatchCall;
-    // 字符串模式在 macOS / Windows 上形同虚设(basename 比对匹配不上事件的相对
-    // 路径),而那是静默的:watch 照建、事件照来、过滤全不生效
+    // 字符串模式在 macOS / Windows 上形同虚设(basename 比对匹配不上事件的相对路径),而那是静默
+    // 的:watch 照建、事件照来、过滤全不生效
     expect(typeof options?.ignore).toBe('function');
 
-    // 传的确实是那份逐段匹配器 —— 光断言「是个函数」的话,传一个 `() => false`
-    // 也通过,而那正是「过滤没生效」本身
+    // 传的确实是那份逐段匹配器 —— 光断言「是个函数」的话,传一个 `() => false` 也通过
     const ignore = options?.ignore as (p: string) => boolean;
     expect(ignore('node_modules/pkg/lib/index.js')).toBe(true);
     expect(ignore('src/a.ts')).toBe(false);
@@ -134,12 +129,10 @@ describe('工作区侧:每档注册了什么', () => {
   });
 
   test('C 档:一个递归 watch 都不建 —— 它就是本工具唯一的外部副作用', async () => {
-    // Node 在 Linux 上的递归实现是用户态遍历,对每个**普通文件**也注册一个 inotify
-    // watch,足以耗尽 max_user_watches,之后整机所有依赖 inotify 的工具(包括用户
-    // 自己的编辑器)开始报 ENOSPC
+    // Node 在 Linux 上的递归实现是用户态遍历,对每个**普通文件**也注册一个 inotify watch,足以耗
+    // 尽 max_user_watches,之后整机所有依赖 inotify 的工具(包括用户自己的编辑器)开始报 ENOSPC
     const changes: number[] = [];
-    // 每拍都换一份快照 —— 这一条只问「轮询这条通路通不通」,「变了才触发」由下面
-    // 那组单独钉
+    // 每拍都换一份快照 —— 这一条只问「轮询这条通路通不通」,「变了才触发」由下面那组单独钉
     let tick = 0;
     const handle = start({
       tier: 'C',
@@ -173,8 +166,7 @@ describe('B 档的过滤在合并窗口之前(红线)', () => {
     start({ tier: 'B', onChange: () => changes.push(Date.now()), debounceMs: 30 });
     const listener = workspaceListener();
 
-    // 过滤若放在窗口之后,这 30 条噪声照样把窗口顶开、触发一次无谓刷新 ——
-    // 而 agent 跑一次装依赖就是几万条
+    // 过滤若放在窗口之后,这 30 条噪声照样把窗口顶开、触发一次无谓刷新 —— 而装一次依赖就是几万条
     for (let i = 0; i < 30; i += 1) listener('change', `node_modules/pkg/lib/chunk-${i}.js`);
     await new Promise((r) => setTimeout(r, 200));
     expect(changes).toHaveLength(0);
@@ -296,8 +288,7 @@ describe('原生档的低频安全轮询', () => {
     });
     snapshot = 'v2';
     await new Promise((r) => setTimeout(r, 120));
-    // 页面上标的是「原生监听」,而它确实还在原生监听 —— 翻成 polling 会把一次
-    // 完全正常的运行说成降级,而那句话是给用户看的
+    // 页面上标的是「原生监听」,而它确实还在原生监听 —— 翻成 polling 会把一次正常运行说成降级
     expect(handle.mode).toBe('native');
     expect(degrades).toHaveLength(0);
   });
@@ -358,13 +349,11 @@ describe('降级为轮询(兜底)', () => {
     expect(handle.mode).toBe('native');
     (recursiveCalls()[0] as WatchCall).watcher.emit('error', new Error('ENOSPC'));
 
-    // mode 是前端唯一的判据:不翻的话页面会一直标着「原生监听」,
-    // 而它自己无从推断降级这件事
+    // mode 是前端唯一的判据:不翻的话页面会一直标着「原生监听」,而它自己无从推断降级这件事
     expect(handle.mode).toBe('polling');
     expect(degrades.map((e) => e.message)).toEqual(['ENOSPC']);
 
-    // 一次 ENOSPC 往往连着把几个 watcher 全打下来 —— 每个都上报等于前端收到一串
-    // 重复的降级通知,而降级本身不可逆
+    // 一次 ENOSPC 往往连着把几个 watcher 全打下来 —— 每个都上报等于前端收到一串重复的降级通知
     (calls[0] as WatchCall).watcher.emit('error', new Error('ENOSPC again'));
     expect(degrades).toHaveLength(1);
 
@@ -375,12 +364,10 @@ describe('降级为轮询(兜底)', () => {
 
   test('出错的工作区 watcher 被显式关掉,不是只把引用丢掉', () => {
     /**
-     * 原生 watcher(macOS / Windows)确实在 emit 之前就关了自己,但 Linux 的**用户态
-     * 递归实现**不是:`internal/fs/recursive_watch.js` 的 `#watchFolder` catch 里
-     * 只有一句 `emit('error', …)`,已注册的那一大批 inotify watch 得靠显式 `close()`
-     * 才放得掉(已核对 Node 24.14.1 源码)。丢掉引用 = 它们活到进程结束,
-     * 而这条路径最典型的触发原因**正是配额耗尽** —— 那时还占着配额不放,
-     * 伤的是用户整机的其他工具,且没有任何报错
+     * 原生 watcher(macOS / Windows)确实在 emit 之前就关了自己,但 Linux 的**用户态递归实现**不
+     * 是:它只 emit 一个 error,已注册的那一大批 inotify watch 得靠显式 `close()` 才放得掉。丢掉
+     * 引用 = 它们活到进程结束,而这条路径最典型的触发原因**正是配额耗尽** —— 那时还占着配额不
+     * 放,伤的是用户整机的其他工具,且没有任何报错。
      */
     const handle = start({ tier: 'A', onDegrade: () => {} });
     const workspace = (recursiveCalls()[0] as WatchCall).watcher;
@@ -394,13 +381,10 @@ describe('降级为轮询(兜底)', () => {
 
   test('C 档下 `.git` watch 建不起来也不上报降级 —— 它本来就在轮询', () => {
     /**
-     * 上报会 stderr 打一行、再往刚连上的客户端推一个 `change`,而 `mode` 从头到尾
-     * 就是 `polling`,没有任何东西真的变过。
-     *
-     * **必须让它在建流那一刻就失败**:事后 emit 一个 'error' 时轮询早就起来了,
-     * `degrade()` 的短路会替我们把这条挡掉 —— 那样这条用例对「C 档的 startPolling
-     * 排在 `.git` 循环之前还是之后」一个字都说不上(第一版正是这么写的,把顺序
-     * 改回去照样绿)。
+     * 上报会 stderr 打一行、再往刚连上的客户端推一个 `change`,而 `mode` 从头到尾就是 `polling`,
+     * 没有任何东西真的变过。**必须让它在建流那一刻就失败**:事后 emit 一个 'error' 时轮询早就起来
+     * 了,`degrade()` 的短路会替我们把这条挡掉 —— 那样这条用例对「C 档的 startPolling 排在
+     * `.git` 循环之前还是之后」一个字都说不上(第一版正是这么写的,把顺序改回去照样绿)。
      */
     failWatch = (path) => path.endsWith('.git');
     const degrades: Error[] = [];

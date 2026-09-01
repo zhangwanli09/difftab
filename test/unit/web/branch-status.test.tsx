@@ -61,9 +61,8 @@ describe('BranchStatus', () => {
     // 正面:分支名与「无上游」都真的画出来了(缺了这条,下面那条对空 DOM 也成立)
     expect(text).toContain('feature/no-upstream');
     expect(text).toContain('no upstream');
-    // 反面:一个箭头都不许出现 —— ahead/behind 在这里根本无从谈起。
-    // 只钉箭头不钉数字:分支名本身可以含数字(`release/1.0`),把数字也禁掉等于给
-    // fixture 加一条看不见的约束,改个名字就会以一个与验收项无关的理由变红
+    // 反面:一个箭头都不许出现。只钉箭头不钉数字 —— 分支名本身可以含数字(`release/1.0`),把数字
+    // 也禁掉等于给 fixture 加一条看不见的约束
     expect(text).not.toMatch(/[↑↓]/);
   });
 
@@ -100,24 +99,21 @@ describe('BranchStatus', () => {
 
 describe('BranchStatus 的降级标注', () => {
   it('detached 时不把 git 的字面量 `(detached)` 当分支名画出去', () => {
-    // 后端**不替它编一个名字**(那是在事实来源那一层说假话,见 `BranchState.head`),
-    // 所以「画什么」这件事就落在这里。原样画出去的症状是页面上凭空多出一个
-    // 叫「(detached)」的分支 —— 不报错,只是没有这样一个分支
+    // 后端**不替它编一个名字**(那是在事实来源那一层说假话),所以「画什么」落在这里。原样画出去
+    // 的症状是页面上凭空多出一个叫「(detached)」的分支 —— 不报错,只是没有这样一个分支
     render(<BranchStatus branch={branch({ head: '(detached)', detached: true })} />, container);
     const text = textOf(container);
 
     expect(text).not.toContain('(detached)');
     expect(text).toContain('Detached HEAD');
-    // 也不该退回「无上游」:detached 时根本谈不上上游,而那句话是留给
-    // 「有分支但没设上游」的(S3a 那条验收项要区分的正是它)
+    // 也不该退回「无上游」:detached 时根本谈不上上游,那句话是留给「有分支但没设上游」的
     expect(text).not.toContain('no upstream');
     expect(text).not.toMatch(/[↑↓]/);
   });
 
   it('detached 但确实有 ahead/behind 时照样画出来', () => {
-    // `detached` 是拿 `# branch.head` 与字面量 `(detached)` 比出来的 —— porcelain v2
-    // 给不出别的判据,而 git 允许真有一个分支叫这个名字。只按 `detached` 藏计数的
-    // 写法会让那个分支的 ahead/behind 静默消失,所以判据连 upstream 一起看
+    // `detached` 是拿 `# branch.head` 与字面量 `(detached)` 比出来的,而 git 允许真有一个分支叫这
+    // 个名字 —— 只按 `detached` 藏计数的写法会让那个分支的 ahead/behind 静默消失
     render(
       <BranchStatus
         branch={branch({ head: '(detached)', detached: true, upstream: { ahead: 1, behind: 2 } })}
@@ -142,8 +138,7 @@ describe('BranchStatus 的降级标注', () => {
   });
 
   it('没有进行中的操作时一个标签都不画', () => {
-    // 反面证据。与 `WatchBadge` 同一条理由:常驻一个「正常」标签会让唯一要紧的
-    // 那一次淹在一片永远正确的字里
+    // 反面证据。与 `WatchBadge` 同一条理由:常驻一个「正常」标签会让唯一要紧的那一次淹在里面
     render(<BranchStatus branch={branch()} />, container);
     const text = textOf(container);
     for (const label of [
@@ -159,8 +154,8 @@ describe('BranchStatus 的降级标注', () => {
   });
 
   it('rebase 停在半路时,detached 与「变基中」同时画出来', () => {
-    // 两者是同时出现的两件事,不是二选一:rebase 期间 status 报的就是 `(detached)`
-    // (已实测)。少画哪一个,用户都看不全自己的处境
+    // 两者是同时出现的两件事,不是二选一:rebase 期间 status 报的就是 `(detached)`,少画哪一个用
+    // 户都看不全自己的处境
     render(
       <BranchStatus branch={branch({ head: '(detached)', detached: true, operation: 'rebase' })} />,
       container,
@@ -173,14 +168,12 @@ describe('BranchStatus 的降级标注', () => {
 
 describe('App 的状态条', () => {
   it('拿到 state 之后才画分支,且画的是 state 里的那一份', async () => {
-    // 组件本身全绿、却压根没被挂进 App —— 这是上面四条一条都盖不到的失效方式。
-    // **只挂载一次,之后只写 signal**:App 在渲染体里读 `repoState`,状态一变自己就
-    // 重画;手动补一次 `render()` 会把「状态变了会不会重画」替它做掉(同 diff-view.test.tsx)
+    // 组件本身全绿、却压根没被挂进 App —— 这是上面四条一条都盖不到的失效方式。**只挂载一次,之后
+    // 只写 signal**:手动补一次 `render()` 会把「状态变了会不会重画」替它做掉
     render(<App />, container);
 
-    // 判据是**整条状态条都还没有**,而不是「没出现『无上游』」那类写法:后者与文案
-    // 字面量耦合,改一次文案就永远真空通过 —— 而这条恰恰是来防「先画一个占位分支」的,
-    // 写死 main、画成 0/0、画成「未知分支」都是同一种退化,这里一次全盖住
+    // 判据是**整条状态条都还没有**,而不是「没出现『无上游』」那类与文案字面量耦合的写法:写死
+    // main、画成 0/0、画成「未知分支」都是同一种退化,这里一次全盖住
     expect(container.querySelector('footer')).toBe(null);
 
     repoState.value = {
