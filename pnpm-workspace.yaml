@@ -1,16 +1,16 @@
 # pnpm 设置的唯一位置(spec §5.11)。
-# pnpm 11 不再读 package.json 的 `pnpm` 字段,.npmrc 只保留 registry / 鉴权;
-# 写错位置不报错、无 deprecation 警告,只是静默不生效。
+# pnpm 11 不再读 package.json 的 `pnpm` 字段，.npmrc 只保留 registry / 鉴权；
+# 写错位置不报错、无 deprecation 警告，只是静默不生效。
 
-# 依赖的生命周期脚本默认不执行,需要执行的必须显式列入白名单。
-# lefthook 靠安装后脚本把 git hooks 写进 .git/hooks,漏列则 hooks 静默不装。
+# 依赖的生命周期脚本默认不执行，需要执行的必须显式列入白名单。
+# lefthook 靠安装后脚本把 git hooks 写进 .git/hooks，漏列则 hooks 静默不装。
 allowBuilds:
   lefthook: true
 # pnpm 11 默认对刚发布不久的版本设了最短发布年龄门槛。下面这条是 `pnpm install`
-# 自己写进来的豁免,入库是为了让 CI 与他人机器上的 --frozen-lockfile 结果一致。
+# 自己写进来的豁免，入库是为了让 CI 与他人机器上的 --frozen-lockfile 结果一致。
 minimumReleaseAgeExclude:
   - vite@8.2.1
-# 发布分支。CLI 的 --publish-branch 默认是 `master`,而本仓库的默认分支是 `main` ——
-# 不写这条时 `pnpm publish` 会因分支不符停下来问一句(交互式)或直接失败(CI),
-# 而那与 --no-git-checks 是两回事:git 检查本身有价值,要留(见 roadmap.md §8)。
+# 发布分支。CLI 的 --publish-branch 默认是 `master`，而本仓库的默认分支是 `main`——
+# 不写这条时 `pnpm publish` 会因分支不符停下来问一句（交互式）或直接失败(CI)，
+# 而那与 --no-git-checks 是两回事：git 检查本身有价值，要留（见 roadmap.md §8）。
 publishBranch: main

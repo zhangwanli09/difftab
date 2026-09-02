@@ -1,12 +1,12 @@
 {
   // 后端 TS 与三份 .ts 构建配置的类型检查。严格性开关见 tsconfig.base.json。
   //
-  // 注意 scripts/*.mjs 与 test/smoke/*.js **不在**任何 tsconfig 里 —— 它们是纯 JS,
-  // 不参与类型检查,因此拿不到 @types/node@^22 的 API 上限保护;这两处用错新 API
-  // 只会在 CI 的 Node 22 档变红,而不是在 `pnpm typecheck` 就拦住。
+  // 注意 scripts/*.mjs 与 test/smoke/*.js **不在**任何 tsconfig 里——它们是纯 JS，
+  // 不参与类型检查，因此拿不到 @types/node@^22 的 API 上限保护；这两处用错新 API
+  // 只会在 CI 的 Node 22 档变红，而不是在 `pnpm typecheck` 就拦住。
   //
-  // target / lib 取 ES2023 且 @types/node 锁 ^22:用到 Node 24+ 才有的内置 API
-  // 或超出 ES2023 的语法时,tsc 在编译期即报错,不必等 CI 的 Node 22 档跑到。
+  // target / lib 取 ES2023 且 @types/node 锁 ^22：用到 Node 24+ 才有的内置 API
+  // 或超出 ES2023 的语法时，tsc 在编译期即报错，不必等 CI 的 Node 22 档跑到。
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "target": "ES2023",
@@ -16,16 +16,16 @@
     "types": ["node"],
 
     // 后端源码内部一律写 `./foo.ts` 这样的真实文件名。
-    // nodenext 默认要求写成 `./foo.js`(即「写产物名、由解析器映射回源码」),
-    // 但后端产物是 tsdown 打出来的**单文件 ESM**,那些 `.js` 说明符在运行时根本
-    // 不存在,只会让人以为 dist/ 下有一棵同构的文件树。这里不 emit,打包由
-    // rolldown 解析,写真名不产生任何运行时代价。
+    // nodenext 默认要求写成 `./foo.js`（即「写产物名、由解析器映射回源码」），
+    // 但后端产物是 tsdown 打出来的**单文件 ESM**，那些 `.js` 说明符在运行时根本
+    // 不存在，只会让人以为 dist/ 下有一棵同构的文件树。这里不 emit，打包由
+    // rolldown 解析，写真名不产生任何运行时代价。
     "allowImportingTsExtensions": true
   },
   "include": [
     "src/server/**/*.ts",
-    // 前端侧的单测在 test/unit/web/,归 tsconfig.web.json ——
-    // 两份 tsconfig 的 moduleResolution 与 lib 不同,同一文件不能被两边同时收
+    // 前端侧的单测在 test/unit/web/，归 tsconfig.web.json——
+    // 两份 tsconfig 的 moduleResolution 与 lib 不同，同一文件不能被两边同时收
     "test/unit/server/**/*.ts",
     "vite.config.ts",
     "vitest.config.ts",

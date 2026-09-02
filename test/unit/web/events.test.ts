@@ -1,8 +1,8 @@
 // SSE 订阅(src/web/state/events.ts)的单测。
 //
-// 用替身而不是 happy-dom 自带的 EventSource:要断言的东西全在**连接的开关时机**上
-// (什么时候新建、什么时候不新建),而真 EventSource 要真起一条 HTTP 连接才有
-// readyState 可看。替身还让「永久关闭」这个状态可以被直接摆出来 —— 它在真实浏览器里
+// 用替身而不是 happy-dom 自带的 EventSource：要断言的东西全在**连接的开关时机**上
+// （什么时候新建、什么时候不新建），而真 EventSource 要真起一条 HTTP 连接才有
+// readyState 可看。替身还让「永久关闭」这个状态可以被直接摆出来——它在真实浏览器里
 // 只在服务端回了非 2xx 或错 Content-Type 时才出现。
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -14,7 +14,7 @@ const CONNECTING = 0;
 const OPEN = 1;
 const CLOSED = 2;
 
-/** 建过的每一条连接都记在这里,顺序即建立顺序。 */
+/** 建过的每一条连接都记在这里，顺序即建立顺序。 */
 const sources: FakeEventSource[] = [];
 
 class FakeEventSource {
@@ -24,8 +24,8 @@ class FakeEventSource {
 
   readonly url: string;
 
-  // 参数属性(`constructor(readonly url)`)在 erasableSyntaxOnly 下不可用 —— 那是「TS 只做类型擦
-  // 除」这条的直接后果,不是风格选择
+  // 参数属性(`constructor(readonly url)`)在 erasableSyntaxOnly 下不可用——那是「TS 只做类型擦
+  // 除」这条的直接后果，不是风格选择
   constructor(url: string) {
     this.url = url;
     sources.push(this);
@@ -46,7 +46,7 @@ class FakeEventSource {
     for (const fn of this.listeners.get(name) ?? []) fn(new Event(name));
   }
 
-  /** 服务端回了非 2xx / 错的 Content-Type:浏览器就此**永久**放弃这条连接。 */
+  /** 服务端回了非 2xx / 错的 Content-Type：浏览器就此**永久**放弃这条连接。 */
   die() {
     this.readyState = CLOSED;
     this.emit('error');
@@ -78,9 +78,9 @@ const latest = () => sources[sources.length - 1] as FakeEventSource;
 /**
  * 订阅并登记好取消函数。
  *
- * **不能靠用例末尾那句 `dispose()`**:一条断言挂掉,后面的取消就不会执行,于是
- * 那条 `visibilitychange` 监听器活到了下一个用例里 —— 下一个用例随之以「多了一次
- * 重取」失败,而它自己一点毛病没有。第一次写这份文件时就是这么连倒了三条。
+ * **不能靠用例末尾那句 `dispose()`**：一条断言挂掉，后面的取消就不会执行，于是
+ * 那条 `visibilitychange` 监听器活到了下一个用例里——下一个用例随之以「多了一次
+ * 重取」失败，而它自己一点毛病没有。第一次写这份文件时就是这么连倒了三条。
  */
 const disposers: (() => void)[] = [];
 function connect(): () => void {
@@ -104,8 +104,8 @@ beforeEach(() => {
 });
 
 describe('connectEvents', () => {
-  test('挂载即连上 /api/events,且不带任何 token', async () => {
-    // token 在生产下是 HttpOnly cookie、dev 下由代理注入 —— 它一旦落到 JS 能读的地方就白设了
+  test('挂载即连上 /api/events，且不带任何 token', async () => {
+    // token 在生产下是 HttpOnly cookie、dev 下由代理注入——它一旦落到 JS 能读的地方就白设了
     stubFetch();
     connect();
 
@@ -118,16 +118,16 @@ describe('connectEvents', () => {
     connect();
 
     latest().emit('change');
-    // 等的是**状态真的换上了**,而不是请求发出去了 —— 后者在正文解析之前就成立,于是这条断言会
-    // 以「repoState 还是 null」失败,而产品一点毛病没有
+    // 等的是**状态真的换上了**，而不是请求发出去了——后者在正文解析之前就成立，于是这条断言会
+    // 以「repoState 还是 null」失败，而产品一点毛病没有
     await vi.waitFor(() => expect(repoState.value).toEqual(state));
     expect(calls).toEqual(['/api/state']);
   });
 
-  test('连接一直活着时,切回标签页既不重连也不补取', async () => {
-    // 重连:每次都是一条新的 HTTP 连接,而空闲退出以连接数为判据 —— 白白开关一轮等于让后端在「有
-    // 人」和「没人」之间抖一下。补取:连接活着就说明期间每个 change 都推到过了,而它取的可能是一
-    // 份数 MB 的 diff —— 切标签又正是这个工具最频繁的动作
+  test('连接一直活着时，切回标签页既不重连也不补取', async () => {
+    // 重连：每次都是一条新的 HTTP 连接，而空闲退出以连接数为判据——白白开关一轮等于让后端在「有
+    // 人」和「没人」之间抖一下。补取：连接活着就说明期间每个 change 都推到过了，而它取的可能是一
+    // 份数 MB 的 diff——切标签又正是这个工具最频繁的动作
     const calls = stubFetch();
     connect();
 
@@ -137,9 +137,9 @@ describe('connectEvents', () => {
     expect(sources).toHaveLength(1);
   });
 
-  test('连接已经死了时,切回标签页会重连', async () => {
-    // 系统休眠唤醒、Chrome 丢弃后台标签之后连接可能已经死了而 error 永远不会来,页面于是停在休眠
-    // 前的那一屏,看上去只是「没有变更」
+  test('连接已经死了时，切回标签页会重连', async () => {
+    // 系统休眠唤醒、Chrome 丢弃后台标签之后连接可能已经死了而 error 永远不会来，页面于是停在休眠
+    // 前的那一屏，看上去只是「没有变更」
     stubFetch();
     connect();
     const first = latest();
@@ -147,15 +147,15 @@ describe('connectEvents', () => {
 
     document.dispatchEvent(new Event('visibilitychange'));
     expect(sources).toHaveLength(2);
-    // 新连接照样收得到事件 —— 监听器要挂在新的那条上,不是还挂在死掉的那条
+    // 新连接照样收得到事件——监听器要挂在新的那条上，不是还挂在死掉的那条
     const calls = stubFetch();
     latest().emit('change');
     await vi.waitFor(() => expect(calls).toEqual(['/api/state']));
   });
 
-  test('连接看着还开着、但两拍心跳都没来 —— 切回标签页照样换一条', async () => {
+  test('连接看着还开着、但两拍心跳都没来——切回标签页照样换一条', async () => {
     // 休眠唤醒、网络切换之后留下的半开 TCP:readyState 一直是 OPEN,error 永远不来。
-    // 只按 readyState 判的话这条连接会一直挂着,页面从此收不到任何变更而毫无异样
+    // 只按 readyState 判的话这条连接会一直挂着，页面从此收不到任何变更而毫无异样
     vi.useFakeTimers();
     const calls = stubFetch();
     connect();
@@ -166,12 +166,12 @@ describe('connectEvents', () => {
 
     expect(first.readyState).toBe(CLOSED); // 是我们亲手掐掉的
     expect(sources).toHaveLength(2);
-    // 断过的这段里发生的变更没人推给我们,补取那一下**只在这条分支上**不能省
+    // 断过的这段里发生的变更没人推给我们，补取那一下**只在这条分支上**不能省
     await vi.waitFor(() => expect(calls).toEqual(['/api/state']));
   });
 
-  test('心跳来过就不算死 —— 一直静默才算', async () => {
-    // 反过来的那一半:没有它,上一条用「切回标签页永远重连」也能通过
+  test('心跳来过就不算死——一直静默才算', async () => {
+    // 反过来的那一半：没有它，上一条用「切回标签页永远重连」也能通过
     vi.useFakeTimers();
     stubFetch();
     connect();
@@ -184,8 +184,8 @@ describe('connectEvents', () => {
     expect(sources).toHaveLength(1);
   });
 
-  test('自己重连有上限,切回标签页重新武装', async () => {
-    // 端口是内核随机分配的,换端口重启的后端旧标签页永远敲不到 —— 不封顶就是每 3 秒敲一次,敲到
+  test('自己重连有上限，切回标签页重新武装', async () => {
+    // 端口是内核随机分配的，换端口重启的后端旧标签页永远敲不到——不封顶就是每 3 秒敲一次，敲到
     // 浏览器关掉为止
     vi.useFakeTimers();
     stubFetch();
@@ -204,7 +204,7 @@ describe('connectEvents', () => {
   test('标签页被隐藏时什么都不做', async () => {
     const calls = stubFetch();
     connect();
-    // 直接改属性描述符,不用 spyOn:hidden 是原型上的 getter,断言的成败不该取决于替身库
+    // 直接改属性描述符，不用 spyOn:hidden 是原型上的 getter，断言的成败不该取决于替身库
     Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
 
     document.dispatchEvent(new Event('visibilitychange'));
@@ -215,9 +215,9 @@ describe('connectEvents', () => {
     Reflect.deleteProperty(document, 'hidden');
   });
 
-  test('连接被永久关闭后自己重连 —— 浏览器这时候不会再管', async () => {
-    // readyState 回到 CONNECTING 的那种断开由浏览器自己重试;CLOSED 是「服务端回了
-    // 非 2xx」,浏览器就此放弃。不自己兜住的话页面从此一动不动,而且看上去完全正常
+  test('连接被永久关闭后自己重连——浏览器这时候不会再管', async () => {
+    // readyState 回到 CONNECTING 的那种断开由浏览器自己重试；CLOSED 是「服务端回了
+    // 非 2xx」，浏览器就此放弃。不自己兜住的话页面从此一动不动，而且看上去完全正常
     vi.useFakeTimers();
     stubFetch();
     connect();
@@ -230,7 +230,7 @@ describe('connectEvents', () => {
   });
 
   test('只是在重连中(CONNECTING)时不插手', async () => {
-    // 浏览器已经在自己重试了,我们再开一条就是两条连接
+    // 浏览器已经在自己重试了，我们再开一条就是两条连接
     vi.useFakeTimers();
     stubFetch();
     connect();

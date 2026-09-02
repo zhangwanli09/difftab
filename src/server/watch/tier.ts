@@ -1,10 +1,10 @@
 // 监听档位判定。
 //
-// **档位按 `process.versions.node` 做 semver 比对,禁用特性探测**:任何探测写法都要依赖
-// 「`fs.watch` 如何处理未知选项」这一未文档化的内部细节。误判的代价是不对称的 —— 错判成
-// A 档时,Linux 上会建一个**没有 `ignore`** 的递归 watch,而那是用户态遍历、对每个普通
-// 文件也注册一个 inotify watch,足以耗尽 `fs.inotify.max_user_watches`,之后整机所有依赖
-// inotify 的工具(包括用户自己的编辑器)开始报 ENOSPC。
+// **档位按 `process.versions.node` 做 semver 比对，禁用特性探测**：任何探测写法都要依赖
+// 「`fs.watch` 如何处理未知选项」这一未文档化的内部细节。误判的代价是不对称的——错判成
+// A 档时，Linux 上会建一个**没有 `ignore`** 的递归 watch，而那是用户态遍历、对每个普通
+// 文件也注册一个 inotify watch，足以耗尽 `fs.inotify.max_user_watches`，之后整机所有依赖
+// inotify 的工具（包括用户自己的编辑器）开始报 ENOSPC。
 
 import type { WatchState } from '../shared/protocol.ts';
 
@@ -14,8 +14,8 @@ export type WatchTier = 'A' | 'B' | 'C';
 const IGNORE_SINCE = { major: 24, minor: 14, patch: 0 };
 
 /**
- * 强制指定档位的**内部**环境变量。没有它,档位相关的验收在单机上一条都无从自查 —— 一台
- * 机器只有一个 Node 版本、一个平台,而三档正是按这两者分的。它不是给用户的开关。
+ * 强制指定档位的**内部**环境变量。没有它，档位相关的验收在单机上一条都无从自查——一台
+ * 机器只有一个 Node 版本、一个平台，而三档正是按这两者分的。它不是给用户的开关。
  */
 export const TIER_ENV = 'DIFFTAB_WATCH_TIER';
 
@@ -28,7 +28,7 @@ export class WatchTierError extends Error {
 }
 
 /**
- * `24.14.1` / `26.0.0-nightly20260101` → 三元组 + 是否带预发布标签。解析不出来返回 null,
+ * `24.14.1` / `26.0.0-nightly20260101` → 三元组 + 是否带预发布标签。解析不出来返回 null，
  * 调用方按「没有 `ignore`」处理。
  */
 function parseNodeVersion(
@@ -45,11 +45,11 @@ function parseNodeVersion(
 }
 
 /**
- * 当前 Node 是否具备 `fs.watch` 的 `ignore` 选项。**解析失败一律按「没有」处理**,方向是
- * 刻意的:误判成没有,代价是 Linux 上退化为 1.5s 轮询(功能完整,只是不即时);误判成有,
- * 代价是上面那条 ENOSPC。两种误判差着一个数量级,判据不确定时只能倒向便宜的那一侧。
+ * 当前 Node 是否具备 `fs.watch` 的 `ignore` 选项。**解析失败一律按「没有」处理**，方向是
+ * 刻意的：误判成没有，代价是 Linux 上退化为 1.5s 轮询（功能完整，只是不即时）；误判成有，
+ * 代价是上面那条 ENOSPC。两种误判差着一个数量级，判据不确定时只能倒向便宜的那一侧。
  *
- * 预发布标签按 semver 的规矩算作**低于**同版本正式版(`24.14.0-rc.1 < 24.14.0`):那正是
+ * 预发布标签按 semver 的规矩算作**低于**同版本正式版(`24.14.0-rc.1 < 24.14.0`)：那正是
  * 选项刚合入、行为还可能变的窗口。
  */
 export function supportsIgnoreOption(nodeVersion: string): boolean {
@@ -64,10 +64,10 @@ export function supportsIgnoreOption(nodeVersion: string): boolean {
 /**
  * 档位判定。
  *
- * - **A**:有 `ignore`,三端通用 —— Linux 上是注册前跳过,正是配额问题的官方解法
- * - **B**:没有 `ignore`,但在 macOS / Windows 上走原生 FSEvents / `ReadDirectoryChangesW`,
- *   单句柄监听整棵树,本就没有配额问题,回调里自己过滤即可
- * - **C**:没有 `ignore` 且在 Linux 上 —— **不建递归 watch**,工作区改动走轮询
+ * - **A**：有 `ignore`，三端通用——Linux 上是注册前跳过，正是配额问题的官方解法
+ * - **B**：没有 `ignore`，但在 macOS / Windows 上走原生 FSEvents / `ReadDirectoryChangesW`，
+ *   单句柄监听整棵树，本就没有配额问题，回调里自己过滤即可
+ * - **C**：没有 `ignore` 且在 Linux 上——**不建递归 watch**，工作区改动走轮询
  */
 export function detectTier(nodeVersion: string, platform: string): WatchTier {
   if (supportsIgnoreOption(nodeVersion)) return 'A';
@@ -75,8 +75,8 @@ export function detectTier(nodeVersion: string, platform: string): WatchTier {
 }
 
 /**
- * 实际生效的档位:环境变量优先,否则按运行时判定。**取值不合法时抛错而不是退回自动判定**:
- * `DIFFTAB_WATCH_TIER=b` 那种手滑退回自动判定后,在本机上多半照样给出 B 档,于是「我验过
+ * 实际生效的档位：环境变量优先，否则按运行时判定。**取值不合法时抛错而不是退回自动判定**：
+ * `DIFFTAB_WATCH_TIER=b` 那种手滑退回自动判定后，在本机上多半照样给出 B 档，于是「我验过
  * B 档了」这个结论建立在一次根本没生效的强制指定上。
  */
 function forcedTier(env: NodeJS.ProcessEnv): WatchTier | null {
@@ -99,8 +99,8 @@ export function resolveTier(
 }
 
 /**
- * 该档位下**工作区通路**的既定形态(`WatchState.mode`)。**它只是「还没起监听时答什么」**:
- * 监听懒起,起了之后真实取值由 `WatchHandle.mode` 给 —— A / B 档运行中落到轮询兜底时,
+ * 该档位下**工作区通路**的既定形态(`WatchState.mode`)。**它只是「还没起监听时答什么」**：
+ * 监听懒起，起了之后真实取值由 `WatchHandle.mode` 给——A / B 档运行中落到轮询兜底时，
  * 那一侧会翻成 `polling`。
  */
 export function initialMode(tier: WatchTier): WatchState['mode'] {
@@ -108,18 +108,18 @@ export function initialMode(tier: WatchTier): WatchState['mode'] {
 }
 
 /**
- * 强制指定 A 档、但这个 Node 根本没有 `ignore` 时的一句提醒(没有则返回 null)。
+ * 强制指定 A 档、但这个 Node 根本没有 `ignore` 时的一句提醒（没有则返回 null）。
  *
- * **不是报错**:「三档均可通过内部环境变量强制指定」是既定用法,在 Node 22 上拒绝启动会把
- * 它推翻。但沉默同样不行 —— Node 对未知选项是**静默忽略**,于是这次「A 档」跑的是一个
- * **没有任何过滤的递归 watch**,而结论会写成「我验过 A 档了」。
+ * **不是报错**：「三档均可通过内部环境变量强制指定」是既定用法，在 Node 22 上拒绝启动会把
+ * 它推翻。但沉默同样不行——Node 对未知选项是**静默忽略**，于是这次「A 档」跑的是一个
+ * **没有任何过滤的递归 watch**，而结论会写成「我验过 A 档了」。
  */
 export function forcedTierWarning(
   env: NodeJS.ProcessEnv = process.env,
   nodeVersion: string = process.versions.node,
 ): string | null {
-  // 归一走 `forcedTier`,不在这里再解析一遍:两份判据里松掉一份,警告会在它最该
-  // 出现的那次(手滑写成别的形式)静默失灵,而两份都归一化过的用例照样绿
+  // 归一走 `forcedTier`，不在这里再解析一遍：两份判据里松掉一份，警告会在它最该
+  // 出现的那次（手滑写成别的形式）静默失灵，而两份都归一化过的用例照样绿
   if (forcedTier(env) !== 'A' || supportsIgnoreOption(nodeVersion)) return null;
   const since = `${IGNORE_SINCE.major}.${IGNORE_SINCE.minor}.${IGNORE_SINCE.patch}`;
   return `${TIER_ENV}=A on Node ${nodeVersion}: fs.watch has no "ignore" option before ${since}, so the recursive watch runs unfiltered — this is not tier A.`;

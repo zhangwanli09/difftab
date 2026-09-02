@@ -1,21 +1,21 @@
 // `porcelain=v2 -z` 解析器的单测。
 //
-// 这里的原始输入都是从真实 git 抄下来的(见 test/fixtures/make.mjs 生成的仓库),
-// 不是凭想象拼的 —— 两个陷阱(重命名占两个 NUL 段、无上游时不输出 `# branch.ab`)
+// 这里的原始输入都是从真实 git 抄下来的（见 test/fixtures/make.mjs 生成的仓库），
+// 不是凭想象拼的——两个陷阱（重命名占两个 NUL 段、无上游时不输出 `# branch.ab`）
 // 恰恰是「凭想象写出来的解析器一定踩中」的地方。
 
 import { describe, expect, test } from 'vitest';
 import { parseStatus, STATUS_ARGS } from '../../../src/server/git/status.ts';
 
-/** 把可读的记录数组拼成 `-z` 输出:每条记录后跟一个 NUL。 */
+/** 把可读的记录数组拼成 `-z` 输出：每条记录后跟一个 NUL。 */
 const z = (...records: string[]) => records.map((r) => `${r}\0`).join('');
 
 describe('parseStatus', () => {
-  test('重命名记录占两个 NUL 段,旧路径不能被当成下一条记录', () => {
+  test('重命名记录占两个 NUL 段，旧路径不能被当成下一条记录', () => {
     const raw = z(
       '# branch.oid 9f9500cb',
       '# branch.head main',
-      // 一条记录,两段:`2 ... R100 <新路径>\0<旧路径>`
+      // 一条记录，两段：`2 ... R100 <新路径>\0<旧路径>`
       '2 RM N... 100644 100644 100644 af8a489d af8a489d R100 src/kept-renamed.txt',
       'src/kept.txt',
       '1 A. N... 000000 100644 100644 00000000 2d155f2d src/rewritten-renamed.txt',
@@ -23,7 +23,7 @@ describe('parseStatus', () => {
 
     const { files } = parseStatus(raw);
 
-    // 无状态平铺切分的话,这里会多出一条 path 为 'src/kept.txt' 的假记录
+    // 无状态平铺切分的话，这里会多出一条 path 为 'src/kept.txt' 的假记录
     expect(files).toHaveLength(2);
     expect(files[0]).toEqual({
       path: 'src/kept-renamed.txt',
@@ -36,7 +36,7 @@ describe('parseStatus', () => {
     expect(files[1]?.path).toBe('src/rewritten-renamed.txt');
   });
 
-  test('无上游时没有 `# branch.ab` 行 —— upstream 为 null,不是 0/0', () => {
+  test('无上游时没有 `# branch.ab` 行——upstream 为 null，不是 0/0', () => {
     const raw = z('# branch.oid 277e9d6a', '# branch.head feature/no-upstream');
     expect(parseStatus(raw).branch).toEqual({
       head: 'feature/no-upstream',
@@ -78,7 +78,7 @@ describe('parseStatus', () => {
     ]);
   });
 
-  test('路径里的空格不会把字段切错 —— 段内是空格分隔,路径是最后一段的剩余全部', () => {
+  test('路径里的空格不会把字段切错——段内是空格分隔，路径是最后一段的剩余全部', () => {
     const raw = z(
       '# branch.head main',
       '1 .M N... 100644 100644 100644 4cb29ea3 4cb29ea3 docs/she "said" it\'s 需求 文档.md',
@@ -94,7 +94,7 @@ describe('parseStatus', () => {
     });
   });
 
-  test('未合并记录(u)有 10 个前置字段,不按 1 的 8 个切', () => {
+  test('未合并记录(u)有 10 个前置字段，不按 1 的 8 个切', () => {
     const raw = z(
       '# branch.head main',
       '1 .M N... 100644 100644 100644 c9c6af7f c9c6af7f after.txt',
@@ -107,8 +107,8 @@ describe('parseStatus', () => {
   });
 
   test('`u` 记录一律带 conflicted,`DD` 这种两位都不是 U 的也不例外', () => {
-    // **判据是「这条来自 `u` 段」,不是状态位**:`DD`(双方都删)与 `AA`(双方都新增)两位里一个
-    // `U` 都没有,靠状态位认的实现会把它们漏掉,于是它们同时落进两组 —— 而两组都不是它们的处境
+    // **判据是「这条来自 `u` 段」，不是状态位**：`DD`（双方都删）与 `AA`（双方都新增）两位里一个
+    // `U` 都没有，靠状态位认的实现会把它们漏掉，于是它们同时落进两组——而两组都不是它们的处境
     const raw = z(
       '# branch.head main',
       'u DD N... 100644 100644 100644 100644 aaaa bbbb cccc both-deleted.txt',
@@ -118,11 +118,11 @@ describe('parseStatus', () => {
     const { files } = parseStatus(raw);
     const conflicted = files.filter((f) => f.conflicted);
     expect(conflicted.map((f) => f.path)).toEqual(['both-deleted.txt', 'both-added.txt']);
-    // 反面:普通记录**不带**这个字段(而不是带一个 false),判据只有「有没有」一种形态
+    // 反面：普通记录**不带**这个字段（而不是带一个 false），判据只有「有没有」一种形态
     expect(files.find((f) => f.path === 'plain.txt')).not.toHaveProperty('conflicted');
   });
 
-  test('空输出不崩溃,分支退化为「无上游」', () => {
+  test('空输出不崩溃，分支退化为「无上游」', () => {
     expect(parseStatus('')).toEqual({
       branch: { head: '', detached: false, upstream: null },
       files: [],
@@ -130,8 +130,8 @@ describe('parseStatus', () => {
   });
 });
 
-test('主查询的参数逐字固定 —— S3b 的降级轮询要复用同一条', () => {
-  // 漏 `-uall` 会让已存在的未跟踪目录里新增文件静默不刷新;漏 `--branch` 会丢掉提交与切分支的检
-  // 测。钉死在这里,改的人至少会看到红
+test('主查询的参数逐字固定——S3b 的降级轮询要复用同一条', () => {
+  // 漏 `-uall` 会让已存在的未跟踪目录里新增文件静默不刷新；漏 `--branch` 会丢掉提交与切分支的检
+  // 测。钉死在这里，改的人至少会看到红
   expect([...STATUS_ARGS]).toEqual(['status', '--porcelain=v2', '--branch', '-uall', '-z']);
 });

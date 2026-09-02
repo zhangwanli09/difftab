@@ -23,7 +23,7 @@
 
 包管理器为 **pnpm**，版本由 `package.json` 的 `packageManager` 字段固定；首次 clone 后 `pnpm install --frozen-lockfile`。
 
-**每新增一个 `package.json` script，立即回来补全本节，并核对 `CONTRIBUTING.md` 的 Gates 表**（对外那份是子集，不必全抄，但不能与本节相左）——过期比缺失更糟。各门禁挡的是哪条静默故障，见 `docs/gates.md`。
+**每新增一个 `package.json` script，立即回来补全本节，并核对 `CONTRIBUTING.md` 的 Gates 表**（对外那份是子集，不必全抄，但不能与本节相左）——过期比缺失更糟。各门禁挡的是哪条静默故障，见 `docs/gates.md`；**新增或改动一道门禁时那张表也要跟着补**，它须同时回答「挡什么」与「在哪跑」。
 
 | 用途 | 命令 |
 |---|---|

@@ -4,7 +4,10 @@ dist/
 *.tgz
 *.log
 
-# 测试仓库 fixture 由脚本生成,不入库
+# 测试仓库 fixture 由脚本生成，不入库
 test/fixtures/repos/
 
 .DS_Store
+
+# 个人偏好，不入库；.claude/skills/ 照常跟踪
+.claude/settings.local.json
