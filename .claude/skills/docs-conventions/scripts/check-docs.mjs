@@ -3,6 +3,9 @@
 //
 // 只查有固定判据、不需要判断力的那几条：全角标点、汉字间硬换行、破折号旁的空格、
 // CLAUDE.md 行预算、decisions.md 小节标题里的标点、跨文件锚点、注释反指文档。
+// 代码与配置里同样查标点，但只查注释与字符串——语法位置上的半角一律放过，
+// 判据是「这个标点落在注释或字符串里」而不是「它旁边有汉字」：`{ 慢写: x }` 的冒号
+// 贴着汉字却是语法，`:root`、`?.`、`light-dark(浅, 深)` 同理；注释里的行内代码也照样豁免。
 // 「内容落哪份」「README 收不收这条」这类需要判断的，脚本不碰，留给 SKILL.md。
 //
 // 用法：
@@ -28,7 +31,7 @@ function git(args) {
 function targets() {
   const argv = process.argv.slice(2);
   if (argv.includes('--all')) {
-    return git(['ls-files', '*.md', 'src/**/*.ts', 'src/**/*.tsx', 'scripts/*.mjs', 'bin/*.js']);
+    return git(['ls-files']).filter(watched);
   }
   const explicit = argv.filter((a) => !a.startsWith('-'));
   if (explicit.length) return explicit.map((p) => relative(root, resolve(p)));
@@ -36,12 +39,16 @@ function targets() {
     ...git(['diff', '--name-only', 'HEAD']),
     ...git(['ls-files', '--others', '--exclude-standard']),
   ]);
-  return [...changed].filter((p) => /\.(md|ts|tsx|mjs|js)$/.test(p) && existsSync(join(root, p)));
+  return [...changed].filter((p) => watched(p) && existsSync(join(root, p)));
 }
+
+// pnpm-lock.yaml 是生成物，不看。
+const watched = (p) =>
+  /\.(md|ts|tsx|mts|js|mjs|cjs|json|css|ya?ml)$/.test(p) && !p.endsWith('pnpm-lock.yaml');
 
 // 剥掉围栏代码块与行内代码：标点三类不转里的两类（代码块、行内代码）在这里排除，
 // 第三类（成段英文引文）没有语法标记，只能靠 SKILL.md 的自检步骤兜住。
-// 填充字符用私用区而不是空格——用空格的话，`code` —— 会被误判成「破折号旁有空格」。
+// 填充字符用私用区而不是空格——用空格的话，`code`——会被误判成「破折号旁有空格」。
 const FILL = '\ue000';
 const fill = (n) => FILL.repeat(n);
 
@@ -155,6 +162,135 @@ function checkAnchors(file, rawLines) {
   });
 }
 
+// 把代码位置遮掉，只留注释与字符串——偏移不变，所以行号照旧。
+function maskCode(file, text) {
+  const prose = new Uint8Array(text.length);
+  const mark = (s, e) => {
+    for (let i = s; i < e && i < text.length; i++) prose[i] = 1;
+  };
+  if (/\.(ts|tsx|mts|js|mjs|cjs|json)$/.test(file)) scanJs(text, mark);
+  else if (file.endsWith('.css')) scanCss(text, mark);
+  else if (/\.ya?ml$/.test(file)) scanYaml(text, mark);
+  let out = '';
+  for (let i = 0; i < text.length; i++) {
+    out += prose[i] || text[i] === '\n' ? text[i] : FILL;
+  }
+  return out;
+}
+
+const REGEX_OK_BEFORE = new Set('=(,:[!&|?{};+-*%~^<>'.split(''));
+const REGEX_OK_WORDS = new Set([
+  'return',
+  'typeof',
+  'case',
+  'in',
+  'of',
+  'new',
+  'throw',
+  'do',
+  'else',
+]);
+
+function scanJs(t, mark) {
+  for (let i = 0; i < t.length; ) {
+    const c = t[i];
+    if (c === '/' && t[i + 1] === '/') {
+      const j = t.indexOf('\n', i);
+      mark(i, j < 0 ? t.length : j);
+      i = j < 0 ? t.length : j;
+    } else if (c === '/' && t[i + 1] === '*') {
+      const j = t.indexOf('*/', i + 2);
+      mark(i, j < 0 ? t.length : j + 2);
+      i = j < 0 ? t.length : j + 2;
+    } else if (c === '"' || c === "'" || c === '`') {
+      let j = i + 1;
+      while (j < t.length && t[j] !== c) {
+        if (t[j] === '\\') j++;
+        else if (t[j] === '\n' && c !== '`') break;
+        j++;
+      }
+      mark(i, Math.min(j + 1, t.length));
+      i = Math.min(j + 1, t.length);
+    } else if (c === '/') {
+      // 正则字面量：只需要知道「别把它当注释或字符串的开头」
+      let k = i - 1;
+      while (k >= 0 && ' \t\r\n'.includes(t[k])) k--;
+      const word = /[A-Za-z]$/.test(t.slice(0, k + 1))
+        ? (t.slice(0, k + 1).match(/[A-Za-z]+$/) ?? [''])[0]
+        : '';
+      if (k < 0 || REGEX_OK_BEFORE.has(t[k]) || REGEX_OK_WORDS.has(word)) {
+        let j = i + 1;
+        let klass = false;
+        while (j < t.length) {
+          if (t[j] === '\\') j += 2;
+          else if (t[j] === '[') {
+            klass = true;
+            j++;
+          } else if (t[j] === ']') {
+            klass = false;
+            j++;
+          } else if (t[j] === '\n' || (t[j] === '/' && !klass)) break;
+          else j++;
+        }
+        i = Math.min(j + 1, t.length);
+      } else i++;
+    } else i++;
+  }
+}
+
+function scanCss(t, mark) {
+  for (let i = 0; i < t.length; ) {
+    if (t[i] === '/' && t[i + 1] === '*') {
+      const j = t.indexOf('*/', i + 2);
+      mark(i, j < 0 ? t.length : j + 2);
+      i = j < 0 ? t.length : j + 2;
+    } else i++;
+  }
+}
+
+// YAML：# 注释，外加 `name:` 的值——run: 之类的正文是 shell / JS，不按散文看。
+function scanYaml(t, mark) {
+  let pos = 0;
+  for (const line of t.split('\n')) {
+    let quote = null;
+    let hash = -1;
+    for (let k = 0; k < line.length; k++) {
+      const ch = line[k];
+      if (quote) {
+        if (ch === quote) quote = null;
+      } else if (ch === '"' || ch === "'") quote = ch;
+      else if (ch === '#' && (k === 0 || ' \t'.includes(line[k - 1]))) {
+        hash = k;
+        break;
+      }
+    }
+    const head = hash < 0 ? line : line.slice(0, hash);
+    const m = head.match(/^(\s*(?:-\s*)?name:\s*)(\S.*?)\s*$/);
+    if (m) mark(pos + m[1].length, pos + m[1].length + m[2].length);
+    if (hash >= 0) mark(pos + hash, pos + line.length);
+    pos += line.length + 1;
+  }
+}
+
+function checkSource(file, text) {
+  if (!CJK_RE.test(text)) return;
+  maskCode(file, text)
+    .split('\n')
+    .forEach((raw, i) => {
+      if (!CJK_RE.test(raw)) return;
+      const n = i + 1;
+      const line = raw.replace(/`[^`]*`/g, (m) => fill(m.length)); // 注释里的行内代码同样豁免
+      const halfWidth = [
+        ...line.matchAll(new RegExp(`.?[${CJK}][,;:!?][^\\s]?|.?[,;:!?][${CJK}]`, 'g')),
+      ].map((m) => m[0]);
+      if (halfWidth.length) report(file, n, '半角标点', [...new Set(halfWidth)].join(' / '));
+      for (const m of line.matchAll(new RegExp(`\\([^()]*[${CJK}][^()]*\\)`, 'g'))) {
+        report(file, n, '半角括号', m[0]);
+      }
+      if (/ ——|—— /.test(line)) report(file, n, '破折号旁有空格', line.trim().slice(0, 60));
+    });
+}
+
 // 红线：代码注释不得反指文档。方向是单向的——CLAUDE.md 第 4 节负责路由，注释只写理由。
 function checkComments(file, text) {
   text.split('\n').forEach((line, i) => {
@@ -172,7 +308,10 @@ for (const f of files) {
   if (!existsSync(abs)) continue;
   const text = readFileSync(abs, 'utf8');
   if (f.endsWith('.md')) checkMarkdown(f, text);
-  else if (f.startsWith('src/')) checkComments(f, text);
+  else {
+    checkSource(f, text);
+    if (f.startsWith('src/')) checkComments(f, text);
+  }
 }
 
 if (!files.length) {
