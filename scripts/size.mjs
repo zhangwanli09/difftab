@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 // 产物体积门禁。
 //
-// 零依赖纯 JS,可由 `node scripts/size.mjs` 直接执行 —— 它要在没有 pnpm、
-// 没有 node_modules 的 CI matrix 机器上跑,package.json 里的 `size` 只是别名。
+// 零依赖纯 JS，可由 `node scripts/size.mjs` 直接执行——它要在没有 pnpm、
+// 没有 node_modules 的 CI matrix 机器上跑，package.json 里的 `size` 只是别名。
 //
-// 用法:
-//   node scripts/size.mjs            对照门禁,超预算即以非 0 退出
-//   node scripts/size.mjs --json 以 JSON 输出实测值(用于回填表格)
+// 用法：
+//   node scripts/size.mjs            对照门禁，超预算即以非 0 退出
+//   node scripts/size.mjs --json 以 JSON 输出实测值（用于回填表格）
 
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
@@ -17,18 +17,18 @@ const webDir = join(repoRoot, 'dist', 'web');
 
 /** 门禁。 */
 const BUDGETS = [
-  { name: '前端 JS(明文)', match: /\.js$/, metric: 'plain', limit: 350 * 1024 },
-  { name: '前端 JS(gzip)', match: /\.js$/, metric: 'gzip', limit: 120 * 1024 },
-  { name: '前端 CSS(明文)', match: /\.css$/, metric: 'plain', limit: 40 * 1024 },
+  { name: '前端 JS（明文）', match: /\.js$/, metric: 'plain', limit: 350 * 1024 },
+  { name: '前端 JS（gzip）', match: /\.js$/, metric: 'gzip', limit: 120 * 1024 },
+  { name: '前端 CSS（明文）', match: /\.css$/, metric: 'plain', limit: 40 * 1024 },
 ];
 
-/** 某个文件是否有任何门禁盯着它的 gzip 值 —— 没有就别白压一遍。 */
+/** 某个文件是否有任何门禁盯着它的 gzip 值——没有就别白压一遍。 */
 const needsGzip = (path) => BUDGETS.some((b) => b.metric === 'gzip' && b.match.test(path));
 
 function collect(dir) {
   let entries;
   try {
-    // 递归交给 readdirSync 自己做,不手写一份遍历;withFileTypes 下 parentPath 给出所在目录
+    // 递归交给 readdirSync 自己做，不手写一份遍历；withFileTypes 下 parentPath 给出所在目录
     entries = readdirSync(dir, { withFileTypes: true, recursive: true });
   } catch {
     console.error(`size: 找不到构建产物目录 ${dir}。先跑 \`pnpm build\`。`);
@@ -40,7 +40,7 @@ function collect(dir) {
       const full = join(entry.parentPath, entry.name);
       const path = relative(repoRoot, full);
       const buf = readFileSync(full);
-      // buf.length 就是明文字节数,再 statSync 一次只是把同一个数字重新问一遍
+      // buf.length 就是明文字节数，再 statSync 一次只是把同一个数字重新问一遍
       return { path, plain: buf.length, gzip: needsGzip(path) ? gzipSync(buf).length : 0 };
     });
 }

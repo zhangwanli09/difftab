@@ -1,8 +1,8 @@
-// 监听层(src/server/watch/)的单测:档位判定 + `.git` 侧的 watch。
+// 监听层(src/server/watch/)的单测：档位判定 + `.git` 侧的 watch。
 //
-// 档位那一半是纯函数,逐档钉住;watcher 那一半是**行为**断言 —— 真的建 watch、真的写文件。理由
-// 是要守的两条红线(不递归、不对单个文件建 watch)都只在运行时才看得出来:写成 mock 的话,断言
-// 的是我们自己传了什么参数,而不是「`.git/objects` 里的写入到底会不会把我们吵醒」。
+// 档位那一半是纯函数，逐档钉住；watcher 那一半是**行为**断言——真的建 watch、真的写文件。理由
+// 是要守的两条红线（不递归、不对单个文件建 watch）都只在运行时才看得出来：写成 mock 的话，断言
+// 的是我们自己传了什么参数，而不是「`.git/objects` 里的写入到底会不会把我们吵醒」。
 
 import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -26,12 +26,12 @@ import {
 
 describe('档位判定', () => {
   test('`ignore` 的分界线正好在 24.14.0', () => {
-    // 低于它就没有 `ignore`,Linux 上的递归 watch 会逐个注册直到耗尽配额 —— 判错一档的代价是用户
+    // 低于它就没有 `ignore`，Linux 上的递归 watch 会逐个注册直到耗尽配额——判错一档的代价是用户
     // 整机的编辑器开始报 ENOSPC
     expect(supportsIgnoreOption('24.14.0')).toBe(true);
     expect(supportsIgnoreOption('24.13.99')).toBe(false);
     expect(supportsIgnoreOption('24.9.0')).toBe(false);
-    // 版本号按数值比不按字典序:'24.9.0' > '24.14.0' 正是这里最容易静默错掉的地方
+    // 版本号按数值比不按字典序：'24.9.0' > '24.14.0' 正是这里最容易静默错掉的地方
     expect(supportsIgnoreOption('23.99.99')).toBe(false);
     expect(supportsIgnoreOption('25.0.0')).toBe(true);
     expect(supportsIgnoreOption('26.4.1')).toBe(true);
@@ -44,7 +44,7 @@ describe('档位判定', () => {
   });
 
   test('版本号解析不出来时倒向「没有 ignore」那一侧', () => {
-    // 两种误判的代价差着一个数量级:误判成没有 → Linux 上退化为轮询(功能完整);
+    // 两种误判的代价差着一个数量级：误判成没有 → Linux 上退化为轮询（功能完整）；
     // 误判成有 → 无 ignore 的递归 watch → ENOSPC
     for (const weird of ['', 'v24', 'unknown', '24.x.0']) {
       expect(supportsIgnoreOption(weird)).toBe(false);
@@ -55,22 +55,22 @@ describe('档位判定', () => {
     expect(detectTier('24.14.0', 'linux')).toBe('A');
     expect(detectTier('24.14.0', 'darwin')).toBe('A');
     expect(detectTier('24.14.0', 'win32')).toBe('A');
-    // 没有 ignore 时只有 Linux 危险 —— macOS / Windows 单句柄监听整棵树,本就没有配额问题
+    // 没有 ignore 时只有 Linux 危险——macOS / Windows 单句柄监听整棵树，本就没有配额问题
     expect(detectTier('22.0.0', 'darwin')).toBe('B');
     expect(detectTier('22.0.0', 'win32')).toBe('B');
     expect(detectTier('22.0.0', 'linux')).toBe('C');
   });
 
-  test('C 档的工作区通路一开始就是轮询,A / B 是原生监听', () => {
+  test('C 档的工作区通路一开始就是轮询，A / B 是原生监听', () => {
     expect(initialMode('C')).toBe('polling');
     expect(initialMode('A')).toBe('native');
     expect(initialMode('B')).toBe('native');
   });
 });
 
-describe(`${TIER_ENV}(S3b2 六条验收项的自查前提)`, () => {
-  test('三档都能强制指定,盖过运行时判定', () => {
-    // 一台机器只有一个 Node 版本、一个平台,而三档正是按这两者分的
+describe(`${TIER_ENV}（S3b2 六条验收项的自查前提）`, () => {
+  test('三档都能强制指定，盖过运行时判定', () => {
+    // 一台机器只有一个 Node 版本、一个平台，而三档正是按这两者分的
     for (const tier of ['A', 'B', 'C'] as const) {
       expect(resolveTier({ [TIER_ENV]: tier }, '22.0.0', 'linux')).toBe(tier);
     }
@@ -85,9 +85,9 @@ describe(`${TIER_ENV}(S3b2 六条验收项的自查前提)`, () => {
     expect(resolveTier({ [TIER_ENV]: '  ' }, '26.0.0', 'darwin')).toBe('A');
   });
 
-  test('在没有 `ignore` 的 Node 上强制 A 档:提醒一句,但照样启动', () => {
-    // 拒绝启动会推翻「三档均可强制指定」;沉默则更糟 —— Node 对未知选项是静默忽略,这次「A 档」
-    // 跑的是一个**没有任何过滤的递归 watch**,而结论会写成「我验过 A 档了」
+  test('在没有 `ignore` 的 Node 上强制 A 档：提醒一句，但照样启动', () => {
+    // 拒绝启动会推翻「三档均可强制指定」；沉默则更糟——Node 对未知选项是静默忽略，这次「A 档」
+    // 跑的是一个**没有任何过滤的递归 watch**，而结论会写成「我验过 A 档了」
     expect(forcedTierWarning({ [TIER_ENV]: 'A' }, '22.0.0')).toMatch(/ignore/);
     expect(forcedTierWarning({ [TIER_ENV]: ' a ' }, '24.13.0')).not.toBeNull();
     // 够新的 Node、别的档、以及没强制指定时都不该有噪声
@@ -96,8 +96,8 @@ describe(`${TIER_ENV}(S3b2 六条验收项的自查前提)`, () => {
     expect(forcedTierWarning({}, '22.0.0')).toBeNull();
   });
 
-  test('取值不合法时抛错,而不是悄悄退回自动判定', () => {
-    // 退回自动判定的话,`DIFFTAB_WATCH_TIER=D` 在 macOS 上照样给出 B 档,于是「我验过 B 档了」建
+  test('取值不合法时抛错，而不是悄悄退回自动判定', () => {
+    // 退回自动判定的话，`DIFFTAB_WATCH_TIER=D` 在 macOS 上照样给出 B 档，于是「我验过 B 档了」建
     // 立在一次根本没生效的强制指定上
     for (const bad of ['D', 'auto', 'native', 'AB']) {
       expect(() => resolveTier({ [TIER_ENV]: bad }, '22.0.0', 'darwin')).toThrow(WatchTierError);
@@ -106,7 +106,7 @@ describe(`${TIER_ENV}(S3b2 六条验收项的自查前提)`, () => {
   });
 });
 
-describe('watch:`.git` 侧与工作区侧(跑真实文件系统)', () => {
+describe('watch:`.git` 侧与工作区侧（跑真实文件系统）', () => {
   const dirs: string[] = [];
   const handles: WatchHandle[] = [];
 
@@ -117,7 +117,7 @@ describe('watch:`.git` 侧与工作区侧(跑真实文件系统)', () => {
     dirs.length = 0;
   });
 
-  /** 一个够用的 `.git`:HEAD、index、refs/heads,外加一个装满对象的 objects/。 */
+  /** 一个够用的 `.git`：HEAD、index、refs/heads，外加一个装满对象的 objects/。 */
   function fakeGitDir(): string {
     const root = mkdtempSync(join(tmpdir(), 'difftab-watch-'));
     dirs.push(root);
@@ -132,11 +132,11 @@ describe('watch:`.git` 侧与工作区侧(跑真实文件系统)', () => {
   }
 
   /**
-   * 起一个 watcher 并登记好收尾。**默认 `tier: 'C'`,也就是只起 `.git` 侧** —— C 档一个递归
-   * watch 都不建,于是那一组断言的每一次回调都只能来自 `.git` 侧那几个非递归 watch。换成 A / B
-   * 的话「objects 里的写入不触发」那条会红,而红的原因与被测的东西无关。
+   * 起一个 watcher 并登记好收尾。**默认 `tier: 'C'`，也就是只起 `.git` 侧**——C 档一个递归
+   * watch 都不建，于是那一组断言的每一次回调都只能来自 `.git` 侧那几个非递归 watch。换成 A / B
+   * 的话「objects 里的写入不触发」那条会红，而红的原因与被测的东西无关。
    *
-   * 两个轮询周期一律给恒定快照 + 一分钟 = 关掉它们:本文件测的是 `fs.watch` 那条路。
+   * 两个轮询周期一律给恒定快照 + 一分钟 = 关掉它们：本文件测的是 `fs.watch` 那条路。
    */
   const watchFor = (
     gitDir: string,
@@ -163,10 +163,10 @@ describe('watch:`.git` 侧与工作区侧(跑真实文件系统)', () => {
   };
 
   /**
-   * 等到这个 watcher **真的开始收事件**,然后把计数清零。`watch()` 返回不等于流已经起来:macOS
-   * 走 FSEvents,而 libuv 在有 watcher 反复开关时会重启那条流,重启窗口内的写入整个丢掉(实测:
-   * 本文件单跑时全绿,跟着前面几条一起跑时偶发收到 0 个事件,而产品代码一个字没变)。用探针写到
-   * 它响为止,是唯一不依赖具体延迟数值的写法。
+   * 等到这个 watcher **真的开始收事件**，然后把计数清零。`watch()` 返回不等于流已经起来：macOS
+   * 走 FSEvents，而 libuv 在有 watcher 反复开关时会重启那条流，重启窗口内的写入整个丢掉（实测：
+   * 本文件单跑时全绿，跟着前面几条一起跑时偶发收到 0 个事件，而产品代码一个字没变）。用探针写到
+   * 它响为止，是唯一不依赖具体延迟数值的写法。
    */
   async function armed(probe: string, calls: number[], debounceMs = 200): Promise<void> {
     await vi.waitFor(
@@ -176,13 +176,13 @@ describe('watch:`.git` 侧与工作区侧(跑真实文件系统)', () => {
       },
       { timeout: 5000, interval: 50 },
     );
-    // 最后一发探针可能还压着一个没到期的合并窗口,等它过去再清零
+    // 最后一发探针可能还压着一个没到期的合并窗口，等它过去再清零
     await new Promise((r) => setTimeout(r, debounceMs * 2));
     calls.length = 0;
   }
 
-  test('盯的全是目录,且绝不包含 objects', () => {
-    // 对单个文件建 watch 会在 git 的「写临时文件 + 原子 rename」之后静默失效(新 inode);进
+  test('盯的全是目录，且绝不包含 objects', () => {
+    // 对单个文件建 watch 会在 git 的「写临时文件 + 原子 rename」之后静默失效（新 inode）；进
     // objects 则是一次 gc 就几万个条目的配额灾难
     const gitDir = fakeGitDir();
     const watched = gitWatchDirs(gitDir);
@@ -197,10 +197,10 @@ describe('watch:`.git` 侧与工作区侧(跑真实文件系统)', () => {
     }
   });
 
-  test('清单里缺目录不算错误 —— 有几个盯几个', () => {
+  test('清单里缺目录不算错误——有几个盯几个', () => {
     const root = mkdtempSync(join(tmpdir(), 'difftab-watch-'));
     dirs.push(root);
-    // 连 refs/ 都没有的目录:gitWatchDirs 只返回它自己,createWatcher 照样起得来
+    // 连 refs/ 都没有的目录：gitWatchDirs 只返回它自己，createWatcher 照样起得来
     expect(gitWatchDirs(root)).toEqual([root]);
     expect(gitWatchDirs(join(root, 'does-not-exist'))).toEqual([]);
   });
@@ -215,7 +215,7 @@ describe('watch:`.git` 侧与工作区侧(跑真实文件系统)', () => {
     await vi.waitFor(() => expect(calls.length).toBe(1), { timeout: 3000, interval: 20 });
   }, 15_000);
 
-  test('一串写入被合并成一次刷新 —— 一条 git commit 就是五六个事件', async () => {
+  test('一串写入被合并成一次刷新——一条 git commit 就是五六个事件', async () => {
     const gitDir = fakeGitDir();
     const calls: number[] = [];
     watchFor(gitDir, calls);
@@ -229,14 +229,14 @@ describe('watch:`.git` 侧与工作区侧(跑真实文件系统)', () => {
     writeFileSync(join(gitDir, 'refs', 'heads', 'main'), `${'1'.repeat(40)}\n`);
 
     await vi.waitFor(() => expect(calls.length).toBe(1), { timeout: 3000, interval: 20 });
-    // 窗口过去之后也不该补一发:合并窗口是「第一个事件起一个窗口」,不是每个事件各起一个
+    // 窗口过去之后也不该补一发：合并窗口是「第一个事件起一个窗口」，不是每个事件各起一个
     await new Promise((r) => setTimeout(r, 400));
     expect(calls).toHaveLength(1);
   }, 15_000);
 
-  test('objects/ 里的写入不触发刷新 —— 这条钉的就是「不递归」', async () => {
-    // 一次 gc 会在这底下写几万个文件,症状不是报错而是刷新风暴 + 配额耗尽,而 `.git` 本身照样监听
-    // 得好好的。把 `recursive: true` 加回去这条立刻红;后半段那个 HEAD 写入不能省 —— 否则「收到 0
+  test('objects/ 里的写入不触发刷新——这条钉的就是「不递归」', async () => {
+    // 一次 gc 会在这底下写几万个文件，症状不是报错而是刷新风暴 + 配额耗尽，而 `.git` 本身照样监听
+    // 得好好的。把 `recursive: true` 加回去这条立刻红；后半段那个 HEAD 写入不能省——否则「收到 0
     // 个事件」也可能只是因为什么都没在听
     const gitDir = fakeGitDir();
     const calls: number[] = [];
@@ -249,19 +249,19 @@ describe('watch:`.git` 侧与工作区侧(跑真实文件系统)', () => {
     await new Promise((r) => setTimeout(r, 600));
     expect(calls).toHaveLength(0);
 
-    // 同一个 watcher 对 `.git` 本身仍然是灵的 —— 否则上面那条断言只是「什么都没在听」
+    // 同一个 watcher 对 `.git` 本身仍然是灵的——否则上面那条断言只是「什么都没在听」
     writeFileSync(join(gitDir, 'HEAD'), 'ref: refs/heads/other\n');
     await vi.waitFor(() => expect(calls.length).toBe(1), { timeout: 3000, interval: 20 });
   }, 15_000);
 
   /**
-   * 工作区侧,**跑真实文件系统**。这一组不能写成 mock:要证伪的恰恰是「原生 watcher 到底把什么
-   * 形状的路径交给匹配器」—— macOS / Windows 给的是**事件的相对路径**
-   * (`node_modules/.bin/foo`),按 basename 比对匹配不上,过滤完全失效。断言我们传了什么参数的
+   * 工作区侧，**跑真实文件系统**。这一组不能写成 mock：要证伪的恰恰是「原生 watcher 到底把什么
+   * 形状的路径交给匹配器」——macOS / Windows 给的是**事件的相对路径**
+   * (`node_modules/.bin/foo`)，按 basename 比对匹配不上，过滤完全失效。断言我们传了什么参数的
    * 用例对这条一个字都说不上。
    */
   describe('工作区侧的三档', () => {
-    /** 在 `fakeGitDir` 那个骨架旁边补出工作区:`src/` + 一层嵌套的 `node_modules/`。 */
+    /** 在 `fakeGitDir` 那个骨架旁边补出工作区：`src/` + 一层嵌套的 `node_modules/`。 */
     function watchRepo(tier: 'A' | 'B', calls: number[]): string {
       const root = dirname(fakeGitDir());
       for (const rel of ['src', 'node_modules/pkg/lib']) {
@@ -275,19 +275,19 @@ describe('watch:`.git` 侧与工作区侧(跑真实文件系统)', () => {
 
     for (const tier of ['A', 'B'] as const) {
       /**
-       * A 档的过滤靠 `fs.watch` 的 `ignore`,而它自 Node 24.14.0 才有 —— 在更低的版本上强制指定
-       * A 档,Node 会把这个未知选项**静默忽略**,于是这条用例会以「过滤没生效」变红,而那正是判
-       * 档要防的运行时行为,不是产品缺陷。跳过而不是假装通过:跑在 24.14+ 上的 CI 照样把它盖住。
+       * A 档的过滤靠 `fs.watch` 的 `ignore`，而它自 Node 24.14.0 才有——在更低的版本上强制指定
+       * A 档，Node 会把这个未知选项**静默忽略**，于是这条用例会以「过滤没生效」变红，而那正是判
+       * 档要防的运行时行为，不是产品缺陷。跳过而不是假装通过：跑在 24.14+ 上的 CI 照样把它盖住。
        */
       const runs = tier === 'B' || supportsIgnoreOption(process.versions.node);
       test.skipIf(!runs)(
-        `${tier} 档:node_modules 的嵌套子目录里批量写文件不触发刷新`,
+        `${tier} 档：node_modules 的嵌套子目录里批量写文件不触发刷新`,
         async () => {
-          // 只写顶层目录本身证伪不了 basename 写法:那种写法在 Linux 上碰巧成立,只有嵌套路径才把
+          // 只写顶层目录本身证伪不了 basename 写法：那种写法在 Linux 上碰巧成立，只有嵌套路径才把
           // 它分开
           const calls: number[] = [];
           const repoRoot = watchRepo(tier, calls);
-          // 探针写在 `src/`(不在忽略清单内),所以「响了」证明的正是递归 watch 已经在收事件
+          // 探针写在 `src/`（不在忽略清单内），所以「响了」证明的正是递归 watch 已经在收事件
           await armed(join(repoRoot, 'src', 'arm-probe.txt'), calls, 100);
 
           const deep = join(repoRoot, 'node_modules', 'pkg', 'lib');
@@ -299,7 +299,7 @@ describe('watch:`.git` 侧与工作区侧(跑真实文件系统)', () => {
           await new Promise((r) => setTimeout(r, 600));
           expect(calls).toHaveLength(0);
 
-          // 同一个 watcher 对普通文件仍然是灵的 —— 否则上面那条断言只是「什么都没在听」
+          // 同一个 watcher 对普通文件仍然是灵的——否则上面那条断言只是「什么都没在听」
           writeFileSync(join(repoRoot, 'src', 'a.ts'), 'export const a = 2;\n');
           await vi.waitFor(() => expect(calls.length).toBe(1), { timeout: 5000, interval: 20 });
         },
@@ -312,10 +312,10 @@ describe('watch:`.git` 侧与工作区侧(跑真实文件系统)', () => {
     const gitDir = fakeGitDir();
     const calls: number[] = [];
     const handle = watchFor(gitDir, calls, { debounceMs: 50 });
-    // 先确认它本来是灵的,否则下面那条「没有回调」可能只是因为流还没起来
+    // 先确认它本来是灵的，否则下面那条「没有回调」可能只是因为流还没起来
     await armed(join(gitDir, 'difftab-arm-probe'), calls, 50);
 
-    // 写完立刻关:合并窗口里那发定时器也必须被一并取消
+    // 写完立刻关：合并窗口里那发定时器也必须被一并取消
     writeFileSync(join(gitDir, 'HEAD'), 'ref: refs/heads/x\n');
     handle.close();
     await new Promise((r) => setTimeout(r, 400));

@@ -1,8 +1,8 @@
 // 探活复用。
 //
-// 钉的是「什么才算命中」。判错的两个方向都不报错:判成陈旧 → 同一个仓库悄悄开出
-// 第二个进程;判成命中 → 把用户带到**别人的页面**(端口被系统回收给了别的东西)。
-// 这里拿真的 node:http server 当对端 —— 三道校验之外的那点协议(Host / Cookie /
+// 钉的是「什么才算命中」。判错的两个方向都不报错：判成陈旧 → 同一个仓库悄悄开出
+// 第二个进程；判成命中 → 把用户带到**别人的页面**（端口被系统回收给了别的东西）。
+// 这里拿真的 node:http server 当对端——三道校验之外的那点协议(Host / Cookie /
 // 正文形状)只有真发一次请求才验得到。
 
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -35,7 +35,7 @@ function tempRepo(): string {
   return dir;
 }
 
-/** 假实例的原始形态:自己拿着 `req` / `res` 想怎么答怎么答(答一半、没完没了)。 */
+/** 假实例的原始形态：自己拿着 `req` / `res` 想怎么答怎么答（答一半、没完没了）。 */
 async function rawInstance(
   handler: (req: IncomingMessage, res: ServerResponse) => void,
 ): Promise<{ port: number }> {
@@ -55,14 +55,14 @@ async function fakeInstance(
   const { port } = await rawInstance((req, res) => {
     requests.push(req);
     const answer = respond(req);
-    if (answer === null) return; // 永远不答 —— 探活超时那条用例要的就是这个
+    if (answer === null) return; // 永远不答——探活超时那条用例要的就是这个
     res.writeHead(answer.status, { 'Content-Type': 'application/json' });
     res.end(answer.body);
   });
   return { port, requests };
 }
 
-/** 把一条注册表条目落到 repo 对应的位置,port 指向假实例。 */
+/** 把一条注册表条目落到 repo 对应的位置，port 指向假实例。 */
 function register(repoRoot: string, port: number): void {
   writeRegistry({
     pid: 4242,
@@ -85,15 +85,15 @@ describe('命中', () => {
     const live = await findLiveInstance(repo);
     expect(live).not.toBe(null);
     expect(live?.pid).toBe(4242);
-    // URL 必须与那个实例自己打印的完全相同 —— 少了 token 就是一个 403 的链接,而这条路平时不走
+    // URL 必须与那个实例自己打印的完全相同——少了 token 就是一个 403 的链接，而这条路平时不走
     expect(live?.url).toBe(
       `http://127.0.0.1:${instance.port}/?token=${encodeURIComponent(`${instance.port}.${TOKEN_SECRET}`)}`,
     );
   });
 
-  test('探活自己也过三道校验:带合规的 Host 与注册表里的 token', async () => {
-    // 不带的话对端一律 403,于是**每一个**活着的实例都被判成陈旧 —— 症状不是报错,是「复用从来没
-    // 生效过」,和功能没做一模一样
+  test('探活自己也过三道校验：带合规的 Host 与注册表里的 token', async () => {
+    // 不带的话对端一律 403，于是**每一个**活着的实例都被判成陈旧——症状不是报错，是「复用从来没
+    // 生效过」，和功能没做一模一样
     const repo = tempRepo();
     const instance = await fakeInstance(() => ({
       status: 200,
@@ -110,8 +110,8 @@ describe('命中', () => {
     );
   });
 
-  test('两侧路径写法不同也认得出 —— 归一化与注册表键同一份', async () => {
-    // macOS 的 /var → /private/var、Windows 的分隔符:两个活着的实例互不相认时,同一个仓库就会开
+  test('两侧路径写法不同也认得出——归一化与注册表键同一份', async () => {
+    // macOS 的 /var → /private/var、Windows 的分隔符：两个活着的实例互不相认时，同一个仓库就会开
     // 出第二个进程
     const repo = tempRepo();
     const instance = await fakeInstance(() => ({
@@ -125,15 +125,15 @@ describe('命中', () => {
 });
 
 describe('判为陈旧', () => {
-  test('没有注册表条目 —— 常态,不发任何请求', async () => {
+  test('没有注册表条目——常态，不发任何请求', async () => {
     expect(await findLiveInstance(tempRepo())).toBe(null);
   });
 
-  test('端口已经没人听了(实例被 SIGKILL 掉、条目没来得及清)', async () => {
+  test('端口已经没人听了（实例被 SIGKILL 掉、条目没来得及清）', async () => {
     const repo = tempRepo();
     const instance = await fakeInstance(() => ({ status: 200, body: '{}' }));
     register(repo, instance.port);
-    // 把假实例整个关掉,那个端口从此是死端口 —— localhost 上 ECONNREFUSED 立即返回
+    // 把假实例整个关掉，那个端口从此是死端口——localhost 上 ECONNREFUSED 立即返回
     for (const server of servers.splice(0)) {
       server.closeAllConnections();
       await new Promise<void>((done) => server.close(() => done()));
@@ -142,7 +142,7 @@ describe('判为陈旧', () => {
     expect(await findLiveInstance(repo)).toBe(null);
   });
 
-  test('403 —— 那个端口已经归了别的 difftab(它的 token 不是我们记下的这个)', async () => {
+  test('403——那个端口已经归了别的 difftab（它的 token 不是我们记下的这个）', async () => {
     const repo = tempRepo();
     const instance = await fakeInstance(() => ({ status: 403, body: '{"error":{}}' }));
     register(repo, instance.port);
@@ -150,8 +150,8 @@ describe('判为陈旧', () => {
     expect(await findLiveInstance(repo)).toBe(null);
   });
 
-  test('**200 但路径不是这个仓库** —— 复用它等于把用户带到别人的页面', async () => {
-    // 这一条是 200 之后还要比路径的全部理由:少了它,判据退化成「端口上有人应答」
+  test('**200 但路径不是这个仓库**——复用它等于把用户带到别人的页面', async () => {
+    // 这一条是 200 之后还要比路径的全部理由：少了它，判据退化成「端口上有人应答」
     const repo = tempRepo();
     const other = tempRepo();
     const instance = await fakeInstance(() => ({
@@ -175,29 +175,29 @@ describe('判为陈旧', () => {
     expect(await findLiveInstance(repo2)).toBe(null);
   });
 
-  test('**答了响应头就不说话了** —— 超时照样得管用', async () => {
+  test('**答了响应头就不说话了**——超时照样得管用', async () => {
     /**
-     * 回归点:响应头一到手,`req` 就不再是错误的出口 —— `req.destroy()` 的错误只落在
-     * `res` 上,而 `IncomingMessage` 把没人听的 `'error'` 吞掉。于是超时那一下什么
-     * 都不会发生,Promise 永远不 settle,`start.ts` 里 `await findLiveInstance()`
-     * 把**启动整个吊死**,一行输出都没有。
+     * 回归点：响应头一到手，`req` 就不再是错误的出口——`req.destroy()` 的错误只落在
+     * `res` 上，而 `IncomingMessage` 把没人听的 `'error'` 吞掉。于是超时那一下什么
+     * 都不会发生，Promise 永远不 settle,`start.ts` 里 `await findLiveInstance()`
+     * 把**启动整个吊死**，一行输出都没有。
      *
-     * 下面那条「对端不答话」抓不到它:响应头都没发时,错误确实落在 `req` 上。
-     * 两条差的只是一次 `writeHead`,症状却是天壤之别。
+     * 下面那条「对端不答话」抓不到它：响应头都没发时，错误确实落在 `req` 上。
+     * 两条差的只是一次 `writeHead`，症状却是天壤之别。
      */
     const repo = tempRepo();
     const instance = await rawInstance((_req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.write('{"repoRoot":'); // 半句话,然后装死
+      res.write('{"repoRoot":'); // 半句话，然后装死
     });
     register(repo, instance.port);
 
     expect(await findLiveInstance(repo, { timeoutMs: 150 })).toBe(null);
   });
 
-  test('正文没完没了 —— 超过上限就断,同样得 settle', async () => {
-    // 端口归了别的服务时,`/api/instance` 可以是任何东西,包括一条无穷的流;断了之后不自己
-    // resolve 的话,后果与上一条相同
+  test('正文没完没了——超过上限就断，同样得 settle', async () => {
+    // 端口归了别的服务时，`/api/instance` 可以是任何东西，包括一条无穷的流；断了之后不自己
+    // resolve 的话，后果与上一条相同
     const repo = tempRepo();
     const instance = await rawInstance((_req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -213,7 +213,7 @@ describe('判为陈旧', () => {
     expect(await findLiveInstance(repo, { timeoutMs: 5000 })).toBe(null);
   });
 
-  test('对端不答话 —— 超时是整次探活的墙钟上限,不是 socket 空闲', async () => {
+  test('对端不答话——超时是整次探活的墙钟上限，不是 socket 空闲', async () => {
     const repo = tempRepo();
     const instance = await fakeInstance(() => null);
     register(repo, instance.port);

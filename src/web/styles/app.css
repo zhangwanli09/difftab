@@ -1,14 +1,14 @@
 /* 样式入口。
  *
- * 层叠方案:无层(unlayered)样式在层叠中永远胜过有层样式,与特异性无关,而 Tailwind v4 把
+ * 层叠方案：无层(unlayered)样式在层叠中永远胜过有层样式，与特异性无关，而 Tailwind v4 把
  * preflight 放在 @layer base、工具类放在 @layer utilities、本文件 @theme 的产出放在
- * @layer theme。因此把 hljs 主题与 diff2html 的 CSS 以 unlayered 形式引在其后,结构上就不
- * 可能被 preflight 压过。两条随之而来的硬约束:
- *   1. 这两份 CSS 不得放进任何 @layer —— 一旦入层,这层保障就被拆掉了;
- *   2. diff2html 渲染出的内部元素只能靠覆写 --d2h-* 变量改配色,不得用 Tailwind 工具类去压。
+ * @layer theme。因此把 hljs 主题与 diff2html 的 CSS 以 unlayered 形式引在其后，结构上就不
+ * 可能被 preflight 压过。两条随之而来的硬约束：
+ *   1. 这两份 CSS 不得放进任何 @layer——一旦入层，这层保障就被拆掉了；
+ *   2. diff2html 渲染出的内部元素只能靠覆写 --d2h-* 变量改配色，不得用 Tailwind 工具类去压。
  *
- * hljs 主题必须排在 diff2html.min.css 之前,且它是**我们自己那份** —— 上游那两份只能靠
- * @import 的媒体条件区分深浅,而媒体条件切不出顶栏那个手动档。
+ * hljs 主题必须排在 diff2html.min.css 之前，且它是**我们自己那份**——上游那两份只能靠
+ * @import 的媒体条件区分深浅，而媒体条件切不出顶栏那个手动档。
  */
 
 @import "tailwindcss";
@@ -16,25 +16,25 @@
 @import "diff2html/bundles/css/diff2html.min.css";
 @import "./vscode-theme.css";
 
-/* 扫描范围写死成 src/web —— Tailwind v4 的自动探测以最近的项目根为基准,探测范围一旦与预期
- * 不符,结果是**工具类静默缺失**(没有报错,只是样式没了)。路径相对本文件所在目录。 */
+/* 扫描范围写死成 src/web——Tailwind v4 的自动探测以最近的项目根为基准，探测范围一旦与预期
+ * 不符，结果是**工具类静默缺失**（没有报错，只是样式没了）。路径相对本文件所在目录。 */
 @source "../";
 
 /* 设计 token。
  *
- * 命名照搬 VS Code 的颜色 token(`editor.background` → `--color-editor-background`),取值
- * 复刻 Light Modern / Dark Modern 的观感 —— **轻量优先于视觉还原度**,是近似而不是逐值移植。
+ * 命名照搬 VS Code 的颜色 token(`editor.background` → `--color-editor-background`)，取值
+ * 复刻 Light Modern / Dark Modern 的观感——**轻量优先于视觉还原度**，是近似而不是逐值移植。
  *
- * **深浅两套取值同住一条声明**:写成 light-dark(浅, 深),选中哪一半由 :root 上的
- * color-scheme 决定(那三条规则在 vscode-theme.css,是整个明暗开关的全部机制)。**禁把任何
- * 深色值写回 @media (prefers-color-scheme: dark)**:那样写不报错、浅色也对,只有手动档翻不
- * 动它 —— 用户切到 Light 时那一个颜色仍是深的(check:css 拦)。
+ * **深浅两套取值同住一条声明**：写成 `light-dark(浅, 深)`，选中哪一半由 :root 上的
+ * color-scheme 决定（那三条规则在 vscode-theme.css，是整个明暗开关的全部机制）。**禁把任何
+ * 深色值写回 @media (prefers-color-scheme: dark)**：那样写不报错、浅色也对，只有手动档翻不
+ * 动它——用户切到 Light 时那一个颜色仍是深的（check:css 拦）。
  *
  * 双值 token **不能带不透明度修饰符**(bg-editor-background/50):Lightning CSS 会把
- * light-dark() 降级成一段 token 流而不是一个合法 <color>,塞进 color-mix() 整条声明作废。
+ * light-dark() 降级成一段 token 流而不是一个合法 <color>，塞进 color-mix() 整条声明作废。
  *
  * **别在这里加"以后可能用得上"的 token**:Tailwind v4 会把既没被工具类、也没被我们自己的
- * CSS 以 var() 引用的 @theme 变量整个裁掉,于是它在产物里根本不存在。
+ * CSS 以 var() 引用的 @theme 变量整个裁掉，于是它在产物里根本不存在。
  */
 @theme {
   /* --- 编辑器与外壳 ------------------------------------------------------ */
@@ -44,44 +44,44 @@
   --color-side-bar-section-header-background: light-dark(#f0f0f0, #202020);
   --color-title-bar-background: light-dark(#f8f8f8, #181818);
   --color-panel-border: light-dark(#e5e5e5, #2b2b2b);
-  /* 次要文字:目录前缀、计数、提示行。VS Code 的 descriptionForeground */
+  /* 次要文字：目录前缀、计数、提示行。VS Code 的 descriptionForeground */
   --color-description-foreground: light-dark(#6f6f6f, #9d9d9d);
   --color-focus-border: light-dark(#005fb8, #0078d4);
   --color-text-link-foreground: light-dark(#005fb8, #4daafc);
 
-  /* --- 列表(变更列表整条都归它) ---------------------------------------- */
+  /* --- 列表（变更列表整条都归它） ---------------------------------------- */
   --color-list-hover-background: light-dark(#e8e8e8, #2a2d2e);
   --color-list-active-selection-background: light-dark(#e4e6f1, #04395e);
   --color-list-active-selection-foreground: light-dark(#000000, #ffffff);
 
-  /* --- 告警条(取不到状态时那一条) -------------------------------------- */
-  /* 底色深浅各一份;边框那个**深浅共用**:同一个偏暗的黄在两种底色上都够分明 */
+  /* --- 告警条（取不到状态时那一条） -------------------------------------- */
+  /* 底色深浅各一份；边框那个**深浅共用**：同一个偏暗的黄在两种底色上都够分明 */
   --color-warning-background: light-dark(#fdf6d3, #352a05);
   --color-warning-border: #b89500;
 
-  /* --- git 装饰色:变更列表的状态位徽章按这套上色 ------------------------ */
+  /* --- git 装饰色：变更列表的状态位徽章按这套上色 ------------------------ */
   --color-git-modified: light-dark(#895503, #e2c08d);
   --color-git-deleted: light-dark(#ad0707, #c74e39);
   --color-git-added: light-dark(#587c0c, #81b88b);
   --color-git-untracked: light-dark(#007100, #73c991);
   --color-git-conflicting: light-dark(#ad0707, #e4676b);
 
-  /* --- diff 底色:由 vscode-theme.css 映射到 --d2h-* --------------------- */
-  /* 下面六个**刻意深浅共用同一取值**:它们是半透明叠加,VS Code 自己的默认值也是深浅共用一
-   * 套,底色一换观感自然跟着换。换成不透明取值就必须在深色那边再维护一份平行的硬编码。 */
+  /* --- diff 底色：由 vscode-theme.css 映射到 --d2h-* --------------------- */
+  /* 下面六个**刻意深浅共用同一取值**：它们是半透明叠加，VS Code 自己的默认值也是深浅共用一
+   * 套，底色一换观感自然跟着换。换成不透明取值就必须在深色那边再维护一份平行的硬编码。 */
   --color-diff-inserted-background: rgb(155 185 85 / 0.2);
   --color-diff-inserted-text-background: rgb(155 185 85 / 0.45);
   --color-diff-inserted-border: rgb(155 185 85 / 0.5);
   --color-diff-removed-background: rgb(255 0 0 / 0.16);
   --color-diff-removed-text-background: rgb(255 0 0 / 0.32);
   --color-diff-removed-border: rgb(255 0 0 / 0.35);
-  /* 并排视图里"这一侧没有对应行"的空占位格。这个**不能**深浅共用:它叠在底色上要的是"比周围
-   * 亮一点",深色下得换成白色叠加,所以它是这组里唯一一条双值的。 */
+  /* 并排视图里"这一侧没有对应行"的空占位格。这个**不能**深浅共用：它叠在底色上要的是"比周围
+   * 亮一点"，深色下得换成白色叠加，所以它是这组里唯一一条双值的。 */
   --color-diff-diagonal-fill: light-dark(rgb(0 0 0 / 0.06), rgb(255 255 255 / 0.06));
 
   /* --- 字体 -------------------------------------------------------------- */
-  /* 这两个键名有额外作用:Tailwind 的 --default-font-family / --default-mono-font-family 指向
-   * 它们,preflight 因此会把 --font-sans 应用到 html,`font-mono` 工具类会用 --font-mono。 */
+  /* 这两个键名有额外作用：Tailwind 的 --default-font-family / --default-mono-font-family 指向
+   * 它们，preflight 因此会把 --font-sans 应用到 html,`font-mono` 工具类会用 --font-mono。 */
   --font-sans:
     ui-sans-serif, -apple-system, "Segoe UI", "Noto Sans", "PingFang SC", "Microsoft YaHei",
     sans-serif;

@@ -1,12 +1,12 @@
-// `npm i -g difftab` 三端验收(全局安装项)。
+// `npm i -g difftab` 三端验收（全局安装项）。
 //
 // 打包 → 全局装 → **用装到 PATH 上的那个可执行文件**在一个真仓库里跑通 → 卸掉。三件事一起
-// 证:产物清单齐全(缺文件时这里才炸,`check:pack` 只看清单)、Windows 的 `.cmd` shim 起得
+// 证：产物清单齐全（缺文件时这里才炸，`check:pack` 只看清单）、Windows 的 `.cmd` shim 起得
 // 来、以及全局目录里除了 difftab 自己什么都没多出来。
 //
-// **零依赖纯 JS**,要跑在 CI 上不装任何依赖的机器上。起进程与清理复用 `test/smoke/helpers.js`
-// —— 尤其是「第一行是 URL」那个 ready 判据,不在这里再定义一遍。前置条件只有两个:`dist/` 已
-// 就位,以及全局尚未装着 difftab。
+// **零依赖纯 JS**，要跑在 CI 上不装任何依赖的机器上。起进程与清理复用 `test/smoke/helpers.js`
+//——尤其是「第一行是 URL」那个 ready 判据，不在这里再定义一遍。前置条件只有两个：`dist/` 已
+// 就位，以及全局尚未装着 difftab。
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync } from 'node:fs';
@@ -18,30 +18,30 @@ const REPO_ROOT = resolve(import.meta.dirname, '..');
 const manifest = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf8'));
 const TARBALL = `${manifest.name}-${manifest.version}.tgz`;
 
-/** 抛而不是 `process.exit()`:后者会跳过 `finally`,把全局包留在机器上。 */
+/** 抛而不是 `process.exit()`：后者会跳过 `finally`，把全局包留在机器上。 */
 class CheckFailed extends Error {}
 function fail(message) {
   throw new CheckFailed(message);
 }
 
 /**
- * **必须 `shell: true`**:Windows 上 npm 是 `npm.cmd`,而 Node 自 CVE-2024-27980 起不再允许不
- * 经 shell 直接 spawn `.cmd`。命令整条以字符串给出、**不传 args 数组**:`shell: true` 下 Node
- * 只是把数组拼回一条命令行,还要为此打一行 DEP0190 弃用警告。
+ * **必须 `shell: true`**：Windows 上 npm 是 `npm.cmd`，而 Node 自 CVE-2024-27980 起不再允许不
+ * 经 shell 直接 spawn `.cmd`。命令整条以字符串给出、**不传 args 数组**：`shell: true` 下 Node
+ * 只是把数组拼回一条命令行，还要为此打一行 DEP0190 弃用警告。
  */
 function run(commandLine, options = {}) {
   const r = spawnSync(commandLine, { encoding: 'utf8', shell: true, ...options });
-  if (r.error) fail(`${commandLine} 起不来:${r.error.message}`);
+  if (r.error) fail(`${commandLine} 起不来：${r.error.message}`);
   return r;
 }
 
 /**
- * 路径进 shell 前加引号。**不能用 `JSON.stringify`** —— 它会把 Windows 路径里的 `\` 转义成
- * `\\`,而 cmd 原样当两个反斜杠用。这些路径都来自 `os.tmpdir()`,不含引号。
+ * 路径进 shell 前加引号。**不能用 `JSON.stringify`**——它会把 Windows 路径里的 `\` 转义成
+ * `\\`，而 cmd 原样当两个反斜杠用。这些路径都来自 `os.tmpdir()`，不含引号。
  */
 const q = (path) => `"${path}"`;
 
-/** 全局目录当前的条目。`.package-lock.json` 是 npm 自己的簿记,不是装进来的包。 */
+/** 全局目录当前的条目。`.package-lock.json` 是 npm 自己的簿记，不是装进来的包。 */
 function entriesOf(dir) {
   try {
     return readdirSync(dir).filter((name) => name !== '.package-lock.json');
@@ -56,66 +56,66 @@ let installed = false;
 
 try {
   if (!existsSync(join(REPO_ROOT, 'dist'))) {
-    fail('dist/ 不存在 —— CI 里应先下载 artifact,本机先 pnpm build');
+    fail('dist/ 不存在——CI 里应先下载 artifact，本机先 pnpm build');
   }
 
   const rootQuery = run('npm root -g');
-  if (rootQuery.status !== 0) fail(`npm root -g 失败:${rootQuery.stderr}`);
+  if (rootQuery.status !== 0) fail(`npm root -g 失败：${rootQuery.stderr}`);
   const globalRoot = rootQuery.stdout.trim();
   const before = entriesOf(globalRoot);
   if (before.includes(manifest.name)) {
-    fail(`全局已经装着 ${manifest.name} —— 先 npm rm -g 再跑,否则「多出了什么」无从判断`);
+    fail(`全局已经装着 ${manifest.name}——先 npm rm -g 再跑，否则「多出了什么」无从判断`);
   }
 
-  // `--ignore-scripts`:本仓库的 `prepublishOnly` 会调 pnpm,而这台机器上没有
+  // `--ignore-scripts`：本仓库的 `prepublishOnly` 会调 pnpm，而这台机器上没有
   console.log('# npm pack');
   const packed = run(`npm pack --ignore-scripts --pack-destination ${q(workdir)}`, {
     cwd: REPO_ROOT,
   });
-  if (packed.status !== 0) fail(`npm pack 失败:${packed.stderr}`);
+  if (packed.status !== 0) fail(`npm pack 失败：${packed.stderr}`);
   const tarball = join(workdir, TARBALL);
-  // 名字自己拼、只验存在,不解析 npm 的输出 —— 那个格式随 npm 版本变,而 matrix 的
+  // 名字自己拼、只验存在，不解析 npm 的输出——那个格式随 npm 版本变，而 matrix 的
   // 三个 Node 自带三个不同的 npm
   if (!existsSync(tarball)) fail(`没打出 ${TARBALL}(${packed.stdout} ${packed.stderr})`);
 
   console.log('# npm i -g');
   const install = run(`npm i -g ${q(tarball)} --ignore-scripts`);
-  if (install.status !== 0) fail(`npm i -g 失败:${install.stdout}\n${install.stderr}`);
+  if (install.status !== 0) fail(`npm i -g 失败：${install.stdout}\n${install.stderr}`);
   installed = true;
 
   /**
-   * **零传递依赖的正面判据,两条对应依赖的两种落法**:npm 默认把传递依赖**提升**到全局根目
-   * 录、与 difftab 平级(目录 diff 抓这一种),版本冲突时则**嵌套**进 `difftab/node_modules`
-   * (第二条抓这一种)。只写目录 diff 会漏掉嵌套那种,只看 `node_modules` 存不存在会漏掉提升
-   * 那种 —— 而提升才是常态。manifest 那一侧另有 `check:pack` 盯着,与这里互补。
+   * **零传递依赖的正面判据，两条对应依赖的两种落法**：npm 默认把传递依赖**提升**到全局根目
+   * 录、与 difftab 平级（目录 diff 抓这一种），版本冲突时则**嵌套**进 `difftab/node_modules`
+   * （第二条抓这一种）。只写目录 diff 会漏掉嵌套那种，只看 `node_modules` 存不存在会漏掉提升
+   * 那种——而提升才是常态。manifest 那一侧另有 `check:pack` 盯着，与这里互补。
    */
   const added = entriesOf(globalRoot).filter((name) => !before.includes(name));
   if (added.length !== 1 || added[0] !== manifest.name) {
-    fail(`全局目录多出了 ${JSON.stringify(added)},期望只有 ["${manifest.name}"]`);
+    fail(`全局目录多出了 ${JSON.stringify(added)}，期望只有 ["${manifest.name}"]`);
   }
   if (existsSync(join(globalRoot, manifest.name, 'node_modules'))) {
-    fail(`${manifest.name}/node_modules 存在 —— 装进来了传递依赖`);
+    fail(`${manifest.name}/node_modules 存在——装进来了传递依赖`);
   }
 
   console.log('# difftab --version');
   const version = run(`${manifest.name} --version`);
-  if (version.status !== 0) fail(`--version 以 ${version.status} 退出:${version.stderr}`);
+  if (version.status !== 0) fail(`--version 以 ${version.status} 退出：${version.stderr}`);
   if (!version.stdout.includes(manifest.version)) {
-    fail(`--version 没打印 ${manifest.version},实际是 ${JSON.stringify(version.stdout)}`);
+    fail(`--version 没打印 ${manifest.version}，实际是 ${JSON.stringify(version.stdout)}`);
   }
 
   /**
-   * 真跑一次。**用的是 PATH 上那个名字**,不是 `node bin/difftab.js` —— Windows 上两者差着一
-   * 个 `.cmd` shim,而冒烟套件走的全是后者,shim 坏了没有任何东西会响。
+   * 真跑一次。**用的是 PATH 上那个名字**，不是 `node bin/difftab.js`——Windows 上两者差着一
+   * 个 `.cmd` shim，而冒烟套件走的全是后者，shim 坏了没有任何东西会响。
    *
-   * 起进程与「第一行是 URL」这个 ready 判据都来自 `test/smoke/helpers.js`:自己再写一遍就等于
-   * 给那个判据加了第三个定义,而 CLI 一旦在 URL 之前多打一行,三处会以三种样子失败。
+   * 起进程与「第一行是 URL」这个 ready 判据都来自 `test/smoke/helpers.js`：自己再写一遍就等于
+   * 给那个判据加了第三个定义，而 CLI 一旦在 URL 之前多打一行，三处会以三种样子失败。
    */
   const repo = join(workdir, 'repo');
   mkdirSync(repo);
   for (const args of ['init --quiet', 'config user.email ci@example.com', 'config user.name ci']) {
     const r = run(`git ${args}`, { cwd: repo });
-    if (r.status !== 0) fail(`git ${args} 失败:${r.stderr}`);
+    if (r.status !== 0) fail(`git ${args} 失败：${r.stderr}`);
   }
 
   console.log('# 在一个真仓库里跑起来');
@@ -123,23 +123,23 @@ try {
     cwd: repo,
     command: manifest.name,
     args: [],
-    // Windows 上 `difftab` 是个 `.cmd` shim,不经 shell 起不来
+    // Windows 上 `difftab` 是个 `.cmd` shim，不经 shell 起不来
     shell: true,
-    // 没有客户端来连,让它按空闲退出自己收场—— 见下面为什么不 kill
+    // 没有客户端来连，让它按空闲退出自己收场——见下面为什么不 kill
     env: { DIFFTAB_IDLE_MS: '1000' },
   });
 
   /**
-   * **不用 `server.stop()`,也不等 `'close'`**:经 shell 起来时被 spawn 的是 shell,产品是它
-   * 的**孙进程**,而 `'close'` 要等所有 stdio 管道关闭 —— 孙进程还攥着管道,于是杀掉 shell 之
-   * 后 `'close'` 永远不来。症状是脚本停在这一行,Node 以「unsettled top-level await」退出码
-   * 13 收场,与「全局安装坏了」毫无相似之处(macOS 上 shell 直接 exec 掉自己,本机怎么跑都
-   * 绿)。改成等它自己按空闲退出、轮询 `exitCode`:`'exit'` 不依赖管道,而轮询的定时器顺便把
+   * **不用 `server.stop()`，也不等 `'close'`**：经 shell 起来时被 spawn 的是 shell，产品是它
+   * 的**孙进程**，而 `'close'` 要等所有 stdio 管道关闭——孙进程还攥着管道，于是杀掉 shell 之
+   * 后 `'close'` 永远不来。症状是脚本停在这一行，Node 以「unsettled top-level await」退出码
+   * 13 收场，与「全局安装坏了」毫无相似之处（macOS 上 shell 直接 exec 掉自己，本机怎么跑都
+   * 绿）。改成等它自己按空闲退出、轮询 `exitCode`：`'exit'` 不依赖管道，而轮询的定时器顺便把
    * 事件循环撑着。
    */
   await waitUntil(() => server.child.exitCode !== null, 30_000, '全局装的那个 difftab 自行退出');
   if (server.child.exitCode !== 0) {
-    fail(`空闲退出的退出码是 ${server.child.exitCode},期望 0。stderr=${server.stderr}`);
+    fail(`空闲退出的退出码是 ${server.child.exitCode}，期望 0。stderr=${server.stderr}`);
   }
 
   console.log(`PASS 全局安装可用(${process.platform} · Node ${process.versions.node})`);
@@ -147,12 +147,12 @@ try {
   console.error(cause instanceof CheckFailed ? `FAIL ${cause.message}` : cause);
   process.exitCode = 1;
 } finally {
-  // 卸干净:本机跑完不该留下一个全局包,CI 上则是让「多出了什么」这条判断下次仍成立。**收尾
-  // 的失败只警告**:从 `finally` 抛出去会顶掉 catch 里正在报的那条真失败。
+  // 卸干净：本机跑完不该留下一个全局包，CI 上则是让「多出了什么」这条判断下次仍成立。**收尾
+  // 的失败只警告**：从 `finally` 抛出去会顶掉 catch 里正在报的那条真失败。
   try {
     if (installed) run(`npm rm -g ${manifest.name}`);
   } catch (cause) {
-    console.error(`# 卸载没成功(不影响上面的结论):${cause.message}`);
+    console.error(`# 卸载没成功（不影响上面的结论）：${cause.message}`);
   }
   removeDir(workdir);
 }

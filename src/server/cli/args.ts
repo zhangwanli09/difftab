@@ -1,11 +1,11 @@
-// 参数解析。`util.parseArgs` 在 Node 22 上可用,不需要第三方库。
+// 参数解析。`util.parseArgs` 在 Node 22 上可用，不需要第三方库。
 
 import { parseArgs } from 'node:util';
 
 export interface CliOptions {
   version: boolean;
   help: boolean;
-  /** `--no-open`:只打印 URL,不拉起浏览器。 */
+  /** `--no-open`：只打印 URL，不拉起浏览器。 */
   noOpen: boolean;
 }
 
@@ -33,7 +33,7 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
         help: { type: 'boolean', short: 'h' },
         'no-open': { type: 'boolean' },
       },
-      // 严格解析 + 不收位置参数:目录由 cwd 决定(「在仓库目录下敲一条命令」),
+      // 严格解析 + 不收位置参数：目录由 cwd 决定（「在仓库目录下敲一条命令」），
       // 多一个可选的路径参数就多一条要在前置检查里覆盖的入口
       strict: true,
       allowPositionals: false,
