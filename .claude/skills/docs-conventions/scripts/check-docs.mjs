@@ -78,8 +78,16 @@ function checkMarkdown(file, text) {
     for (const m of prose.matchAll(new RegExp(`\\([^()]*[${CJK}][^()]*\\)`, 'g'))) {
       report(file, n, '半角括号', m[0]);
     }
-    // 破折号前后不加空格
+    // 破折号前后不加空格。软换行同样渲染成一个空格，所以折在破折号旁边等价于加了空格。
     if (/ ——|—— /.test(prose)) report(file, n, '破折号旁有空格', line.trim());
+    const nextLine = lines[i + 1];
+    const prevLine = lines[i - 1];
+    const continues = (l) =>
+      l !== undefined && l.trim() !== '' && !/^\s*(#|\||>|[-*+]\s|\d+\.\s)/.test(l);
+    if (/——\s*$/.test(prose) && continues(nextLine))
+      report(file, n, '破折号折在行尾', line.trim().slice(-16));
+    if (/^\s*——/.test(prose) && continues(prevLine))
+      report(file, n, '破折号折在行首', line.trim().slice(0, 16));
 
     // 段落在两个汉字之间硬换行：markdown 会渲染成一个可见空格
     const next = lines[i + 1];
