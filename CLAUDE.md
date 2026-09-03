@@ -33,7 +33,7 @@
 | 类型检查 | `pnpm typecheck`（`tsc --noEmit`，前后端各一份 tsconfig，严格性开关共用 `tsconfig.base.json`） |
 | 格式化 + lint | `pnpm lint`（`biome check`）/ CI 用 `biome ci` |
 | 单元/集成测试（Vitest，直接跑 TS 源码） | `pnpm test`。用例按被测代码分 `test/unit/server/` 与 `test/unit/web/`——**放错目录会静默不跑，判据见第 5 节「测试布局」** |
-| 冒烟测试（纯 JS，跑构建产物，含只读性两层验证） | **先 `pnpm build`**——它跑 `dist/`，产物比源码旧一轮时红的样子像「三道校验全坏了」。`pnpm test:smoke`（CI matrix 档不经 script，直接 `node --test "test/smoke/*.test.js"`） |
+| 冒烟测试（纯 JS，跑构建产物，含只读性两层验证） | **先 `pnpm build`**——它跑 `dist/`，产物比源码旧一轮时红的样子像「三道校验全坏了」。`pnpm test:smoke`（CI matrix 档不经 script：由 bash 把 `test/smoke/*.test.js` 展开成数组、点名两个只读性门禁文件，再 `node --test "${files[@]}"`） |
 | 测试仓库 fixture 生成 | `pnpm fixtures`（默认写 `test/fixtures/repos/`；测试自己调 `makeFixtures()` 写临时目录） |
 | 其余门禁（冷启动 ≤300ms / 体积 / 样式层叠 / 发布产物 / bin mode） | `pnpm bench:startup`、`size`、`check:css`、`check:pack`、`check:bin`——各自挡什么见 `docs/gates.md` |
 | 全局安装验收（打包 → `npm i -g` → 用 PATH 上那个名字跑通 → 卸掉） | **先 `pnpm build`**，再 `pnpm check:global`；要求全局**尚未**装着 difftab，否则脚本直接拒跑 |

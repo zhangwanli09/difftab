@@ -100,7 +100,16 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        # 22.0.x 是产品运行时下限本身，不是 22 线的最新版——下限档要真的跑在下限上
+        # 22.0.x 是产品运行时下限本身，不是 22 线的最新版——下限档要真的跑在下限上。
+        #
+        # **24 与 26 在档位上是同一格**：监听档的分界是 Node 24.14.0，而
+        # watch-tiers.test.js 是自动判档、不用 DIFFTAB_WATCH_TIER 强制，于是实际覆盖是
+        # 22.0.x → ubuntu C / macOS·Windows B，24 与 26 → 三端均 A。26 留着不是为了补
+        # 档位，是最新 Node 的前向兼容金丝雀（fs.watch 语义、node --test 行为）。
+        #
+        # 另外注意这里的 '24' / '26' 是**浮动解析**，档位覆盖会随上游发版自己变：
+        # Node 24.14.0 发布之前 ubuntu × 24 判的是 C 档，发布之后自动变成 A，
+        # 而 CI 一个字都没改。看这张矩阵时别把它当成钉死的映射。
         node: ['22.0.x', '24', '26']
     steps:
       - uses: actions/checkout@v7
@@ -114,34 +123,51 @@ jobs:
           name: dist
           path: dist/
 
-      # `node --test` 在一个用例都没匹配上时是 **0 用例、exit 0**——一次改名、
-      # 一次目录搬迁，或某个平台上的引号行为不同，就会把「只读承诺的唯一自动化保护」
-      # （S1 起主门禁就落在 test/smoke/）变成一个什么都没跑的绿勾。
-      # 先数一遍，数不到就响亮地失败。
-      - name: 冒烟用例确实被发现了
-        shell: bash
-        run: |
-          node -e "
-          const { readdirSync } = require('node:fs');
-          const files = readdirSync('test/smoke').filter((f) => f.endsWith('.test.js'));
-          if (files.length === 0) { console.error('test/smoke/ 下没有任何 *.test.js——node --test 会静默跑 0 个用例'); process.exit(1); }
-          // 两层只读验证是 4.1「零写操作」承诺在开发期唯一的自动化护栏。
-          // 按文件名点名一次：改名、搬走、误删都会在这里响亮地失败，而不是变成
-          // 一次「少跑了一个文件」的绿勾。
-          for (const required of ['readonly.test.js', 'readonly-git-dir.test.js']) {
-            if (!files.includes(required)) { console.error('只读性门禁 test/smoke/' + required + ' 不见了'); process.exit(1); }
-          }
-          console.log('发现 ' + files.length + ' 个冒烟文件：' + files.join(', '));
-          "
-
       # 本档**完全不执行安装、也不需要 pnpm**：它的全部意义就是只跑用户真正拿到的
       # dist/ 产物。一旦装了东西，测的就不再是那个东西。
       # 因此直接 node --test 打到冒烟套件文件，不经 package.json 的 script。
       #
       # 套件自带 fixture 生成（test/fixtures/make.mjs，零依赖纯 JS），所以这里除了
       # runner 自带的 git 之外不需要任何前置步骤；主门禁也在其中。
+      #
+      # **必须断言那两个只读性门禁文件确实进了这次 node --test 的调用参数**：
+      # `node --test` 在一个文件都没匹配上时是 **0 用例、exit 0**——一次改名、
+      # 一次目录搬迁，或某个平台上那对引号被 shell 吃掉的方式不同，就会把
+      # 「只读承诺的唯一自动化保护」变成一个什么都没跑的绿勾。
+      #
+      # 判据是 bash 自己把 glob 展开成数组、点名检查、再把**同一个数组**原样传给
+      # node：展开与点名两件事全在 node 之前完成，与 node 版本、reporter 能力无关。
+      #
+      # 走过的弯路，两条都别再试：
+      #   - **数用例总数不够**（「跑了 N 个用例」被任何一个别的文件满足，而漏掉的
+      #     偏偏可能是这两个）；
+      #   - **按 junit reporter 的 testcase `file=` 属性点名**看着正好，但那个属性
+      #     是 Node 后来才加的，**下限档 Node 22.0.0 的内建 junit reporter 不写它**，
+      #     于是检查在那一档必挂、且只在那一档挂。
+      #
+      # 这条点名同时覆盖了「文件还在不在原处」——改名、搬走、误删都让展开结果里
+      # 不再有那条字面路径。所以 build 档**不再另设**一份读磁盘的存在性检查：那是
+      # 同一个谓词的两处实现，而这一份还多证一件事（真被传给了 node）。
+      #
+      # **`shell: bash` 是这次新加的**：本步骤原先没有 shell 键，Windows 上走的是
+      # pwsh。改用 bash 是为了三端拿到同一套 glob 与数组语义，代价是 Windows 这一
+      # 档从此也在 `-eo pipefail` 下跑。
       - name: 冒烟测试（跑 dist/ 产物）
-        run: node --test "test/smoke/*.test.js"
+        shell: bash
+        run: |
+          files=(test/smoke/*.test.js)
+          if [ ! -e "${files[0]}" ]; then
+            echo 'FAIL glob 一个冒烟文件都没展开出来——test/smoke/*.test.js 不匹配任何文件'
+            exit 1
+          fi
+          for required in readonly.test.js readonly-git-dir.test.js; do
+            found=0
+            for f in "${files[@]}"; do
+              [ "$f" = "test/smoke/$required" ] && found=1
+            done
+            [ "$found" = 1 ] || { echo "FAIL 只读性门禁 test/smoke/$required 没有出现在展开结果里"; exit 1; }
+          done
+          node --test "${files[@]}"
 
       - name: 冷启动测量(≤300ms)
         run: node scripts/bench-startup.mjs
@@ -211,12 +237,13 @@ jobs:
   # 5 个具体语法逐条列举，而 catch {}、对象展开、class 静态块、** 等一律漏网，
   # 后果正是禁止的「用户看到 SyntaxError 而不是友好提示」。这一档直接断言那句话。
   #
-  # 三个平台各跑一次(S5)：守卫里那句提示要经 `writeSync(2, …)` 出来，而那条
+  # 只跑 ubuntu + windows：守卫里那句提示要经 `writeSync(2, …)` 出来，而那条
   # 红线说的正是"`process.stderr.write` + `process.exit` 在 Windows 上写管道时是异步的、
-  # 整条消息会被丢掉"——那种失效只在 Windows 上看得见。**写法本身另有一条静态断言
-  # 罩着**(冒烟里的「退出前的报错一律 writeSync(2, …)」，连动态 import 失败那个出口
-  # 一起罩)，这一档是它的行为侧背书：静态扫描证明源码没写错，这里证明真跑起来那句话
-  # 确实到得了管道对面。
+  # 整条消息会被丢掉"——**那种失效只在 Windows 上看得见**，ubuntu 是它的对照面。
+  # macOS 在这条断言上与 ubuntu 同属 POSIX 的同一种行为，没有独立的证伪能力，故不列。
+  # **写法本身另有一条静态断言罩着**(冒烟里的「退出前的报错一律 writeSync(2, …)」，
+  # 连动态 import 失败那个出口一起罩)，这一档是它的行为侧背书：静态扫描证明源码没写错，
+  # 这里证明真跑起来那句话确实到得了管道对面。
   #
   # 本档不需要 dist/：守卫在 import 主模块**之前**就退出了(冒烟里另有一条断言
   # stdout 为空，证的就是这个顺序)。
@@ -226,7 +253,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v7
 
