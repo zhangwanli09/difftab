@@ -68,24 +68,6 @@ jobs:
       - run: pnpm run typecheck
       - run: pnpm run test
 
-      # 两层只读验证是「零写操作」承诺在开发期唯一的自动化护栏。按文件名点名一次：
-      # 改名、搬走、误删都会在这里响亮地失败，而不是变成一次「少跑了一个文件」的绿勾。
-      #
-      # 放在 build 而不是 matrix：它读的是仓库内容，没有平台与 Node 维度，摆进 matrix
-      # 是同一条判断跑 9 遍。matrix 那侧守的是另一件事——那条 glob 在那个平台上到底
-      # 展开到了它们没有，判据见该档「冒烟测试」步骤。两件事各自证不出对方：
-      # 文件在磁盘上不等于跑到了它，跑到了它也不等于文件名还是约定的那两个。
-      - name: 只读性门禁文件还在原处
-        run: |
-          node -e "
-          const { readdirSync } = require('node:fs');
-          const files = readdirSync('test/smoke').filter((f) => f.endsWith('.test.js'));
-          for (const required of ['readonly.test.js', 'readonly-git-dir.test.js']) {
-            if (!files.includes(required)) { console.error('只读性门禁 test/smoke/' + required + ' 不见了'); process.exit(1) }
-          }
-          console.log('发现 ' + files.length + ' 个冒烟文件：' + files.join(', '));
-          "
-
       # bin/difftab.js 以 100755 入库（先跑，不用等构建）+ 未被构建管线触碰
       # （该脚本内部会跑一次完整构建）
       - run: pnpm run check:bin
@@ -149,19 +131,27 @@ jobs:
       # runner 自带的 git 之外不需要任何前置步骤；主门禁也在其中。
       #
       # **必须断言那两个只读性门禁文件确实进了这次 node --test 的调用参数**：
-      # `node --test` 在一个文件都没匹配上时是 **0 用例、exit 0**——一次目录搬迁，
-      # 或某个平台上那对引号被 shell 吃掉的方式不同，就会把「只读承诺的唯一自动化
-      # 保护」变成一个什么都没跑的绿勾。
+      # `node --test` 在一个文件都没匹配上时是 **0 用例、exit 0**——一次改名、
+      # 一次目录搬迁，或某个平台上那对引号被 shell 吃掉的方式不同，就会把
+      # 「只读承诺的唯一自动化保护」变成一个什么都没跑的绿勾。
       #
-      # **数磁盘上的文件是数不出这件事的**（那只证明文件在，不证明真被传给了
-      # node），**数用例总数也不够**（跑了 N 个用例可能被任何一个别的文件满足，
-      # 漏掉的偏偏可能是这两个）——真试过按 junit reporter 的 testcase `file=`
-      # 属性点名，但那个属性是 Node 后来才加的，**下限档 Node 22.0.0 上的内建
-      # junit reporter 压根不写它**，检查在那一档必挂，且只在那一档挂。
+      # 判据是 bash 自己把 glob 展开成数组、点名检查、再把**同一个数组**原样传给
+      # node：展开与点名两件事全在 node 之前完成，与 node 版本、reporter 能力无关。
       #
-      # 判据换成 bash 自己展开 glob、把结果数组原样传给 node（这一步本就是
-      # `shell: bash`，三端一致）：expand 与「required 是否在数组里」两件事完全
-      # 不经 node，与 node 版本、reporter 能力都无关，也不再需要写文件再解析。
+      # 走过的弯路，两条都别再试：
+      #   - **数用例总数不够**（「跑了 N 个用例」被任何一个别的文件满足，而漏掉的
+      #     偏偏可能是这两个）；
+      #   - **按 junit reporter 的 testcase `file=` 属性点名**看着正好，但那个属性
+      #     是 Node 后来才加的，**下限档 Node 22.0.0 的内建 junit reporter 不写它**，
+      #     于是检查在那一档必挂、且只在那一档挂。
+      #
+      # 这条点名同时覆盖了「文件还在不在原处」——改名、搬走、误删都让展开结果里
+      # 不再有那条字面路径。所以 build 档**不再另设**一份读磁盘的存在性检查：那是
+      # 同一个谓词的两处实现，而这一份还多证一件事（真被传给了 node）。
+      #
+      # **`shell: bash` 是这次新加的**：本步骤原先没有 shell 键，Windows 上走的是
+      # pwsh。改用 bash 是为了三端拿到同一套 glob 与数组语义，代价是 Windows 这一
+      # 档从此也在 `-eo pipefail` 下跑。
       - name: 冒烟测试（跑 dist/ 产物）
         shell: bash
         run: |

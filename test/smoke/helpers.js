@@ -1,7 +1,7 @@
 // 冒烟测试的公共工具。纯 JS、只用标准库——matrix 档完全不装依赖。
 //
-// 文件名不以 `.test.js` 结尾：`node --test "test/smoke/*.test.js"` 不会把它当用例，
-// CI 里那条「数一遍冒烟文件」的检查也不会把它算进去。
+// 文件名不以 `.test.js` 结尾：`test/smoke/*.test.js` 展开不到它，于是既不会被
+// node --test 当成用例，也不进 CI 里那条按文件名点名的检查。
 
 import { spawn, spawnSync } from 'node:child_process';
 import { rmSync } from 'node:fs';

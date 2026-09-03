@@ -35,8 +35,7 @@
 | `pnpm check:global` | `npm i -g` 之后用 PATH 上那个名字跑不通，或全局目录下冒出了传递依赖。**要求全局尚未装着 difftab，否则脚本直接拒跑** | 专用作业（三平台） |
 | `pnpm check:inotify` | Linux 上压低 `fs.inotify.max_user_watches` 至 ENOSPC 后没能降级。**不进冒烟套件**，非 Linux 直接 SKIP | 专用作业（ubuntu，需免密 sudo） |
 | old-node-guard | 低于下限的 Node 上拿到的是 `SyntaxError` 而不是友好提示。**单列一档**，因为 build 与 matrix 都跑在 ≥22 上，解析期失败那条路径在那里永远测不到。**只跑 ubuntu + windows**：那句提示丢不丢只在 Windows 上看得见，macOS 与 ubuntu 同属 POSIX 的同一种行为 | 专用作业（Node 20 × 两平台） |
-| 只读性门禁确实进了调用参数 | `node --test` 一个文件都没匹配上时是 0 用例、exit 0——一次目录搬迁，或某个平台上那对引号被 shell 吃掉的方式不同，就能把「只读承诺的唯一自动化保护」变成一个什么都没跑的绿勾。**判据是 bash 自己展开 `test/smoke/*.test.js` 后检查数组里有没有那两个文件、再把数组原样传给 node**——与 node 版本、reporter 能力都无关（试过读 junit reporter 的 `file=` 属性，但那是 Node 后来才加的，下限档 Node 22.0.0 的内建 junit reporter 不写它，检查在那一档必挂）；数磁盘上的文件只证明文件在、不证明真被传给了 node，只数用例总数会被任何一个别的文件满足 | matrix |
-| 只读性门禁文件还在原处 | `readonly.test.js` / `readonly-git-dir.test.js` 被改名、搬走或误删，变成一次「少跑了一个文件」的绿勾。按文件名点名。**在 build 跑一次**：它读的是仓库内容，没有平台与 Node 维度 | build |
+| 只读性门禁确实进了调用参数 | `readonly.test.js` / `readonly-git-dir.test.js` 被改名、搬走、误删，或那条 glob 在某个平台上没展开到它们——两种都让「只读承诺的唯一自动化保护」变成一个什么都没跑的绿勾（`node --test` 一个文件都没匹配上时是 0 用例、exit 0）。**判据是 bash 自己把 `test/smoke/*.test.js` 展开成数组、点名检查、再把同一个数组原样传给 node**，与 node 版本、reporter 能力无关。走过的弯路：只数用例总数会被任何一个别的文件满足；按 junit reporter 的 `file=` 属性点名则在下限档 Node 22.0.0 上必挂——那个属性是 Node 后来才加的 | matrix |
 | 后端产物 import 检查 | 后端引了标准库以外的模块（断言 `dist/server/main.js` 的 import 说明符全部以 `node:` 开头） | matrix |
 | 前端产物 CJK 计数为 0 | 界面文案漏了中文。**后端那侧拦不到**（产物按约定保留注释），它的用户可见文案是 `sendError` 与各 `*Error` 的字面量，归 `test/unit/server/` | matrix |
 
