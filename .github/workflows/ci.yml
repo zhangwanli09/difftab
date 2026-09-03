@@ -100,7 +100,16 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        # 22.0.x 是产品运行时下限本身，不是 22 线的最新版——下限档要真的跑在下限上
+        # 22.0.x 是产品运行时下限本身，不是 22 线的最新版——下限档要真的跑在下限上。
+        #
+        # **24 与 26 在档位上是同一格**：监听档的分界是 Node 24.14.0，而
+        # watch-tiers.test.js 是自动判档、不用 DIFFTAB_WATCH_TIER 强制，于是实际覆盖是
+        # 22.0.x → ubuntu C / macOS·Windows B，24 与 26 → 三端均 A。26 留着不是为了补
+        # 档位，是最新 Node 的前向兼容金丝雀（fs.watch 语义、node --test 行为）。
+        #
+        # 另外注意这里的 '24' / '26' 是**浮动解析**，档位覆盖会随上游发版自己变：
+        # Node 24.14.0 发布之前 ubuntu × 24 判的是 C 档，发布之后自动变成 A，
+        # 而 CI 一个字都没改。看这张矩阵时别把它当成钉死的映射。
         node: ['22.0.x', '24', '26']
     steps:
       - uses: actions/checkout@v7
