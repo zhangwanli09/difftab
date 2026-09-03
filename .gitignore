@@ -9,5 +9,5 @@ test/fixtures/repos/
 
 .DS_Store
 
-# 个人偏好，不入库；.claude/skills/ 照常跟踪
+# 个人偏好，不入库
 .claude/settings.local.json
