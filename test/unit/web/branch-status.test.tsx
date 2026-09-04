@@ -97,6 +97,27 @@ describe('BranchStatus', () => {
   });
 });
 
+describe('BranchStatus 的分支图标', () => {
+  it.each([
+    ['有分支名', branch()],
+    ['detached', branch({ head: '(detached)', detached: true })],
+    ['取不到分支名', branch({ head: '' })],
+  ])('%s 时都画出图标，且不进无障碍树', (_case, state) => {
+    render(<BranchStatus branch={state} />, container);
+    const icon = container.querySelector('svg');
+
+    // 正面：图标真的画出来了。三种情况都要一条——按情况藏掉不报错，只是状态条左边缘忽进忽出
+    expect(icon).not.toBe(null);
+    // 图标是分支名的装饰：漏 `aria-hidden` 时页面看着一模一样，只是读屏在名字前多念一声
+    expect(icon?.getAttribute('aria-hidden')).toBe('true');
+    // 两个类名各挡一件**只是「看着不对」**的事（先被裁的变成图标 / 图标坐在文字基线上比字高出小
+    // 半个字），没有它们就该进红线。happy-dom 没有排版引擎，能断言的只有类名在不在——这条的真正
+    // 职责也正是拦住「看着是条多余的工具类」的顺手删除（同 `diff-view.test.tsx` 钉 `relative`）
+    expect(icon?.classList.contains('shrink-0')).toBe(true);
+    expect(icon?.classList.contains('self-center')).toBe(true);
+  });
+});
+
 describe('BranchStatus 的降级标注', () => {
   it('detached 时不把 git 的字面量 `(detached)` 当分支名画出去', () => {
     // 后端**不替它编一个名字**（那是在事实来源那一层说假话），所以「画什么」落在这里。原样画出去
