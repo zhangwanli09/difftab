@@ -55,7 +55,7 @@
 - **`localStorage` 的读与写各自 `try/catch`**：Safari 隐私模式下光是取值就会抛。抛了就只在内存里生效——按钮照常能点，只是刷新后回到跟随系统。读到不在两个合法值里的脏值同样退回跟随系统，不做修复也不清除。
 - **这是仓库里第一份跨会话的用户偏好**，key 为 `difftab:theme`。加第二份之前先想清楚它是不是也该有这一节。
 - **`main.tsx` 里在 `render()` 之前接线**，让属性尽早落到 `<html>` 上。但**首帧仍可能闪一下系统色**：CSP 是 `script-src 'self'`（见 [`server.md`](server.md)），页面里塞不了那段惯用的 pre-paint 内联脚本。代价只落在显式选过档、且选的与系统相反的人身上，闪的是一帧底色——为它开 `unsafe-inline` 或维护一份脚本 hash 不划算。
-- 控件是图标按钮，`title` 与 `aria-label` 三档分别是 `Theme: follow system` / `Theme: light` / `Theme: dark`。**只画图标不写字**：320px 的顶栏里那三个词会跟项目名抢宽度，而抢输的那个是项目名。三个图形取自 **Heroicons v2 `24/outline`**（`computer-desktop` / `sun` / `moon`，MIT），**复制 path 数据内联，不装包**——包里是逐图标的组件或 SVG 文件，而这里要的只是三条 path 字符串，于是「后端零依赖、前端只装构建期依赖」那条不受影响。仍是内联 SVG + `currentColor`：按钮自己的文字色由 token 给，图标跟着深浅翻，不必在这里再写一遍配色。
+- 控件是图标按钮，`title` 与 `aria-label` 三档分别是 `Follow system` / `Light` / `Dark`。**只画图标不写字**：320px 的顶栏里那三个词会跟项目名抢宽度，而抢输的那个是项目名。三个图形取自 **Heroicons v2 `24/outline`**（`computer-desktop` / `sun` / `moon`，MIT），**复制 path 数据内联，不装包**——包里是逐图标的组件或 SVG 文件，而这里要的只是三条 path 字符串，于是「后端零依赖、前端只装构建期依赖」那条不受影响。仍是内联 SVG + `currentColor`：按钮自己的文字色由 token 给，图标跟着深浅翻，不必在这里再写一遍配色。
 
 ## 页面标题
 
