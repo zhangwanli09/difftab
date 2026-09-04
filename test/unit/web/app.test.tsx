@@ -79,7 +79,7 @@ describe('顶栏的形状', () => {
     const buttons = header()?.querySelectorAll('button') ?? [];
     expect(buttons).toHaveLength(1);
     // 只画图标，名字只能由 aria-label 给——掉了它这个按钮在读屏里就是一个无名控件
-    expect(buttons[0]?.getAttribute('aria-label')).toBe('Theme: follow system');
+    expect(buttons[0]?.getAttribute('aria-label')).toBe('Follow system');
   });
 
   it('第一份 state 还没到时开关也在——它不依赖仓库状态', () => {

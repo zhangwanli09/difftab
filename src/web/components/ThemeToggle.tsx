@@ -11,9 +11,9 @@ import { cycleTheme, type ThemePreference, themePreference } from '../state/them
  * 什么」：这个按钮的第一职责是回答「现在跟不跟系统」。
  */
 const LABELS: Record<ThemePreference, string> = {
-  system: 'Theme: follow system',
-  light: 'Theme: light',
-  dark: 'Theme: dark',
+  system: 'Follow system',
+  light: 'Light',
+  dark: 'Dark',
 };
 
 // 三个图标各画一档：显示器 / 太阳 / 月亮。图形取自 **Heroicons v2 的 24/outline**
