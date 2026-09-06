@@ -42,19 +42,31 @@ same list is a second place to forget.
 ## Publishing
 
 ```bash
-# 1. Bump the version. One commit, nothing else in it.
-#    `npm version` also creates the tag; --no-git-tag-version leaves that to step 3.
+# 1. Bump the version on a branch — main takes pull requests only, so a direct push
+#    is rejected with "Changes must be made through a pull request".
+#    One commit, nothing else in it; `npm version` would also create the tag, and
+#    --no-git-tag-version leaves that to step 4.
+git checkout -b release/0.1.0
 npm version 0.1.0 --no-git-tag-version
 git commit -am "chore(release): 0.1.0"
 
-# 2. Push and let CI confirm the release commit itself is green.
-git push origin main
+# 2. Open the PR, let CI go green on it, and merge. --rebase keeps a README commit
+#    and the version bump as two commits; squash would fuse them.
+git push -u origin release/0.1.0
+gh pr create --base main --title "chore(release): 0.1.0" --body "…"
+gh pr merge --rebase --delete-branch
 
-# 3. Tag and push the tag.
+# 3. Sync main. The rebase merge rewrote the commits, so `git pull --ff-only` refuses
+#    — compare the trees, then reset. The two rev-parse lines must print the same hash.
+git checkout main && git fetch origin main
+git rev-parse HEAD^{tree} origin/main^{tree}
+git reset --hard origin/main
+
+# 4. Let CI confirm the merged release commit itself is green, then tag and push the tag.
 git tag -a v0.1.0 -m "v0.1.0"
 git push origin v0.1.0
 
-# 4. Publish. prepublishOnly runs the full build first, and pnpm stops to ask for a
+# 5. Publish. prepublishOnly runs the full build first, and pnpm stops to ask for a
 #    2FA one-time password — so run this in a real terminal, or pass --otp=<code>.
 pnpm publish
 ```
@@ -65,7 +77,7 @@ Then create the GitHub Release from the tag:
 gh release create v0.1.0 --title "v0.1.0" --notes "…"
 ```
 
-## Seven things that will bite
+## Eight things that will bite
 
 - **`pnpm` needs its own login; `npm login` does not carry over.** Being logged in with
   the npm CLI (`npm whoami` answers, `~/.npmrc` holds a token) is not enough — the first
@@ -83,9 +95,16 @@ gh release create v0.1.0 --title "v0.1.0" --notes "…"
   pins the publish target to `registry.npmjs.org` regardless of what `~/.npmrc` says —
   verified by dry run. If you ever see any other host in the
   `📦 name@version → …` line that `pnpm publish` prints, stop.
+- **A rebase merge leaves your local `main` looking broken, and it is not.** GitHub
+  rewrites the committer on every commit it rebases, so the SHAs differ from the ones you
+  pushed and `git pull --ff-only` answers `fatal: Not possible to fast-forward, aborting.`
+  That reads like a lost commit; the criterion that it is not is the **tree** hash —
+  `git rev-parse HEAD^{tree}` and `git rev-parse origin/main^{tree}` print the same thing
+  when the content is identical. Only then `git reset --hard origin/main`. Tag the commit
+  that is on the remote, never the local one you are about to discard.
 - **Do not pass `--no-git-checks`.** pnpm refuses to publish from a dirty tree, from the
-  wrong branch, or when the branch is behind its remote. Those checks are the reason step
-  2 comes before step 4. The publish branch is `main`, set as `publishBranch` in
+  wrong branch, or when the branch is behind its remote. Those checks are the reason steps
+  2 and 3 come before step 5. The publish branch is `main`, set as `publishBranch` in
   `pnpm-workspace.yaml` — pnpm's own default is still `master`.
 - **Do not pass `--skip-manifest-obfuscation`.** pnpm strips `packageManager` and the
   publish lifecycle scripts (`prepublishOnly`) from the manifest it uploads, and leaves
