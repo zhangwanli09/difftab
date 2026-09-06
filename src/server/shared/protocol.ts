@@ -144,3 +144,42 @@ export type DiffPayload =
 export interface ErrorPayload {
   error: { code: string; message: string };
 }
+
+/**
+ * 目录树的一个条目。**一次只描述一层的直接子项**——整棵树的形状属于前端的展开状态，不
+ * 属于协议（理由与 diff 的按文件懒加载同源：`node_modules` 让一份全量树比整仓 diff 还大）。
+ */
+export interface TreeEntry {
+  /** 这一层里的名字，不含任何 `/`。 */
+  name: string;
+  /** 相对仓库根、以 `/` 分隔的完整路径。原样来自 `-z` 输出。 */
+  path: string;
+  kind: 'directory' | 'file';
+  /**
+   * 被 `.gitignore` 忽略。**它是「这条来自第二次 `ls-files` 调用」这一事实本身**，不是从
+   * 路径推出来的——前端手上没有 `.gitignore` 的语义，推不出来也不该推（同 `conflicted`）。
+   */
+  ignored: boolean;
+}
+
+/** `GET /api/tree` 的响应体。`path` 为空串即仓库根。 */
+export interface TreePayload {
+  path: string;
+  entries: TreeEntry[];
+}
+
+/**
+ * `GET /api/file` 的响应体，判别联合。
+ *
+ * **`symlink` 单独成一支、不并进 `text`**：给的是链接目标字符串而不是目标内容（跟随链接
+ * 会让仓库边界校验形同虚设），而这两件事在页面上要说的话不同——「这是一个指向 X 的链接」
+ * 对「这是 X 的内容」。
+ *
+ * `too-large` 的 `size` / `reason` 与 `DiffPayload` 同一条判据：两个触发口（5MB 与
+ * 50,000 行），只给 `size` 时行数那一路解释不了拒绝的原因。
+ */
+export type FilePayload =
+  | { kind: 'text'; content: string }
+  | { kind: 'symlink'; target: string }
+  | { kind: 'binary' }
+  | { kind: 'too-large'; size: number; reason: 'size' | 'lines' };

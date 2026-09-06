@@ -43,10 +43,14 @@ export interface FixtureRepos {
   linkedWorktree: string;
   /** 子模块自己的工作区——git 目录在父仓库的 `modules/` 下。 */
   submodule: string;
+  /** 上一条的父仓库。gitlink（mode 160000）只在它的 `ls-files` 里才有。 */
+  submoduleParent: string;
   /** bare 仓库（无工作区）。 */
   bare: string;
   /** `--object-format=sha256` 且无任何提交——SHA-256 空树常量的实测来源。 */
   sha256Empty: string;
+  /** 带 `.gitignore`：被忽略的整目录 / 单文件、未跟踪文件、二进制与指向仓库外的符号链接。 */
+  ignoredTree: string;
 }
 
 export type FixtureName = keyof FixtureRepos;

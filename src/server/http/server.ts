@@ -6,9 +6,12 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { Socket } from 'node:net';
 import { homedir } from 'node:os';
-import { DiffRequestError, readDiff } from '../git/diff.ts';
+import { readDiff } from '../git/diff.ts';
+import { readFileContent } from '../git/file.ts';
 import { type RepoInfo, repoNameOf } from '../git/repo.ts';
 import { readStatus, readStatusRaw } from '../git/status.ts';
+import { readTree } from '../git/tree.ts';
+import { WorktreeError } from '../git/worktree.ts';
 import type { ErrorPayload, RepoState, WatchState } from '../shared/protocol.ts';
 import { forcedTierWarning, initialMode, resolveTier } from '../watch/tier.ts';
 import { createWatcher, type WatchHandle } from '../watch/watcher.ts';
@@ -276,6 +279,31 @@ export async function startServer(
         return;
       }
 
+      /**
+       * 文件浏览器的目录树，**一次只回一层**。`path` 缺省即仓库根——根是这个端点唯一一个
+       * 天天要用的取值，让它必须显式传一个空串只是把 `?path=` 写进每一次调用。
+       */
+      case '/api/tree': {
+        // **payload 整份由 git 那侧给**，与 /api/diff、/api/file 一致：路径归一化也归它，
+        // 不然回给前端的 `path` 是客户端原样传来的那一份，而 `readTree` 内部用的是归一后的
+        sendJson(res, 200, await readTree(repo.root, url.searchParams.get('path') ?? ''));
+        return;
+      }
+
+      /**
+       * 单个文件的只读内容。**`path` 必填**，与 `/api/tree` 刻意不同：树有一个自然的默认
+       * 值（根），而「默认读哪个文件」不存在，缺省时静默给一份别的内容比 400 更糟。
+       */
+      case '/api/file': {
+        const path = url.searchParams.get('path');
+        if (!path) {
+          sendError(res, 400, 'bad-request', 'path is required');
+          return;
+        }
+        sendJson(res, 200, await readFileContent(repo.root, path));
+        return;
+      }
+
       /** SSE。**三道校验在上面已经统一走过**，这里没有例外分支。 */
       case '/api/events': {
         const headers = {
@@ -329,7 +357,7 @@ export async function startServer(
         res.destroy();
         return;
       }
-      if (cause instanceof DiffRequestError) {
+      if (cause instanceof WorktreeError) {
         sendError(res, 400, cause.code, cause.message);
         return;
       }

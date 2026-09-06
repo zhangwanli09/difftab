@@ -2,14 +2,10 @@
 
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import {
-  DiffRequestError,
-  parseNumstat,
-  resolveInRepo,
-  untrackedDiff,
-} from '../../../src/server/git/diff.ts';
+import { parseNumstat, untrackedDiff } from '../../../src/server/git/diff.ts';
+import { WorktreeError } from '../../../src/server/git/worktree.ts';
 
 let root: string;
 
@@ -18,25 +14,6 @@ beforeAll(() => {
 });
 afterAll(() => {
   rmSync(root, { recursive: true, force: true });
-});
-
-describe('resolveInRepo', () => {
-  test('仓库内的相对路径正常落地', () => {
-    expect(resolveInRepo('/repo', 'src/a.ts')).toBe(resolve('/repo', 'src/a.ts'));
-  });
-
-  test('走出仓库、绝对路径、空路径、NUL 一律拒——未跟踪那条路要直接读磁盘', () => {
-    for (const bad of ['../etc/passwd', '../../etc/passwd', 'a/../../b', '', 'x\0y']) {
-      expect(() => resolveInRepo('/repo', bad)).toThrow(DiffRequestError);
-    }
-    expect(() => resolveInRepo('/repo', join('/etc', 'passwd'))).toThrow(DiffRequestError);
-    // 指向仓库根自身也不是一个文件
-    expect(() => resolveInRepo('/repo', '.')).toThrow(DiffRequestError);
-  });
-
-  test('路径里的 `..` 只要没走出仓库就放行', () => {
-    expect(resolveInRepo('/repo', 'src/../src/a.ts')).toBe(resolve('/repo', 'src/a.ts'));
-  });
 });
 
 describe('parseNumstat（已跟踪那一侧的二进制与行数判定）', () => {
@@ -130,6 +107,6 @@ describe('untrackedDiff', () => {
   });
 
   test('文件不在了给明确错误，而不是抛一个 ENOENT 栈', async () => {
-    await expect(untrackedDiff(root, 'gone.txt')).rejects.toThrow(DiffRequestError);
+    await expect(untrackedDiff(root, 'gone.txt')).rejects.toThrow(WorktreeError);
   });
 });

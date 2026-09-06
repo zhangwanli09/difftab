@@ -24,7 +24,16 @@ import { cleanupOnExit, once, parseTrace, REPO_ROOT, runFullFlow } from './helpe
 const READ_ONLY = new Set(['version', 'rev-parse', 'status', 'diff', 'ls-files']);
 
 /** 本文件用得到的 fixture。生成全部 16 个要 1.5s 上下，其中一半这里根本不打开。 */
-const NEEDED = ['unicodePaths', 'renames', 'deletions', 'empty', 'diffEdges', 'rebaseInProgress'];
+const NEEDED = [
+  'unicodePaths',
+  'renames',
+  'deletions',
+  'empty',
+  'diffEdges',
+  'rebaseInProgress',
+  // 目录树那两条 `ls-files` 唯一能被证伪的形态——被忽略的整目录与被忽略的单文件
+  'ignoredTree',
+];
 
 let workdir;
 let tracePath;

@@ -6,18 +6,83 @@
 
 import { useEffect, useRef } from 'preact/hooks';
 import { observeDiffPanel } from '../state/layout';
-import { loadError, repoState } from '../state/store';
+import { activePane, activeTab, loadError, repoState } from '../state/store';
 import { PRODUCT_NAME } from '../state/title';
+import { loadDir, ROOT, refreshTree } from '../state/tree';
 import { BranchStatus } from './BranchStatus';
 import { ChangeList } from './ChangeList';
 import { DiffView } from './DiffView';
+import { FileTree } from './FileTree';
+import { FileView } from './FileView';
 import { ThemeToggle } from './ThemeToggle';
 import { WatchBadge } from './WatchBadge';
+
+/**
+ * 侧栏那两个 tab。位置对应 VS Code 的 activity bar，但**做成一行文字 tab 而不是一列图标**：
+ * 图标栏要再占一列宽，而 320px 里那一列是从文件名身上扣的，两个视图也用不着一整列。
+ */
+const TABS = [
+  { id: 'changes', label: 'Changes' },
+  { id: 'files', label: 'Files' },
+] as const;
+
+const TAB_CLASS =
+  'flex-1 border-b-2 px-3 py-1.5 text-xs font-medium focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus-border';
+
+function SideBarTabs() {
+  const active = activeTab.value;
+  return (
+    // tablist/tab 三件套：两个按钮控制的是同一片区域，只靠视觉差异说不清这件事
+    <div class="flex shrink-0 border-b border-panel-border" role="tablist">
+      {TABS.map((tab) => (
+        <button
+          key={tab.id}
+          type="button"
+          role="tab"
+          aria-selected={active === tab.id}
+          /**
+           * **只改 `activeTab`，绝不碰 `activePane`**：换的是左栏在列什么，不是用户此刻在读
+           * 什么——写成「切到 Files 就清空右侧」时页面看着完全正常，只是每瞄一眼目录树就丢掉
+           * 正在读的那份 diff。
+           */
+          onClick={() => {
+            activeTab.value = tab.id;
+          }}
+          class={`${TAB_CLASS} ${
+            active === tab.id
+              ? 'border-focus-border text-editor-foreground'
+              : 'border-transparent text-description-foreground hover:bg-list-hover-background'
+          }`}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 export function App() {
   const state = repoState.value;
   const error = loadError.value;
+  const tab = activeTab.value;
+  const pane = activePane.value;
   const diffPanel = useRef<HTMLElement>(null);
+
+  /**
+   * 切到 `Files` 那一档时把树接上，**两件一起做**：
+   *
+   * - `loadDir(ROOT)` 取根那一层。**不在挂载时预取**：冷启动门禁量的是「监听成功并打印
+   *   URL」，而这条请求要跑一趟 `ls-files`，预取等于把一个多数会话根本用不到的开销摆进首屏。
+   *   它自带「取过就不再取」，所以这里不必自己记。
+   * - `refreshTree()` 把展开着的层刷新一遍。**这是「刷新只给看得见的那一半付钱」的另一半**
+   *   （见 `store.ts` 的 `refresh`）：不看这一档时 SSE 不重取树，切回来时就得补上，否则页面
+   *   上是一份停在离开那一刻的旧目录。
+   */
+  useEffect(() => {
+    if (tab !== 'files') return;
+    void loadDir(ROOT);
+    refreshTree();
+  }, [tab]);
 
   // diff 版式的**唯一**测量点。本组件只管「量哪个元素、什么时候开始和停」——量法与阈值都在
   // `state/layout.ts`，两者是一个取舍的两半。量的是这个 `<section>` 而不是 DiffView 底下那个
@@ -43,6 +108,8 @@ export function App() {
           <ThemeToggle />
         </header>
 
+        <SideBarTabs />
+
         {/* break-words 是搬进 320px 之后才需要的：这条文案是 git 的原话，里面那截路径是一个
             不带断点的长词，在这一列里会漫过右边框压到 diff 面板上——不报错，只是错位 */}
         {error !== null && (
@@ -51,11 +118,14 @@ export function App() {
           </p>
         )}
 
-        {/* flex 的自动最小尺寸只在该轴 overflow:visible 时才解析成 min-content，所以
-            `min-h-0` 与 `overflow-auto` 各自都足以把它归零——两个都没有时列表会把整列
-            撑高、把状态条挤出屏幕底部。并排写是既有形状（右边那个 section 同款） */}
+        {/* 两个视图**共用这一层滚动容器**：左右两栏各一个滚动容器是既有约定（SSE 刷新要留住
+            列表的滚动位置），tab 不是第三个。flex 的自动最小尺寸只在该轴 overflow:visible 时
+            才解析成 min-content，所以 `min-h-0` 与 `overflow-auto` 各自都足以把它归零——两个
+            都没有时列表会把整列撑高、把状态条挤出屏幕底部 */}
         <nav class="min-h-0 flex-1 overflow-auto">
-          {state === null ? (
+          {tab === 'files' ? (
+            <FileTree />
+          ) : state === null ? (
             // 第一次就失败时不能继续说「读取中」——那份加载态永远不会结束，
             // 页面看上去像卡住了，而错误条其实已经把原因写在上面了
             <p class="px-3 py-2 text-sm text-description-foreground">
@@ -83,7 +153,7 @@ export function App() {
       {/* diff 容器自己滚：列表侧的滚动位置在 SSE 刷新时要留住，
           两侧共用一个滚动容器就做不到 */}
       <section ref={diffPanel} class="min-w-0 flex-1 overflow-auto">
-        <DiffView />
+        {pane === 'file' ? <FileView /> : <DiffView />}
       </section>
     </div>
   );

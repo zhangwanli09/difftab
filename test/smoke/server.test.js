@@ -9,7 +9,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } 
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { test } from 'node:test';
-import { makeFixtures } from '../fixtures/make.mjs';
+import { makeFixtures, OUTSIDE_SECRET } from '../fixtures/make.mjs';
 import {
   authedGet,
   BIN,
@@ -22,7 +22,7 @@ import {
 } from './helpers.js';
 
 /** 本文件用得到的 fixture。生成全部 16 个要 1.5s 上下，其中一半这里根本不打开。 */
-const NEEDED = ['unicodePaths', 'staged', 'empty', 'diffEdges'];
+const NEEDED = ['unicodePaths', 'staged', 'empty', 'diffEdges', 'ignoredTree'];
 
 /**
  * 只读工具不接受的方法。**两个用例共用一份**：各写一份的话，哪天添一个
@@ -43,6 +43,7 @@ const ATTACKER_HOST = { Host: 'evil.example' };
 let workdir;
 let repos;
 let server;
+let ignored;
 cleanupOnExit(() => workdir);
 
 /** 递归列出仓库里的所有文件（相对路径），用来证明工具没往里写东西。 */
@@ -64,7 +65,11 @@ function listFiles(dir, prefix = '') {
 const setup = once(async () => {
   workdir = mkdtempSync(join(tmpdir(), 'difftab-server-'));
   repos = makeFixtures(join(workdir, 'repos'), NEEDED);
-  server = await startDifftab({ cwd: repos.unicodePaths });
+  // 两个实例并发起：目录树那三条要的是带 `.gitignore` 的仓库，别的都用第一个
+  [server, ignored] = await Promise.all([
+    startDifftab({ cwd: repos.unicodePaths }),
+    startDifftab({ cwd: repos.ignoredTree }),
+  ]);
 });
 
 test('stdout 的第一行是且只是 URL——冷启动门禁以它为 ready 判据', async () => {
@@ -258,6 +263,118 @@ test('query 里的路径是字面量：`path=*` 取不到东西，更不是一�
     assert.notEqual(res.status, 200, `path=${path} 竟然取到了 diff：${res.body.slice(0, 200)}`);
     assert.ok(!res.body.includes('diff --git'), `path=${path} 回了补丁正文`);
   }
+});
+
+/**
+ * 跑在 `ignoredTree` 上的那个实例发一个请求。**第二个实例是必需的**（文件顶上那个跑在
+ * `unicodePaths` 上，而目录树这三条要的是一个带 `.gitignore` 的仓库），**但只起一个**：它与
+ * 那一个一样活到整份文件跑完，由 `setup()` 一并起。先前是每条用例各起各停一次，在 9 格 CI
+ * 矩阵上就是二十来次多余的进程启动。
+ */
+const onIgnoredTree = (path) => authedGet(ignored.port, ignored.token, path);
+
+const q = (path) => `path=${encodeURIComponent(path)}`;
+
+test('/api/tree 一次只回一层，被忽略的整目录折叠成一条并打上 ignored', async () => {
+  await setup();
+  const root = JSON.parse((await onIgnoredTree('/api/tree')).body);
+  assert.equal(root.path, '');
+  const byName = new Map(root.entries.map((entry) => [entry.name, entry]));
+
+  // 漏掉 `--directory` 时这里会冒出 vendor/a.js 与 vendor/nested/b.js 两条，而 git 照常 exit 0
+  assert.deepEqual(byName.get('vendor'), {
+    name: 'vendor',
+    path: 'vendor',
+    kind: 'directory',
+    ignored: true,
+  });
+  // 漏掉 `--ignored` 时这一档整个不出现
+  assert.equal(byName.get('.env')?.ignored, true);
+  // 已跟踪与未跟踪都在，且都不灰
+  assert.equal(byName.get('README.md')?.ignored, false);
+  assert.equal(byName.get('src')?.ignored, false);
+  // 一层只回直接子项：更深处的路径只贡献它的第一段
+  assert.ok(!byName.has('app.ts'));
+
+  // 被折叠的那一层 git 答不出内容，靠读一层磁盘兜底，整棵子树继承 ignored
+  const vendor = JSON.parse((await onIgnoredTree(`/api/tree?${q('vendor')}`)).body);
+  assert.deepEqual(vendor.entries.map((entry) => [entry.name, entry.kind, entry.ignored]).sort(), [
+    ['a.js', 'file', true],
+    ['nested', 'directory', true],
+  ]);
+
+  // 更深处同样答得出：git 折叠在**最高**那一层，问 vendor/nested 回的仍是 `vendor/`。
+  // 兜底判据只认「正好等于本层」时，这一层会两手空空地回来——页面上是个写着 Empty 的目录
+  const nested = JSON.parse((await onIgnoredTree(`/api/tree?${q('vendor/nested')}`)).body);
+  assert.deepEqual(
+    nested.entries.map((entry) => [entry.name, entry.kind, entry.ignored]),
+    [['b.js', 'file', true]],
+  );
+
+  // 整目录未跟踪且**未被忽略**时同样会折叠，那一侧继承的必须是「不灰显」
+  assert.equal(byName.get('fresh')?.ignored, false);
+  const fresh = JSON.parse((await onIgnoredTree(`/api/tree?${q('fresh/deep')}`)).body);
+  assert.deepEqual(
+    fresh.entries.map((entry) => [entry.name, entry.kind, entry.ignored]),
+    [['u.ts', 'file', false]],
+  );
+});
+
+test('/api/file 只读回内容，各 kind 各回各的，且不跟随符号链接', async () => {
+  await setup();
+  const at = async (path) => JSON.parse((await onIgnoredTree(`/api/file?${q(path)}`)).body);
+
+  assert.deepEqual(await at('src/app.ts'), { kind: 'text', content: 'export const app = 1;\n' });
+  // 被忽略的文件照样读得到——树上点得到，就得看得到
+  assert.deepEqual(await at('.env'), { kind: 'text', content: 'SECRET=1\n' });
+  assert.deepEqual(await at('logo.png'), { kind: 'binary' });
+
+  if (process.platform !== 'win32') {
+    const link = await at('link-to-outside');
+    // 写成 stat 的话这里回的是 { kind: 'text' }，正文正是仓库外那份内容
+    assert.equal(link.kind, 'symlink');
+    assert.ok(!JSON.stringify(link).includes(OUTSIDE_SECRET));
+  }
+});
+
+test('/api/file 与 /api/tree 上的路径同样是字面量，且走不出仓库', async () => {
+  await setup();
+  // 走出仓库的一律拒掉，两个端点都是
+  for (const endpoint of ['/api/file', '/api/tree']) {
+    for (const path of ['../..', '/etc/passwd']) {
+      const res = await onIgnoredTree(`${endpoint}?${q(path)}`);
+      assert.notEqual(res.status, 200, `${endpoint}?path=${path} 竟然回了 200`);
+    }
+  }
+  // **中间那一段是符号链接**同样走不出去：`linkdir/secret.txt` 在字面上老实待在仓库内，
+  // 而 lstat 只保护最后一段。三个端点是同一道边界，所以三个一起钉
+  if (process.platform !== 'win32') {
+    for (const endpoint of ['/api/file', '/api/diff']) {
+      const res = await onIgnoredTree(`${endpoint}?${q('linkdir/secret.txt')}`);
+      assert.notEqual(res.status, 200, `${endpoint} 穿过符号链接读到了仓库外`);
+      assert.ok(!res.body.includes(OUTSIDE_SECRET), `${endpoint} 把仓库外的内容吐回来了`);
+    }
+    const listed = await onIgnoredTree(`/api/tree?${q('linkdir')}`);
+    assert.notEqual(listed.status, 200, '/api/tree 列出了仓库外那个目录');
+    // 链接自己照常展示——挡的是穿越，不是符号链接
+    assert.equal(
+      JSON.parse((await onIgnoredTree(`/api/file?${q('linkdir')}`)).body).kind,
+      'symlink',
+    );
+  }
+
+  // 通配字符按**字面量**解释：`*` 是一个不存在的名字，两个端点都以「不在」收场——
+  // 漏掉 GIT_LITERAL_PATHSPECS 时 `/api/tree?path=*` 会匹配到整仓，回来的是根那一层的全部条目
+  for (const endpoint of ['/api/tree', '/api/file']) {
+    const res = await onIgnoredTree(`${endpoint}?${q('*')}`);
+    assert.notEqual(res.status, 200, `${endpoint}?path=* 竟然回了 200：${res.body.slice(0, 200)}`);
+    assert.ok(!res.body.includes('README.md'), `${endpoint}?path=* 把整仓的条目回来了`);
+  }
+  // 把一个文件当目录展开是坏请求，不是一个空目录
+  assert.notEqual((await onIgnoredTree(`/api/tree?${q('README.md')}`)).status, 200);
+  // path 缺省时：树取根、文件是 400——「默认读哪个文件」不存在
+  assert.equal((await onIgnoredTree('/api/tree')).status, 200);
+  assert.equal((await onIgnoredTree('/api/file')).status, 400);
 });
 
 test('注册表落在 os.tmpdir()，权限 0600，仓库目录内无任何新增文件', async () => {

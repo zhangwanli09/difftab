@@ -13,7 +13,8 @@ bin/difftab.js       版本守卫 + 动态 import，手写 JS，不参与构建
 src/server/
   cli/                 参数解析、仓库定位与前置检查、拉起浏览器、单实例注册表
   http/                node:http server、路由、三道校验、dist/web 静态托管
-  git/                 唯一的 git 子进程出口：status / diff / numstat 调用与解析
+  git/                 唯一的 git 子进程出口：status / diff / numstat 调用与解析；
+                       worktree.ts 是它们共同的底座（仓库边界、读一个文件的分类与两道闸）
   watch/               三档监听 + debounce + 轮询兜底
   shared/              前后端共用的协议类型
 src/web/

@@ -71,8 +71,10 @@ export const ALL_REPOS = [
   'rebaseInProgress',
   'linkedWorktree',
   'submodule',
+  'submoduleParent',
   'bare',
   'sha256Empty',
+  'ignoredTree',
 ];
 
 /**
@@ -444,8 +446,10 @@ export function makeFixtures(destDir, only) {
   }
 
   // 8e. submodule——同上的另一种形态：git 目录在 `<父仓库>/.git/modules/<路径>`。
-  //     返回的是**子模块自己的工作区**（用户在里面敲命令的那个目录）
-  if (wanted('submodule')) {
+  //     一次生成给出**两个**入口：`submodule` 是子模块自己的工作区（用户在里面敲命令的那
+  //     个目录），`submoduleParent` 是父仓库——目录树那一侧要的是后者，gitlink 只在父仓库
+  //     的 `ls-files` 里才有
+  if (wanted('submodule') || wanted('submoduleParent')) {
     const child = init('submodule-child');
     write(child, 'child.txt', 'c1\n');
     commit(child, 'child initial');
@@ -471,6 +475,7 @@ export function makeFixtures(destDir, only) {
     write(cwd, 'child.txt', 'changed inside the submodule\n');
     write(cwd, 'untracked-in-submodule.txt', 'brand new\n');
     repos.submodule = cwd;
+    repos.submoduleParent = parent;
   }
 
   // 8f. bare 仓库——`rev-parse --show-toplevel` 直接以 128 退出，要的是一句话拒绝，不是崩溃
@@ -484,6 +489,49 @@ export function makeFixtures(destDir, only) {
     write(cwd, 'staged-before-first-commit.txt', 'no commits yet, and sha-256 at that\n');
     git(cwd, 'add', 'staged-before-first-commit.txt');
     repos.sha256Empty = cwd;
+  }
+
+  /**
+   * 9. 带 `.gitignore` 的仓库——目录树那两条 `ls-files` 唯一能被证伪的形态。
+   *
+   * 三样东西各挡一条：**被忽略的整目录**（`vendor/` 装两个文件）挡的是漏掉 `--directory`
+   * ——漏了它那个目录会展开成逐个文件，而 git 照常 exit 0；**被忽略的单文件**（`.env`）挡的
+   * 是漏掉 `--ignored`，漏了它那一档整个不出现；**目录里既有可见文件又有被忽略的文件**
+   * （`src/` 底下 `app.ts` 与 `app.log`）挡的是去重时把可见的那条也标成灰的。
+   */
+  if (wanted('ignoredTree')) {
+    const cwd = init('ignored-tree');
+    write(cwd, '.gitignore', 'vendor/\n.env\n*.log\n');
+    write(cwd, 'src/app.ts', 'export const app = 1;\n');
+    write(cwd, 'README.md', '# ignored-tree\n');
+    commit(cwd, 'initial');
+
+    write(cwd, '.env', 'SECRET=1\n');
+    write(cwd, 'src/app.log', 'noise\n');
+    write(cwd, 'vendor/a.js', 'module.exports = 1;\n');
+    write(cwd, 'vendor/nested/b.js', 'module.exports = 2;\n');
+    // 未跟踪但**不**被忽略：可见那一档在「已跟踪」之外还得覆盖到它
+    write(cwd, 'src/new.ts', 'export const fresh = true;\n');
+    // **整目录未跟踪且未被忽略**——`--others` 那条同样会把它折叠成 `fresh/`，
+    // 于是折叠兜底在「不灰显」这一侧也得成立（继承的是 ignored: false）
+    write(cwd, 'fresh/deep/u.ts', 'export const u = 1;\n');
+    // 二进制与符号链接各一份：只读读文件那条路的两个分支，后者同样指向仓库外
+    writeFileSync(join(cwd, 'logo.png'), binaryBytes('logo'));
+    if (!WINDOWS) {
+      const outside = join(dest, 'outside-secret.txt');
+      writeFileSync(outside, `${OUTSIDE_SECRET}\n`);
+      symlinkSync(outside, join(cwd, 'link-to-outside'));
+      /**
+       * **指向仓库外一个目录**的符号链接。它挡的是与上面那条不同的一件事：`lstat` 只保护
+       * 路径的**最后一段**，中间段照跟不误——`linkdir/secret.txt` 在字面上老实待在仓库内，
+       * 而 `readFile` 会顺着 `linkdir` 走出去。列目录那侧更直接，`readdir` 本来就跟。
+       */
+      const outsideDir = join(dest, 'outside-dir');
+      mkdirSync(outsideDir, { recursive: true });
+      writeFileSync(join(outsideDir, 'secret.txt'), `${OUTSIDE_SECRET}\n`);
+      symlinkSync(outsideDir, join(cwd, 'linkdir'));
+    }
+    repos.ignoredTree = cwd;
   }
 
   // 没生成的仓库不能是 undefined：调用方会拿着它去 spawn,cwd 变成进程当前目录，

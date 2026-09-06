@@ -49,6 +49,14 @@
 - **`--hljs-bg` 保持上游取值**（`#ffffff` / `#0d1117`），没有映射到 `--color-editor-background`。合并主题这件事本身不该顺手改观感；想让代码区底色跟编辑器底色是另一个决定。
 - **门禁只能证明「都走了 `var()`」，证明不了「抄对了颜色」**：`check:css` 断言 hljs 规则里不许出现硬编码颜色、每个 `--hljs-*` 都是双值且都被引用到，但色值本身抄错只能靠人逐条对。
 
+## 文件视图与 `.hljs`
+
+我们那份主题里有一条 `.hljs { color: var(--hljs-fg); background: var(--hljs-bg) }`，它与整份文件一样是 **unlayered** 的。diff2html 把 `hljs` 类加在行容器上，那条规则因此正是 diff 视图代码区底色的来源。
+
+**文件视图的容器不得加这个类。** unlayered 规则在层叠中永远胜过 `@layer utilities`，所以 `class="hljs bg-editor-background"` 里赢的是 `.hljs`——页面上的症状只是「文件视图的底色跟其余部分对不上」（深色下 `#0d1117` 对 `#1f1f1f`），没有任何东西会报错。
+
+不加也不损失什么：15 条 token 规则（`.hljs-keyword`、`.hljs-string` 之类）是**独立选择器**，不挂容器类照样命中，而底色与前景色由 `--color-editor-*` 那对 token 给，与页面其余部分同源。
+
 ## 为什么 `colorScheme` 传 `'light'`
 
 **diff2html 自带的深色方案不用。** 它的深色配色由渲染时挂在容器上的 class 门控：`colorScheme: 'auto'` 输出 `.d2h-auto-color-scheme`，对应规则整块包在一个 `@media (prefers-color-scheme: dark)` 里，读的是**另一套** `--d2h-dark-*` 变量。

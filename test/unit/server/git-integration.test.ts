@@ -5,10 +5,11 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { DiffRequestError, readDiff } from '../../../src/server/git/diff.ts';
+import { readDiff } from '../../../src/server/git/diff.ts';
 import { locateRepo, type RepoInfo, resolveDiffBase } from '../../../src/server/git/repo.ts';
 import { GitError, runGit } from '../../../src/server/git/run.ts';
 import { readStatus } from '../../../src/server/git/status.ts';
+import { WorktreeError } from '../../../src/server/git/worktree.ts';
 import {
   type DiffPayload,
   type FileEntry,
@@ -110,10 +111,8 @@ describe('路径是字面量而不是通配模式(GIT_LITERAL_PATHSPECS)', () =>
   posixOnly('纯模式取不到任何东西——`*` 不该变成一份整仓 diff', async () => {
     // 路径来自 URL query，是外部输入。`path=*` 在通配语义下会让 `git diff -- '*'` 回一份整仓 diff：
     // 300+ 文件的补丁一次性发给浏览器，主线程冻上数秒到数十秒
-    await expect(readDiff(repos.unicodePaths, { path: '*' })).rejects.toThrow(DiffRequestError);
-    await expect(readDiff(repos.unicodePaths, { path: 'docs/*' })).rejects.toThrow(
-      DiffRequestError,
-    );
+    await expect(readDiff(repos.unicodePaths, { path: '*' })).rejects.toThrow(WorktreeError);
+    await expect(readDiff(repos.unicodePaths, { path: 'docs/*' })).rejects.toThrow(WorktreeError);
   });
 });
 
@@ -236,6 +235,18 @@ describe('删除与符号链接——决定「已跟踪 / 未跟踪」的分流�
       expect(patch).not.toContain(OUTSIDE_SECRET);
       expect(patch).toContain('new file mode 120000');
       expect(patch).toContain('outside-secret.txt');
+    },
+  );
+
+  test.skipIf(process.platform === 'win32')(
+    '路径中间那一段是符号链接时同样取不到——`lstat` 只保护最后一段',
+    async () => {
+      // 上一条钉的是「链接自己」，这一条钉的是**穿过链接**：`linkdir/secret.txt` 在字面上
+      // 老老实实待在仓库内（`resolveInRepo` 是纯字面量的），而 `readFile` 会顺着 `linkdir`
+      // 走出去，把仓库外那份内容当成一个新增文件吐回来。挡它的是 realpath 那道
+      await expect(
+        readDiff(repos.ignoredTree, { path: 'linkdir/secret.txt' }),
+      ).rejects.toBeInstanceOf(WorktreeError);
     },
   );
 });

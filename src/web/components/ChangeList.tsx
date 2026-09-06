@@ -38,8 +38,11 @@ function splitForDisplay(path: string): { dir: string; name: string } {
 /**
  * 状态位的**颜色**，同样只是展示。取的是 VS Code `gitDecoration.*` 那套 token，让徽章的颜色
  * 语义与用户在编辑器里看到的一致。深浅两套取值在 token 层翻，这里不出现 `dark:` 变体。
+ *
+ * **导出给文件树共用，不复制一份**：同一个文件在两处必须是同一个颜色，而两份表漂开之后
+ * 页面上只是「树里那个 M 跟列表里那个 M 不一样绿」。
  */
-const CODE_COLORS: Record<StatusCode, string> = {
+export const CODE_COLORS: Record<StatusCode, string> = {
   '.': 'text-description-foreground',
   M: 'text-git-modified',
   T: 'text-git-modified',
