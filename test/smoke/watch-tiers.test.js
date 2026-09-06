@@ -109,8 +109,8 @@ test('自动判定的那一档：node_modules 深层批量写入不刷新，同�
      * **判据是「这批写入之后多出了几个」，不是「一共有几个」**：起监听那一下，Windows 会先冒出
      * 一个事件——`ReadDirectoryChangesW` 建流时会把建流前一刻的写入补报进来，而 `filename` 为
      * null 的事件是**放行**的。它与 `node_modules` 那批写入毫无关系，却把绝对计数顶成 1，读起来
-     * 像「过滤没生效」。**这不是把标准放宽**：下面量的仍然是那 50 次写入引出了几次刷新，只是把
-     * 零点挪到了它们开始之前。「起监听本身之外还有谁在推事件」由下一条用例单独盯。
+     * 像「过滤没生效」。**这不是把标准放宽**：下面量的仍然是那几次写入各自引出了几次刷新，只是
+     * 把零点挪到了它们开始之前。「起监听本身之外还有谁在推事件」由下一条用例单独盯。
      */
     await sleep(QUIET_MS);
     const baseline = sse.count;
@@ -134,14 +134,21 @@ test('自动判定的那一档：node_modules 深层批量写入不刷新，同�
     const write = (name) => writeFileSync(join(deep, name), `module.exports = '${name}';\n`);
 
     /**
-     * **两种写法各量一次，两个数一起报出来再一起断言。**
+     * **写入逐次隔开一个合并窗口，三端一律断言 0。**
      *
-     * 快写一批在 Windows 上有第二种解释：`ReadDirectoryChangesW` 的通知缓冲区被一次突发写满时，
-     * 内核报的是「丢了一批」，Node 由此 emit 一个**没有 filename** 的事件，而那种事件是**刻意放
-     * 行**的。它与「逐段过滤没生效」会给出一模一样的一个事件——合并窗口把 50 次写入本来也压成
-     * 1 个。慢写把两者分开：每次写入之间隔开一个合并窗口，过滤失效时应当逐个漏出来，缓冲区溢出
-     * 则一个都没有。先各记一个数、都打进 diagnostic 再一起断言——这两个数**只有摆在一起才说明
-     * 得了病因**。
+     * 这里曾经还有一路「一口气写 50 个」，已经删掉，**别再加回来**：
+     *
+     * - macOS / Linux 上它是同一条断言的**更弱**形式。合并窗口会把那 50 次压成**一个**事件，于是
+     *   过滤失效时快写只漏出 1 个，而慢写逐个漏出 6 个——慢写发现得了的它都发现得了，反过来不
+     *   成立，它一条独有的形态都没有。
+     * - Windows 上它**分辨不了任何东西**。`ReadDirectoryChangesW` 的通知缓冲区被一次突发写满时，
+     *   内核报的是「丢了一批」而不是具体路径，Node 由此 emit 一个没有 `filename` 的事件，而那种
+     *   事件是**刻意放行**的（见 `design/watch.md` 的已知边界）。它与「逐段过滤没生效」给出的是
+     *   同一个信号，所以那条断言当初只能带一个「Windows 上放宽到 1 次」的上限——**而一个分辨不
+     *   了病因的断言，唯一稳定的产出就是偶发变红**：实测 windows × Node 26 上溢出过 2 次。
+     *
+     * 也就是说，它在能断言的地方是冗余的，在不冗余的地方断言不了。放宽阈值只会让它更晚一点再骗
+     * 人一次，所以整段删掉而不是调大上限。
      */
     const SLOW_WRITES = 6;
     const slowStart = sse.count;
@@ -152,24 +159,8 @@ test('自动判定的那一档：node_modules 深层批量写入不刷新，同�
     await sleep(QUIET_MS);
     const slowDelta = sse.count - slowStart;
 
-    const burstStart = sse.count;
-    for (let i = 0; i < 50; i += 1) write(`burst-${stamp}-${i}.js`);
-    await sleep(QUIET_MS);
-    const burstDelta = sse.count - burstStart;
-
-    t.diagnostic(
-      `往 ${DEEP.join('/')} 写入引出的刷新：慢写 ${SLOW_WRITES} 次 → ${slowDelta} 个；快写 50 次 → ${burstDelta} 个`,
-    );
-    /**
-     * **慢写那一路是判据，三端一律 0**；快写那一路在 Windows 上放宽到最多 1 次（理由见上面那段：
-     * 缓冲区溢出与过滤失效在快写上给出同一个数，**能分辨的只有慢写那一路**）。
-     */
-    const burstCeiling = process.platform === 'win32' ? 1 : 0;
-    assert.deepEqual(
-      { 慢写: slowDelta, 快写: burstDelta > burstCeiling },
-      { 慢写: 0, 快写: false },
-      `${tier} 档：node_modules 深层写入引出了刷新（快写上限 ${burstCeiling}）`,
-    );
+    t.diagnostic(`往 ${DEEP.join('/')} 间隔写入 ${SLOW_WRITES} 次引出的刷新：${slowDelta} 个`);
+    assert.equal(slowDelta, 0, `${tier} 档：node_modules 深层写入引出了刷新——逐段过滤没生效`);
 
     /**
      * **对照组不可省**：没有它，「0 次」只说明什么都没在听——监听整个没起来、SSE 断了、
