@@ -9,30 +9,58 @@ import { observeDiffPanel } from '../state/layout';
 import { activePane, activeTab, loadError, repoState } from '../state/store';
 import { PRODUCT_NAME } from '../state/title';
 import { loadDir, ROOT, refreshTree } from '../state/tree';
-import { BranchStatus } from './BranchStatus';
+import { BRANCH_ICON_PATH, BranchStatus } from './BranchStatus';
 import { ChangeList } from './ChangeList';
 import { DiffView } from './DiffView';
 import { FileTree } from './FileTree';
 import { FileView } from './FileView';
+import { Octicon } from './Octicon';
 import { ThemeToggle } from './ThemeToggle';
 import { WatchBadge } from './WatchBadge';
 
 /**
- * 侧栏那两个 tab。位置对应 VS Code 的 activity bar，但**做成一行文字 tab 而不是一列图标**：
- * 图标栏要再占一列宽，而 320px 里那一列是从文件名身上扣的，两个视图也用不着一整列。
+ * 侧栏那两个 tab。位置对应 VS Code 的 activity bar，**画成两枚紧挨着靠左的图标，但仍是横排
+ * 一行、不切一列竖排**：竖排要再占一列宽，而 320px 里那一列是从文件名身上扣的，两个视图也用
+ * 不着一整列。
+ *
+ * 图形取自 **Octicons**（MIT，Copyright GitHub Inc.），外壳走 `Octicon`：`Changes` 那枚**与状态
+ * 条上分支名前的是同一枚 `git-branch-16`**（对应 VS Code activity bar 上的 Source Control），故
+ * path 直接从 `BranchStatus` 导入、不在这里再抄一份——两份会各自漂，而漂开之后同一个概念在页面
+ * 上就是两个图形。`Files` 那枚是同一套的 `file-directory-16`。**取 Octicons 而不是 `ThemeToggle`
+ * 那套 Heroicons**：16 + fill 与 24 + stroke 是两种版式，同一行里混着摆线宽对不上。
+ *
+ * `label` 不再进 DOM 文本，改作 `aria-label` 与 tooltip：只画图标时它是这个按钮名字的**唯一**
+ * 来源，掉了之后读屏里就是两个无名控件，而页面上什么都看不出来（同 `ThemeToggle`）。
  */
+const FILE_DIRECTORY_ICON_PATH =
+  'M0 2.75C0 1.784.784 1 1.75 1H5c.55 0 1.07.26 1.4.7l.9 1.2a.25.25 0 0 0 .2.1h6.75c.966 0 1.75.784 1.75 1.75v8.5A1.75 1.75 0 0 1 14.25 15H1.75A1.75 1.75 0 0 1 0 13.25Zm1.75-.25a.25.25 0 0 0-.25.25v10.5c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25v-8.5a.25.25 0 0 0-.25-.25H7.5c-.55 0-1.07-.26-1.4-.7l-.9-1.2a.25.25 0 0 0-.2-.1Z';
+
 const TABS = [
-  { id: 'changes', label: 'Changes' },
-  { id: 'files', label: 'Files' },
+  { id: 'changes', label: 'Changes', path: BRANCH_ICON_PATH },
+  { id: 'files', label: 'Files', path: FILE_DIRECTORY_ICON_PATH },
 ] as const;
 
+// **不给 `flex-1`**：两枚各按自身宽度排、紧挨着靠左，平分整栏时选中那条下划线有半栏宽，看着
+// 不像指示器像第二条分隔线。`px-3 py-1.5` 留着当点击热区（约 40×28px 一枚）。`flex` 只为把图标
+// 从行内排版里摘出来（免掉替换元素在基线下方那点空隙），**不写居中类**：按钮的两个方向都由内容
+// 精确撑满，没有多余空间可分，写了只会让人以为这里在补偿什么。
+//
+// 选中那条短线走 `border-editor-foreground`（照 VS Code 经典 Dark+ 的 activity bar 活动边框），
+// **不用 `focus-border`**：后者是「键盘焦点在这里」那件事的颜色，而这一行的 focus-visible 轮廓
+// 正用着它——两处同色时，「选中的是哪个 tab」与「焦点在哪个 tab 上」在页面上化成同一种蓝。
+// 与选中图标本身同色，一枚图标加它底下那条线于是连成一体。
+//
+// **`-mb-px` 让这条边压在容器那条 `border-b` 上**：两条边本来上下相邻而不是重叠（按钮的画在
+// 自己 border box 内、容器的画在其外），于是选中那一段是 1px 前景色 + 1px 分隔线的双线，比未
+// 选中处厚一倍——不报错，只是那条线看着没做细
 const TAB_CLASS =
-  'flex-1 border-b-2 px-3 py-1.5 text-xs font-medium focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus-border';
+  '-mb-px flex border-b px-3 py-1.5 focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus-border';
 
 function SideBarTabs() {
   const active = activeTab.value;
   return (
-    // tablist/tab 三件套：两个按钮控制的是同一片区域，只靠视觉差异说不清这件事
+    // tablist/tab 三件套：两个按钮控制的是同一片区域，只靠视觉差异说不清这件事。
+    // 这一层的 border-b 横贯整栏，选中下划线是画在它上面的一小段
     <div class="flex shrink-0 border-b border-panel-border" role="tablist">
       {TABS.map((tab) => (
         <button
@@ -40,6 +68,8 @@ function SideBarTabs() {
           type="button"
           role="tab"
           aria-selected={active === tab.id}
+          aria-label={tab.label}
+          title={tab.label}
           /**
            * **只改 `activeTab`，绝不碰 `activePane`**：换的是左栏在列什么，不是用户此刻在读
            * 什么——写成「切到 Files 就清空右侧」时页面看着完全正常，只是每瞄一眼目录树就丢掉
@@ -50,11 +80,11 @@ function SideBarTabs() {
           }}
           class={`${TAB_CLASS} ${
             active === tab.id
-              ? 'border-focus-border text-editor-foreground'
+              ? 'border-editor-foreground text-editor-foreground'
               : 'border-transparent text-description-foreground hover:bg-list-hover-background'
           }`}
         >
-          {tab.label}
+          <Octicon path={tab.path} />
         </button>
       ))}
     </div>

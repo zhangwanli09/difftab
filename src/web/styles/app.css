@@ -20,6 +20,22 @@
  * 不符，结果是**工具类静默缺失**（没有报错，只是样式没了）。路径相对本文件所在目录。 */
 @source "../";
 
+/* 可点控件的光标。Tailwind v4 起 preflight 不再把 <button> 的光标改成手型（v3 会），而 UA
+ * 默认是箭头——不写时整页可点的东西悬停起来与一段死文字无异，而页面上没有任何别的地方会不对。
+ *
+ * **这一条落在 @layer base，而不是逐个组件往类名串里贴 `cursor-pointer`**：它撤的正是
+ * preflight（同在 base 层）的一条默认值，同层靠源码顺序胜出；工具类仍在 utilities 层，真要在
+ * 某个按钮上改回箭头照旧压得过。逐处贴的写法每加一个按钮就要有人记得再贴一遍，漏了不报错。
+ *
+ * 页面上的 <button> 全是我们自己的四个：diff2html 渲染出的是 table 与 div，这条命中不到它。
+ * `:not(:disabled)` 是因为手型画在禁用按钮上是句假话——本仓库暂时一个禁用按钮都没有，但这半条
+ * 的成本只有一个选择器。 */
+@layer base {
+  button:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
 /* 设计 token。
  *
  * 命名照搬 VS Code 的颜色 token(`editor.background` → `--color-editor-background`)，取值

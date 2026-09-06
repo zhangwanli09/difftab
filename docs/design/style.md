@@ -94,6 +94,15 @@
 - **第四条的两半各自成立**：`.d2h-code-linenumber` 只出现在 unified 模板里（并排用的是 `-side-`），裸类选择器已经足够精确；并排那半靠 `.d2h-files-diff .d2h-file-side-diff:first-child`，`side-by-side-file-diff` 模板底下**恒定**是左旧右新两个 `.d2h-file-side-diff`、没有别的兄弟节点。写 `border-left` 而不是 `border-left-color: transparent`——**这里的理由与上一条正相反**：行号列是 `box-sizing: border-box` + 固定宽度（unified `7.5em` / 并排 `4em`），去掉左边框不改外框宽度、右边框原地不动，数字又是右对齐（`direction: rtl` + `text-align: right`），页面上零位移；要的就是「这一条不画」，而不是「留着它但看不见」。
 - **四条都不加断言**：失效的症状是文件头、外框、那截留白又出现在页面上，或左沿那条线重新变粗，肉眼可见，不属于门禁要防的那类静默故障。
 
+## 按钮的手型光标只写一条
+
+**Tailwind v4 起 preflight 不再把 `<button>` 的光标改成手型**（v3 会），而 UA 默认是箭头——不管的话整页可点的东西悬停起来与一段死文字无异，而页面上没有任何别的地方会不对，门禁也一条都拦不住。
+
+- **一条 `@layer base { button:not(:disabled) { cursor: pointer } }` 收全部**，不逐个组件往类名串里贴 `cursor-pointer`：它撤的正是 preflight（同在 base 层）的一条默认值，同层胜出靠源码顺序，而本文件排在 `@import "tailwindcss"` 之后。逐处贴的写法每加一个按钮就要有人记得再贴一遍，漏了不报错。
+- **工具类仍压得过它**：`cursor-*` 在 `@layer utilities`，真要给某个按钮改回箭头照旧写得动。
+- **命中范围只有我们自己的按钮**：diff2html 渲染出的是 table 与 div，一个 `<button>` 都没有，所以这条不会漏进那片受「只能改 `--d2h-*`」约束的子树。
+- `:not(:disabled)` 挡的是「手型画在禁用按钮上」这句假话。本仓库暂时一个禁用按钮都没有，留着它的成本只有一个选择器。
+
 ## 行号列需要一个 positioned 祖先
 
 **diff2html 的行号列是 `position: absolute`，滚动容器内部必须有一个 positioned 祖先。** 这与「两侧各自滚」是同一个决定的两半：diff2html 把行号做成绝对定位、偏移量全 auto，靠的是「包含块 = 初始包含块，而滚的就是整个文档」这个前提；我们为了让 SSE 刷新时留住列表侧的滚动位置，把滚动收进了内层的 `overflow-auto` 容器（见 [`web.md`](web.md) 的「页面骨架」），那个前提就不再成立——**包含块在滚动容器之外的绝对定位盒不随该容器的内容滚动**，于是一滚代码行就跑了、整列行号原地不动，页面不报任何错。

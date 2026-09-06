@@ -117,7 +117,7 @@
 | 目录树某一层出错就画那句话（不看手上有没有缓存） | 刷新途中失败是常态（后端重启、dev 代理抖一下），而 `loadDir` 失败只写 `treeErrors`、不动 `treeCache`。先看错误的写法会让一个已经画出来的目录连同它底下展开的一切被一行红字换掉——陈旧的内容比消失的内容有用得多，且下一拍就会被换新 |
 | 树的选中态与变更列表共用一份 | 同一个文件从两处点进去看到的是两样东西（补丁 / 全文），共用一份就得再补一条「这次是从哪点进来的」，而那与 `activePane` 是同一个信息的两处实现 |
 | 监听 `storage` 事件做多标签页同步 | difftab 一个仓库只跑一个实例、正常只有一个标签页，为此接一条跨标签通道是给一个不存在的场景付代价 |
-| 为界面里那几个图标装 `heroicons` / `@heroicons/react` / `@primer/octicons` | 包里是逐图标的组件或 SVG 文件，而这里要的只是几条 path 字符串；两套图形都是 MIT，复制 path 的成本只有一行署名注释。**被排除的是装包，不是用它们的图形**——`ThemeToggle` 的三个图标正是从 Heroicons `24/outline` 的 `computer-desktop` / `sun` / `moon` 逐字抄来的，状态条分支名前那一枚同样逐字抄自 Octicons 的 `git-branch-16`。体积也不构成理由：四条 path 合计约 1 KB，是 JS 明文余量（实测 205.9 KB / 门禁 350 KB）的 0.5% |
+| 为界面里那几个图标装 `heroicons` / `@heroicons/react` / `@primer/octicons` | 包里是逐图标的组件或 SVG 文件，而这里要的只是几条 path 字符串；两套图形都是 MIT，复制 path 的成本只有一行署名注释。**被排除的是装包，不是用它们的图形**——`ThemeToggle` 的三个图标正是从 Heroicons `24/outline` 的 `computer-desktop` / `sun` / `moon` 逐字抄来的，状态条分支名前那一枚同样逐字抄自 Octicons 的 `git-branch-16`（侧栏 `Changes` 那个 tab 与它共用同一条 path），`Files` 那个 tab 是同一套的 `file-directory-16`。体积也不构成理由：五条 path 合计约 1.3 KB，是 JS 明文余量（实测 211.6 KB / 门禁 350 KB）的 0.9% |
 
 ## 样式层叠
 
