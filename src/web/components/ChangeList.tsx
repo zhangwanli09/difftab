@@ -87,7 +87,8 @@ function ConflictBadge({ staged, unstaged }: Pick<FileEntry, 'staged' | 'unstage
 }
 
 // focus-visible 那两个类是键盘可达性的最低档：列表项是 <button>，而 preflight 清掉了
-// UA 默认焦点环。用 focus-border token 画，深浅都跟着翻
+// UA 默认焦点环。用 focus-border token 画，深浅都跟着翻。手型光标不在这里——那是所有按钮
+// 共有的一件事，`styles/app.css` 里有一条 base 层规则统一给
 const ROW_CLASS =
   'flex w-full items-baseline gap-2 px-3 py-1 text-left text-sm focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus-border';
 

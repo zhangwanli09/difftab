@@ -41,8 +41,8 @@ function codeOf(entry: FileEntry | undefined): StatusCode | null {
   return null;
 }
 
-// 与变更列表的 ROW_CLASS 同源（focus-visible 那两个类是键盘可达性的最低档：行是 <button>，
-// 而 preflight 清掉了 UA 默认焦点环）。这里多一个 `gap-1`：三角与名字之间比列表那两段更紧
+// 与变更列表的 ROW_CLASS 同源（focus-visible 那两个类是键盘可达性的最低档，理由写在
+// ChangeList.tsx 那份上）。这里多一个 `gap-1`：三角与名字之间比列表那两段更紧
 const ROW_CLASS =
   'flex w-full items-center gap-1 py-0.5 pr-3 text-left text-sm focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus-border';
 
