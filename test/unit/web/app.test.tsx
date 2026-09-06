@@ -109,15 +109,25 @@ describe('顶栏的形状', () => {
 
 const waitFor = (assert: () => void) => vi.waitFor(assert, { interval: 5 });
 
+// 只画图标，于是 textContent 是空的——名字只能从 aria-label 上找
 const tabOf = (label: string): HTMLButtonElement => {
   const found = [...container.querySelectorAll('[role="tab"]')].find(
-    (node) => node.textContent === label,
+    (node) => node.getAttribute('aria-label') === label,
   );
   if (!found) throw new Error(`没有画出 ${label} 这个 tab`);
   return found as HTMLButtonElement;
 };
 
 describe('侧栏那两个 tab', () => {
+  it('只画图标，名字由 aria-label 给——掉了它这两个就是无名控件，而页面上看不出来', () => {
+    render(<App />, container);
+    const tabs = [...container.querySelectorAll('[role="tab"]')];
+    expect(tabs.map((tab) => tab.getAttribute('aria-label'))).toEqual(['Changes', 'Files']);
+    // 名字不在文本里、图标真的画出来了：两条一起才说明「换成图标」这件事成立
+    expect(tabs.map((tab) => tab.textContent)).toEqual(['', '']);
+    expect(tabs.every((tab) => tab.querySelector('svg') !== null)).toBe(true);
+  });
+
   it('默认停在 Changes 上——工具存在的理由仍是「瞥一眼改了什么」', () => {
     render(<App />, container);
     expect(tabOf('Changes').getAttribute('aria-selected')).toBe('true');
