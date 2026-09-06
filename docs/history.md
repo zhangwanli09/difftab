@@ -13,6 +13,14 @@
 
 ## 发布日志
 
+### 0.2.0（2026-09-06）
+
+- **第一次发 minor，判据是这一版越过了「改动全落在界面版式」那条线**：文件浏览器是 `spec.md` 里一个完整的 P1 功能，带 `/api/tree`、`/api/file` 两个新端点，而 0.1.2 与 0.1.3 收进 patch 的理由恰恰是「不新增接口、只改版式」。CLI 参数、只读承诺与空 `dependencies` 一处没动，所以是 minor 不是 major——0.x 下把 major 留给会推翻只读承诺或改掉 CLI 形状的那类改动。
+- **`git push origin main` 当场被拒：main 在 0.1.3 之后加上了 pull request 规则**，`RELEASING.md` 的第 2 步整条不再成立。**这条报得很响**（`remote rejected … Changes must be made through a pull request`），不属于静默故障，但它把发布从两条命令变成「建分支 → 开 PR → 等 CI → 合并 → 同步 main」五步；清单不改的话下一版还要在发布当场重新想一遍。已改成走 PR，并指定 rebase 合并——squash 会把 README 那个提交与版本号那个提交融成一个，而「一个提交一件事」正是发布提交好读的全部原因。
+- **rebase 合并之后本地 main 与 origin 分叉，`git pull --ff-only` 回 `fatal: Not possible to fast-forward`。** GitHub 会重写它 rebase 过的每个提交的 committer，SHA 因此全变，而**症状长得像刚推上去的两个提交丢了**。判据是 tree 哈希：`git rev-parse HEAD^{tree}` 与 `git rev-parse origin/main^{tree}` 相同即内容一致，此时 `reset --hard origin/main` 是安全的，tag 要打在远端那一份上、不是本地那份将被丢弃的。已进 `RELEASING.md` 的「会咬人的事」——那节因此从七条变成八条。
+- **README 里两个实测数字过期了，而没有任何门禁看得见**：正文写着冷启动约 30ms、bundle gzip 68KB，这一版实测是 42.8ms 与 71KB。`bench:startup` 只管 300ms 上限、`size` 只管体积上限，README 正文里那两个**具体**数字是自由文本，两道门禁都不查。发布前清单里「两份 README 描述这一版实际做了什么」是唯一拦得住它的一条，而它靠人读。
+- **全局安装那条隔版因果第三次照清单走通**（先 `npm rm -g difftab` 再 `pnpm check:global`），发布后四条验收一次过。额外加了一步：对 registry 上那份直接打了 `/api/tree` 与 `/api/file`。文件浏览器是第一次进包，而冒烟只证明它在 CI 构建出的 `dist/` 上活着。
+
 ### 0.1.3（2026-08-30）
 
 - **两条 feat 收进 patch 号，判据是改动全落在界面层**：页面内的明暗开关与并排视图的横向滚动同步都不碰 CLI 参数、HTTP 接口与只读承诺，`dependencies` 依旧为空。0.x 下把 minor 留给会让人重新读一遍 `--help` 的那类改动，这一版不是。
