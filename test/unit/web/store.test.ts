@@ -2,19 +2,30 @@
 // `FileEntry` 的字段，不在前端重新推导 git 语义。这类回归不会让任何东西报错——只是列表里少一类
 // 文件或多一类。
 
+import { effect } from '@preact/signals';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import type { DiffPayload, FileEntry, RepoState } from '../../../src/server/shared/protocol';
+import type {
+  DiffPayload,
+  FileEntry,
+  FilePayload,
+  RepoState,
+} from '../../../src/server/shared/protocol';
 import {
+  activePane,
+  activeTab,
   diffState,
+  fileState,
   groupFiles,
   loadDiff,
   loadError,
   loadState,
+  openFile,
   refresh,
   repoState,
   selectedPath,
   selectFile,
 } from '../../../src/web/state/store';
+import { expandedDirs, loadDir, ROOT, treeCache } from '../../../src/web/state/tree';
 
 const file = (partial: Partial<FileEntry> & { path: string }): FileEntry => ({
   kind: 'tracked',
@@ -529,5 +540,145 @@ describe('refresh（一次 SSE change 之后要重取什么）', () => {
       rename: null,
       payload: text,
     });
+  });
+});
+
+/** 一份最小的 `/api/state` 正文，给下面两个 describe 里那些不关心列表内容的用例用。 */
+const emptyState: RepoState = {
+  repoName: 'demo',
+  branch: { head: 'main', detached: false, upstream: null },
+  files: [],
+  watch: { mode: 'native', tier: 'A' },
+};
+
+describe('文件视图与右侧面板的归属', () => {
+  beforeEach(() => {
+    diffState.value = null;
+    fileState.value = null;
+    activePane.value = 'diff';
+    loadError.value = null;
+    treeCache.value = new Map();
+    expandedDirs.value = new Set();
+  });
+
+  test('在树上点开文件：取它的内容，并把右侧切到文件视图', async () => {
+    const calls = stubJson({ kind: 'text', content: 'hello\n' } satisfies FilePayload);
+
+    openFile('src/app.ts');
+    // **两件必须同时发生**：只取不切的症状是点了没反应（内容取回来了，右边还画着上一份 diff）
+    expect(activePane.value).toBe('file');
+    await vi.waitFor(() => expect(fileState.value?.status).toBe('ready'));
+    expect(query(calls[0] as string).get('path')).toBe('src/app.ts');
+  });
+
+  test('点变更列表把右侧切回 diff——从文件视图点一条变更时右边得跟着动', async () => {
+    activePane.value = 'file';
+    stubJson({ kind: 'text', patch: '' } satisfies DiffPayload);
+
+    selectFile(file({ path: 'a.ts', unstaged: 'M' }));
+    expect(activePane.value).toBe('diff');
+    await vi.waitFor(() => expect(diffState.value?.status).toBe('ready'));
+  });
+
+  test('取不到时错误落在右侧自己的位置上，不写进那条全局错误条', async () => {
+    stubJson({ error: { code: 'not-found', message: 'file no longer exists' } }, 404);
+
+    openFile('gone.ts');
+    await vi.waitFor(() => expect(fileState.value?.status).toBe('error'));
+    expect(loadError.value).toBeNull();
+  });
+
+  test('同一个文件重新取时不回退 loading——一回退高亮好的 DOM 连同滚动位置一起没了', async () => {
+    stubJson({ kind: 'text', content: 'a\n' } satisfies FilePayload);
+    openFile('a.ts');
+    await vi.waitFor(() => expect(fileState.value?.status).toBe('ready'));
+
+    const seen: string[] = [];
+    const stop = effect(() => {
+      if (fileState.value !== null) seen.push(fileState.value.status);
+    });
+    openFile('a.ts');
+    await vi.waitFor(() => expect(fileState.value?.status).toBe('ready'));
+    stop();
+    expect(seen).not.toContain('loading');
+  });
+
+  test('换文件必须清空——留着上一份正文，新标题下会短暂挂着旧内容', async () => {
+    stubJson({ kind: 'text', content: 'a\n' } satisfies FilePayload);
+    openFile('a.ts');
+    await vi.waitFor(() => expect(fileState.value?.status).toBe('ready'));
+
+    openFile('b.ts');
+    expect(fileState.value).toEqual({ status: 'loading', path: 'b.ts' });
+  });
+});
+
+describe('refresh 对树与文件视图那一半', () => {
+  const treeCalls = (calls: readonly string[]) =>
+    calls.filter((url) => url.startsWith('/api/tree')).map((url) => query(url).get('path'));
+
+  beforeEach(() => {
+    diffState.value = null;
+    fileState.value = null;
+    treeCache.value = new Map();
+    expandedDirs.value = new Set();
+    repoState.value = null;
+    loadError.value = null;
+    activeTab.value = 'changes';
+    activePane.value = 'diff';
+  });
+
+  test('不看 Files 那一档时一次 `/api/tree` 都不发——看不见的面板不付钱', async () => {
+    treeCache.value = new Map([[ROOT, []]]);
+    const calls = stubJson(emptyState);
+    await refresh();
+    // 少了这条收窄，瞄过一眼 Files 之后每个 change 都要白跑「1 + 展开层数」个请求、
+    // 每个再起三个 ls-files 子进程——而那一档此刻根本不在屏幕上
+    expect(treeCalls(calls)).toEqual([]);
+  });
+
+  test('看着 Files 时才重取，且只取「根 + 展开着的、且真的取过的」那几层', async () => {
+    activeTab.value = 'files';
+    treeCache.value = new Map([
+      [ROOT, []],
+      ['src', []],
+      ['docs', []],
+    ]);
+    // docs 取过但此刻收起着——用户看不见，重取它只是白发一个请求
+    expandedDirs.value = new Set(['src']);
+    const calls = stubJson(emptyState);
+
+    await refresh();
+    expect(treeCalls(calls).sort()).toEqual(['', 'src']);
+  });
+
+  test('重叠的刷新不被丢弃，且后发的那份说了算', async () => {
+    // 「已经在取就直接不取」的写法会把一次 change 引出的刷新整个丢掉；若它正是 agent 那一串
+    // 写入的最后一个事件，这一层就一直停在旧内容上，直到用户手动收起再展开
+    stubSlowThenFast(
+      { path: ROOT, entries: [{ name: 'old.ts', path: 'old.ts', kind: 'file', ignored: false }] },
+      { path: ROOT, entries: [{ name: 'new.ts', path: 'new.ts', kind: 'file', ignored: false }] },
+    );
+    const slow = loadDir(ROOT, true);
+    const fast = loadDir(ROOT, true);
+    await Promise.all([slow, fast]);
+    expect(treeCache.value.get(ROOT)?.map((item) => item.name)).toEqual(['new.ts']);
+  });
+
+  test('右侧画的是 diff 时不重取那份全文——最多 5MB 的往返，而它此刻不在屏幕上', async () => {
+    fileState.value = { status: 'ready', path: 'a.ts', payload: { kind: 'text', content: 'old' } };
+    const calls = stubJson(emptyState);
+
+    await refresh();
+    expect(calls.some((url) => url.startsWith('/api/file'))).toBe(false);
+  });
+
+  test('右侧画的就是那份全文时才重取——内容变了而树没变是最常见的形态', async () => {
+    activePane.value = 'file';
+    fileState.value = { status: 'ready', path: 'a.ts', payload: { kind: 'text', content: 'old' } };
+    const calls = stubJson(emptyState);
+
+    await refresh();
+    await vi.waitFor(() => expect(calls.some((url) => url.startsWith('/api/file'))).toBe(true));
   });
 });

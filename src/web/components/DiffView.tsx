@@ -16,8 +16,11 @@ import { renderDiff } from '../diff/render';
 import { diffOutputFormat } from '../state/layout';
 import { diffState, type RenameInfo, repoState } from '../state/store';
 
-/** 提示行的统一外观——空态、加载中、错误、二进制、超大文件共用。 */
-function Notice({ children }: { children: ComponentChildren }) {
+/**
+ * 提示行的统一外观——空态、加载中、错误、二进制、超大文件共用。**导出给文件视图共用**：
+ * 两边说的都是「这里没有正文可看」，各写一份的症状是同一类提示在两个面板里内边距不一样。
+ */
+export function Notice({ children }: { children: ComponentChildren }) {
   return <p class="p-4 text-sm text-description-foreground">{children}</p>;
 }
 
@@ -49,9 +52,10 @@ function Patch({ patch }: { patch: string }) {
 
 /**
  * 体积的可读写法。**不能一律按 MB 取整**：`reason: 'lines'` 那一路的文件可能只有几百 KB，按
- * MB 取整会显示「0 MB」。
+ * MB 取整会显示「0 MB」。**导出给文件视图共用**——两份拷贝在第一次提交时就已经漂开过一次
+ * （那边漏掉了下面 `size > 0` 那道）。
  */
-function formatSize(bytes: number): string {
+export function formatSize(bytes: number): string {
   const mb = bytes / 1024 / 1024;
   return mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
@@ -60,15 +64,21 @@ function formatSize(bytes: number): string {
  * 拒绝预览的原因(`reason`)。两个触发口的文案必须不同：行数那一路的体积可能只有几百 KB，单说
  * 「文件过大」会让用户对着一个不大的数字发愣。**具体阈值（5MB / 50,000 行）刻意不写在这里**
  *——它属 server/git 那一侧的判据，复述一遍就是第二份事实来源。
+ *
+ * `verb` 是两个面板唯一的差别：diff 那侧说的是「不预览这份补丁」，文件视图说的是「不显示
+ * 这份正文」。**其余（含 `size > 0` 那道）必须共用**——各写一份时漂开的正是那一道。
  */
-function tooLargeNotice(payload: Extract<DiffPayload, { kind: 'too-large' }>): string {
+export function tooLargeNotice(
+  payload: Extract<DiffPayload, { kind: 'too-large' }>,
+  verb: 'preview' | 'show',
+): string {
   // 体积可能压根取不到：已被删除的文件在工作区已经没有了，后端给的是 0。那时不能照着
   // formatSize 报一个「1 KB」——编一个数出来比不说更糟。两个 reason 都会遇上，判据只写一次
   const size = payload.size > 0 ? formatSize(payload.size) : null;
   if (payload.reason === 'lines') {
-    return size ? `Too many lines to preview (${size} in total).` : 'Too many lines to preview.';
+    return size ? `Too many lines to ${verb} (${size} in total).` : `Too many lines to ${verb}.`;
   }
-  return size ? `File too large to preview (${size}).` : 'File too large to preview.';
+  return size ? `File too large to ${verb} (${size}).` : `File too large to ${verb}.`;
 }
 
 /**
@@ -86,6 +96,15 @@ function RenameNotice({ rename }: { rename: RenameInfo }) {
   );
 }
 
+/** 右侧面板顶上那条路径。**两个面板共用**：它是面板唯一的 chrome，各写一份的症状是两边不一样。 */
+export function PathHeader({ path }: { path: string }) {
+  return (
+    <h2 class="border-b border-panel-border bg-title-bar-background px-4 py-2 font-mono text-sm break-all">
+      {path}
+    </h2>
+  );
+}
+
 function Payload({ payload }: { payload: DiffPayload }) {
   switch (payload.kind) {
     case 'text':
@@ -94,7 +113,7 @@ function Payload({ payload }: { payload: DiffPayload }) {
     case 'binary':
       return <Notice>Binary file — contents are not compared.</Notice>;
     case 'too-large':
-      return <Notice>{tooLargeNotice(payload)}</Notice>;
+      return <Notice>{tooLargeNotice(payload, 'preview')}</Notice>;
   }
 }
 
@@ -117,9 +136,7 @@ export function DiffView() {
 
   return (
     <div>
-      <h2 class="border-b border-panel-border bg-title-bar-background px-4 py-2 font-mono text-sm break-all">
-        {state.path}
-      </h2>
+      <PathHeader path={state.path} />
       {/* 三个状态下都标注：标注属于「选了哪个条目」，与补丁取到没有无关 */}
       {state.rename && <RenameNotice rename={state.rename} />}
       {state.status === 'loading' && <Notice>Loading…</Notice>}

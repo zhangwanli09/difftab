@@ -71,6 +71,8 @@
 | `GET /` | `dist/web` 静态资源 | 固定文件名不加 hash |
 | `GET /api/state` | `{ repoName, branch, files, watch }` | 对应**单次** status 调用 |
 | `GET /api/diff?path=&oldPath=` | `DiffPayload` | 按文件懒加载；`oldPath` 仅重命名条目传 |
+| `GET /api/tree?path=` | `TreePayload` | 文件浏览器的目录树，**按目录懒加载**，一次只回一层；`path` 缺省即仓库根 |
+| `GET /api/file?path=` | `FilePayload` | 单个文件的只读内容；`path` 必填 |
 | `GET /api/events` | SSE | 事件 `change` / `heartbeat`；空闲退出以本端点的连接数判定 |
 | `GET /api/instance` | `{ repoRoot, pid }` | 探活复用**唯一**的消费者（不是给前端的） |
 
@@ -84,6 +86,12 @@
   - **`size` 只用于展示，不是判定依据**，且**可以是 0**——已被删除的文件在工作区没有体积可取。前端据此不显示体积，而不是把 0 四舍五入成「1 KB」：编一个数出来比不说更糟。
 - `InstanceInfo { repoRoot; pid }`——**唯一一个正文里带绝对路径的响应**，与「错误消息不含绝对路径」不冲突：那条防的是把本机目录结构混进面向页面的输出，而这里路径**就是**被问的那件事。能读到它的前提是手里已有本会话 token，而拿着 token 本就能读遍整个仓库的 diff。前端不消费它。
 - `repoName: string`——工作区根目录的 **basename**，用作页面标题里的项目标识。**给的是目录名而不是路径**：basename 是回答「这个标签属于哪个项目」所需的最小的那一份。**不复用 `InstanceInfo.repoRoot`**：让页面去读它等于把上面那条边界作废。**空串的含义是「这个根目录没有 basename」**（`/`、Windows 的盘符根）——后端不为此编一个名字出来，「取不到时显示什么」是展示决定，归前端。
+- `TreeEntry { name; path; kind: 'directory' | 'file'; ignored }` 与 `TreePayload { path; entries }`——`path: ''` 即仓库根。
+  - **`ignored` 由后端给，不由前端推**：它来自「这条是第二次 `ls-files` 出的」这一事实（见 [`git.md`](git.md)），前端手上没有 `.gitignore` 的语义，推不出来也不该推。
+  - **一次只回一层**：整棵树的形状属于前端的展开状态，不属于协议。这与 diff 的按文件懒加载同源——`node_modules` 让一份全量树比整仓 diff 还大。
+- `FilePayload` 为判别联合：`{ kind: 'text', content }` / `{ kind: 'symlink', target }` / `{ kind: 'binary' }` / `{ kind: 'too-large', size, reason }`。
+  - **`symlink` 单独成一支**，不并进 `text`：给的是链接目标字符串而不是目标内容，两者在页面上要说的话不同（「这是一个指向 X 的链接」对「这是 X 的内容」）。
+  - `too-large` 的 `size` / `reason` 与 `DiffPayload` 同一条判据，两个触发口，`size` 单独解释不了拒绝的原因。
 - `WatchState { mode: 'native' | 'polling'; tier: 'A' | 'B' | 'C' }`——降级既可能是 C 档的既定形态、也可能是 A/B 档运行中落到轮询兜底，**前端无从自己推断，必须由后端告知**。
 
 **错误约定**：`{ error: { code, message } }`，`message` **不含绝对路径**。

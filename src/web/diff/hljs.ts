@@ -80,3 +80,28 @@ export function getHljs(): typeof hljs {
 
 /** 注册清单，供单测对着校验（体积门禁是零依赖 JS，读不到这里）。 */
 export const REGISTERED_LANGUAGES = Object.keys(LANGUAGES);
+
+/**
+ * 扩展名 → 语言名的**补漏表**，只装 hljs 自己认不出来的那几个。
+ *
+ * **不要在这里重建一张完整映射**：上面那 22 个模块各自带 `aliases`，`getLanguage()` 会走它
+ * ——`ts` / `tsx` / `jsx` / `mjs` / `cjs` / `py` / `rb` / `rs` / `sh` / `zsh` / `yml` / `md` /
+ * `cc` / `hpp` / `toml` / `svg` / `html` 全都直接命中（实测 38 个候选里 37 个不需要映射）。
+ * 手写一张全表等于把语言清单抄第二遍，而**增删一个模块时那份抄件不会有任何东西提醒你改**。
+ */
+const EXTRA_ALIASES: Record<string, string> = { htm: 'xml' };
+
+/**
+ * 一条路径该用哪个语言高亮。清单在本文件，解析也就该在本文件——放到组件里的话，那张表与它
+ * 依赖的注册清单会隔着两层目录各活各的。
+ *
+ * **必须先 `getLanguage()` 探一下**：`highlight()` 传一个没注册的语言名会**抛**，而文件视图
+ * 那侧没有 diff2html 兜底，异常冒上去炸的是整个面板。取不到一律退回 `plaintext`（它随那 22
+ * 个模块一起注册着，正是为这类兜底）。
+ */
+export function languageOf(path: string): string {
+  const dot = path.lastIndexOf('.');
+  const ext = dot === -1 ? '' : path.slice(dot + 1).toLowerCase();
+  const name = EXTRA_ALIASES[ext] ?? ext;
+  return name !== '' && getHljs().getLanguage(name) ? name : 'plaintext';
+}

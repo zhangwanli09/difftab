@@ -49,9 +49,9 @@
 
 | 改这块 | 动手前读 |
 |---|---|
-| git 封装层、status/diff 解析、二进制与体积闸、git 异常状态 | `docs/design/git.md` |
+| git 封装层、status/diff 解析、二进制与体积闸、git 异常状态、目录树的 `ls-files`、只读读文件 | `docs/design/git.md` |
 | 文件监听、三档策略、自动刷新、轮询兜底 | `docs/design/watch.md` |
-| 前端组件与 signals、界面文案、页面骨架、变更列表、标签页标题 | `docs/design/web.md` |
+| 前端组件与 signals、界面文案、页面骨架、变更列表、侧栏 tab、文件树与文件视图、标签页标题 | `docs/design/web.md` |
 | diff2html 渲染、hljs 清单、版式切换、产物体积 | `docs/design/diff-render.md` |
 | Tailwind token、样式层叠与主题、`--d2h-*` 覆写 | `docs/design/style.md` |
 | CLI 入口与 Node 下限、进程生命周期与单实例、HTTP/SSE 协议、token 与 CSP | `docs/design/server.md` |
@@ -86,10 +86,14 @@
 - numstat 一次可回不止一条记录：**按路径挑、按合计算**，取 `[0]` 会放 6 万行补丁过闸
 - 二进制与行数两道判定在**取补丁之前**；5MB 那道对已跟踪文件卡的是**补丁字节**（取补丁时带 `maxStdoutBytes`），未跟踪那侧才按文件体积
 - diff 按文件懒加载，禁止一次性取全仓 diff
+- **目录树取未跟踪那两条 `ls-files` 必须带 `--directory --no-empty-directory`**——漏了之后被忽略的那条会把 `node_modules` 底下几万条路径全数返回，而 git 照常 exit 0
+- **折叠是折在最高那一层**：兜底判据须为「折叠记录是本层自己**或祖先**」，写成「正好等于本层」时深一层就是个展开后写着 Empty 的目录；兜底读磁盘那条要自己滤掉 `.git`
+- 目录树按目录懒加载（一次一层），只读读文件复用 `diff.ts` 导出的 `MAX_BYTES` / `MAX_LINES`，**禁另写字面量**——两份阈值漂开后同一个文件在两个视图里一个说太大、一个照常渲染
 - 空树哈希硬编码（禁 `hash-object /dev/null`、禁 `mktree`）；`--show-object-format` 非零退出即按 SHA-1
 - 未跟踪文件手工构造 unified diff，禁 `--no-index`
 - **「已跟踪」的判据是 HEAD ∪ index，不是 index**——只查 `ls-files` 会把已暂存的删除误判成未跟踪
 - **未跟踪那条路读磁盘必须 `lstat` 不得 `stat`**——否则一个指向仓库外的符号链接就能把外部文件当作新增文件返回
+- **但 `lstat` 只保护最后一段**：凡是真要落磁盘的路径，字面量校验之外还必须过 `realpath` 那道，否则 `linkdir/secret.txt` 穿过中间那段链接读到仓库外；列目录那侧连最后一段也要展开
 - **进行中的操作在 porcelain 里一行都没有**：判据是 git 目录下的状态文件、按序取第一个命中，rebase 必须先于 merge 判
 - **状态文件一律按 `rev-parse --git-dir` 找，禁拼 `<root>/.git`**——linked worktree 与 submodule 下永远读不到，于是永远标不出操作
 - **冲突的判据是「这条来自 `u` 记录」而不是状态位**——`DD`/`AA` 里一个 `U` 都没有
@@ -118,6 +122,8 @@
 - **滚动容器内部必须有一个 positioned 祖先**（`DiffView` 宿主 div 上的 `relative`）——diff2html 行号列是 `position:absolute`，缺了它一滚代码行走了、整列行号原地钉死
 - **`outputFormat` 的判据量 diff 面板的 border box、不量 content box**（`observe` 与读值两处都得写）——否则滚动条进出让阈值附近两种版式来回重画；量法必须与阈值同住 `state/layout.ts`
 - **变更列表一行的文件名与目录必须同住一个 `truncate` span**（名在前、目录在后）——拆成平级 flex 子项会让两段按底边对齐，页面上只是「看着没对齐」
+- **文件视图的容器不得加 `hljs` 类**——那条规则是 unlayered 的，会压过 Tailwind 的 `bg-editor-background`，症状只是「文件视图底色跟页面对不上」；15 条 token 规则不挂容器类照样生效
+- **切侧栏 tab 不得改 `activePane`**——写成「切到 Files 就清空右侧」时页面看着正常，只是每瞄一眼目录树就丢掉正在读的 diff
 - **`Diff2HtmlUI` 的 `colorScheme` 必须传 `'light'`**——传 `'auto'` 会让深色一条都不生效，而页面只是「深色不太像 VS Code」
 - **界面文案一律英文**（`docs/`、代码注释、测试名仍中文）——冒烟里那条「前端产物 CJK 计数为 0」拦得住，但**后端那侧拦不到**（`sendError` 与各 `*Error` 的字面量）
 - **`@theme` 里没人引用的 token 会被 Tailwind 裁掉**，引用名写错则产物里留下无定义的 `var()`、属性静默变 unset（两者都由 `check:css` 拦）

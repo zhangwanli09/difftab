@@ -8,14 +8,16 @@
 import { computed, signal } from '@preact/signals';
 import {
   type DiffPayload,
-  type ErrorPayload,
   type FileEntry,
+  type FilePayload,
   hasStagedChange,
   hasUnstagedChange,
   isConflicted,
   isUntracked,
   type RepoState,
 } from '../../server/shared/protocol';
+import { getJson, latestWins, toMessage } from './http';
+import { refreshTree } from './tree';
 
 /** `GET /api/state` 的结果。null 表示还没拿到第一份。 */
 export const repoState = signal<RepoState | null>(null);
@@ -64,6 +66,15 @@ export const diffState = signal<DiffRequestState | null>(null);
  */
 export const selectedPath = computed(() => diffState.value?.path ?? null);
 
+/**
+ * `path → 条目`。**建一次，不在每一行里现找**：SSE 每换一份 `files` 数组，文件树上每个可见
+ * 行都会重算自己那份 computed，各自 `find` 一遍就是 O(行数 × 变更数)——300 个变更、200 行
+ * 可见时每个文件系统事件要跑六万次字符串比较，而这条路每次变更都走。
+ */
+export const fileByPath = computed(
+  () => new Map((repoState.value?.files ?? []).map((file) => [file.path, file])),
+);
+
 export type ChangeGroupId = 'conflicted' | 'staged' | 'unstaged' | 'untracked';
 
 export interface ChangeGroup {
@@ -94,47 +105,13 @@ export function groupFiles(files: readonly FileEntry[]): ChangeGroup[] {
   ];
 }
 
-/** 从任意失败里取一句可展示的话。永远返回非空字符串，免得 UI 出现空白的错误条。 */
-function toMessage(cause: unknown): string {
-  return cause instanceof Error && cause.message ? cause.message : 'Unknown error';
-}
-
 /**
- * 失败响应的正文 → 一句话。**不能直接 `res.json()`**：错误正文未必是 JSON。`pnpm dev` 下后
- * 端没起来时，Vite 代理回的是纯文本 500,`json()` 会先抛 SyntaxError，于是错误条上显示的是
- * 「Unexpected token 'E'…」而不是「后端连不上」——真正的原因被解析错误盖掉了。
+ * 「后发的说了算」。SSE 的每个 `change` 事件都会调一次 `loadState()`，而 agent 跑动期间事件
+ * 密集：两次请求重叠时先发的**可能后到**，旧快照就会盖掉新快照，列表停在过期状态直到下一次
+ * 事件——不报错，只是显示的东西不对。判据放在这里而不是留给调用方，是因为调用方没有理由知道
+ * 这件事；**机制则只有 `http.ts` 那一份**，四个加载器共用它。
  */
-function messageFrom(text: string, status: number): string {
-  try {
-    const payload = JSON.parse(text) as Partial<ErrorPayload>;
-    if (payload.error?.message) return payload.error.message;
-  } catch {
-    // 不是 JSON——这条路径本身就是上面说的那种情况
-  }
-  return `Request failed (HTTP ${status}).`;
-}
-
-/**
- * 取一个 JSON 端点，失败即抛一句可展示的话。两个端点共用一份，是因为上面那条「错误正文先当
- * 文本读」的规矩必须只有一处实现：两份拷贝里有一份被「顺手简化」成 `res.json()`，只有那个
- * 端点会退回显示「Unexpected token 'E'…」，而它照样是绿的。
- *
- * 成功那一路仍走 `res.json()`：「未必是 JSON」只对错误正文成立，而 diff 的正文可以到 5MB，
- * 先 `text()` 再 `JSON.parse()` 等于把它在内存里存两份。竞态判据**不在这里**。
- */
-async function getJson<T>(url: string): Promise<T> {
-  const res = await fetch(url, { headers: { Accept: 'application/json' } });
-  if (!res.ok) throw new Error(messageFrom(await res.text(), res.status));
-  return (await res.json()) as T;
-}
-
-/**
- * 已发出的最新一次请求的序号。SSE 的每个 `change` 事件都会调一次 `loadState()`，而 agent
- * 跑动期间事件密集：两次请求重叠时先发的**可能后到**，旧快照就会盖掉新快照，列表停在过期
- * 状态直到下一次事件——不报错，只是显示的东西不对。判据放在这里而不是留给调用方，是因为
- * 调用方没有理由知道这件事。
- */
-let latestRequest = 0;
+const stateTickets = latestWins();
 
 /**
  * 拉一次 `/api/state`。不带任何鉴权参数：token 在生产下由启动 URL 的 302 换成了 HttpOnly
@@ -145,22 +122,22 @@ let latestRequest = 0;
  * 返回 false，而这两种情况下 `repoState` 里留着的都是**上一份**快照。
  */
 export async function loadState(): Promise<boolean> {
-  const ticket = ++latestRequest;
+  const ticket = stateTickets.claim();
   try {
     const state = await getJson<RepoState>('/api/state');
-    if (ticket !== latestRequest) return false;
+    if (!stateTickets.isCurrent(ticket)) return false;
     repoState.value = state;
     loadError.value = null;
     return true;
   } catch (cause) {
-    if (ticket !== latestRequest) return false;
+    if (!stateTickets.isCurrent(ticket)) return false;
     loadError.value = toMessage(cause);
     return false;
   }
 }
 
-/** `loadState` 那套竞态判据的 diff 版。两条请求各有各的序号，互不影响。 */
-let latestDiffRequest = 0;
+/** diff 那一份。三份各有各的计数，互不影响。 */
+const diffTickets = latestWins();
 
 /**
  * 清空右侧：置空 + **作废在途的那一次取 diff**，两件必须同时发生。成对写在这里而不是在调用
@@ -168,7 +145,7 @@ let latestDiffRequest = 0;
  * 没了，那次请求回来照旧写成 `ready`，右侧刚清掉又长回来。
  */
 function clearDiff(): void {
-  latestDiffRequest++;
+  diffTickets.claim();
   diffState.value = null;
 }
 
@@ -182,7 +159,7 @@ function clearDiff(): void {
  *   冻结浏览器主线程数秒到数十秒
  */
 export async function loadDiff(entry: FileEntry): Promise<void> {
-  const ticket = ++latestDiffRequest;
+  const ticket = diffTickets.claim();
   const current = diffState.value;
   const rename = renameOf(entry);
   /**
@@ -199,10 +176,10 @@ export async function loadDiff(entry: FileEntry): Promise<void> {
     if (entry.oldPath) query.set('oldPath', entry.oldPath);
     const payload = await getJson<DiffPayload>(`/api/diff?${query}`);
     // 用户在等待期间点了别的文件——这份结果已经是过期的那一个
-    if (ticket !== latestDiffRequest) return;
+    if (!diffTickets.isCurrent(ticket)) return;
     diffState.value = { status: 'ready', path: entry.path, rename, payload };
   } catch (cause) {
-    if (ticket !== latestDiffRequest) return;
+    if (!diffTickets.isCurrent(ticket)) return;
     diffState.value = { status: 'error', path: entry.path, rename, message: toMessage(cause) };
   }
 }
@@ -216,6 +193,9 @@ export async function loadDiff(entry: FileEntry): Promise<void> {
  * path 不回退 loading」正好让它不闪。
  */
 export function selectFile(entry: FileEntry): void {
+  // 与 `openFile` 对称：点变更列表就把右侧切回 diff。少了这一句，从文件视图点一条变更
+  // 时列表高亮动了而右边纹丝不动——不报错，只是像点空了
+  activePane.value = 'diff';
   void loadDiff(entry);
 }
 
@@ -232,6 +212,21 @@ export function selectFile(entry: FileEntry): void {
  *   **重命名不算消失**：那一行还在左栏列着，跟着它走到新路径上即可
  */
 export async function refresh(): Promise<void> {
+  /**
+   * 树与右侧那份全文**不依赖新列表**，所以不等 `loadState()` 的结果、也不受它失败的影响：
+   * 它们的数据源是工作区本身，而 `loadState()` 失败只说明 status 这一次没取到。
+   *
+   * **但只给看得见的那一半付钱。** 两处都不是白省：树那一次是 `1 + 展开层数` 个请求、每个
+   * 再起三个 `ls-files` 子进程；文件那一次是一次磁盘读加最多 5MB 的 JSON 往返。而 agent
+   * 跑动期间这条路每次文件变更都走一遍。看不见时不取也不会留下陈旧内容——切回 `Files` 由
+   * `App` 那个 tab effect 补一次，而右侧要换成文件视图只有 `openFile()` 一条路，它自己就取。
+   */
+  if (activeTab.value === 'files') refreshTree();
+  const openFile = fileState.value;
+  // **打开着的文件也要重取**，与「打开着的 diff 也要重取」同源：内容变了而树没变是最常见的
+  // 形态，只刷树的话右侧停在旧内容上，而页面看不出任何异样
+  if (openFile !== null && activePane.value === 'file') void loadFile(openFile.path);
+
   if (!(await loadState())) return;
   const path = selectedPath.value;
   if (path === null) return;
@@ -244,4 +239,69 @@ export async function refresh(): Promise<void> {
     files.find((file) => file.path === path) ?? files.find((file) => file.oldPath === path);
   if (entry === undefined) return clearDiff();
   await loadDiff(entry);
+}
+
+/**
+ * 右侧面板此刻在展示哪一种东西。**它与侧栏在列什么是两件事**：切 tab 换的是「左边列什么」，
+ * 不是「用户此刻在读什么」——VS Code 里换侧栏视图同样不会换掉编辑器。写成「切到 Files 就
+ * 清空右侧」时页面看着完全正常，只是每瞄一眼目录树就丢掉正在读的那份 diff。
+ */
+export const activePane = signal<'diff' | 'file'>('diff');
+
+/**
+ * 侧栏此刻列的是哪一档。默认 `changes`——工具存在的理由仍是「瞥一眼改了什么」，目录树是顺带
+ * 能做到的第二件事。**不进 `localStorage`**：跨会话保持的偏好目前只有主题一份，加第二份之前
+ * 先想清楚它是不是也该有那一节（见 `theme.ts`）。
+ */
+export const activeTab = signal<'changes' | 'files'>('changes');
+
+/**
+ * 只读文件内容的请求状态。形状与 `DiffRequestState` 逐字同构，理由也一样：三态显式建模而不是
+ * 「payload + 一个 loading 布尔」，每一态都带着 `path`，渲染前因此能确认「这份结果属于当前
+ * 打开的文件」——写错的症状是**在 A 文件的标题下显示 B 文件的内容**，不报错，只是不对。
+ */
+export type FileRequestState =
+  | { status: 'loading'; path: string }
+  | { status: 'ready'; path: string; payload: FilePayload }
+  | { status: 'error'; path: string; message: string };
+
+/** null 表示还没在树上点过任何文件。 */
+export const fileState = signal<FileRequestState | null>(null);
+
+/** 只读全文那一份。 */
+const contentTickets = latestWins();
+
+/**
+ * 取一个文件的只读全文。
+ *
+ * **同一个文件重新取时不回退到 loading 态**，与 `loadDiff` 一字不差：一回退，渲染那棵子树整个
+ * 卸载，高亮好的 DOM 连同滚动位置一起没了。每个 SSE `change` 事件都会走这里。
+ */
+export async function loadFile(path: string): Promise<void> {
+  const ticket = contentTickets.claim();
+  if (fileState.value?.status !== 'ready' || fileState.value.path !== path) {
+    fileState.value = { status: 'loading', path };
+  }
+  try {
+    const query = new URLSearchParams({ path });
+    const payload = await getJson<FilePayload>(`/api/file?${query}`);
+    // 用户在等待期间点了别的文件——这份结果已经是过期的那一个
+    if (!contentTickets.isCurrent(ticket)) return;
+    fileState.value = { status: 'ready', path, payload };
+  } catch (cause) {
+    if (!contentTickets.isCurrent(ticket)) return;
+    fileState.value = { status: 'error', path, message: toMessage(cause) };
+  }
+}
+
+/**
+ * 在树上点开一个文件：取它的内容，并**把右侧切到文件视图**。两件必须同时发生——只取不切的
+ * 症状是点了没反应（内容取回来了，右边还画着上一份 diff）。
+ *
+ * 与 `selectFile` 分开而不是合成一个：同一个文件从两处点进去看到的是两样东西（补丁 / 全文），
+ * 合成一个就得再补一条「这次是从哪点进来的」，而那与 `activePane` 是同一个信息的两处实现。
+ */
+export function openFile(path: string): void {
+  activePane.value = 'file';
+  void loadFile(path);
 }

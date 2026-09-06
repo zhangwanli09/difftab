@@ -10,11 +10,18 @@
 // 能自动化的是形状，「谁先被裁」归肉眼。
 
 import { render } from 'preact';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RepoState } from '../../../src/server/shared/protocol';
 import { App } from '../../../src/web/components/App';
-import { diffState, repoState } from '../../../src/web/state/store';
+import {
+  activePane,
+  activeTab,
+  diffState,
+  fileState,
+  repoState,
+} from '../../../src/web/state/store';
 import { PRODUCT_NAME } from '../../../src/web/state/title';
+import { expandedDirs, ROOT, treeCache, treeErrors } from '../../../src/web/state/tree';
 
 const stateWith = (repoName: string): RepoState => ({
   repoName,
@@ -29,6 +36,11 @@ beforeEach(() => {
   document.body.innerHTML = '';
   container = document.createElement('div');
   document.body.appendChild(container);
+  // `Files` 那一档挂载时会去取根那一层——用例里不需要真发请求
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(() => new Promise(() => {})),
+  );
 });
 
 afterEach(() => {
@@ -36,6 +48,13 @@ afterEach(() => {
   // signals 活在组件树之外，不清就会漏进下一个用例
   repoState.value = null;
   diffState.value = null;
+  fileState.value = null;
+  activeTab.value = 'changes';
+  activePane.value = 'diff';
+  treeCache.value = new Map();
+  treeErrors.value = new Map();
+  expandedDirs.value = new Set();
+  vi.unstubAllGlobals();
 });
 
 const header = () => container.querySelector('header');
@@ -85,5 +104,85 @@ describe('顶栏的形状', () => {
   it('第一份 state 还没到时开关也在——它不依赖仓库状态', () => {
     render(<App />, container);
     expect(header()?.querySelectorAll('button')).toHaveLength(1);
+  });
+});
+
+const waitFor = (assert: () => void) => vi.waitFor(assert, { interval: 5 });
+
+const tabOf = (label: string): HTMLButtonElement => {
+  const found = [...container.querySelectorAll('[role="tab"]')].find(
+    (node) => node.textContent === label,
+  );
+  if (!found) throw new Error(`没有画出 ${label} 这个 tab`);
+  return found as HTMLButtonElement;
+};
+
+describe('侧栏那两个 tab', () => {
+  it('默认停在 Changes 上——工具存在的理由仍是「瞥一眼改了什么」', () => {
+    render(<App />, container);
+    expect(tabOf('Changes').getAttribute('aria-selected')).toBe('true');
+    expect(tabOf('Files').getAttribute('aria-selected')).toBe('false');
+  });
+
+  it('切到 Files 换的是左栏列什么', async () => {
+    repoState.value = stateWith('demo');
+    render(<App />, container);
+    expect(container.querySelector('nav')?.textContent).toContain('Working tree clean');
+
+    tabOf('Files').click();
+    // 树那一档还没取到第一层，画的是 Loading…
+    await waitFor(() => expect(tabOf('Files').getAttribute('aria-selected')).toBe('true'));
+    expect(container.querySelector('nav')?.textContent).not.toContain('Working tree clean');
+  });
+
+  it('**切 tab 不动右侧面板**——每瞄一眼目录树就丢掉正在读的 diff 是不能接受的', async () => {
+    diffState.value = {
+      status: 'ready',
+      path: 'src/app.ts',
+      rename: null,
+      payload: { kind: 'binary' },
+    };
+    render(<App />, container);
+    expect(container.querySelector('section')?.textContent).toContain('Binary file');
+
+    tabOf('Files').click();
+    await waitFor(() => expect(tabOf('Files').getAttribute('aria-selected')).toBe('true'));
+    expect(activePane.value).toBe('diff');
+    expect(container.querySelector('section')?.textContent).toContain('Binary file');
+  });
+
+  it('右侧画哪一个由 activePane 定，与停在哪个 tab 上无关', async () => {
+    fileState.value = { status: 'ready', path: 'a.ts', payload: { kind: 'binary' } };
+    activePane.value = 'file';
+    render(<App />, container);
+    // 侧栏还停在 Changes 上，右边已经是文件视图了——两者本就不是一回事
+    await waitFor(() =>
+      expect(container.querySelector('section')?.textContent).toContain(
+        'Binary file — contents are not shown.',
+      ),
+    );
+    expect(tabOf('Changes').getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('切回 Files 时把树刷一遍——不看那一档时 SSE 不重取它，回来就得补上', async () => {
+    const fetchMock = vi.fn((_url: string) => new Promise(() => {}));
+    vi.stubGlobal('fetch', fetchMock);
+    // 已经取过根那一层：`loadDir` 自带「取过就不再取」，所以真去发请求的只能是 refreshTree
+    treeCache.value = new Map([[ROOT, []]]);
+    render(<App />, container);
+
+    tabOf('Files').click();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(fetchMock.mock.calls[0]?.[0]).toContain('/api/tree');
+  });
+
+  it('状态条在两个 tab 下都留着——它说的是仓库怎么样，与左栏列什么无关', async () => {
+    repoState.value = stateWith('demo');
+    render(<App />, container);
+    expect(container.querySelector('footer')?.textContent).toContain('main');
+
+    tabOf('Files').click();
+    await waitFor(() => expect(tabOf('Files').getAttribute('aria-selected')).toBe('true'));
+    expect(container.querySelector('footer')?.textContent).toContain('main');
   });
 });

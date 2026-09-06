@@ -325,7 +325,27 @@ export async function runFullFlow(cwd, { env } = {}) {
       if (file.oldPath) query.set('oldPath', file.oldPath);
       diffs.push(await authedGet(server.port, server.token, `/api/diff?${query}`));
     }
-    return { cwd, state, files, diffs, stderr: server.stderr };
+
+    /**
+     * 文件浏览器那两条路也要走一遍——**只读主门禁的覆盖面等于本函数打过的端点**：新增一个
+     * 端点却不把它加进来，门禁不会红，只是那条路上的 git 调用一次都没被看过。
+     *
+     * 根一层 + 里面每个目录各展开一层（不递归到底：那会把 `node_modules` 那类折叠目录整棵走
+     * 完，而这里要的只是「这条路跑得通、且只发了白名单里的命令」）；文件那侧同样每个都点一遍。
+     */
+    const root = await authedGet(server.port, server.token, '/api/tree');
+    const trees = [root];
+    const fileReads = [];
+    for (const entry of JSON.parse(root.body).entries ?? []) {
+      const query = new URLSearchParams({ path: entry.path });
+      if (entry.kind === 'directory') {
+        trees.push(await authedGet(server.port, server.token, `/api/tree?${query}`));
+      } else {
+        fileReads.push(await authedGet(server.port, server.token, `/api/file?${query}`));
+      }
+    }
+
+    return { cwd, state, files, diffs, trees, fileReads, stderr: server.stderr };
   } finally {
     await server.stop();
   }

@@ -3,52 +3,11 @@
 // **禁止一次性获取或渲染全仓 diff**——agent 单次改 300+ 文件是常态，整仓 diff 会
 // 冻结浏览器主线程数秒到数十秒，同时拖垮冷启动指标。
 
-import { lstat, readFile, readlink } from 'node:fs/promises';
-import { isAbsolute, relative, resolve, sep } from 'node:path';
+import { lstat } from 'node:fs/promises';
 import type { DiffPayload } from '../shared/protocol.ts';
 import { resolveDiffBase } from './repo.ts';
 import { GitError, runGit, runGitStrict } from './run.ts';
-
-/**
- * 超过这个字节数只提示、不预览。**两条路量的东西不同，但量的都是「前端要吃下多少
- * 字节」**：未跟踪那一侧整份文件就是补丁（量文件还省得把它读进来），已跟踪那一侧补丁只
- * 含改动与上下文，所以量补丁本身（见 `trackedDiff`）。
- */
-const MAX_BYTES = 5 * 1024 * 1024;
-
-/**
- * 行数上限。体积阈值挡不住另一头：超长行数的窄文件体积不大，但逐行构造 diff 与前端渲染
- * 同样会卡。已跟踪那一侧数的是**改动行数**（numstat 的加 + 减），未跟踪数的是文件行数。
- */
-const MAX_LINES = 50_000;
-
-export type DiffErrorCode = 'invalid-path' | 'not-found';
-
-export class DiffRequestError extends Error {
-  readonly code: DiffErrorCode;
-  constructor(code: DiffErrorCode, message: string) {
-    super(message);
-    this.name = 'DiffRequestError';
-    this.code = code;
-  }
-}
-
-/**
- * 把请求里的仓库相对路径落到磁盘上，并保证它没有走出仓库。路径来自 URL query，是外部
- * 输入：`git diff -- <pathspec>` 自身受仓库边界约束，但未跟踪文件那条路要**直接读磁盘**，
- * 没有这道检查就是一个路径穿越。
- */
-export function resolveInRepo(root: string, path: string): string {
-  if (!path || isAbsolute(path) || path.includes('\0')) {
-    throw new DiffRequestError('invalid-path', 'invalid path');
-  }
-  const abs = resolve(root, path);
-  const rel = relative(root, abs);
-  if (rel === '' || rel.startsWith('..') || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
-    throw new DiffRequestError('invalid-path', 'invalid path');
-  }
-  return abs;
-}
+import { inspectFile, MAX_BYTES, MAX_LINES, resolveInRepo, WorktreeError } from './worktree.ts';
 
 /** `-z` 输出里是否原样出现这条路径。 */
 function lists(output: string, path: string): boolean {
@@ -205,7 +164,7 @@ async function trackedDiff(
   }
   // 非零退出在这里没有第二种解释（路径不存在、基准无效都属于坏请求）
   if (result.code !== 0) {
-    throw new DiffRequestError('not-found', 'no diff available for this path');
+    throw new WorktreeError('not-found', 'no diff available for this path');
   }
   return { kind: 'text', patch: result.stdout };
 }
@@ -225,54 +184,39 @@ function newFileHeader(path: string, mode: string): string[] {
  * `git diff --no-index`——它依赖 `/dev/null` 作为对比端，Windows 上不可移植。
  */
 export async function untrackedDiff(root: string, path: string): Promise<DiffPayload> {
-  const abs = resolveInRepo(root, path);
+  // 分类链在 `worktree.ts`：边界、`lstat` 而非 `stat`、两道闸、NUL 探测都归它，这里只把
+  // 结果翻译成补丁。两份分类各写一遍时，行数口径已经在第一次提交里就差了一
+  const file = await inspectFile(root, path);
 
-  let info: Awaited<ReturnType<typeof lstat>>;
-  try {
-    // **必须是 lstat 而不是 stat**：未跟踪的符号链接照样进变更列表(`git status -uall`
-    // 报 `? <链接>`)，而 stat 跟随链接——resolveInRepo 校验的是**链接自身**的路径，读到
-    // 的却会是链接目标，于是一个指向 /etc/passwd 的链接就能把仓库外的内容当新增文件吐出去
-    info = await lstat(abs);
-  } catch {
-    throw new DiffRequestError('not-found', 'file no longer exists');
+  switch (file.kind) {
+    // git 对符号链接给的是 mode 120000，正文是**链接目标字符串本身**、不带末尾换行（已实测）
+    case 'symlink':
+      return {
+        kind: 'untracked-text',
+        patch: `${[
+          ...newFileHeader(path, '120000'),
+          '@@ -0,0 +1 @@',
+          `+${file.target}`,
+          '\\ No newline at end of file',
+        ].join('\n')}\n`,
+      };
+    case 'binary':
+    case 'too-large':
+      return file;
+    case 'text':
+      break;
   }
 
-  // 顺带也是正确的语义：git 对符号链接给的是 mode 120000，正文是**链接目标字符串
-  // 本身**、不带末尾换行（已实测），而不是目标文件的内容
-  if (info.isSymbolicLink()) {
-    const target = await readlink(abs);
-    const patch = [
-      ...newFileHeader(path, '120000'),
-      '@@ -0,0 +1 @@',
-      `+${target}`,
-      '\\ No newline at end of file',
-    ].join('\n');
-    return { kind: 'untracked-text', patch: `${patch}\n` };
-  }
-
-  if (!info.isFile()) throw new DiffRequestError('invalid-path', 'not a regular file');
-  if (info.size > MAX_BYTES) return { kind: 'too-large', size: info.size, reason: 'size' };
-
-  const buffer = await readFile(abs);
-  // 已跟踪那一侧的二进制判定以 `git diff --numstat` 为准(git 自身含 .gitattributes 的
-  // 判定，比启发式准确)；只有未跟踪文件才走 NUL 字节探测
-  if (buffer.includes(0)) return { kind: 'binary' };
-
-  const text = buffer.toString('utf8');
-  const endsWithNewline = text.endsWith('\n');
-  // `''.split('\n')` 是 `['']` 而不是 `[]`——不特判的话空文件会产出一个
-  // 「一行空内容 + 末尾无换行」的假 hunk
-  const lines = text === '' ? [] : text.split('\n');
-  if (endsWithNewline) lines.pop();
-  // 体积没超、行数超了——`reason` 区分的就是这条路径：文件可能只有几百 KB，
-  // 光把体积报给前端解释不了为什么不预览
-  if (lines.length > MAX_LINES) return { kind: 'too-large', size: info.size, reason: 'lines' };
-
-  const head = newFileHeader(path, info.mode & 0o111 ? '100755' : '100644');
-  if (lines.length === 0) {
+  const head = newFileHeader(path, file.executable ? '100755' : '100644');
+  if (file.lines === 0) {
     // 空文件：git 自己也不输出 hunk
     return { kind: 'untracked-text', patch: `${head.join('\n')}\n` };
   }
+
+  const text = file.buffer.toString('utf8');
+  const endsWithNewline = text.endsWith('\n');
+  const lines = text.split('\n');
+  if (endsWithNewline) lines.pop();
   const body = lines.map((line) => `+${line}`);
   if (!endsWithNewline) body.push('\\ No newline at end of file');
 
@@ -286,9 +230,10 @@ export interface DiffQuery {
 }
 
 export async function readDiff(root: string, query: DiffQuery): Promise<DiffPayload> {
-  // 先确认路径本身合法，再决定走哪条路——两条路都要用到它
-  const abs = resolveInRepo(root, query.path);
-  if (query.oldPath) resolveInRepo(root, query.oldPath);
+  // 先确认路径本身合法，再决定走哪条路。`follow: false` 与读文件那侧同一把钥匙——
+  // 这里只用 `abs` 去 lstat 取展示用的体积，最后一段照样不跟随
+  const { abs } = await resolveInRepo(root, query.path, { follow: false });
+  if (query.oldPath) await resolveInRepo(root, query.oldPath, { follow: false });
 
   // 基准与 index 查询彼此不依赖，并发跑：串行等于把两次进程启动开销直接叠加，而**每条
   // `/api/diff` 都要付**。基准在一次请求里只解析一次、两条分支共用，这不是缓存
