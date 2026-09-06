@@ -37,14 +37,17 @@ Running it again in the same repository reuses the running instance.
 - **Diffs, lazily** — click a file to load its patch, rendered by
   [diff2html](https://diff2html.xyz/) + highlight.js in a VS Code-like theme, side by side
   until the pane gets too narrow.
+- **File tree** — a second sidebar tab browses the whole repository rather than only what
+  changed: tracked, untracked and ignored files (the ignored ones dimmed), loaded one
+  directory at a time. Click any file to read it, highlighted by the same theme.
 - **Branch status** — branch name, ahead/behind counts, "no upstream", detached HEAD, and
   an in-progress rebase / merge / cherry-pick / revert / bisect / `git am`.
 - **Auto-refresh** — a file watcher pushes changes over SSE, falling back to polling where
   recursive watching would exhaust the inotify quota (and saying so in the UI).
 - **Exits on its own** — 45 seconds after the last tab closes.
-- **Cheap to run** — about 30 ms from launch to a listening server, well inside the 300 ms
+- **Cheap to run** — about 40 ms from launch to a listening server, well inside the 300 ms
   budget CI enforces on every commit across nine Node × OS combinations; the JS bundle is
-  68 KB gzipped.
+  71 KB gzipped.
 
 Empty repositories, interrupted rebases, linked worktrees, submodules, binary and >5 MB
 files, renames, and paths with spaces, quotes, CJK or emoji are handled explicitly.
