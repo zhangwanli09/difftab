@@ -21,7 +21,7 @@ export function Icon({
   class: className,
 }: {
   icon: LucideIcon;
-  /** 渲染尺寸（px）。默认 16，只有文件树那枚展开三角按 12 画。 */
+  /** 渲染尺寸（px）。默认 16；状态条那枚按 14、文件树那枚展开三角按 12，各自跟着同一行的字号收。 */
   size?: number;
   class?: string;
 }) {
