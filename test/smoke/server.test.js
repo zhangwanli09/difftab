@@ -306,17 +306,39 @@ test('/api/tree 一次只回一层，被忽略的整目录折叠成一条并打�
   // 更深处同样答得出：git 折叠在**最高**那一层，问 vendor/nested 回的仍是 `vendor/`。
   // 兜底判据只认「正好等于本层」时，这一层会两手空空地回来——页面上是个写着 Empty 的目录
   const nested = JSON.parse((await onIgnoredTree(`/api/tree?${q('vendor/nested')}`)).body);
+  assert.deepEqual(nested.entries.map((entry) => [entry.name, entry.kind, entry.ignored]).sort(), [
+    ['b.js', 'file', true],
+    ['deeper', 'directory', true],
+  ]);
+
+  // **再深一层**：`--ignored` 那条在这里以 `internal error - directory entry not superset of
+  // prefix` fatal，靠「非零退出就把 pathspec 退到第一段重问一次」接住。没有那道退让时端点回
+  // 500，页面上是那一层写着一行 `git ls-files … failed (exit)`；深度 ≤ 2 恒安全，所以上面
+  // 那两条一条都拦不住它
+  const deeper = await onIgnoredTree(`/api/tree?${q('vendor/nested/deeper')}`);
+  assert.equal(deeper.status, 200, `被忽略那一片的第三层没回 200：${deeper.body.slice(0, 200)}`);
   assert.deepEqual(
-    nested.entries.map((entry) => [entry.name, entry.kind, entry.ignored]),
-    [['b.js', 'file', true]],
+    JSON.parse(deeper.body).entries.map((entry) => [entry.name, entry.kind, entry.ignored]),
+    [['c.js', 'file', true]],
   );
 
   // 整目录未跟踪且**未被忽略**时同样会折叠，那一侧继承的必须是「不灰显」
   assert.equal(byName.get('fresh')?.ignored, false);
   const fresh = JSON.parse((await onIgnoredTree(`/api/tree?${q('fresh/deep')}`)).body);
+  assert.deepEqual(fresh.entries.map((entry) => [entry.name, entry.kind, entry.ignored]).sort(), [
+    ['deeper', 'directory', false],
+    ['u.ts', 'file', false],
+  ]);
+  // 不灰显那一侧的第三层：fatal 只出在 `--ignored` 那条上，这一侧深多少层都答得出
+  const freshDeeper = await onIgnoredTree(`/api/tree?${q('fresh/deep/deeper')}`);
+  assert.equal(
+    freshDeeper.status,
+    200,
+    `未忽略那一侧的第三层没回 200：${freshDeeper.body.slice(0, 200)}`,
+  );
   assert.deepEqual(
-    fresh.entries.map((entry) => [entry.name, entry.kind, entry.ignored]),
-    [['u.ts', 'file', false]],
+    JSON.parse(freshDeeper.body).entries.map((entry) => [entry.name, entry.kind, entry.ignored]),
+    [['v.ts', 'file', false]],
   );
 });
 

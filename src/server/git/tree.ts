@@ -6,7 +6,7 @@
 
 import { readdir } from 'node:fs/promises';
 import type { TreeEntry, TreePayload } from '../shared/protocol.ts';
-import { runGitStrict } from './run.ts';
+import { GitError, runGitStrict } from './run.ts';
 import { resolveInRepo, WorktreeError } from './worktree.ts';
 
 /**
@@ -65,10 +65,46 @@ export async function readTree(root: string, dir: string): Promise<TreePayload> 
   // `--` 后面那一段仍受封装层的 GIT_LITERAL_PATHSPECS=1 约束，而字面量 pathspec 保留
   // 前导目录匹配：`-- src` 照样匹配 src/ 底下的一切
   const scope = path === '' ? [] : ['--', path];
+  /**
+   * **两条 `--others` 照旧按本层完整路径问，只有 git 自己失败了才退到第一段重问一次。**
+   *
+   * 要它是因为深处那一层会**直接 fatal**（`internal error - directory entry not superset of
+   * prefix`，exit 128）：git 拿全部 pathspec 的公共前导目录当前缀（`a/b/c` 截到最后一个 `/`，
+   * 得 `a/b/`），而 `--ignored` 那条报的是**排除规则命中的那一层**（`.gitignore` 里的
+   * `vendor/`）、与 pathspec 有多深无关——吐目录条目之前那道断言要求前缀不比条目长。于是
+   * **被忽略的那一片里深度 ≥ 3 的那一层必炸，深度 ≤ 2 恒安全**（前缀最长就是 `a/`，正好等于
+   * 最短的那条记录）。`-C` 进那个目录、pathspec 带尾斜杠都绕不过；第一段不含 `/`，前缀因此
+   * 恒为空，断言永远成立。页面上炸出来的样子是那一层写着一行 `git ls-files … failed (exit)`。
+   *
+   * **但第一段只能当兜底，不能当默认**——放宽 pathspec 会静默改掉另外两件事的答案：
+   *
+   * - **被忽略的那一片嵌在一个未跟踪目录里时，放宽之后 `--ignored` 那条一条都不回**（实测：
+   *   `u/` 整个未跟踪、`u/ig/` 被忽略，问 `-- u/ig` 回 `u/ig/`，问 `-- u` 回空）。那一层于是
+   *   继承「不灰显」，页面上只是它不再灰了；
+   * - **`?path=<未跟踪目录里的一个文件>` 会从 400 变成 500**：窄 pathspec 下 git 吐的是这个
+   *   文件自己（下面据此判 `selfKind === 'file'`），放宽之后它被折叠进 `a/`，于是没人认出这是
+   *   坏请求，兜底拿一个普通文件去 `readdir`，以 `ENOTDIR` 收场。
+   *
+   * 所以退让只发生在 git 已经答不出东西的那一刻，代价范围也就限死在「本来是个 500」的那一层。
+   * 重问一次拿到的是折叠记录，之后走的是下面读一层磁盘的兜底——折叠层以下 git 本就答不出内容。
+   *
+   * 判据用「非零退出」而不是去比对那句 fatal 的字面量：这两条调用是只读列举，非零退出没有第二
+   * 种解释，而按消息匹配要赌它逐字不变。重问那次再失败就把**原来那个**错误抛出去。
+   */
+  const firstSlash = path.indexOf('/');
+  const runOthers = (args: readonly string[]) =>
+    runGitStrict([...args, ...scope], root).catch((cause: unknown) => {
+      // 根那一层与只有一段的那一层退无可退：第一段就是本层自己。`missing`（git 不在 PATH）
+      // 与 `overflow`（stdout 超限）也不该重问——前者重问一样没有 git，后者放宽只会更大
+      if (!(cause instanceof GitError) || cause.kind !== 'exit' || firstSlash === -1) throw cause;
+      return runGitStrict([...args, '--', path.slice(0, firstSlash)], root).catch(() => {
+        throw cause;
+      });
+    });
   const [cached, others, ignoredOut] = await Promise.all([
     runGitStrict([...CACHED_ARGS, ...scope], root),
-    runGitStrict(['ls-files', ...OTHERS_ARGS, '--others', ...scope], root),
-    runGitStrict(['ls-files', ...OTHERS_ARGS, '--others', '--ignored', ...scope], root),
+    runOthers(['ls-files', ...OTHERS_ARGS, '--others']),
+    runOthers(['ls-files', ...OTHERS_ARGS, '--others', '--ignored']),
   ]);
 
   const prefix = path === '' ? '' : `${path}/`;

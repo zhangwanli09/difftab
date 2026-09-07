@@ -80,13 +80,21 @@ describe('readTree', () => {
     // 本层」的话，这一条既不相等、又过不了 startsWith，这一层于是两手空空——页面上就是一个
     // 展开后写着 Empty 的目录，而里面明明有东西
     const entries = byName(await readTree(root, 'vendor/nested'));
-    expect([...entries.keys()]).toEqual(['b.js']);
+    expect([...entries.keys()].sort()).toEqual(['b.js', 'deeper']);
     expect(entries.get('b.js')).toEqual({
       name: 'b.js',
       path: 'vendor/nested/b.js',
       kind: 'file',
       ignored: true,
     });
+  });
+
+  test('被忽略那一片的第三层：pathspec 给完整路径时 git 直接 fatal，只能给第一段', async () => {
+    // 靠「非零退出就把 pathspec 退到第一段重问一次」接住。**深度 ≤ 2 恒安全**，所以上面那条
+    // 只到 `vendor/nested` 的用例一条都证伪不了
+    const entries = byName(await readTree(root, 'vendor/nested/deeper'));
+    expect([...entries.keys()]).toEqual(['c.js']);
+    expect(entries.get('c.js')?.ignored).toBe(true);
   });
 
   test('一层只回直接子项——更深处的路径只贡献它的第一段', async () => {
@@ -114,6 +122,31 @@ describe('readTree', () => {
       kind: 'file',
       ignored: false,
     });
+  });
+
+  test('不灰显那一侧深多少层都答得出——fatal 只出在 `--ignored` 那条上', async () => {
+    // 不带 `--ignored` 的那条从 pathspec 处开始遍历，最高只折叠到 pathspec 自己，永远不比
+    // 前缀短，所以上一条那个 fatal 在这一侧炸不起来
+    const entries = byName(await readTree(root, 'fresh/deep/deeper'));
+    expect([...entries.keys()]).toEqual(['v.ts']);
+    expect(entries.get('v.ts')?.ignored).toBe(false);
+  });
+
+  test('被忽略的一片嵌在未跟踪目录里时照样灰显——退到第一段只能当兜底', async () => {
+    // `untracked/` 整个未跟踪、`untracked/ig/` 被忽略。把 pathspec 无条件退到第一段的话，
+    // `--ignored` 那条一条都不回，这一片于是继承成「不灰显」，页面上只是它不再灰了
+    const inside = byName(await readTree(root, 'untracked/ig'));
+    expect(inside.get('hidden.ts')?.ignored).toBe(true);
+    // 上一层答不出这件事是 git 的数据模型使然、与本条无关：`untracked/` 整个被折叠成一条，
+    // 那一层因此走读磁盘的兜底，每个子项都继承「不灰显」
+    expect(byName(await readTree(root, 'untracked')).get('ig')?.ignored).toBe(false);
+  });
+
+  test('把未跟踪目录里的一个文件当目录展开是 400，不是兜底出来的 ENOTDIR', async () => {
+    // 窄 pathspec 下 git 吐的是这个文件自己，`selfKind === 'file'` 据此认出坏请求；退到第一段
+    // 之后它被折叠进 `fresh/`，于是没人拦，兜底拿一个普通文件去 readdir，以 ENOTDIR 收场——
+    // 那是个 500，而且正文里带着一条绝对路径
+    await expect(readTree(root, 'fresh/deep/u.ts')).rejects.toBeInstanceOf(WorktreeError);
   });
 
   test('submodule 是目录不是文件，且展开得进去', async () => {

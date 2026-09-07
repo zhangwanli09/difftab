@@ -501,7 +501,7 @@ export function makeFixtures(destDir, only) {
    */
   if (wanted('ignoredTree')) {
     const cwd = init('ignored-tree');
-    write(cwd, '.gitignore', 'vendor/\n.env\n*.log\n');
+    write(cwd, '.gitignore', 'vendor/\n.env\n*.log\nig/\n');
     write(cwd, 'src/app.ts', 'export const app = 1;\n');
     write(cwd, 'README.md', '# ignored-tree\n');
     commit(cwd, 'initial');
@@ -510,11 +510,22 @@ export function makeFixtures(destDir, only) {
     write(cwd, 'src/app.log', 'noise\n');
     write(cwd, 'vendor/a.js', 'module.exports = 1;\n');
     write(cwd, 'vendor/nested/b.js', 'module.exports = 2;\n');
+    // **被忽略那一片里的第三层**：`--ignored` 那条在这里以 `internal error - directory entry
+    // not superset of prefix` fatal。深度 ≤ 2 恒安全，所以只到 `vendor/nested` 的 fixture
+    // 一条都证伪不了
+    write(cwd, 'vendor/nested/deeper/c.js', 'module.exports = 3;\n');
     // 未跟踪但**不**被忽略：可见那一档在「已跟踪」之外还得覆盖到它
     write(cwd, 'src/new.ts', 'export const fresh = true;\n');
     // **整目录未跟踪且未被忽略**——`--others` 那条同样会把它折叠成 `fresh/`，
     // 于是折叠兜底在「不灰显」这一侧也得成立（继承的是 ignored: false）
     write(cwd, 'fresh/deep/u.ts', 'export const u = 1;\n');
+    // **不灰显那一侧的第三层**：上面那条 fatal 只出在 `--ignored` 那条上，不带它的那条从
+    // pathspec 处开始遍历、最高只折叠到 pathspec 自己，所以这一侧深多少层都答得出
+    write(cwd, 'fresh/deep/deeper/v.ts', 'export const v = 1;\n');
+    // **被忽略的一片嵌在一个未跟踪目录里**。它钉的是「pathspec 退到第一段」只能当兜底、
+    // 不能当默认：无条件放宽的话这一片继承成「不灰显」，而没有任何东西会报错
+    write(cwd, 'untracked/keep.ts', 'export const keep = 1;\n');
+    write(cwd, 'untracked/ig/hidden.ts', 'export const hidden = 1;\n');
     // 二进制与符号链接各一份：只读读文件那条路的两个分支，后者同样指向仓库外
     writeFileSync(join(cwd, 'logo.png'), binaryBytes('logo'));
     if (!WINDOWS) {
