@@ -55,9 +55,10 @@
 一层要**三条**调用（并发发出，墙上时间仍是一条的量级）：
 
 ```
-git ls-files -z --stage --cached                                              [-- <目录>]
-git ls-files -z --others           --exclude-standard --directory --no-empty-directory [-- <目录>]
-git ls-files -z --others --ignored --exclude-standard --directory --no-empty-directory [-- <目录>]
+git ls-files -z --stage --cached                                              [-- <本层>]
+git ls-files -z --others           --exclude-standard --directory --no-empty-directory [-- <本层>]
+git ls-files -z --others --ignored --exclude-standard --directory --no-empty-directory [-- <本层>]
+                                            ↑ 后两条非零退出时，pathspec 退到 <本层的第一段> 重问一次
 ```
 
 三条各答一件事：已跟踪的、未跟踪且未被忽略的、被忽略的。三者的并集就是这一层要画的东西，第三条来的打上 `ignored`。
@@ -70,6 +71,22 @@ git ls-files -z --others --ignored --exclude-standard --directory --no-empty-dir
 - **`--ignored` 必须与 `--exclude-standard` 同用**，否则 git 以 `--ignored needs some exclude pattern` 直接 fatal。这条会响，记在这里只是免得有人「顺手精简」掉后面那个。
 - **`-z`**：与其余所有列表类调用同一条约束，路径原样输出、按 NUL 切分。
 - **`--` 后面那一段仍受封装层的 `GIT_LITERAL_PATHSPECS=1` 约束**，而字面量 pathspec 保留前导目录匹配：`-- src` 照样匹配 `src/` 底下的一切。根目录那一层不带 `--`。
+- **两条 `--others` 非零退出时，pathspec 退到本层的第一段重问一次。** 要它是因为 git 在被忽略的那一片深处会**直接 fatal**：
+
+  ```
+  $ git ls-files -z --exclude-standard --directory --no-empty-directory \
+        --others --ignored -- node_modules/.pnpm/@biomejs+biome@2.5.7
+  fatal: git ls-files: internal error - directory entry not superset of prefix   (exit 128)
+  ```
+
+  判据是**层数，不是路径里的特殊字符**：git 取全部 pathspec 的公共前导目录做 `max_prefix_len`（`a/b/c` 截到最后一个 `/`，得 `a/b/`），而 `--ignored` 那条报的是**排除规则命中的那一层**（`.gitignore` 里的 `vendor/`）、与 pathspec 有多深无关；吐目录条目前那道断言正是「前缀不得比条目长」。于是**被忽略的那一片里深度 ≥ 3 的那一层必然 fatal，深度 ≤ 2 恒安全**（前缀最长就是 `a/`，正好等于最短的那条记录）。`-C` 进那个目录、pathspec 带尾斜杠都绕不过；第一段不含 `/`，`max_prefix_len` 因此恒为 0。不带 `--ignored` 的那条炸不起来（实测：它从 pathspec 处开始遍历，最高只折叠到 pathspec 自己，问 `fresh/deep/deeper` 回的是 `fresh/deep/deeper/`），退让逻辑两条都挂只是不想把这条实测钉进代码。
+
+- **但第一段只能当兜底，不能当默认。** 无条件放宽会静默改掉另外两件事的答案，两件都不报错：
+
+  - **被忽略的一片嵌在一个未跟踪目录里时，放宽之后 `--ignored` 那条一条都不回**（实测：`untracked/` 整个未跟踪、`untracked/ig/` 被忽略，问 `-- untracked/ig` 回 `untracked/ig/`，问 `-- untracked` 回空）。那一层于是继承「不灰显」，页面上只是它不再灰了；
+  - **`?path=<未跟踪目录里的一个文件>` 从 400 变成 500**：窄 pathspec 下 git 吐的是这个文件自己（下面的「把一个文件当目录展开」正是据此判的），放宽之后它被折叠进 `a/`，于是没人认出这是坏请求，兜底拿一个普通文件去 `readdir`，以 `ENOTDIR` 收场。
+
+  所以退让只发生在 git 已经答不出东西的那一刻，代价范围限死在「本来就是个 500」的那一层。判据用**非零退出**而不是比对那句 fatal 的字面量：这两条是只读列举，非零退出没有第二种解释，而按消息匹配要赌它逐字不变；重问那次再失败就把原来那个错误抛出去。
 
 **收敛成直接子项的判据是「相对本层的第一段」**：`src/web/main.tsx` 相对 `src` 的第一段是 `web`，后面还有 `/`，所以 `web` 是目录；`--directory` 折叠出的 `node_modules/` 以 `/` 结尾，同样是目录。去重后目录在前、各自按名字排序（照 VS Code 的排法）。
 
@@ -77,7 +94,7 @@ git ls-files -z --others --ignored --exclude-standard --directory --no-empty-dir
 
 **判据是两条正面证据，不是「一条子项都没有」。** 有两种形态会走到这里，而两种手上都有证据：
 
-- **`--directory` 把这一片折叠了**。折叠是它该有的行为（`node_modules/` 正是靠它才没变成三万条路径），但代价是 git 从此再也答不出那里面有什么——往里 scope 拿到的仍是那条折叠记录（三种 pathspec 写法与 `-C` 进去都一样，已实测）。
+- **`--directory` 把这一片折叠了**。折叠是它该有的行为（`node_modules/` 正是靠它才没变成三万条路径），但代价是 git 从此再也答不出那里面有什么——往里 scope 拿到的仍是那条折叠记录（三种 pathspec 写法与 `-C` 进去都一样，已实测；被忽略的那一片里深度 ≥ 3 时，这三种写法连折叠记录都给不出、直接 fatal，见上一节最后一条）。
 - **这是一个 submodule**：父仓库的 `ls-files` 对它只有一条 gitlink 记录（mode `160000`、路径正好等于本层），看不进去。
 
 命中时这一层改为读一次磁盘（`readdir`，只读一层）。**写成「空就兜底」是个 catch-all**：`?path=<一个文件>` 与 `?path=<不存在的路径>` 同样落进来，`readdir` 抛 `ENOTDIR` / `ENOENT` 被咽掉，页面上是一个「展开后空空如也的目录」——而它们本该是 400 / 404。为了不吞掉 `EACCES` 而加的那道 errno 过滤，本身就是在给一个过宽的开关打补丁；判据换成正面证据之后，那道过滤连同它一起没了。
@@ -96,7 +113,7 @@ git ls-files -z --others --ignored --exclude-standard --directory --no-empty-dir
 
 ### 已知的成本
 
-三条调用**都以「这一层底下的全部路径」为量级**，不是这一层的条目数：收敛成直接子项发生在拿到输出之后。根那一层因此每次都要枚举一遍全仓，而 `refreshTree()` 在 `Files` 打开着时每个 `change` 都会重发。
+三条调用**都以「这一层底下的全部路径」为量级**，不是这一层的条目数：收敛成直接子项发生在拿到输出之后。根那一层因此每次都要枚举一遍全仓，而 `refreshTree()` 在 `Files` 打开着时每个 `change` 都会重发。（退到第一段重问的那一次量级是「第一段底下的全部路径」，仍不超过根那一层。）
 
 按本工具的目标场景（agent 正在改的那个仓库，几千个文件量级）这是可以接受的：一次约几百 KB 的 stdout，与 `/api/state` 那次 status 同一个数量级。**但它不是常数级**，上限由封装层那个 64MB 的 stdout 兜底给出——真到那一步是一个 500，而不是悄悄给一份不全的树。若将来要支持十万文件级的仓库，先改的是这里而不是前端。
 

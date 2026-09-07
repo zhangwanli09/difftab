@@ -21,6 +21,7 @@
 - **重命名取 diff 必须传新旧两个路径**：`diff HEAD -- <新路径>` 输出的是 `new file mode` + `--- /dev/null`，`-M -- <新> <旧>` 才输出 `similarity index` + `rename from/to`。
 - **numstat 要按路径挑、按合计算**：`git mv` 后把新文件重写成 60,000 行且**不 add**，`-M -- <新> <旧>` 回 `0\t20\t<旧路径>` 与 `60000\t0\t<新路径>` 两条按路径排序的记录（NUL 分隔），而 status 仍报 `R100`——取 `[0]` 拿到的是旧文件那条几十行的删除，行数闸随即放行。
 - **pathspec 默认是 wildmatch 而不是字面路径**：仓库里同时有 `docs/star*.md` 与 `docs/starlight.md` 时，`diff HEAD --numstat -z -- 'docs/star*.md'` 回**两条**记录，`-- '*'` 回全部改动文件；设 `GIT_LITERAL_PATHSPECS=1`（自 git 1.9 即有）后都只按字面比较。
+- **`ls-files --directory` 的 pathspec 深过折叠层时 git 直接 fatal**：`-- node_modules/.pnpm/@biomejs+biome@2.5.7` 报 `fatal: git ls-files: internal error - directory entry not superset of prefix`（exit 128），而 `-- node_modules` 与 `-- node_modules/.pnpm` 都正常回一条 `node_modules/`。判据是**层数不是路径里的 `@`/`+`**（`-- node_modules/.pnpm/node_modules` 同样 fatal）：git 拿全部 pathspec 的公共前导目录当前缀（`a/b/c` → `a/b/`），而它要吐的条目是 `node_modules/`，吐之前那道断言要求前缀不比条目长。因此深度 ≥ 3 必炸、深度 ≤ 2 恒安全。**`-C` 进那个目录、pathspec 带尾斜杠都绕不过**（三种写法实测同样 fatal），能绕的只有「pathspec 不含 `/`」——前缀因此为空。**只有 `--ignored` 那条炸得起来**：它报的是排除规则命中的那一层，与 pathspec 有多深无关；不带它的那条从 pathspec 处开始遍历，最高只折叠到 pathspec 自己（`-- fresh/deep/deeper` 回 `fresh/deep/deeper/`），永远不比前缀短。
 - **只读 `.git` 挡不住 index 回写，只是让它静默失败**：`touch` 一个内容未变的已跟踪文件后，默认 `git status` 把 `.git/index` 重写一遍，设 `GIT_OPTIONAL_LOCKS=0` 则不变；而把 `.git` 整棵 `chmod -R a-w` 之后再跑同一条默认 `git status`，它 **exit 0、stderr 全空**，只是没写成——所以收紧权限既替代不了那个环境变量，也不能拿来验只读性。
 - **超限掐断 git 之后，Windows 上先到的是 `'error'` 而不是 `'close'`**：`maxStdoutBytes` 触发后 `child.kill()`，**windows × Node 22.0.x 那一档**随即走进 `'error'` 分支，`GitError.kind` 因此是 `exit` 而不是 `overflow`、`/api/diff` 回 500 而不是 `too-large`（另外八档不触发）。
 
@@ -34,6 +35,7 @@
 | 重命名文件按单路径取 diff | git 只看到一侧无法配对，重命名会退化成全新增文件，「重命名识别并标注」落空 |
 | 目录树整体以 `readdir` 遍历工作区 | 要把「仓库边界 + 不跟随符号链接 + `.gitignore` 语义」三件事全部重写一遍——最后那件等于在产品里塞进第二份 git 知识，而它不受只读门禁覆盖；`.git/` 与 `node_modules` 也得自己滤。`ls-files` 已在只读白名单里，三件事一次都不用写。**被排除的是「整体这么做」**：`--directory` 折叠掉的那一层 git 答不出内容，那一处读一层磁盘是唯一的兜底，而它落在「整棵子树已被 git 判为同一档」之后，一条 `.gitignore` 语义都不需要重写 |
 | 目录树一次性返回整棵树 | 与「禁止一次性取全仓 diff」同一条理由，且更糟：`node_modules` 让一份全量树的 JSON 比整仓 diff 还大，而它每次 SSE 刷新都要重发一遍 |
+| 目录树两条 `--others` **无条件**把 pathspec 放宽到本层第一段 | 那样确实绕开了上面那条 fatal，但**静默改掉另外两件事的答案**：被忽略的一片嵌在未跟踪目录里时 `--ignored` 那条一条都不回（`-- untracked/ig` 回 `untracked/ig/`，`-- untracked` 回空），那一片于是不再灰显；而未跟踪目录里的一个文件被折叠进 `a/`、`selfKind` 认不出坏请求，`?path=<那个文件>` 从 400 变成兜底 `readdir` 的 `ENOTDIR` 500。放宽只能当**非零退出后的兜底**，代价范围因此限死在「本来就是个 500」的那一层 |
 | 被忽略的文件那条 `ls-files` 不带 `--directory` | 一个装着 30,000 个文件的 `node_modules` 会原样吐出 30,000 条路径，**git 照常 exit 0**——症状只是这一层慢得离谱、内存里凭空多出几 MB 字符串，没有任何东西会报错 |
 | 仓库边界只做字面量判断（`resolve` + `relative`） | 挡得住 `../`，挡不住**中间某一段是符号链接**：`linkdir/secret.txt` 在字面上待在仓库内，而 `readFile` 顺着它走出去。`lstat` 只保护最后一段，救不了这条。三个端点实测全中，必须补一道 `realpath` |
 | 目录树那处兜底把 `readdir` 的错误一律咽成「空目录」 | 「读不了」会伪装成「里面是空的」。只对 `ENOENT` / `ENOTDIR` 回空（目录刚被删是 agent 跑动期间的常态），`EACCES` 一类照抛 |
