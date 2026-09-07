@@ -8,22 +8,10 @@
 // 另外两条降级标注：**detached** 时 `head` 是 git 给的字面量 `(detached)`，不能当分支名画出
 // 去；**进行中的多步操作**(rebase / merge / …)后端从 git 目录读来，由 `operation` 承载。
 
+import { GitBranch } from 'lucide-preact';
 import type { BranchState } from '../../server/shared/protocol';
 import { Badge } from './Badge';
-import { Octicon } from './Octicon';
-
-/**
- * 分支图标的 path 数据。图形取自 **Octicons 的 `git-branch-16`**（MIT，Copyright GitHub Inc.），
- * 署名就落在这里——与 `ThemeToggle` 记 Heroicons 来源、`styles/hljs-theme.css` 记 hljs 主题来源
- * 是同一种做法。**复制 path 数据而不装包**的理由与那三枚一字不差：包里是逐图标的组件或 SVG 文
- * 件，而这里要的只是下面这一条字符串。
- *
- * **导出是因为侧栏 `Changes` 那个 tab 用的是同一枚**（对应 VS Code activity bar 上的 Source
- * Control）——两处各抄一份时改了其中一处，页面上就是同一个概念画成了两个图形，而没有任何东西
- * 会响。做法与 `ChangeList` 把 `CODE_COLORS` 导出给文件树共用一字不差。
- */
-export const BRANCH_ICON_PATH =
-  'M9.5 3.25a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.493 2.493 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25Zm-6 0a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Zm8.25-.75a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z';
+import { Icon } from './Icon';
 
 /** 为 0 的那个减淡。模块作用域：每个 SSE 事件都会重画这里（同 `ChangeList` 的 `CODE_*`）。 */
 const dim = (n: number) => (n === 0 ? 'text-description-foreground' : '');
@@ -126,7 +114,7 @@ export function BranchStatus({ branch }: { branch: BranchState }) {
           是 HEAD 在哪」。两个类名各挡一件不报错的事：`shrink-0` 让 320px 里先被裁的仍是分支名
           而不是图标；`self-center` 是因为这一行是 `items-baseline`，而替换元素的基线是它的底
           边——不写时图标整个坐在文字基线上，比文字高出小半个字，看着就是没对齐 */}
-      <Octicon path={BRANCH_ICON_PATH} class="shrink-0 self-center" />
+      <Icon icon={GitBranch} class="shrink-0 self-center" />
       <span class="max-w-60 truncate" title={title}>
         {label}
       </span>

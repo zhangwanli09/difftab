@@ -5,6 +5,7 @@
 // 一份先拍平再画的清单。
 
 import { useComputed } from '@preact/signals';
+import { ChevronRight } from 'lucide-preact';
 import {
   type FileEntry,
   isConflicted,
@@ -14,17 +15,13 @@ import {
 import { fileByPath, fileState, openFile } from '../state/store';
 import { expandedDirs, ROOT, toggleDir, treeCache, treeErrors } from '../state/tree';
 import { CODE_COLORS } from './ChangeList';
+import { Icon } from './Icon';
 
 /** 每一层的缩进量（px）。用内联 style 按层级算——层数没有上界，而 Tailwind 只产出源码里出现过的类名。 */
 const INDENT_PX = 12;
 
 /** 一行（或一句占位文案）在第 `depth` 层的左内边距。**只此一份**，两处各写一遍会让占位与行错位。 */
 const indent = (depth: number) => ({ paddingLeft: `${(depth + 1) * INDENT_PX}px` });
-
-// 展开三角。图形取自 **Heroicons v2 的 24/outline**（`chevron-right`,MIT,Copyright
-// Tailwind Labs），与 ThemeToggle 那三枚同一处来源、同样复制 path 数据而不装包。
-// 展开时靠 `rotate-90` 转 90°，不另备一条向下的 path
-const CHEVRON_PATH = 'm8.25 4.5 7.5 7.5-7.5 7.5';
 
 /**
  * 这个路径在变更列表里对应的状态字母；没有改动就是 `null`。
@@ -97,20 +94,9 @@ function Row({ entry, depth }: { entry: TreeEntry; depth: number }) {
         {/* 文件那一侧画的是等宽占位而不是什么都不画：少了它，文件名会比同层的目录名往左挪
             一截，同一层看着像两层 */}
         {isDir ? (
-          <svg
-            aria-hidden="true"
-            viewBox="0 0 24 24"
-            width="12"
-            height="12"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            class={`shrink-0 ${isExpanded ? 'rotate-90' : ''}`}
-          >
-            <path d={CHEVRON_PATH} />
-          </svg>
+          // 展开时靠 `rotate-90` 转 90°，不另换一枚朝下的图标。**这一枚按 12 画**：它是行首
+          // 的从属记号而不是内容，与文件名同高时会跟名字抢视线
+          <Icon icon={ChevronRight} size={12} class={`shrink-0 ${isExpanded ? 'rotate-90' : ''}`} />
         ) : (
           <span class="w-3 shrink-0" />
         )}
