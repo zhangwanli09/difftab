@@ -4,17 +4,18 @@
 // 档位)，与右边看的是哪个文件无关，横跨等于在 diff 面板顶上切一条与 diff 无关的横杠。
 // 两侧的所有权是分开的：列表归 Preact 的 keyed reconcile，单文件 diff 容器归 `Diff2HtmlUI`。
 
+import { Folder, GitBranch } from 'lucide-preact';
 import { useEffect, useRef } from 'preact/hooks';
 import { observeDiffPanel } from '../state/layout';
 import { activePane, activeTab, loadError, repoState } from '../state/store';
 import { PRODUCT_NAME } from '../state/title';
 import { loadDir, ROOT, refreshTree } from '../state/tree';
-import { BRANCH_ICON_PATH, BranchStatus } from './BranchStatus';
+import { BranchStatus } from './BranchStatus';
 import { ChangeList } from './ChangeList';
 import { DiffView } from './DiffView';
 import { FileTree } from './FileTree';
 import { FileView } from './FileView';
-import { Octicon } from './Octicon';
+import { Icon } from './Icon';
 import { ThemeToggle } from './ThemeToggle';
 import { WatchBadge } from './WatchBadge';
 
@@ -23,21 +24,17 @@ import { WatchBadge } from './WatchBadge';
  * 一行、不切一列竖排**：竖排要再占一列宽，而 320px 里那一列是从文件名身上扣的，两个视图也用
  * 不着一整列。
  *
- * 图形取自 **Octicons**（MIT，Copyright GitHub Inc.），外壳走 `Octicon`：`Changes` 那枚**与状态
- * 条上分支名前的是同一枚 `git-branch-16`**（对应 VS Code activity bar 上的 Source Control），故
- * path 直接从 `BranchStatus` 导入、不在这里再抄一份——两份会各自漂，而漂开之后同一个概念在页面
- * 上就是两个图形。`Files` 那枚是同一套的 `file-directory-16`。**取 Octicons 而不是 `ThemeToggle`
- * 那套 Heroicons**：16 + fill 与 24 + stroke 是两种版式，同一行里混着摆线宽对不上。
+ * `Changes` 那枚**与状态条上分支名前的是同一枚 `GitBranch`**（对应 VS Code activity bar 上的
+ * Source Control）。两处 import 同一个具名组件，**「同一枚」这件事因此由编译器保证**——拼错标
+ * 识符是编译错误，而共用一条 path 字符串的老做法里，两份漂开之后同一个概念在页面上就是两个
+ * 图形，没有任何东西会响。`Files` 那枚是 `Folder`。
  *
  * `label` 不再进 DOM 文本，改作 `aria-label` 与 tooltip：只画图标时它是这个按钮名字的**唯一**
  * 来源，掉了之后读屏里就是两个无名控件，而页面上什么都看不出来（同 `ThemeToggle`）。
  */
-const FILE_DIRECTORY_ICON_PATH =
-  'M0 2.75C0 1.784.784 1 1.75 1H5c.55 0 1.07.26 1.4.7l.9 1.2a.25.25 0 0 0 .2.1h6.75c.966 0 1.75.784 1.75 1.75v8.5A1.75 1.75 0 0 1 14.25 15H1.75A1.75 1.75 0 0 1 0 13.25Zm1.75-.25a.25.25 0 0 0-.25.25v10.5c0 .138.112.25.25.25h12.5a.25.25 0 0 0 .25-.25v-8.5a.25.25 0 0 0-.25-.25H7.5c-.55 0-1.07-.26-1.4-.7l-.9-1.2a.25.25 0 0 0-.2-.1Z';
-
 const TABS = [
-  { id: 'changes', label: 'Changes', path: BRANCH_ICON_PATH },
-  { id: 'files', label: 'Files', path: FILE_DIRECTORY_ICON_PATH },
+  { id: 'changes', label: 'Changes', icon: GitBranch },
+  { id: 'files', label: 'Files', icon: Folder },
 ] as const;
 
 // **不给 `flex-1`**：两枚各按自身宽度排、紧挨着靠左，平分整栏时选中那条下划线有半栏宽，看着
@@ -84,7 +81,7 @@ function SideBarTabs() {
               : 'border-transparent text-description-foreground hover:bg-list-hover-background'
           }`}
         >
-          <Octicon path={tab.path} />
+          <Icon icon={tab.icon} />
         </button>
       ))}
     </div>

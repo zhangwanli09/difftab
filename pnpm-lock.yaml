@@ -32,6 +32,9 @@ importers:
       lefthook:
         specifier: 2.1.10
         version: 2.1.10
+      lucide-preact:
+        specifier: 1.41.0
+        version: 1.41.0(preact@10.29.8)
       preact:
         specifier: 10.29.8
         version: 10.29.8
@@ -961,6 +964,11 @@ packages:
     resolution: {integrity: sha512-WkUDrojuJs0xkgGf2udWxa3yGBRxPtxUkB79i6aCZLRgc7PM8fZe9TosfPDcvEpQZbuFASnHYmRLBLUbmLOIIA==}
     engines: {node: '>= 12.0.0'}
 
+  lucide-preact@1.41.0:
+    resolution: {integrity: sha512-tHLVOGaMYnYLY2pZh5B2XWhKKz6dx+LhpHc71MNHzXW/LfiV0qEwDsbecFdDRaXGnPNMyAiRao0M946mFJRSkQ==}
+    peerDependencies:
+      preact: ^10.27.2
+
   magic-string@0.30.21:
     resolution: {integrity: sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ==}
 
@@ -1841,6 +1849,10 @@ snapshots:
       lightningcss-linux-x64-musl: 1.33.0
       lightningcss-win32-arm64-msvc: 1.33.0
       lightningcss-win32-x64-msvc: 1.33.0
+
+  lucide-preact@1.41.0(preact@10.29.8):
+    dependencies:
+      preact: 10.29.8
 
   magic-string@0.30.21:
     dependencies:
