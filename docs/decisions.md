@@ -97,6 +97,8 @@
 - **`ResizeObserver` 要 `observe(el, { box: 'border-box' })`，只在读值那侧取 `borderBoxSize` 不够**：`observe(el)` 默认按 **content box** 判「有没有变」，于是滚动条每次进出都推一次回调，哪怕 border box 一动没动——读值那侧滤的是**已经产生的**回调，指定观察 box 才是从源头不投递。另：`borderBoxSize` 读的是观察阶段已算好的值，且**不带 transform 缩放**——对「还剩多少地方排版」这个问题，未缩放的排版宽度才是想要的那个。
 - **happy-dom 盖不到的两处**（20.11.2）：其一，`Attr.nodeName` 返回空字符串（同一属性上 `name` / `localName` 都正常），而 diff2html 的 `mergeStreams.open()` 恰好用它重新序列化属性，于是凡走过 `mergeStreams` 的行——带 `<del>` / `<ins>` 词级标记的增删行——**类名丢失**（真机实测 177 个 hljs span / 12 类，故只影响 DOM 测试环境），`test/unit/web/` 里「高亮出颜色」的断言只能压在**上下文行**上。其二，它的 `ResizeObserver` 三个方法体都只有一句 `// TODO: Not implemented`，也没有布局引擎，故「`ResizeObserver` → 宽度 signal」这一段归肉眼项，阈值映射与「格式进了 effect 依赖数组」则靠**直接写那个 signal** 断言。
 
+- **界面图标统一到 Lucide，装包由构建期 tree-shake，不再手抄 path**：原先那 6 枚抄自两个上游、两种版式（Octicons 的 16 + `fill` 两枚，Heroicons v2 的 24 + `stroke` 四枚），同一个界面里两种质感并存，`stroke-width` 还在两处不一致（1.5 / 2）。统一时**连「复制 path 而不装包」一起翻掉**，是因为那条的理由在 Lucide 下不再成立：它的 `git-branch`（5 个子元素）、`sun`（4）、`monitor`（4）**不是单条 path**，手抄意味着把「一个常量字符串」升级成「一段 JSX 子树」，而那正是装包本该省掉的东西。**体积实测反而更省**：`lucide-preact@1.41.0`（ISC，零运行时依赖，`sideEffects: false`）在 barrel 入口下由 Rollup tree-shake，6 枚组件连同 `createLucideIcon` 运行时合计 **+1.4 KB 明文 / +0.5 KB gzip**（211.4 → 212.8 KB，门禁 350 KB），与原先六条 path 的 **1,335 B** 基本持平（343 + 326 + 25 + 268 + 193 + 180），CSS 一字未增——「装包会把体积顶上去」这半条顾虑实测不成立。换来的还有一处**静态可查的增强**：状态条与侧栏 `Changes` 那个 tab 共用同一枚分支图标，从前靠共用一条导出的 path 字符串（两份漂开时静默画成两个图形），现在是两处 import 同一个具名组件，拼错即编译错误。
+
 ### 被排除的做法
 
 | 做法 | 排除原因 |
@@ -119,7 +121,7 @@
 | 目录树某一层出错就画那句话（不看手上有没有缓存） | 刷新途中失败是常态（后端重启、dev 代理抖一下），而 `loadDir` 失败只写 `treeErrors`、不动 `treeCache`。先看错误的写法会让一个已经画出来的目录连同它底下展开的一切被一行红字换掉——陈旧的内容比消失的内容有用得多，且下一拍就会被换新 |
 | 树的选中态与变更列表共用一份 | 同一个文件从两处点进去看到的是两样东西（补丁 / 全文），共用一份就得再补一条「这次是从哪点进来的」，而那与 `activePane` 是同一个信息的两处实现 |
 | 监听 `storage` 事件做多标签页同步 | difftab 一个仓库只跑一个实例、正常只有一个标签页，为此接一条跨标签通道是给一个不存在的场景付代价 |
-| 为界面里那几个图标装 `heroicons` / `@heroicons/react` / `@primer/octicons` | 包里是逐图标的组件或 SVG 文件，而这里要的只是几条 path 字符串；两套图形都是 MIT，复制 path 的成本只有一行署名注释。**被排除的是装包，不是用它们的图形**——`ThemeToggle` 的三个图标正是从 Heroicons `24/outline` 的 `computer-desktop` / `sun` / `moon` 逐字抄来的，状态条分支名前那一枚同样逐字抄自 Octicons 的 `git-branch-16`（侧栏 `Changes` 那个 tab 与它共用同一条 path），`Files` 那个 tab 是同一套的 `file-directory-16`。体积也不构成理由：五条 path 合计约 1.3 KB，是 JS 明文余量（实测 211.6 KB / 门禁 350 KB）的 0.9% |
+| 统一到 Heroicons v2 或 Codicons | **Heroicons 整套没有任何 git 图标**（就 Iconify 的 316 枚清单逐条核对），而分支图标是这个产品最核心的语义——统一到它等于把唯一一枚不可替代的图标永久留在混用状态。Codicons 是 VS Code 自家那套、视觉取向最贴，但**没有 sun / moon / desktop**（651 枚里只有一枚 `color-mode`），三档主题开关画不出来；它还是 CC BY 4.0 而非 MIT / ISC，是本仓库唯一一处要求署名的依赖。Tabler（6184 枚，MIT）全覆盖、也够格，落选只因 Lucide 的线性观感更接近 VS Code，两者差别不构成理由 |
 
 ## 样式层叠
 
@@ -195,5 +197,4 @@
 - [MDN：CSS Cascade Layers——无层声明与层内声明的优先级](https://developer.mozilla.org/en-US/docs/Web/CSS/@layer)
 - [pnpm v10 → v11 迁移指南：`allowBuilds`、配置文件位置变更](https://pnpm.io/migration)
 - [pnpm/pnpm#11536：pnpm 11 静默忽略 `package.json` 的 `pnpm` 字段](https://github.com/pnpm/pnpm/issues/11536)
-- [Heroicons：`24/outline` 的 SVG 源文件（MIT，Copyright Tailwind Labs）](https://github.com/tailwindlabs/heroicons/tree/master/optimized/24/outline)
-- [Octicons：`git-branch-16` 的 SVG 源文件（MIT，Copyright GitHub Inc.）](https://github.com/primer/octicons/blob/main/icons/git-branch-16.svg)
+- [Lucide：图标源与 `lucide-preact` 包（ISC，Copyright Lucide Contributors）](https://github.com/lucide-icons/lucide)
