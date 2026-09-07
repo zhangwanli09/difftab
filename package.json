@@ -43,7 +43,6 @@
     "registry": "https://registry.npmjs.org/",
     "access": "public"
   },
-  "dependencies": {},
   "scripts": {
     "dev": "vite",
     "build": "pnpm run build:web && pnpm run build:server",

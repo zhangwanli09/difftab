@@ -187,6 +187,7 @@
 | 把 pnpm 设置写进 `package.json` 的 `pnpm` 字段或 `.npmrc` | pnpm 11 两处都不再读取，**且是静默忽略、无 deprecation 警告**：`allowBuilds` 写错位置即等同于没写，禁止扁平化的设置写错位置即等同于没禁 |
 | matrix 作业用 `pnpm install --prod` 之类的「装一点点」代替完全不装 | 仍会建 `node_modules`，而该作业的全部意义是只跑用户真正拿到的 `dist/`；一旦装了东西，测的就不再是那个东西 |
 | 靠 `corepack enable` 在 CI 里准备 pnpm | Corepack 已不再随 Node 25+ 发行版分发而 CI 矩阵含 Node 26；哪天基础镜像不再自带，这一步就从「能用」变成失败或静默走到系统里的另一个 pnpm 版本 |
+| 手工把 `"dependencies": {}` 加回 `package.json` | `pnpm add` 会把空对象当空值规范化掉，而 `check:pack` 的判据是 `Object.keys(manifest[field] ?? {})`——**字段缺失与空对象在门禁眼里完全等价**，加回来一个字节的保护力度也不多。换来的是一行没有任何门禁看着、下一次装依赖时又被静默删掉的装饰，以及「承诺写在明面上」的错觉。「后端只用标准库」由 `check:pack`（查发布 manifest 的三个依赖字段）与冒烟（查 `dist/server/main.js` 的 import 说明符）两侧承载，不靠那行字面量 |
 
 ## 外部参考
 
