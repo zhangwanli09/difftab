@@ -109,12 +109,12 @@ export function BranchStatus({ branch }: { branch: BranchState }) {
    */
   const showsUpstream = branch.upstream !== null || !branch.detached;
   return (
-    <span class="flex min-w-0 items-baseline gap-2 text-sm">
+    <span class="flex min-w-0 items-baseline gap-2 text-xs">
       {/* 分支图标，位置对应 VS Code status bar 最左那枚；三种情况一律画，它标的是「这一栏说的
           是 HEAD 在哪」。两个类名各挡一件不报错的事：`shrink-0` 让 320px 里先被裁的仍是分支名
           而不是图标；`self-center` 是因为这一行是 `items-baseline`，而替换元素的基线是它的底
           边——不写时图标整个坐在文字基线上，比文字高出小半个字，看着就是没对齐 */}
-      <Icon icon={GitBranch} class="shrink-0 self-center" />
+      <Icon icon={GitBranch} size={14} class="shrink-0 self-center" />
       <span class="max-w-60 truncate" title={title}>
         {label}
       </span>
