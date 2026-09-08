@@ -50,6 +50,22 @@ function Content({ path, content }: { path: string; content: string }) {
   );
 }
 
+/**
+ * 这一路要不要一个「按内容撑宽」的外层盒子（`w-max min-w-full`，理由见 `FileView`）。
+ *
+ * **写成按 kind 穷举的 `Record` 而不是 `payload.kind === 'text'` 一句**：那样写它就是第二处独立
+ * 判定 kind 的地方，与紧挨着的 `Payload` 各写各的——将来加进第五个 kind 时只改 `Payload`、忘了
+ * 这边，粘性会静默退回 static（余量为 0 时与 static 一模一样），页面上什么都不会响。`Record` 的
+ * 键是穷举的，漏一个就是编译错误。
+ */
+const NEEDS_WIDE_BOX: Record<FilePayload['kind'], boolean> = {
+  // 只有正文那一路会有长行；其余三路都是散文，撑不出横向溢出
+  text: true,
+  symlink: false,
+  binary: false,
+  'too-large': false,
+};
+
 function Payload({ path, payload }: { path: string; payload: FilePayload }) {
   switch (payload.kind) {
     case 'text':
@@ -73,8 +89,23 @@ export function FileView() {
   // 与 diff 那侧共用同一句：两个 tab 下指的都是左栏，而左栏此刻列的是什么用户自己看得见
   if (state === null) return <Notice>Select a file on the left.</Notice>;
 
+  /**
+   * **`w-max min-w-full` 是行号槽与标题栏留在原地的前提，不是排版偏好。** 长行会把正文撑得比
+   * 面板宽，而横向滚动发生在外面那个 `<section>` 上。这一层若是普通块盒，它的宽度只有面板那么
+   * 宽：行号槽的 `sticky left-0` 于是一点滑动余量都没有（粘不粘都是同一个位置），横向一滚整列
+   * 行号跟着内容滑出视口；同一个原因下标题栏的底色与下边框也只画到面板那么宽，滚过去之后顶上
+   * 是一条秃的。`w-max` 让这一层长到与最长那行齐平，两者才各自有地方可粘、可铺。**`min-w-full`
+   * 那半条同样必填**：只写 `w-max` 时短文件会让这一层比面板还窄，标题栏跟着缩成半截。
+   *
+   * **但它只能给正文那一路**（`NEEDS_WIDE_BOX`）：`max-content` 下文本一律不折行，而提示行那
+   * 几路是散文——套进去之后整句排成一行横着跑出面板，要横向滚才看得全。symlink 那句里的目标路
+   * 径带着 `break-all` 也救不了：`break-all` 只把 min-content 降到一个字符，max-content 仍是整
+   * 句不断。实测读数在 `docs/decisions.md` 的「前端渲染与体积」。
+   */
+  const wide = state.status === 'ready' && NEEDS_WIDE_BOX[state.payload.kind];
+
   return (
-    <div>
+    <div class={wide ? 'w-max min-w-full' : ''}>
       <PathHeader path={state.path} />
       {state.status === 'loading' && <Notice>Loading…</Notice>}
       {state.status === 'error' && <Notice>Could not load this file: {state.message}</Notice>}
