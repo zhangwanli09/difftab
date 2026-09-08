@@ -9,7 +9,7 @@ import { useEffect, useRef } from 'preact/hooks';
 import { observeDiffPanel } from '../state/layout';
 import { activePane, activeTab, loadError, repoState } from '../state/store';
 import { PRODUCT_NAME } from '../state/title';
-import { loadDir, ROOT, refreshTree } from '../state/tree';
+import { loadDir, ROOT, refreshTree, treeCache } from '../state/tree';
 import { BranchStatus } from './BranchStatus';
 import { ChangeList } from './ChangeList';
 import { DiffView } from './DiffView';
@@ -98,16 +98,18 @@ export function App() {
   /**
    * 切到 `Files` 那一档时把树接上，**两件一起做**：
    *
-   * - `loadDir(ROOT)` 取根那一层。**不在挂载时预取**：冷启动门禁量的是「监听成功并打印
-   *   URL」，而这条请求要跑一趟 `ls-files`，预取等于把一个多数会话根本用不到的开销摆进首屏。
-   *   它自带「取过就不再取」，所以这里不必自己记。
+   * - 取根那一层，**且只在没取过时取**。「取过就不再取」这条判据只有这一处需要，所以它写在
+   *   这里，而不是塞回 `loadDir` 去当所有人的默认——展开与刷新两条路要的都是一份新的（见
+   *   `tree.ts`）。少了这个条件，切到这一档会连发两趟：这里一趟，紧接着 `refreshTree` 再一趟。
+   *   **不在挂载时预取**：冷启动门禁量的是「监听成功并打印 URL」，而这条请求要跑一趟
+   *   `ls-files`，预取等于把一个多数会话根本用不到的开销摆进首屏。
    * - `refreshTree()` 把展开着的层刷新一遍。**这是「刷新只给看得见的那一半付钱」的另一半**
    *   （见 `store.ts` 的 `refresh`）：不看这一档时 SSE 不重取树，切回来时就得补上，否则页面
    *   上是一份停在离开那一刻的旧目录。
    */
   useEffect(() => {
     if (tab !== 'files') return;
-    void loadDir(ROOT);
+    if (!treeCache.value.has(ROOT)) void loadDir(ROOT);
     refreshTree();
   }, [tab]);
 

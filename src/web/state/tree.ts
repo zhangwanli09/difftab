@@ -45,12 +45,17 @@ function removeFrom<V>(map: ReadonlyMap<string, V>, key: string): ReadonlyMap<st
 /**
  * 取一层。
  *
- * `force` 是刷新用的，它同时决定两件事：正常展开时缓存里已经有、或已经在取，就不必再发一次；
- * 而刷新**必须**绕过这两条判据——它要的正是一份新的。重叠时靠序号决胜负（见 `inFlight`），
- * 不靠丢弃。
+ * **每次调用都真的去取**：「缓存里已经有就不必再发」不在这里——展开与刷新两条路要的都是一份
+ * 新的（理由各见 `toggleDir` 与 `refreshTree`），只有 `App` 切到 `Files` 时取根那一处要「取过
+ * 就不再取」，那条判据因此写在它自己那里。当过所有人的默认时，它以「展开后少几行」的形式还
+ * 债，而那既不报错也不空白。
+ *
+ * `force` 于是只剩一个意思：**连「已经在飞」也要再发一趟**。刷新要的正是这个——「已经在取就
+ * 直接不取」会把一次 `change` 引出的刷新整个丢掉，而若它正是 agent 那一串写入的最后一个事件，
+ * 这一层就一直停在旧内容上。重叠时靠序号决胜负（见 `dirTickets`），不靠丢弃。
  */
 export async function loadDir(path: string, force = false): Promise<void> {
-  if (!force && (treeCache.value.has(path) || dirTickets.pending(path))) return;
+  if (!force && dirTickets.pending(path)) return;
   const ticket = dirTickets.claim(path);
   try {
     const query = new URLSearchParams({ path });
@@ -67,7 +72,17 @@ export async function loadDir(path: string, force = false): Promise<void> {
   }
 }
 
-/** 展开 / 收起一个目录。收起**不丢缓存**：再展开时不该又空一拍。 */
+/**
+ * 展开 / 收起一个目录。收起**不丢缓存**：再展开时不该又空一拍。
+ *
+ * **展开一律去取一份新的**：收起期间这一层不在 `refreshTree` 的范围里，缓存停在收起那一刻，而
+ * agent 正在往里写文件——直接拿缓存交差，页面上就是一份陈旧的目录，一直旧到下一个 `change` 到
+ * 达，不报错、也不空白，只是少了几行。手上那份仍然照画（旧行留在原处、不空一拍），新的回来再
+ * 换掉。
+ *
+ * **不传 `force`**：连点两下时后一次搭在前一次那趟上就够了，一次展开与一次 SSE 刷新撞上时也只
+ * 发一趟。绕过防重是刷新那侧才需要的事。
+ */
 export function toggleDir(path: string): void {
   const next = new Set(expandedDirs.value);
   if (next.has(path)) {
@@ -84,8 +99,9 @@ export function toggleDir(path: string): void {
  *
  * 两道收窄，都是「不为没人看的东西付钱」：
  *
- * - **只重取「根 + 当前展开着的那几层」**，不是整个缓存——收起过的那些层用户此刻看不见，而
- *   它们的缓存留着也不会被画出来，下次展开时这里已经重取过一轮；
+ * - **只重取「根 + 当前展开着的那几层」**，不是整个缓存——收起过的那些层用户此刻看不见，它们
+ *   的缓存留着也不会被画出来。**这条收窄不欠债**：再展开时 `toggleDir` 自己会去取一份新的，所
+ *   以这里省掉的那一趟不会以「展开后少几行」的形式冒出来；
  * - **只重取真的取过的那几层**。少了这一条，从没点开过 `Files` 的会话每收到一个 `change`
  *   都要白跑一趟 `ls-files`，而 agent 跑动期间这些事件是密集的——不报错，只是凭空多出一串
  *   谁也不会去看的请求。

@@ -155,6 +155,21 @@ describe('FileTree', () => {
     expect(rowOf('src').getAttribute('aria-expanded')).toBe('true');
   });
 
+  it('再展开一个取过的目录会重取——收起期间它不在刷新范围里，缓存可能已经陈旧了', async () => {
+    const fetchMock = vi.mocked(fetch);
+    treeCache.value = new Map([
+      [ROOT, [entry({ name: 'src', kind: 'directory' })]],
+      ['src', [entry({ name: 'app.ts', path: 'src/app.ts' })]],
+    ]);
+    await waitFor(() => expect(container.textContent).toContain('src'));
+
+    rowOf('src').click();
+    // 旧那几行照画（不空一拍），同时去取一份新的——不重取时页面上是一份停在收起那一刻的目录，
+    // 一直旧到下一个 change 到达，而它不报错、也不空白，只是少了几行
+    await waitFor(() => expect(container.textContent).toContain('app.ts'));
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain('path=src');
+  });
+
   it('选中的文件高亮，且判据是 fileState 而不是变更列表那份选中态', async () => {
     treeCache.value = new Map([[ROOT, [entry({ name: 'a.ts' })]]]);
     await waitFor(() => expect(container.textContent).toContain('a.ts'));

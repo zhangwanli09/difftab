@@ -177,13 +177,28 @@ describe('侧栏那两个 tab', () => {
   it('切回 Files 时把树刷一遍——不看那一档时 SSE 不重取它，回来就得补上', async () => {
     const fetchMock = vi.fn((_url: string) => new Promise(() => {}));
     vi.stubGlobal('fetch', fetchMock);
-    // 已经取过根那一层：`loadDir` 自带「取过就不再取」，所以真去发请求的只能是 refreshTree
+    // 已经取过根那一层：那个 effect 里的「取过就不再取」把取根那一趟挡掉，真去发的只能是 refreshTree
     treeCache.value = new Map([[ROOT, []]]);
     render(<App />, container);
 
     tabOf('Files').click();
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     expect(fetchMock.mock.calls[0]?.[0]).toContain('/api/tree');
+  });
+
+  it('切到 Files 时取根那一趟与刷新那一趟不重复发', async () => {
+    const fetchMock = vi.fn((_url: string) => new Promise(() => {}));
+    vi.stubGlobal('fetch', fetchMock);
+    // 根已经取过：这一趟该由 refreshTree 发。`loadDir` 自己不看缓存（展开与刷新要的都是新的
+    // 那一份），少了这个 effect 里那道「取过就不再取」，切一次 tab 就是两趟 ls-files×3
+    treeCache.value = new Map([[ROOT, []]]);
+    render(<App />, container);
+
+    tabOf('Files').click();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(
+      fetchMock.mock.calls.filter(([url]) => String(url).startsWith('/api/tree')),
+    ).toHaveLength(1);
   });
 
   it('状态条在两个 tab 下都留着——它说的是仓库怎么样，与左栏列什么无关', async () => {
