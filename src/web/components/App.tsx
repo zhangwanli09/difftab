@@ -9,11 +9,11 @@ import { useEffect, useRef } from 'preact/hooks';
 import { observeDiffPanel } from '../state/layout';
 import { activePane, activeTab, loadError, repoState } from '../state/store';
 import { PRODUCT_NAME } from '../state/title';
-import { loadDir, ROOT, refreshTree } from '../state/tree';
+import { loadDir, ROOT, refreshTree, treeCache } from '../state/tree';
 import { BranchStatus } from './BranchStatus';
 import { ChangeList } from './ChangeList';
 import { DiffView } from './DiffView';
-import { FileTree } from './FileTree';
+import { FileTree, FileTreeToolBar } from './FileTree';
 import { FileView } from './FileView';
 import { Icon } from './Icon';
 import { ThemeToggle } from './ThemeToggle';
@@ -98,16 +98,18 @@ export function App() {
   /**
    * 切到 `Files` 那一档时把树接上，**两件一起做**：
    *
-   * - `loadDir(ROOT)` 取根那一层。**不在挂载时预取**：冷启动门禁量的是「监听成功并打印
-   *   URL」，而这条请求要跑一趟 `ls-files`，预取等于把一个多数会话根本用不到的开销摆进首屏。
-   *   它自带「取过就不再取」，所以这里不必自己记。
+   * - 取根那一层，**且只在没取过时取**。「取过就不再取」这条判据只有这一处需要，所以它写在
+   *   这里，而不是塞回 `loadDir` 去当所有人的默认——展开与刷新两条路要的都是一份新的（见
+   *   `tree.ts`）。少了这个条件，切到这一档会连发两趟：这里一趟，紧接着 `refreshTree` 再一趟。
+   *   **不在挂载时预取**：冷启动门禁量的是「监听成功并打印 URL」，而这条请求要跑一趟
+   *   `ls-files`，预取等于把一个多数会话根本用不到的开销摆进首屏。
    * - `refreshTree()` 把展开着的层刷新一遍。**这是「刷新只给看得见的那一半付钱」的另一半**
    *   （见 `store.ts` 的 `refresh`）：不看这一档时 SSE 不重取树，切回来时就得补上，否则页面
    *   上是一份停在离开那一刻的旧目录。
    */
   useEffect(() => {
     if (tab !== 'files') return;
-    void loadDir(ROOT);
+    if (!treeCache.value.has(ROOT)) void loadDir(ROOT);
     refreshTree();
   }, [tab]);
 
@@ -144,6 +146,13 @@ export function App() {
             {error}
           </p>
         )}
+
+        {/* 树那条工具栏（眼下只有「全部折叠」）**只在 `Files` 那一档画**：`Changes` 档下它一
+            个动作都放不了，留一条空栏比不留更费解。**必须排在下面那层滚动容器之外**，塞进去
+            按钮会跟着树一起滚走；也**不塞进 tab 那一行的右端**（那里正空着）——那一行是
+            `role="tablist"`，里面躺一个非 tab 元素时读屏会把它当成第三个 tab 报出来。排在错误
+            条之下，「错误条在顶栏之下、列表之上」照旧成立 */}
+        {tab === 'files' && <FileTreeToolBar />}
 
         {/* 两个视图**共用这一层滚动容器**：左右两栏各一个滚动容器是既有约定（SSE 刷新要留住
             列表的滚动位置），tab 不是第三个。flex 的自动最小尺寸只在该轴 overflow:visible 时
