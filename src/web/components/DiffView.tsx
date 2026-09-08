@@ -107,10 +107,15 @@ function RenameNotice({ rename }: { rename: RenameInfo }) {
  * 操作。
  *
  * `inline-block` 是 sticky 要一个不被行盒切开的整块；`break-all` 留在 `<h2>` 上照样继承下去。
+ *
+ * **竖向那条 `sticky top-0` 的搭档是 `z-10`，不是可选的美化**：diff2html 的行号列是
+ * `position: absolute`，`Patch` 的宿主 div 又带着 `relative`，两者都排在本组件之后——定位元素
+ * 之间 z-index 为 auto 时按 DOM 顺序绘制，于是不写 z-index 时横杠是粘住了，只是整条被下面滚上
+ * 来的代码盖在底下，页面上看着就像它压根没粘。底色也因此必须是实心 token（本来就是）。
  */
 export function PathHeader({ path }: { path: string }) {
   return (
-    <h2 class="border-b border-panel-border bg-title-bar-background py-2 font-mono text-sm break-all">
+    <h2 class="sticky top-0 z-10 border-b border-panel-border bg-title-bar-background py-2 font-mono text-sm break-all">
       <span class="sticky left-0 inline-block px-4">{path}</span>
     </h2>
   );
