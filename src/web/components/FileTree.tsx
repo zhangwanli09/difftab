@@ -5,7 +5,7 @@
 // 一份先拍平再画的清单。
 
 import { useComputed } from '@preact/signals';
-import { ChevronRight } from 'lucide-preact';
+import { ChevronRight, ChevronsDownUp } from 'lucide-preact';
 import {
   type FileEntry,
   isConflicted,
@@ -13,9 +13,10 @@ import {
   type TreeEntry,
 } from '../../server/shared/protocol';
 import { fileByPath, fileState, openFile } from '../state/store';
-import { expandedDirs, ROOT, toggleDir, treeCache, treeErrors } from '../state/tree';
+import { collapseAll, expandedDirs, ROOT, toggleDir, treeCache, treeErrors } from '../state/tree';
 import { CODE_COLORS } from './ChangeList';
 import { Icon } from './Icon';
+import { IconButton } from './IconButton';
 
 /** 每一层的缩进量（px）。用内联 style 按层级算——层数没有上界，而 Tailwind 只产出源码里出现过的类名。 */
 const INDENT_PX = 12;
@@ -149,6 +150,28 @@ function Level({ path, depth }: { path: string; depth: number }) {
         <Row key={entry.path} entry={entry} depth={depth} />
       ))}
     </ul>
+  );
+}
+
+/**
+ * 树上方那条工具栏，眼下只有「全部折叠」一枚按钮。**与树分开导出，但挂在哪、以及只在 `Files`
+ * 那一档画，都由 `App` 决定**——那是侧栏版式的知识（尤其「必须在滚动容器之外」），理由写在挂
+ * 载它的那一处，不在这里再说一遍。
+ *
+ * **不给这条栏自己的 `border-b`**：tab 行那条已经把它与上面分开，再切一条只是把 320px 的侧栏
+ * 横着剁得更碎。**横向内边距与顶栏同一档（`px-3`）**：这枚按钮与顶栏那个主题开关是同一个
+ * `IconButton`，于是外层 padding 一致时两枚图标恰好落在同一条竖线上——差几个像素不报错，只是
+ * 「看着没对齐」，而侧栏右边这一列此刻正好只有它们两个。
+ *
+ * **不订阅 `expandedDirs` 去做禁用态**：一个目录都没展开时点下去写的是一个空集，而 `Row` 那份
+ * computed 是记忆化的（空集换空集重算出同一个 `false`），一行都不会重画——那是真的无操作。为一
+ * 个灰掉的图标让这枚按钮跟着每次展开收起重画不划算，而按钮忽有忽无也比常亮更难扫。
+ */
+export function FileTreeToolBar() {
+  return (
+    <div class="flex shrink-0 justify-end px-3 py-0.5">
+      <IconButton icon={ChevronsDownUp} label="Collapse all" onClick={collapseAll} />
+    </div>
   );
 }
 

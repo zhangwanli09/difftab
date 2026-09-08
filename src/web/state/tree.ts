@@ -95,6 +95,20 @@ export function toggleDir(path: string): void {
 }
 
 /**
+ * 全部折叠：树回到只剩根那一层。
+ *
+ * **只清展开态、不动 `treeCache`**——与 `toggleDir` 收起那一半逐字同一条理由：再展开时不该又
+ * 空一拍，而陈旧由展开那侧重取兜底。
+ *
+ * **已经是空集时不必自己短路**：`Row` 那份 computed 是记忆化的，空集换空集重算出同一个 `false`、
+ * 一行都不会重画，写下去是真的无操作。这一下把整棵树移出 `refreshTree` 的范围，而它恰恰是用户
+ * 准备回头继续翻树时按的——**「展开一律重取」那条因此是这枚按钮成立的前提**，见 `toggleDir`。
+ */
+export function collapseAll(): void {
+  expandedDirs.value = new Set();
+}
+
+/**
  * 一次 SSE `change` 之后重取树。
  *
  * 两道收窄，都是「不为没人看的东西付钱」：

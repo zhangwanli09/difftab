@@ -6,7 +6,7 @@
 import { render } from 'preact';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FileEntry, TreeEntry } from '../../../src/server/shared/protocol';
-import { FileTree } from '../../../src/web/components/FileTree';
+import { FileTree, FileTreeToolBar } from '../../../src/web/components/FileTree';
 import { fileState, repoState } from '../../../src/web/state/store';
 import { expandedDirs, ROOT, treeCache, treeErrors } from '../../../src/web/state/tree';
 
@@ -43,7 +43,15 @@ beforeEach(() => {
   fileState.value = null;
   repoState.value = null;
   vi.stubGlobal('fetch', vi.fn());
-  render(<FileTree />, container);
+  // 真实版式里工具栏在树之外（滚动容器之外，见 App），两件一起画才点得到那枚按钮。
+  // 它的 `textContent` 是空串，`rowOf()` 按可见文本挑行不会撞上它
+  render(
+    <>
+      <FileTreeToolBar />
+      <FileTree />
+    </>,
+    container,
+  );
 });
 
 afterEach(() => {
@@ -201,5 +209,70 @@ describe('FileTree', () => {
     expect(rowOf('a.ts').querySelector('span')?.className).toContain('w-3');
     // 占位在前、名字在后：名字那一段永远是最后一个 span
     expect(nameOf('a.ts').textContent).toBe('a.ts');
+  });
+});
+
+// 树上方那枚「全部折叠」。三条钉的都是「不报错、只是不对」：折不干净、顺手把缓存也清了（再
+// 展开时凭空空一拍），以及连右侧正在读的那个文件一起丢掉。
+describe('FileTreeToolBar', () => {
+  const collapseButton = (): HTMLButtonElement => {
+    const found = container.querySelector('[aria-label="Collapse all"]');
+    if (!found) throw new Error('没有画出「全部折叠」那枚按钮');
+    return found as HTMLButtonElement;
+  };
+
+  /** 根 → src → src/web → 一个文件，两层都展开着。 */
+  const twoLevelsOpen = () => {
+    treeCache.value = new Map([
+      [ROOT, [entry({ name: 'src', kind: 'directory' })]],
+      ['src', [entry({ name: 'web', kind: 'directory', path: 'src/web' })]],
+      ['src/web', [entry({ name: 'App.tsx', path: 'src/web/App.tsx' })]],
+    ]);
+    expandedDirs.value = new Set(['src', 'src/web']);
+  };
+
+  it('只画图标，名字由 aria-label 给——掉了它这就是一个无名控件，而页面上看不出来', () => {
+    expect(collapseButton().title).toBe('Collapse all');
+    expect(collapseButton().textContent).toBe('');
+    expect(collapseButton().querySelector('svg')).not.toBeNull();
+  });
+
+  it('一下把展开着的那几层全收起来，树回到只剩根那一层', async () => {
+    twoLevelsOpen();
+    await waitFor(() => expect(container.textContent).toContain('App.tsx'));
+
+    collapseButton().click();
+    await waitFor(() => expect(container.textContent).not.toContain('App.tsx'));
+    expect(container.textContent).not.toContain('web');
+    expect(container.textContent).toContain('src');
+    expect(expandedDirs.value.size).toBe(0);
+  });
+
+  it('不清 treeCache——再展开时不该又空一拍', async () => {
+    twoLevelsOpen();
+    await waitFor(() => expect(container.textContent).toContain('App.tsx'));
+
+    collapseButton().click();
+    await waitFor(() => expect(container.textContent).not.toContain('App.tsx'));
+    expect(treeCache.value.get('src')).toHaveLength(1);
+
+    // 手上还有那一层，于是再展开画的是原来那行，不是 Loading…
+    expandedDirs.value = new Set(['src']);
+    await waitFor(() => expect(container.textContent).toContain('web'));
+    expect(container.textContent).not.toContain('Loading…');
+  });
+
+  it('不动右侧选中态——折的是左栏在列什么，不是用户此刻在读什么', async () => {
+    twoLevelsOpen();
+    fileState.value = {
+      status: 'ready',
+      path: 'src/web/App.tsx',
+      payload: { kind: 'text', content: '' },
+    };
+    await waitFor(() => expect(container.textContent).toContain('App.tsx'));
+
+    collapseButton().click();
+    await waitFor(() => expect(container.textContent).not.toContain('App.tsx'));
+    expect(fileState.value?.path).toBe('src/web/App.tsx');
   });
 });

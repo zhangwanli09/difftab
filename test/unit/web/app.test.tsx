@@ -211,3 +211,37 @@ describe('侧栏那两个 tab', () => {
     expect(container.querySelector('footer')?.textContent).toContain('main');
   });
 });
+
+// 树那条工具栏在左栏里的位置。两条钉的都是「不报错、只是不对」：`Changes` 档下多出一条空栏，
+// 以及它被塞进滚动容器后跟着树一起滚走（那时按钮还在，只是往下翻两屏就找不着了）。
+describe('树上方那条工具栏', () => {
+  const collapseButton = () => container.querySelector('[aria-label="Collapse all"]');
+
+  /** 画出来、切到 `Files`、等工具栏出现。 */
+  const openFilesTab = async () => {
+    render(<App />, container);
+    tabOf('Files').click();
+    await waitFor(() => expect(collapseButton()).not.toBeNull());
+  };
+
+  it('只在 Files 那一档画——Changes 档下它一个动作都放不了', async () => {
+    render(<App />, container);
+    expect(collapseButton()).toBeNull();
+
+    tabOf('Files').click();
+    await waitFor(() => expect(collapseButton()).not.toBeNull());
+  });
+
+  it('横向内边距与顶栏同一档——两枚都是 IconButton，于是图标落在同一条竖线上', async () => {
+    await openFilesTab();
+    // 差几个像素不报错，只是「看着没对齐」，而侧栏右边这一列此刻正好只有它们两个。
+    // 按钮自身的内边距不必再钉：两处走的是同一个组件，构造上就相等
+    expect(header()?.className).toContain('px-3');
+    expect(collapseButton()?.parentElement?.className).toContain('px-3');
+  });
+
+  it('排在滚动容器之外——塞进 nav 里按钮会跟着树滚走', async () => {
+    await openFilesTab();
+    expect(container.querySelector('nav')?.contains(collapseButton())).toBe(false);
+  });
+});

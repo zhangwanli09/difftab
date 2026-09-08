@@ -13,7 +13,7 @@ import { loadDir, ROOT, refreshTree, treeCache } from '../state/tree';
 import { BranchStatus } from './BranchStatus';
 import { ChangeList } from './ChangeList';
 import { DiffView } from './DiffView';
-import { FileTree } from './FileTree';
+import { FileTree, FileTreeToolBar } from './FileTree';
 import { FileView } from './FileView';
 import { Icon } from './Icon';
 import { ThemeToggle } from './ThemeToggle';
@@ -146,6 +146,13 @@ export function App() {
             {error}
           </p>
         )}
+
+        {/* 树那条工具栏（眼下只有「全部折叠」）**只在 `Files` 那一档画**：`Changes` 档下它一
+            个动作都放不了，留一条空栏比不留更费解。**必须排在下面那层滚动容器之外**，塞进去
+            按钮会跟着树一起滚走；也**不塞进 tab 那一行的右端**（那里正空着）——那一行是
+            `role="tablist"`，里面躺一个非 tab 元素时读屏会把它当成第三个 tab 报出来。排在错误
+            条之下，「错误条在顶栏之下、列表之上」照旧成立 */}
+        {tab === 'files' && <FileTreeToolBar />}
 
         {/* 两个视图**共用这一层滚动容器**：左右两栏各一个滚动容器是既有约定（SSE 刷新要留住
             列表的滚动位置），tab 不是第三个。flex 的自动最小尺寸只在该轴 overflow:visible 时
