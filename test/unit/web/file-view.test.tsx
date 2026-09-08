@@ -60,7 +60,7 @@ describe('FileView', () => {
     expect(container.firstElementChild?.className).toBe('');
   });
 
-  it('横向滚动下留在左边的那几样：外层 w-max、行号槽、标题栏里那段路径', async () => {
+  it('滚动时留在原处的那几样：外层 w-max、行号槽、标题栏与它里面那段路径', async () => {
     ready('a.ts', { kind: 'text', content: 'const x = 1;\n' });
     await waitFor(() => expect(container.textContent).toContain('const x = 1;'));
 
@@ -86,6 +86,10 @@ describe('FileView', () => {
 
     const bar = container.querySelector('h2');
     expect([...(bar?.classList ?? [])].some((cls) => cls.startsWith('px-'))).toBe(false);
+    // 竖向那半条：`z-10` 掉了横杠照样粘着，只是被滚上来的代码整条盖在底下
+    for (const cls of ['sticky', 'top-0', 'z-10']) {
+      expect(bar?.classList.contains(cls)).toBe(true);
+    }
   });
 
   it('文本文件高亮出颜色，且行号与代码行数对得上', async () => {
