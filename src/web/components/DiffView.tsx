@@ -96,11 +96,22 @@ function RenameNotice({ rename }: { rename: RenameInfo }) {
   );
 }
 
-/** 右侧面板顶上那条路径。**两个面板共用**：它是面板唯一的 chrome，各写一份的症状是两边不一样。 */
+/**
+ * 右侧面板顶上那条路径。**两个面板共用**：它是面板唯一的 chrome，各写一份的症状是两边不一样。
+ *
+ * **横向内边距落在里面那个 span 上，不在 `<h2>` 上**：文件视图那一路的长行会把正文撑得比面板
+ * 宽（见 `FileView`），横杠本身要铺满整条可滚宽度、而路径这几个字要留在左边，两件事因此分给两
+ * 个盒子——底色与下边框归 `<h2>`，`sticky left-0` 归 span。`left-0` 能直接对齐是因为内边距跟着
+ * span 走：留在 `<h2>` 上时得改写成 `left-4` 去抵消它，而那两个数字从此必须一直相等，谁也不会
+ * 在改其中一个时想起另一个。逐行视图那侧没有横向滚动（diff2html 自己开滚动容器），这一层是空
+ * 操作。
+ *
+ * `inline-block` 是 sticky 要一个不被行盒切开的整块；`break-all` 留在 `<h2>` 上照样继承下去。
+ */
 export function PathHeader({ path }: { path: string }) {
   return (
-    <h2 class="border-b border-panel-border bg-title-bar-background px-4 py-2 font-mono text-sm break-all">
-      {path}
+    <h2 class="border-b border-panel-border bg-title-bar-background py-2 font-mono text-sm break-all">
+      <span class="sticky left-0 inline-block px-4">{path}</span>
     </h2>
   );
 }
