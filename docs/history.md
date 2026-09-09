@@ -13,6 +13,15 @@
 
 ## 发布日志
 
+### 0.2.1（2026-09-09）
+
+- **收进 patch 号，判据与 0.1.3 那次逐字相同**：两条 feat（折叠全部、路径栏钉在面板顶端）连同其余改动全落在界面层，不新增端点、不碰 CLI 参数与只读承诺，`dependencies` 依旧为空。0.2.0 拿到 minor 的理由是 `/api/tree` 与 `/api/file` 两个新端点，这一版没有对应的东西。
+- **`gh pr merge --rebase` 当场被拒，而仓库设置是条假线索**：报的是 `GraphQL: Rebase merges are not allowed on this repository. (mergePullRequest)`，可 `gh api repos/<owner>/difftab` 里 `allow_merge_commit` / `allow_squash_merge` / `allow_rebase_merge` 三个全是 `true`——真正卡住的是 `Protect main` 这条 ruleset 的 `allowed_merge_methods`，它只列了 `squash`，而 0.2.0 发布时还没有这条 ruleset（那次的 rebase 合并确实走通了，本文上一节记着它重写 committer 引出的分叉）。**这条报得很响，不属于静默故障**，但它把 `RELEASING.md` 从 0.2.0 起写着的第 2 步当场推翻了。**这一版是用 squash 合的**，随后 ruleset 把 `rebase` 加了回去（现在是 `["squash", "rebase"]`），第 2 步因此仍写 `--rebase`；留在清单里的是「rebase 被拒时该去查哪儿」——仓库设置那三个字段回 `true` 是条会骗人一程的线索。
+- **这一版用 squash 合掉没有任何损失，但那是运气**：发布分支上只有版本号一个提交，squash 与 rebase 的结果一模一样。真正的后果落在第 1 步而不是第 2 步——squash 会把分支上的所有提交融成一个，若照 0.2.0 的写法把 README 提交也放进发布分支，两个提交会静默融成一个，而「一个提交一件事」正是发布提交好读的全部原因。**这条即使 rebase 已经恢复也仍成立**，因为下次再被关掉时症状与判据完全一样，已连同「查 ruleset 而不是仓库设置」一起补进 `RELEASING.md` 的「会咬人的事」，那节从八条变成九条。合并命令本身另有一处：不给 `--subject` 时 gh 会把 ` (#20)` 缀在 subject 后面。
+- **「先建分支再提交」第一次照 0.2.0 补的新写法走了一遍，分叉那条整条没有发生**：`gh pr merge --delete-branch` 顺手把本地 `main` 快进到了合并后的提交，`git pull --ff-only` 无事可做，两侧 tree 哈希相同，tag 打在远端那一份上。**判据是本地 `main` 上一个提交都没有**，与合并方式是 rebase 还是 squash 无关——两种都重写 SHA。
+- **README 那两个自由文本里的实测数字这次仍然准**（约 40ms、gzip 71KB，本版实测冷启动中位 42.9ms、`app.js` gzip 71.4KB），所以两份 README 一个字没动。0.2.0 因为这两个数字过期立下的那条人读检查，这一版是它第一次跑出绿。
+- **发布后四条验收一次过**：`npm view` 回 0.2.1、全局装完 `npm ls -g --depth=1 difftab` 底下没有传递依赖、在一个新建的临时仓库里 `npx difftab@0.2.1 --no-open` 打印 URL 并按 `DIFFTAB_IDLE_MS` 自行退出、Release 建在 tag `v0.2.1` 上。
+
 ### 0.2.0（2026-09-06）
 
 - **第一次发 minor，判据是这一版越过了「改动全落在界面版式」那条线**：文件浏览器是 `spec.md` 里一个完整的 P1 功能，带 `/api/tree`、`/api/file` 两个新端点，而 0.1.2 与 0.1.3 收进 patch 的理由恰恰是「不新增接口、只改版式」。CLI 参数、只读承诺与空 `dependencies` 一处没动，所以是 minor 不是 major——0.x 下把 major 留给会推翻只读承诺或改掉 CLI 形状的那类改动。
