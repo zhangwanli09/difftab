@@ -122,7 +122,7 @@
 - **且必须排在 diff2html 之后**：特异性同为 (0,1,0)，胜出纯靠源码顺序，挪到前面会让 23 条覆写整片静默失效（两半都由 `check:css` 拦）
 - 并排视图那对 `--d2h-change-*` **刻意与纯增删同色**（VS Code 没有这一档区分），是取舍不是漏映射
 - **滚动容器内部必须有一个 positioned 祖先**（`DiffView` 宿主 div 上的 `relative`）——diff2html 行号列是 `position:absolute`，缺了它一滚代码行走了、整列行号原地钉死
-- **`outputFormat` 的判据量 diff 面板的 border box、不量 content box**（`observe` 与读值两处都得写）——否则滚动条进出让阈值附近两种版式来回重画；量法必须与阈值同住 `state/layout.ts`
+- **`outputFormat` 量的是 diff 面板那一层的 border box**（不是里面那层滚动容器、不是 content box；`observe` 与读值两处都得写）——否则滚动条进出让阈值附近两种版式来回重画；量法必须与阈值同住 `state/layout.ts`
 - **变更列表一行的文件名与目录必须同住一个 `truncate` span**（名在前、目录在后）——拆成平级 flex 子项会让两段按底边对齐，页面上只是「看着没对齐」
 - **文件视图的容器不得加 `hljs` 类**——那条规则是 unlayered 的，会压过 Tailwind 的 `bg-editor-background`，症状只是「文件视图底色跟页面对不上」；15 条 token 规则不挂容器类照样生效
 - **切侧栏 tab 不得改 `activePane`**——写成「切到 Files 就清空右侧」时页面看着正常，只是每瞄一眼目录树就丢掉正在读的 diff

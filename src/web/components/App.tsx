@@ -114,8 +114,10 @@ export function App() {
   }, [tab]);
 
   // diff 版式的**唯一**测量点。本组件只管「量哪个元素、什么时候开始和停」——量法与阈值都在
-  // `state/layout.ts`，两者是一个取舍的两半。量的是这个 `<section>` 而不是 DiffView 底下那个
-  // 宿主 div：前者从挂载到卸载一直在，后者每换一个文件就重建一次，观察者会跟着反复拆建
+  // `state/layout.ts`，两者是一个取舍的两半。量的是这个 `<section>`，**既不是 DiffView 底下那
+  // 个宿主 div、也不是两个视图里那层滚动容器**：这一层从挂载到卸载一直在，那两个各自会随换文
+  // 件、换 pane 重建，观察者跟着反复拆建；而滚动条是从滚动容器的 content box 里扣的，量它等于
+  // 把「换版式 → 滚动条进出 → 宽度抖十几像素」的回路请回来
   useEffect(() => {
     const panel = diffPanel.current;
     return panel === null ? undefined : observeDiffPanel(panel);
@@ -186,9 +188,11 @@ export function App() {
         )}
       </aside>
 
-      {/* diff 容器自己滚：列表侧的滚动位置在 SSE 刷新时要留住，
-          两侧共用一个滚动容器就做不到 */}
-      <section ref={diffPanel} class="min-w-0 flex-1 overflow-auto">
+      {/* **面板这一层自己不滚**：滚动容器在两个视图内部，路径横杠排在它之外（两者由
+          `DiffView` 导出的 `Panel` 一起给），于是这里只剩一列 flex——横杠 `shrink-0`，底下那层
+          `min-h-0 flex-1 overflow-auto`。左右两栏仍是两个各自独立的滚动容器：列表侧的滚动位置
+          在 SSE 刷新时要留住，两侧共用一个就做不到 */}
+      <section ref={diffPanel} class="flex min-w-0 flex-1 flex-col">
         {pane === 'file' ? <FileView /> : <DiffView />}
       </section>
     </div>
