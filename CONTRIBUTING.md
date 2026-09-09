@@ -114,6 +114,10 @@ Imperative mood, subject ≤ 50 characters with no trailing period, body wrapped
 covering what and why rather than how. One commit does one thing — don't mix a refactor
 into a feature change.
 
+A squash merge appends ` (#N)` to the subject, and the 50 characters have to cover that
+too. Pass your own subject with `gh pr merge --squash --subject '…'`, or merge with
+`--rebase`.
+
 ## Reporting bugs
 
 Please include your OS, `node --version`, `git --version`, and the difftab version.

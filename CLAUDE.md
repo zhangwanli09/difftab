@@ -17,6 +17,7 @@
 
 - **英文** + **Conventional Commits**：`<type>(<scope>): <description>`，type 取 `feat`/`fix`/`docs`/`refactor`/`perf`/`test`/`build`/`ci`/`chore`，破坏性加 `!`
 - 祈使语气，subject ≤ 50 不加句号，body 折 72 只写 what 与 why
+- squash 合并会把 ` (#N)` 缀在 subject 后，50 的预算含它——顶格的标题要么 `gh pr merge --squash --subject '…'` 自己给，要么走 `--rebase`
 - 一个提交一件事，不混重构与功能改动
 
 ## 3. 常用命令
