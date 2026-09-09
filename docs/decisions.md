@@ -110,6 +110,7 @@
 | 自行重写 diff2html 的高亮切分逻辑 | 需要把整文件高亮结果按 diff 行边界切回并补齐跨行未闭合标签；既然允许深导入源码模块，自研等于维护一份更易出错的等价物 |
 | 自研一份带回声抑制的两侧联动，替掉 `synchronisedScroll` | 换回来的只有「两侧滚动上限不等时边界处那一次顿挫」，而代价是一段自研的滚动同步代码（要拿「这一侧已经停在它自己够得着的位置」把回声认出来）、一条决策记录，以及一个只有在 happy-dom 里手工模拟 clamp 才跑得起来的单测 |
 | 单独 import `highlight.js/lib/languages/{jsx,tsx,toml}` | 这三个模块不存在（实测 404），它们是 `javascript` / `typescript` / `ini` 的**别名**，注册主模块时自动生效；写了会在构建期 resolve 失败 |
+| 为 `.vue` / `.env` 引第三方语言包（highlightjs-vue 之类）或新增模块 | 上游 highlight.js **没有** vue / svelte / env 模块，第三方包意味着一份不受 hljs 版本约束的额外依赖；而实测把它们映射到已注册的模块已经够用——SFC 的模板段按 `xml` 上色，`<script>` / `<style>` 那两段由逐行判定器换成 javascript / css（**不是**靠 xml 的子语言：那要整块正文一次高亮才成立，diff 视图是逐行的，见 [`design/diff-render.md`](design/diff-render.md) 的「单文件组件的区块高亮」），`.env` 走 `ini` 后 `KEY` 是 `hljs-attr`、`#` 是注释。补一张映射表的体积是 0，而语言清单是 JS 预算的主导项 |
 | `outputFormat` 按**视口**宽度判（`matchMedia`） | 面板宽度恒等于「视口 − 320」，按视口判等于把侧栏宽度这个常数在 CSS 之外再写一遍；侧栏一改阈值就静默错位 |
 | 量里面那层滚动容器，或按 content box（`contentRect` / `contentBoxSize`）判阈值 | **滚动条是从 content box 里扣的**：换格式改变内容高度 → 滚动条进出 → 那一层的 content box 宽度抖十几像素，阈值落在抖动区间里时两种格式来回重画。标题栏搬出滚动区之后面板自己不滚，量它的 border box 从源头没有这份抖动 |
 | 右侧标题栏用滚动容器内的 `sticky top-0` 钉住 | 要靠 `z-10` 与实心底色去躲 diff2html 那列 `position:absolute` 的行号（宿主 div 的 `relative` 是它们的包含块，两者都排在横杠之后）；文件视图那侧还得靠外层 `w-max min-w-full` 与一个 `sticky left-0` 的 span 才铺得满、留得住，`px-4` 与 `left-4` 两个数字从此绑死。把横杠排到滚动容器之外，这几处一起消失——越界的盒子被容器的 `overflow` 裁掉，够不着它 |

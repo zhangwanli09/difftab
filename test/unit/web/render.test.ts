@@ -2,19 +2,23 @@
 //
 // **这几条是本文件存在的理由，它们全都「违反后不报错、只是静默出错」**：
 //
-// 1. `draw()` 之后**不得**再补一次 `highlightCode()`——第二遍的 `nodeStream()` 拿到的已是第一
-//    遍插入的 hljs span,`mergeStreams` 把两份流交织进同一行，产出**嵌套重复**的 span(开销也翻
-//    倍)，而页面看上去只是颜色略怪，不报错；
-// 2. `plaintext` 兜底——无扩展名文件(`LICENSE` / `Dockerfile`)会让 diff2html 把语言改写成字面
+// 1. **高亮只做一遍**。现行配置是 `highlight: false` + `draw()` 之后走我们自己那个逐行循环
+//    （`highlightLines()`，`highlightCode()` 一次都不调）；把 `highlight` 也开上就是两遍，第二遍
+//    的 `nodeStream()` 拿到的已是第一遍插入的 hljs span,`mergeStreams` 把两份流交织进同一行，产
+//    出**嵌套重复**的 span(开销也翻倍)，而页面看上去只是颜色略怪，不报错；
+// 2. **语言由 `languageOf(path)` 判，不由 diff2html 判**——它内置的 `languagesToExt` 里没有
+//    `vue` / `env` / `svelte`，也够不着 `.env.local` 这种多段名；而单文件组件还要**逐行**换语言
+//    （`createLineLanguage()`），diff2html 对一个文件只认一个语言。判据是行上那个语言 class；
+// 3. `plaintext` 兜底——无扩展名文件(`LICENSE` / `Dockerfile`)会让 diff2html 把语言改写成字面
 //    量 `'plaintext'` 再无条件调 hljs，漏注册时异常从 `highlightCode()` 冒到调用方，**炸的是整
 //    个 diff 视图**，不是那一个文件；
-// 3. `colorScheme` 必须是 `'light'`——传 `'auto'` 会让 `.d2h-auto-color-scheme` 前缀规则(特异
+// 4. `colorScheme` 必须是 `'light'`——传 `'auto'` 会让 `.d2h-auto-color-scheme` 前缀规则(特异
 //    性 0,2,0)压过基础规则、读回 diff2html 自带的 `--d2h-dark-*`，vscode-theme.css 覆写的那 23
 //    个变量在深色下一条都不生效；
-// 4. `outputFormat` 由调用方按 diff 面板宽度给。两种版式的判据是一对正反计数：并排下一个文件是
+// 5. `outputFormat` 由调用方按 diff 面板宽度给。两种版式的判据是一对正反计数：并排下一个文件是
 //    **两张** `.d2h-diff-table`（各裹在一个 `.d2h-file-side-diff` 里），逐行下是**一张**且
 //    `.d2h-file-side-diff` 一个都没有。传错时页面照常渲染，只是版式不对；
-// 5. **并排两侧的横向联动**(`synchronisedScroll`)。关掉时两半各滚各的——同一行的新旧内容错开
+// 6. **并排两侧的横向联动**(`synchronisedScroll`)。关掉时两半各滚各的——同一行的新旧内容错开
 //    成两个列位置，而页面照常渲染、不报错。
 //
 // **每条否定式断言都配一条正面断言**：容器空着的时候，「没有重复 span」「没有 auto class」全都自
@@ -78,6 +82,58 @@ index 1111111..2222222 100644
 +Copyright (c) 2026
 `;
 
+/**
+ * Vue SFC 的补丁，三个区块齐全。**highlight.js 上游没有 vue 模块**，diff2html 的
+ * `languagesToExt` 里也没有 `vue` 这个键——两侧都认不出时整份文件是没有颜色的纯文本；而只把它
+ * 判成 `xml` 时，`<script>` / `<style>` 那两段仍旧一个 span 都拿不到（diff2html 逐行高亮，跨行
+ * 状态不保留），页面上就是「模板有色、另外两段整块白」。
+ *
+ * 每段都留了上下文行——增删行的类名在 happy-dom 下会丢（理由见文件头）。
+ */
+const VUE_PATCH = `diff --git a/src/App.vue b/src/App.vue
+index 1111111..2222222 100644
+--- a/src/App.vue
++++ b/src/App.vue
+@@ -1,12 +1,12 @@
+ <script setup lang="ts">
+ import { ref } from 'vue'
+-const msg = ref('hi')
++const msg = ref('hello')
+ </script>
+ 
+ <template>
+   <p class="card">{{ msg }}</p>
+ </template>
+ 
+ <style scoped>
+ .card { color: red; }
+ </style>
+`;
+
+/** `.env` 的补丁。两条上下文行分别承载 `hljs-comment` 与 `hljs-attr`。 */
+const ENV_PATCH = `diff --git a/.env b/.env
+index 1111111..2222222 100644
+--- a/.env
++++ b/.env
+@@ -1,3 +1,3 @@
+ # local overrides
+ API_URL=http://localhost:3000
+-DEBUG=false
++DEBUG=true
+`;
+
+/** `.pyi` 走的是第三道（hljs 的 python 模块没有 `pyi` 这个别名，diff2html 那张表有）。 */
+const PYI_PATCH = `diff --git a/stubs/api.pyi b/stubs/api.pyi
+index 1111111..2222222 100644
+--- a/stubs/api.pyi
++++ b/stubs/api.pyi
+@@ -1,3 +1,3 @@
+ from typing import Any
+ 
+-def get(url: str) -> Any: ...
++def get(url: str, timeout: float) -> Any: ...
+`;
+
 let host: HTMLElement;
 
 beforeEach(() => {
@@ -90,7 +146,7 @@ const hljsSpanCount = () => host.querySelectorAll('[class*="hljs-"]').length;
 
 describe('renderDiff', () => {
   it('画出 diff 表格并给代码上色', () => {
-    renderDiff(host, TS_PATCH, 'side-by-side');
+    renderDiff(host, 'src/a.ts', TS_PATCH, 'side-by-side');
 
     // 正面断言：下面几条否定式断言的前提
     expect(host.querySelector('.d2h-diff-table')).not.toBeNull();
@@ -99,7 +155,7 @@ describe('renderDiff', () => {
   });
 
   it('高亮只做一遍——没有一模一样的 span 套一层', () => {
-    renderDiff(host, TS_PATCH, 'side-by-side');
+    renderDiff(host, 'src/a.ts', TS_PATCH, 'side-by-side');
 
     // 在 `draw()` 后补一次 `highlightCode()`（即被禁的那个写法）时，**先炸的是这一条**：第二遍让
     // 上下文行也走一次 mergeStreams，连它的类名都被写坏（机制见文件头），span 数从 20+ 掉到 0——
@@ -120,13 +176,47 @@ describe('renderDiff', () => {
 
   it('无扩展名文件走 plaintext 兜底，不抛异常也不空白', () => {
     // 漏注册 plaintext 时这里抛 `Unknown language: "plaintext"`，而整个 diff 视图都渲染不出来
-    expect(() => renderDiff(host, LICENSE_PATCH, 'side-by-side')).not.toThrow();
+    expect(() => renderDiff(host, 'LICENSE', LICENSE_PATCH, 'side-by-side')).not.toThrow();
     expect(host.querySelector('.d2h-diff-table')).not.toBeNull();
     expect(host.textContent).toContain('MIT License');
   });
 
+  // 三段各自的语言 class + 各自真上了色。**只断言「模板有色」是抓不到这次回归的**——那一段在
+  // 只判 xml 的写法下本来就有色，白的是另外两段
+  it.each([
+    ['xml', '.hljs-name', 'template'],
+    ['ts', '.hljs-keyword', 'script'],
+    ['css', '.hljs-attribute', 'style'],
+  ])('.vue 的 %s 段落到 %s（区块：%s）', (language, token) => {
+    renderDiff(host, 'src/App.vue', VUE_PATCH, 'side-by-side');
+
+    // 判据的两半：行上落了这个语言 class，且这一段真的上了色。只断言前者时，一个高亮没跑起来
+    // 的容器照样通过；只断言后者时，别的语言碰巧也能给这段文本上点色
+    expect(host.querySelectorAll(`.d2h-code-line-ctn.${language}`).length).toBeGreaterThan(0);
+    expect(host.querySelectorAll(token).length).toBeGreaterThan(0);
+  });
+
+  // 语言只由 path 判、与补丁头无关，所以同一段 `.env` 补丁换个 path 就能盖住多段名那条规则：
+  // `.env.production` 的「扩展名」是 `production`，只有按文件名的规则接得住
+  it.each(['.env', '.env.local', 'apps/web/.env.production'])('%s 走 ini', (path) => {
+    renderDiff(host, path, ENV_PATCH, 'side-by-side');
+
+    expect(host.querySelectorAll('.d2h-code-line-ctn.ini').length).toBeGreaterThan(0);
+    // `API_URL` 那行是上下文行，ini 把等号左边判成 attr
+    expect(host.querySelectorAll('.hljs-attr').length).toBeGreaterThan(0);
+    expect(host.querySelectorAll('.hljs-comment').length).toBeGreaterThan(0);
+  });
+
+  it('.pyi 走 python——语言判据的第三道（上游那张 languagesToExt）也在这条路上', () => {
+    renderDiff(host, 'stubs/api.pyi', PYI_PATCH, 'side-by-side');
+
+    expect(host.querySelectorAll('.d2h-code-line-ctn.python').length).toBeGreaterThan(0);
+    // `from typing import Any` 是上下文行，python 把 from / import 判成关键字
+    expect(host.querySelectorAll('.hljs-keyword').length).toBeGreaterThan(0);
+  });
+
   it('重命名的补丁画成一个文件、新旧两个名字都在（不退化成全新增）', () => {
-    renderDiff(host, RENAME_PATCH, 'side-by-side');
+    renderDiff(host, 'src/kept-renamed.txt', RENAME_PATCH, 'side-by-side');
 
     // 一个文件而不是两个：diff2html 把 `rename from/to` 认成同一个文件的两侧
     expect(host.querySelectorAll('.d2h-file-wrapper')).toHaveLength(1);
@@ -141,7 +231,7 @@ describe('renderDiff', () => {
   });
 
   it('容器上没有 d2h 自己那套深色 class——深浅归我们的 --d2h-* 覆写', () => {
-    renderDiff(host, TS_PATCH, 'side-by-side');
+    renderDiff(host, 'src/a.ts', TS_PATCH, 'side-by-side');
 
     // 正面断言：colorScheme 确实生效了，只是生效成那个空 class
     expect(host.querySelector('.d2h-light-color-scheme')).not.toBeNull();
@@ -158,7 +248,7 @@ describe('renderDiff', () => {
     ['side-by-side', 2, 2],
     ['line-by-line', 1, 0],
   ] as const)('outputFormat=%s:%i 张表、%i 个并排容器', (format, tables, sideDiffs) => {
-    renderDiff(host, TS_PATCH, format);
+    renderDiff(host, 'src/a.ts', TS_PATCH, format);
 
     expect(host.querySelectorAll('.d2h-diff-table')).toHaveLength(tables);
     expect(host.querySelectorAll('.d2h-file-side-diff')).toHaveLength(sideDiffs);
@@ -166,7 +256,7 @@ describe('renderDiff', () => {
   });
 
   it('并排两侧横向联动——滚一侧，另一侧跟到同一个 scrollLeft', () => {
-    renderDiff(host, TS_PATCH, 'side-by-side');
+    renderDiff(host, 'src/a.ts', TS_PATCH, 'side-by-side');
 
     const sides = [...host.querySelectorAll('.d2h-file-side-diff')];
     // 正面断言：两个滚动容器真的画出来了——少了它，下面那条 toEqual 在一个空数组上同样通过
@@ -188,8 +278,8 @@ describe('renderDiff', () => {
   it('同一个容器重画一次不会叠加两份 diff', () => {
     // 同一个文件拿到新补丁时就走这条路（DiffView 的 effect 按 [patch] 重跑），靠的是 draw() 内部
     // 整片覆盖 innerHTML
-    renderDiff(host, TS_PATCH, 'side-by-side');
-    renderDiff(host, TS_PATCH, 'side-by-side');
+    renderDiff(host, 'src/a.ts', TS_PATCH, 'side-by-side');
+    renderDiff(host, 'src/a.ts', TS_PATCH, 'side-by-side');
 
     // 数的是「几个文件」而不是「几张表」：并排下一个文件本来就是左右两张表，按表数会得到 2
     expect(host.querySelectorAll('.d2h-file-wrapper')).toHaveLength(1);

@@ -13,8 +13,13 @@
 
 import type { ColorSchemeType, OutputFormatType } from 'diff2html/lib-esm/types.js';
 import { Diff2HtmlUI } from 'diff2html/lib-esm/ui/js/diff2html-ui-base.js';
+import {
+  closeTags,
+  mergeStreams,
+  nodeStream,
+} from 'diff2html/lib-esm/ui/js/highlight.js-helpers.js';
 
-import { getHljs } from './hljs';
+import { createLineLanguage, getHljs } from './hljs';
 
 /**
  * diff2html 的两种版式——**别名，不是第二份声明**：自己写一遍 `'side-by-side' |
@@ -27,17 +32,34 @@ export type DiffOutputFormat = OutputFormatType;
 /**
  * 把一段 unified diff 渲染进 target 并高亮。调用方必须在 Preact 的 ref/effect 之后调用——
  * `draw()` 内部是 `innerHTML` 赋值加命令式事件绑定，不能与 vdom 争夺同一棵子树。
+ *
+ * **`path` 是语言判据的来源**，与文件视图共用 `languageOf()`：diff2html 自己那条判据是「文件
+ * 名最后一段扩展名 → 它内置的 `languagesToExt`」，而那张表里没有 `vue` / `env` / `svelte` 之
+ * 类，也够不着 `.env.local` 这种多段名——症状是这些文件在两个视图里都静默没有颜色。
  */
-export function renderDiff(target: HTMLElement, patch: string, format: DiffOutputFormat): void {
+export function renderDiff(
+  target: HTMLElement,
+  path: string,
+  patch: string,
+  format: DiffOutputFormat,
+): void {
   const ui = new Diff2HtmlUI(
     target,
     patch,
     {
-      // 用不到的开关一律关掉，留下的是 highlight 与紧随其后那条 synchronisedScroll
+      // 用不到的开关一律关掉，留下的是紧随其后那条 synchronisedScroll
       fileListToggle: false,
       fileContentToggle: false,
       stickyFileHeaders: false,
-      highlight: true,
+      /**
+       * **高亮整个归 `highlightLines()`（见文件末），这里必须关掉。**
+       *
+       * `highlightCode()` 对一个文件只认一个语言（每个 `.d2h-file-wrapper` 上的 `data-lang`），
+       * 而单文件组件一份文件里有三种。开着它就是**两遍高亮**：第二遍读到的 `textContent` 仍是
+       * 纯文本，但 `nodeStream()` 拿到的已是第一遍插入的 hljs span，`mergeStreams` 把两份流交
+       * 织成嵌套重复的 span，开销也白付一倍。
+       */
+      highlight: false,
       drawFileList: false,
       /**
        * **并排两侧的横向联动**。两半各是一个独立的滚动容器（`.d2h-file-side-diff` 自带
@@ -71,8 +93,47 @@ export function renderDiff(target: HTMLElement, patch: string, format: DiffOutpu
     },
     getHljs(),
   );
-  // highlight: true 时 draw() 内部已经调过 highlightCode()，这里不能再补一次：
-  // 第二遍读到的 textContent 仍是纯文本，但 nodeStream() 拿到的已是第一遍插入的
-  // hljs-* span,mergeStreams 会把两份流交织成嵌套重复的 span，开销也白付一倍。
+  // draw() 只写 innerHTML 与绑那对滚动联动，不高亮（highlight: false，理由见上）
   ui.draw();
+  highlightLines(target, path);
+}
+
+/**
+ * 逐行上色。**替掉的是 `Diff2HtmlUI.highlightCode()` 的那个 `forEach`，不是它的切分逻辑**——
+ * `closeTags` / `nodeStream` / `mergeStreams` 三个仍是 diff2html 的导出，原样调用：把一行的高亮
+ * 结果与这一行已有的 `<del>` / `<ins>` 词级标记合流、补齐被切断的标签，是它们的活，自研等于维
+ * 护一份更易出错的等价物。
+ *
+ * **自研的只有「这一行用哪个语言」**：上游那个循环对整个文件只取一次 `data-lang`，而单文件组件
+ * 一份文件里有三种语言（模板 / 脚本 / 样式）。判定器由 `createLineLanguage()` 给，状态机住在
+ * `hljs.ts`——语言的事继续只在那一个文件里。
+ *
+ * **一张表一个判定器**：状态属于「一条连续的行序」，而并排版式下 `.d2h-diff-table` 有两张（左
+ * 旧右新），各自内部才连续。共用一个的话，右栏开头继承的是左栏末尾的状态——两栏行数相同时它
+ * 恰好总被右栏的上下文行重置回来（试出来的：这条**造不出失败用例**，所以没有配测试），但那是
+ * 巧合不是判据，两栏内容一错开就不成立。
+ */
+function highlightLines(target: HTMLElement, path: string): void {
+  const hljs = getHljs();
+  for (const table of target.querySelectorAll('.d2h-diff-table')) {
+    const languageAt = createLineLanguage(path);
+    for (const line of table.querySelectorAll('.d2h-code-line-ctn')) {
+      const text = line.textContent;
+      if (text === null) continue;
+      const result = closeTags(
+        // ignoreIllegals：补丁给的是片段，一行代码在语法上「不合法」是常态
+        hljs.highlight(text, { language: languageAt(text), ignoreIllegals: true }),
+      );
+      const original = nodeStream(line);
+      if (original.length) {
+        // 这一行里已经有 diff2html 画的词级 <del> / <ins>，两份流得交织回一行
+        const rendered = document.createElementNS('http://www.w3.org/1999/xhtml', 'div');
+        rendered.innerHTML = result.value;
+        result.value = mergeStreams(original, nodeStream(rendered), text);
+      }
+      line.classList.add('hljs');
+      if (result.language) line.classList.add(result.language);
+      line.innerHTML = result.value;
+    }
+  }
 }
