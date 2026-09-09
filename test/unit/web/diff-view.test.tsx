@@ -47,8 +47,9 @@ const ready = (path: string, payload: DiffPayload, rename: RenameInfo | null = n
   diffState.value = { status: 'ready', path, rename, payload };
 };
 
-/** DiffView 的最外层 div 下，最后一个元素就是 payload 那一档（提示行或 diff 容器）。 */
-const payloadNode = () => container.firstElementChild?.lastElementChild ?? null;
+/** 标题栏的兄弟，也是唯一滚的那一层；它的最后一个元素就是 payload 那一档（提示行或 diff 容器）。 */
+const scroller = () => container.querySelector('.overflow-auto');
+const payloadNode = () => scroller()?.lastElementChild ?? null;
 
 beforeEach(() => {
   document.body.innerHTML = '';
@@ -116,6 +117,18 @@ describe('DiffView', () => {
         expect(container.querySelector('[class*="hljs-"]')).not.toBeNull();
       });
     }
+  });
+
+  it('路径横杠排在滚动容器之外', async () => {
+    ready('a.ts', { kind: 'text', patch: patchFor('const x = 1;') });
+    await waitFor(() => expect(container.querySelector('h2')).not.toBeNull());
+
+    // 面板是一列 flex，横杠与滚动容器是两个兄弟——竖着滚几千行时它留在原处，靠的不再是
+    // `sticky top-0` + `z-10`（那一套要去躲 diff2html 那列绝对定位的行号）。塞回滚动容器里
+    // 页面不会报错，只是横杠跟着代码滚走
+    const bar = container.querySelector('h2');
+    expect(scroller()?.contains(bar)).toBe(false);
+    expect(bar?.nextElementSibling).toBe(scroller());
   });
 
   it('diff2html 的宿主容器带着 relative——行号列的包含块', async () => {

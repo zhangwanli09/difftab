@@ -9,7 +9,7 @@ import { useMemo } from 'preact/hooks';
 import type { FilePayload } from '../../server/shared/protocol';
 import { getHljs, languageOf } from '../diff/hljs';
 import { fileState } from '../state/store';
-import { Notice, PathHeader, tooLargeNotice } from './DiffView';
+import { Notice, Panel, tooLargeNotice } from './DiffView';
 
 /**
  * 正文 + 行号。
@@ -51,7 +51,7 @@ function Content({ path, content }: { path: string; content: string }) {
 }
 
 /**
- * 这一路要不要一个「按内容撑宽」的外层盒子（`w-max min-w-full`，理由见 `FileView`）。
+ * 这一路要不要一个「按内容撑宽」的盒子（`w-max`，理由见 `FileView`）。
  *
  * **写成按 kind 穷举的 `Record` 而不是 `payload.kind === 'text'` 一句**：那样写它就是第二处独立
  * 判定 kind 的地方，与紧挨着的 `Payload` 各写各的——将来加进第五个 kind 时只改 `Payload`、忘了
@@ -90,12 +90,12 @@ export function FileView() {
   if (state === null) return <Notice>Select a file on the left.</Notice>;
 
   /**
-   * **`w-max min-w-full` 是行号槽与标题栏留在原地的前提，不是排版偏好。** 长行会把正文撑得比
-   * 面板宽，而横向滚动发生在外面那个 `<section>` 上。这一层若是普通块盒，它的宽度只有面板那么
-   * 宽：行号槽的 `sticky left-0` 于是一点滑动余量都没有（粘不粘都是同一个位置），横向一滚整列
-   * 行号跟着内容滑出视口；同一个原因下标题栏的底色与下边框也只画到面板那么宽，滚过去之后顶上
-   * 是一条秃的。`w-max` 让这一层长到与最长那行齐平，两者才各自有地方可粘、可铺。**`min-w-full`
-   * 那半条同样必填**：只写 `w-max` 时短文件会让这一层比面板还窄，标题栏跟着缩成半截。
+   * **`w-max` 是行号槽留在原地的前提，不是排版偏好。** 长行会把正文撑得比面板宽，而横向滚动
+   * 发生在标题栏底下那层滚动容器上。这一层若是普通块盒，它的宽度只有面板那么宽：行号槽的
+   * `sticky left-0` 于是一点滑动余量都没有（粘不粘都是同一个位置），横向一滚整列行号跟着内容
+   * 滑出视口。`w-max` 让这一层长到与最长那行齐平，它才有地方可粘。**从前与它并写的
+   * `min-w-full` 已经去掉**：那半条挡的是「短文件下标题栏缩成半截」，而标题栏搬出滚动区之后
+   * 宽度不再来自这一层，正文这一路自己没有任何要铺满面板的底色或边框。
    *
    * **但它只能给正文那一路**（`NEEDS_WIDE_BOX`）：`max-content` 下文本一律不折行，而提示行那
    * 几路是散文——套进去之后整句排成一行横着跑出面板，要横向滚才看得全。symlink 那句里的目标路
@@ -104,15 +104,17 @@ export function FileView() {
    */
   const wide = state.status === 'ready' && NEEDS_WIDE_BOX[state.payload.kind];
 
+  // 按内容撑宽的那个盒子在滚动容器**里面**（外壳那两层由 `Panel` 给），它只管正文
   return (
-    <div class={wide ? 'w-max min-w-full' : ''}>
-      <PathHeader path={state.path} />
-      {state.status === 'loading' && <Notice>Loading…</Notice>}
-      {state.status === 'error' && <Notice>Could not load this file: {state.message}</Notice>}
-      {/* key 让换文件走卸载重挂，两份正文因此不可能落在同一棵子树上 */}
-      {state.status === 'ready' && (
-        <Payload key={state.path} path={state.path} payload={state.payload} />
-      )}
-    </div>
+    <Panel path={state.path}>
+      <div class={wide ? 'w-max' : ''}>
+        {state.status === 'loading' && <Notice>Loading…</Notice>}
+        {state.status === 'error' && <Notice>Could not load this file: {state.message}</Notice>}
+        {/* key 让换文件走卸载重挂，两份正文因此不可能落在同一棵子树上 */}
+        {state.status === 'ready' && (
+          <Payload key={state.path} path={state.path} payload={state.payload} />
+        )}
+      </div>
+    </Panel>
   );
 }

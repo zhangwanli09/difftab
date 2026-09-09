@@ -97,27 +97,42 @@ function RenameNotice({ rename }: { rename: RenameInfo }) {
 }
 
 /**
- * 右侧面板顶上那条路径。**两个面板共用**：它是面板唯一的 chrome，各写一份的症状是两边不一样。
+ * 右侧面板顶上那条路径。**只由下面的 `Panel` 用**，两个视图因此拿到的是同一条——它是面板唯一
+ * 的 chrome，各写一份的症状是两边不一样。
  *
- * **横向内边距落在里面那个 span 上，不在 `<h2>` 上**：文件视图那一路的长行会把正文撑得比面板
- * 宽（见 `FileView`），横杠本身要铺满整条可滚宽度、而路径这几个字要留在左边，两件事因此分给两
- * 个盒子——底色与下边框归 `<h2>`，`sticky left-0` 归 span。`left-0` 能直接对齐是因为内边距跟着
- * span 走：留在 `<h2>` 上时得改写成 `left-4` 去抵消它，而那两个数字从此必须一直相等，谁也不会
- * 在改其中一个时想起另一个。逐行视图那侧没有横向滚动（diff2html 自己开滚动容器），这一层是空
- * 操作。
+ * **它排在滚动区域之外**：面板（`App` 那个 `<section>`）是一列 flex，本组件 `shrink-0` 占第一
+ * 行，底下那层 `min-h-0 flex-1 overflow-auto` 才是滚的那一个。因此这里既不需要 `sticky top-0`
+ * 也不需要 `z-10`——从前两者是一对：diff2html 的行号列是 `position: absolute`、`Patch` 的宿主
+ * div 又带着 `relative`，两者都排在横杠之后，而定位元素之间 z-index 为 auto 时按 DOM 顺序绘
+ * 制，于是粘住的横杠会被滚上来的代码整条盖住；现在那些盒子被滚动容器的 `overflow` 裁掉，压根
+ * 够不着这一层。
  *
- * `inline-block` 是 sticky 要一个不被行盒切开的整块；`break-all` 留在 `<h2>` 上照样继承下去。
- *
- * **竖向那条 `sticky top-0` 的搭档是 `z-10`，不是可选的美化**：diff2html 的行号列是
- * `position: absolute`，`Patch` 的宿主 div 又带着 `relative`，两者都排在本组件之后——定位元素
- * 之间 z-index 为 auto 时按 DOM 顺序绘制，于是不写 z-index 时横杠是粘住了，只是整条被下面滚上
- * 来的代码盖在底下，页面上看着就像它压根没粘。底色也因此必须是实心 token（本来就是）。
+ * **横向内边距因此就写在 `<h2>` 上**：文件视图那一路的长行会把正文撑得比面板宽（见
+ * `FileView`），但横向滚动同样发生在下面那层容器里——横杠恒等于面板宽，底色与下边框天然铺满。
+ * 从前它在滚动区内时得拆成两个盒子（底色归 `<h2>`、`sticky left-0` 与 `px-4` 归里面一个
+ * `inline-block` 的 span），而内边距一旦留在 `<h2>` 上就要改写成 `left-4` 去抵消，那两个数字从
+ * 此必须一直相等，谁也不会在改其中一个时想起另一个。
  */
-export function PathHeader({ path }: { path: string }) {
+function PathHeader({ path }: { path: string }) {
   return (
-    <h2 class="sticky top-0 z-10 border-b border-panel-border bg-title-bar-background py-2 font-mono text-sm break-all">
-      <span class="sticky left-0 inline-block px-4">{path}</span>
+    <h2 class="shrink-0 border-b border-panel-border bg-title-bar-background px-4 py-2 font-mono text-sm break-all">
+      {path}
     </h2>
+  );
+}
+
+/**
+ * 面板的外壳：横杠 + 唯一滚的那一层。**两个视图共用**，理由与 `Notice` / `PathHeader` 一字不
+ * 差——这两行是 `App` 那个 `<section>`（一列 flex）的直接子项，而它们的类名必须逐字相同：各写
+ * 一份时漂开的症状是「其中一个面板底下那半屏不跟着滚」或「横杠被内容挤扁」，两样都不报错。
+ * 滚动区里放什么由调用方给：diff 那侧是补丁与提示行，文件视图那侧还要多一层按内容撑宽的盒子。
+ */
+export function Panel({ path, children }: { path: string; children: ComponentChildren }) {
+  return (
+    <>
+      <PathHeader path={path} />
+      <div class="min-h-0 flex-1 overflow-auto">{children}</div>
+    </>
   );
 }
 
@@ -151,9 +166,9 @@ export function DiffView() {
   }
 
   return (
-    <div>
-      <PathHeader path={state.path} />
-      {/* 三个状态下都标注：标注属于「选了哪个条目」，与补丁取到没有无关 */}
+    <Panel path={state.path}>
+      {/* 三个状态下都标注：标注属于「选了哪个条目」，与补丁取到没有无关。**它留在滚动区
+          里**：钉住的只有那条路径——这一行说的是这份补丁的来历，不是「我在看哪个文件」 */}
       {state.rename && <RenameNotice rename={state.rename} />}
       {state.status === 'loading' && <Notice>Loading…</Notice>}
       {state.status === 'error' && (
@@ -161,6 +176,6 @@ export function DiffView() {
       )}
       {/* key 让换文件走卸载重挂，两次 draw() 因此不可能落在同一个元素上 */}
       {state.status === 'ready' && <Payload key={state.path} payload={state.payload} />}
-    </div>
+    </Panel>
   );
 }
