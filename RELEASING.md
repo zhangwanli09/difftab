@@ -75,7 +75,7 @@ Then create the GitHub Release from the tag:
 gh release create v0.1.0 --title "v0.1.0" --notes "…"
 ```
 
-## Eight things that will bite
+## Nine things that will bite
 
 - **`pnpm` needs its own login; `npm login` does not carry over.** Being logged in with
   the npm CLI (`npm whoami` answers, `~/.npmrc` holds a token) is not enough — the first
@@ -93,8 +93,9 @@ gh release create v0.1.0 --title "v0.1.0" --notes "…"
   pins the publish target to `registry.npmjs.org` regardless of what `~/.npmrc` says —
   verified by dry run. If you ever see any other host in the
   `📦 name@version → …` line that `pnpm publish` prints, stop.
-- **Commit on the release branch, never on `main` first.** A rebase merge rewrites the
-  committer on every commit it replays, so what lands on the remote has different SHAs
+- **Commit on the release branch, never on `main` first.** Merging through a PR rewrites
+  history either way — squash builds one new commit, and a rebase merge rewrites the
+  committer on every commit it replays — so what lands on the remote has different SHAs
   from what you pushed. That is invisible as long as your local `main` holds none of those
   commits — which is why step 1 branches before it commits. Commit on `main` and branch
   afterwards (0.2.0 did) and `main` diverges: `git pull --ff-only` answers `fatal: Not
@@ -103,6 +104,16 @@ gh release create v0.1.0 --title "v0.1.0" --notes "…"
   and `git rev-parse origin/main^{tree}` print the same thing when the content is
   identical, and only then is `git reset --hard origin/main` safe. Tag the commit that is
   on the remote, never the local one you are about to discard.
+- **If `--rebase` is rejected, the repository settings are a red herring — read the
+  ruleset.** 0.2.1 hit `GraphQL: Rebase merges are not allowed on this repository.
+  (mergePullRequest)` while `gh api repos/<owner>/difftab` reported all three merge
+  methods as `true`: the restriction lives in the `Protect main` ruleset's
+  `allowed_merge_methods`, which listed `squash` alone. `gh api
+  repos/<owner>/difftab/rulesets/<id> --jq '.rules[] | select(.type=="pull_request")'`
+  prints it. Rebase is back in that list, so step 2 stands as written; **if it is ever
+  taken out again, the consequence lands on step 1, not step 2** — squash fuses
+  everything on the branch into one commit, so the release branch would have to carry
+  the version bump and nothing else, with a README update going in its own earlier PR.
 - **Do not pass `--no-git-checks`.** pnpm refuses to publish from a dirty tree, from the
   wrong branch, or when the branch is behind its remote. Those checks are the reason steps
   2 and 3 come before step 5. The publish branch is `main`, set as `publishBranch` in
