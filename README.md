@@ -47,7 +47,7 @@ Running it again in the same repository reuses the running instance.
 - **Exits on its own** — 45 seconds after the last tab closes.
 - **Cheap to run** — about 40 ms from launch to a listening server, well inside the 300 ms
   budget CI enforces on every commit across nine Node × OS combinations; the JS bundle is
-  71 KB gzipped.
+  72 KB gzipped.
 
 Empty repositories, interrupted rebases, linked worktrees, submodules, binary and >5 MB
 files, renames, and paths with spaces, quotes, CJK or emoji are handled explicitly.
