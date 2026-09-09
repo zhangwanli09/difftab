@@ -112,7 +112,11 @@
 ### 前端与样式（`design/` 下 `web.md` / `diff-render.md` / `style.md`）
 
 - 禁用三个 diff2html 预构建 UI bundle（深导入 `diff2html/lib-esm/ui/js/diff2html-ui-base.js` 是允许且推荐的）；禁止自行重写它的高亮切分逻辑
-- **`highlight: true` 时 `draw()` 内部已经调过 `highlightCode()`，不得在 `draw()` 后再补一次**——第二遍产生嵌套重复的 span，开销也翻倍
+- **高亮只做一遍**：`highlight: false` + `draw()` 之后走我们自己那个逐行循环（`highlightLines`），禁再开 `highlight` 或调 `highlightCode()`——两遍时第二遍产生嵌套重复的 span，开销也翻倍
+- **自研的只有「这一行用哪个语言」，`closeTags`/`nodeStream`/`mergeStreams` 必须原样用上游的**——那三个才是禁止重写的切分逻辑
+- **SFC（`.vue`/`.svelte`/`.astro`）的 `<script>`/`<style>` 靠逐行区块状态机，不靠 xml 的子语言**——子语言要整块正文一次高亮才成立，而 diff 是逐行；写错的症状是那两段整块白、模板段照常有色
+- **两个视图的语言判定必须同为 `languageOf(path)`，禁在 `render.ts` 另写一张映射**——两份漂开后同一个文件在 diff 里有色、在文件视图里没色；表里的值只能是已注册的那 22 个模块，映射到别的静默退回 plaintext
+- **`languageOf` 的第三道（diff2html 那张 `languagesToExt`）不能砍、也不许抄成自己的表**——它比前两道多认 88 个扩展名（`pyi`/`jsonl`/`rake`…），砍掉后那些文件静默变纯文本；它随 `diff2html-ui-base` 早就在产物里，体积是 0
 - **`plaintext` 必须与 22 个语言模块一起注册**——漏注册时炸的是**整个 diff 视图**不是那一个文件（diff 里出现 `LICENSE`/`Dockerfile`/`.txt` 即触发）
 - hljs 别名 `jsx`/`tsx`/`toml`/`html` 不是模块、不可单独 import
 - hljs 主题是**我们自己那份** `hljs-theme.css`（禁直接引上游两份——媒体条件切不出手动档）；必须排在 `diff2html.min.css` **之前**，两者保持 unlayered、禁入 `@layer`

@@ -36,13 +36,15 @@ export function Notice({ children }: { children: ComponentChildren }) {
  * 式上——不报错，只是拖窗口时视图纹丝不动。在 body 里读这个 signal 是安全的：本组件刻意没有
  * 子节点，重渲染只是复用同一个空 div，两次 `draw()` 因此落在同一个元素上。
  */
-function Patch({ patch }: { patch: string }) {
+function Patch({ path, patch }: { path: string; patch: string }) {
   const host = useRef<HTMLDivElement>(null);
   const format = diffOutputFormat.value;
 
+  // path 只用来判语言（`languageOf`），换文件那一路本来就靠 key 卸载重挂——依赖仍要写全，
+  // 少一个就是「依赖数组与实参对不上」，而那种漏在别的路径上就是静默停在旧值
   useEffect(() => {
-    if (host.current) renderDiff(host.current, patch, format);
-  }, [patch, format]);
+    if (host.current) renderDiff(host.current, path, patch, format);
+  }, [path, patch, format]);
 
   // 刻意没有子节点：里面的一切都归 diff2html。**`relative` 不是排版需要，是 diff2html 行号列
   // 的包含块**——它把行号做成 `position: absolute`，而包含块在滚动容器之外的绝对定位盒不随容
@@ -136,11 +138,11 @@ export function Panel({ path, children }: { path: string; children: ComponentChi
   );
 }
 
-function Payload({ payload }: { payload: DiffPayload }) {
+function Payload({ path, payload }: { path: string; payload: DiffPayload }) {
   switch (payload.kind) {
     case 'text':
     case 'untracked-text':
-      return <Patch patch={payload.patch} />;
+      return <Patch path={path} patch={payload.patch} />;
     case 'binary':
       return <Notice>Binary file — contents are not compared.</Notice>;
     case 'too-large':
@@ -175,7 +177,9 @@ export function DiffView() {
         <Notice>Could not load the diff for this file: {state.message}</Notice>
       )}
       {/* key 让换文件走卸载重挂，两次 draw() 因此不可能落在同一个元素上 */}
-      {state.status === 'ready' && <Payload key={state.path} payload={state.payload} />}
+      {state.status === 'ready' && (
+        <Payload key={state.path} path={state.path} payload={state.payload} />
+      )}
     </Panel>
   );
 }
