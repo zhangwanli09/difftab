@@ -4,18 +4,19 @@
 // 档位)，与右边看的是哪个文件无关，横跨等于在 diff 面板顶上切一条与 diff 无关的横杠。
 // 两侧的所有权是分开的：列表归 Preact 的 keyed reconcile，单文件 diff 容器归 `Diff2HtmlUI`。
 
-import { Folder, GitBranch } from 'lucide-preact';
+import { ChevronsDownUp, Folder, GitBranch } from 'lucide-preact';
 import { useEffect, useRef } from 'preact/hooks';
 import { observeDiffPanel } from '../state/layout';
 import { activePane, activeTab, loadError, repoState } from '../state/store';
 import { PRODUCT_NAME } from '../state/title';
-import { loadDir, ROOT, refreshTree, treeCache } from '../state/tree';
+import { collapseAll, loadDir, ROOT, refreshTree, treeCache } from '../state/tree';
 import { BranchStatus } from './BranchStatus';
 import { ChangeList } from './ChangeList';
 import { DiffView } from './DiffView';
-import { FileTree, FileTreeToolBar } from './FileTree';
+import { FileTree } from './FileTree';
 import { FileView } from './FileView';
 import { Icon } from './Icon';
+import { IconButton } from './IconButton';
 import { ThemeToggle } from './ThemeToggle';
 import { WatchBadge } from './WatchBadge';
 
@@ -53,37 +54,57 @@ const TABS = [
 const TAB_CLASS =
   '-mb-px flex border-b px-3 py-1.5 focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus-border';
 
-function SideBarTabs() {
+function SideBarTabRow() {
   const active = activeTab.value;
   return (
-    // tablist/tab 三件套：两个按钮控制的是同一片区域，只靠视觉差异说不清这件事。
-    // 这一层的 border-b 横贯整栏，选中下划线是画在它上面的一小段
-    <div class="flex shrink-0 border-b border-panel-border" role="tablist">
-      {TABS.map((tab) => (
-        <button
-          key={tab.id}
-          type="button"
-          role="tab"
-          aria-selected={active === tab.id}
-          aria-label={tab.label}
-          title={tab.label}
-          /**
-           * **只改 `activeTab`，绝不碰 `activePane`**：换的是左栏在列什么，不是用户此刻在读
-           * 什么——写成「切到 Files 就清空右侧」时页面看着完全正常，只是每瞄一眼目录树就丢掉
-           * 正在读的那份 diff。
-           */
-          onClick={() => {
-            activeTab.value = tab.id;
-          }}
-          class={`${TAB_CLASS} ${
-            active === tab.id
-              ? 'border-editor-foreground text-editor-foreground'
-              : 'border-transparent text-description-foreground hover:bg-list-hover-background'
-          }`}
-        >
-          <Icon icon={tab.icon} />
-        </button>
-      ))}
+    // **这一层不是 tablist，里面那层才是**：`Files` 档下这一行的右端站着「全部折叠」，而
+    // `role="tablist"` 里躺一个非 tab 元素时读屏会把它当成第三个 tab 报出来——按钮做成 tablist
+    // 的兄弟，两件事就不冲突了。写成孩子时页面上完全看不出来，只有读屏里多一个无名控件。
+    //
+    // 这一串类名逐条是：**通栏那条 `border-b` 归这一层**（留在 tablist 上时它只有两枚 tab 那么
+    // 宽）；**不给纵向内边距**——选中 tab 那条 `-mb-px` 压的正是它这条边，中间垫上 padding 就压
+    // 不着了；`items-center` 是给那枚矮按钮的（tab 连图标带 `py-1.5` 有 28px，`IconButton` 只有
+    // 20px），行高因此仍由 tab 定，按钮进出时这一行一个像素都不动；**`pr-3` 而不是 `px-3`**——tab
+    // 得贴着左边缘起排，要对齐的本来也只有右边那 12px，而顶栏那个主题开关与这枚是同一个
+    // `IconButton`，右 gutter 一致时两枚图标恰好落在同一条竖线上；`justify-between` 而不是给按钮
+    // 加 `ml-auto`：`IconButton` 不收 `class`，不必为这一处扩它。
+    <div class="flex shrink-0 items-center justify-between border-b border-panel-border pr-3">
+      {/* tablist/tab 三件套：两个按钮控制的是同一片区域，只靠视觉差异说不清这件事 */}
+      <div class="flex" role="tablist">
+        {TABS.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            aria-selected={active === tab.id}
+            aria-label={tab.label}
+            title={tab.label}
+            /**
+             * **只改 `activeTab`，绝不碰 `activePane`**：换的是左栏在列什么，不是用户此刻在读
+             * 什么——写成「切到 Files 就清空右侧」时页面看着完全正常，只是每瞄一眼目录树就丢掉
+             * 正在读的那份 diff。
+             */
+            onClick={() => {
+              activeTab.value = tab.id;
+            }}
+            class={`${TAB_CLASS} ${
+              active === tab.id
+                ? 'border-editor-foreground text-editor-foreground'
+                : 'border-transparent text-description-foreground hover:bg-list-hover-background'
+            }`}
+          >
+            <Icon icon={tab.icon} />
+          </button>
+        ))}
+      </div>
+
+      {/* 「全部折叠」**只在 `Files` 那一档画**：`Changes` 档下它一个动作都放不了。**不订阅
+          `expandedDirs` 去做禁用态**——一个目录都没展开时点下去写的是一个空集，而 `FileTree` 每行
+          那份 computed 是记忆化的（空集换空集重算出同一个 `false`），一行都不会重画，那是真的无
+          操作；为一个灰掉的图标让这枚按钮跟着每次展开收起重画不划算，而按钮忽有忽无也比常亮更难扫 */}
+      {active === 'files' && (
+        <IconButton icon={ChevronsDownUp} label="Collapse all" onClick={collapseAll} />
+      )}
     </div>
   );
 }
@@ -139,7 +160,7 @@ export function App() {
           <ThemeToggle />
         </header>
 
-        <SideBarTabs />
+        <SideBarTabRow />
 
         {/* break-words 是搬进 320px 之后才需要的：这条文案是 git 的原话，里面那截路径是一个
             不带断点的长词，在这一列里会漫过右边框压到 diff 面板上——不报错，只是错位 */}
@@ -148,13 +169,6 @@ export function App() {
             {error}
           </p>
         )}
-
-        {/* 树那条工具栏（眼下只有「全部折叠」）**只在 `Files` 那一档画**：`Changes` 档下它一
-            个动作都放不了，留一条空栏比不留更费解。**必须排在下面那层滚动容器之外**，塞进去
-            按钮会跟着树一起滚走；也**不塞进 tab 那一行的右端**（那里正空着）——那一行是
-            `role="tablist"`，里面躺一个非 tab 元素时读屏会把它当成第三个 tab 报出来。排在错误
-            条之下，「错误条在顶栏之下、列表之上」照旧成立 */}
-        {tab === 'files' && <FileTreeToolBar />}
 
         {/* 两个视图**共用这一层滚动容器**：左右两栏各一个滚动容器是既有约定（SSE 刷新要留住
             列表的滚动位置），tab 不是第三个。flex 的自动最小尺寸只在该轴 overflow:visible 时
