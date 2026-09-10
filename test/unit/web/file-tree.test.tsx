@@ -6,9 +6,15 @@
 import { render } from 'preact';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FileEntry, TreeEntry } from '../../../src/server/shared/protocol';
-import { FileTree, FileTreeToolBar } from '../../../src/web/components/FileTree';
+import { FileTree } from '../../../src/web/components/FileTree';
 import { fileState, repoState } from '../../../src/web/state/store';
-import { expandedDirs, ROOT, treeCache, treeErrors } from '../../../src/web/state/tree';
+import {
+  collapseAll,
+  expandedDirs,
+  ROOT,
+  treeCache,
+  treeErrors,
+} from '../../../src/web/state/tree';
 
 const entry = (partial: Partial<TreeEntry> & { name: string }): TreeEntry => ({
   path: partial.name,
@@ -43,15 +49,7 @@ beforeEach(() => {
   fileState.value = null;
   repoState.value = null;
   vi.stubGlobal('fetch', vi.fn());
-  // 真实版式里工具栏在树之外（滚动容器之外，见 App），两件一起画才点得到那枚按钮。
-  // 它的 `textContent` 是空串，`rowOf()` 按可见文本挑行不会撞上它
-  render(
-    <>
-      <FileTreeToolBar />
-      <FileTree />
-    </>,
-    container,
-  );
+  render(<FileTree />, container);
 });
 
 afterEach(() => {
@@ -212,15 +210,11 @@ describe('FileTree', () => {
   });
 });
 
-// 树上方那枚「全部折叠」。三条钉的都是「不报错、只是不对」：折不干净、顺手把缓存也清了（再
-// 展开时凭空空一拍），以及连右侧正在读的那个文件一起丢掉。
-describe('FileTreeToolBar', () => {
-  const collapseButton = (): HTMLButtonElement => {
-    const found = container.querySelector('[aria-label="Collapse all"]');
-    if (!found) throw new Error('没有画出「全部折叠」那枚按钮');
-    return found as HTMLButtonElement;
-  };
-
+// 「全部折叠」在树上的效果。三条钉的都是「不报错、只是不对」：折不干净、顺手把缓存也清了（再
+// 展开时凭空空一拍），以及连右侧正在读的那个文件一起丢掉。**直接调 `collapseAll()`，不画那枚
+// 按钮**：按钮住在 tab 行里（见 `App`），在这里摆一个等于让树的用例跟着侧栏版式走——`app.test.tsx`
+// 已经钉着「点得到、且点的是这个动作」，这里要的只是「这个动作落在树上是什么样」。
+describe('collapseAll()', () => {
   /** 根 → src → src/web → 一个文件，两层都展开着。 */
   const twoLevelsOpen = () => {
     treeCache.value = new Map([
@@ -231,17 +225,11 @@ describe('FileTreeToolBar', () => {
     expandedDirs.value = new Set(['src', 'src/web']);
   };
 
-  it('只画图标，名字由 aria-label 给——掉了它这就是一个无名控件，而页面上看不出来', () => {
-    expect(collapseButton().title).toBe('Collapse all');
-    expect(collapseButton().textContent).toBe('');
-    expect(collapseButton().querySelector('svg')).not.toBeNull();
-  });
-
   it('一下把展开着的那几层全收起来，树回到只剩根那一层', async () => {
     twoLevelsOpen();
     await waitFor(() => expect(container.textContent).toContain('App.tsx'));
 
-    collapseButton().click();
+    collapseAll();
     await waitFor(() => expect(container.textContent).not.toContain('App.tsx'));
     expect(container.textContent).not.toContain('web');
     expect(container.textContent).toContain('src');
@@ -252,7 +240,7 @@ describe('FileTreeToolBar', () => {
     twoLevelsOpen();
     await waitFor(() => expect(container.textContent).toContain('App.tsx'));
 
-    collapseButton().click();
+    collapseAll();
     await waitFor(() => expect(container.textContent).not.toContain('App.tsx'));
     expect(treeCache.value.get('src')).toHaveLength(1);
 
@@ -271,7 +259,7 @@ describe('FileTreeToolBar', () => {
     };
     await waitFor(() => expect(container.textContent).toContain('App.tsx'));
 
-    collapseButton().click();
+    collapseAll();
     await waitFor(() => expect(container.textContent).not.toContain('App.tsx'));
     expect(fileState.value?.path).toBe('src/web/App.tsx');
   });

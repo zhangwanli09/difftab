@@ -212,12 +212,15 @@ describe('侧栏那两个 tab', () => {
   });
 });
 
-// 树那条工具栏在左栏里的位置。两条钉的都是「不报错、只是不对」：`Changes` 档下多出一条空栏，
-// 以及它被塞进滚动容器后跟着树一起滚走（那时按钮还在，只是往下翻两屏就找不着了）。
-describe('树上方那条工具栏', () => {
+// tab 行右端那枚「全部折叠」。五条钉的都是「不报错、只是不对」：`Changes` 档下
+// 多出一枚点了没反应的按钮、读屏把它报成第三个 tab、它被塞回滚动容器里跟着树滚走（那时按钮还
+// 在，只是往下翻两屏就找不着了）、两枚 IconButton 的图标没落在同一条竖线上，以及只画图标时
+// 掉了 `aria-label` 就是个无名控件。
+describe('tab 行右端那枚「全部折叠」', () => {
   const collapseButton = () => container.querySelector('[aria-label="Collapse all"]');
+  const tabList = () => container.querySelector('[role="tablist"]');
 
-  /** 画出来、切到 `Files`、等工具栏出现。 */
+  /** 画出来、切到 `Files`、等按钮出现。 */
   const openFilesTab = async () => {
     render(<App />, container);
     tabOf('Files').click();
@@ -232,12 +235,26 @@ describe('树上方那条工具栏', () => {
     await waitFor(() => expect(collapseButton()).not.toBeNull());
   });
 
-  it('横向内边距与顶栏同一档——两枚都是 IconButton，于是图标落在同一条竖线上', async () => {
+  it('只画图标，名字由 aria-label 给——掉了它这就是一个无名控件，而页面上看不出来', async () => {
     await openFilesTab();
-    // 差几个像素不报错，只是「看着没对齐」，而侧栏右边这一列此刻正好只有它们两个。
+    expect((collapseButton() as HTMLButtonElement).title).toBe('Collapse all');
+    expect(collapseButton()?.textContent).toBe('');
+    expect(collapseButton()?.querySelector('svg')).not.toBeNull();
+  });
+
+  it('站在 tab 行里，但在 tablist 之外——躺进去读屏会把它报成第三个 tab', async () => {
+    await openFilesTab();
+    expect(tabList()?.contains(collapseButton())).toBe(false);
+    // 后一条钉的是「确实在那一行里」：少了它，按钮被挪回下面另起的一条栏时前一条照样绿
+    expect(tabList()?.parentElement?.contains(collapseButton())).toBe(true);
+  });
+
+  it('右内边距与顶栏同一档——两枚都是 IconButton，于是图标落在同一条竖线上', async () => {
+    await openFilesTab();
+    // 这一行只能给 pr-3 不能给 px-3：tab 得贴着左边缘起排，而要对齐的只有右边那 12px。
     // 按钮自身的内边距不必再钉：两处走的是同一个组件，构造上就相等
     expect(header()?.className).toContain('px-3');
-    expect(collapseButton()?.parentElement?.className).toContain('px-3');
+    expect(collapseButton()?.parentElement?.className).toContain('pr-3');
   });
 
   it('排在滚动容器之外——塞进 nav 里按钮会跟着树滚走', async () => {
