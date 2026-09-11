@@ -73,12 +73,24 @@ export const CODE_COLORS: Record<StatusCode, string> = {
   '?': 'text-git-untracked',
 };
 
-function StatusBadge({ code }: { code: StatusCode }) {
+/**
+ * 行尾状态记号的外壳：`ml-auto` 靠右，侧栏右端于是有一列定宽记号（对应 VS Code 的 decoration
+ * 位置），行首没有东西挡在文件名前面。`shrink-0` 不能省——前面的截断盒收缩时它得原样留着，否则
+ * 长路径行上先被挤掉的就是它。
+ *
+ * **三枚记号（字母、冲突两位、`Files` 那档目录行的圆点）共用这一个常量**：各写一份时不一致不报错，
+ * 只是某一组或某一档那一列横着挪一截。
+ */
+export const STATUS_SLOT = 'ml-auto w-5 shrink-0';
+const LETTER_CLASS = `${STATUS_SLOT} text-center font-mono text-xs`;
+
+/**
+ * **导出给 `Files` 那档的文件行共用**：两处切换时同一个文件的字母得落在同一个位置、同一个颜色，
+ * 各画一枚时改其中一处不报错，只是切一次 tab 那一列横着跳一截。
+ */
+export function StatusBadge({ code }: { code: StatusCode }) {
   return (
-    <span
-      title={CODE_LABELS[code]}
-      class={`w-5 shrink-0 text-center font-mono text-xs ${CODE_COLORS[code]}`}
-    >
+    <span title={CODE_LABELS[code]} class={`${LETTER_CLASS} ${CODE_COLORS[code]}`}>
       {code}
     </span>
   );
@@ -90,15 +102,11 @@ function StatusBadge({ code }: { code: StatusCode }) {
  *——那是 porcelain 的记录语义，前端一旦写下来就成了第二份 git 知识。
  *
  * 颜色取 `CODE_COLORS.U` 而不是再写一遍那个 token：两处各写一份时，调冲突色只改一处的话，同
- * 一个页面上冲突组与别处的 `U` 会是两个颜色。宽度与居中沿用 `StatusBadge` 的
- * `w-5 text-center`，否则冲突组的文件名会比别的组横着挪一截。
+ * 一个页面上冲突组与别处的 `U` 会是两个颜色。
  */
 function ConflictBadge({ staged, unstaged }: Pick<FileEntry, 'staged' | 'unstaged'>) {
   return (
-    <span
-      title="Unmerged (conflicted)"
-      class={`w-5 shrink-0 text-center font-mono text-xs ${CODE_COLORS.U}`}
-    >
+    <span title="Unmerged (conflicted)" class={`${LETTER_CLASS} ${CODE_COLORS.U}`}>
       {staged}
       {unstaged}
     </span>
@@ -109,7 +117,7 @@ function ConflictBadge({ staged, unstaged }: Pick<FileEntry, 'staged' | 'unstage
 // UA 默认焦点环。用 focus-border token 画，深浅都跟着翻。手型光标不在这里——那是所有按钮
 // 共有的一件事，`styles/app.css` 里有一条 base 层规则统一给
 //
-// 对齐方式不在这一串里：文件行是「状态位 + 文件名」两段文字，按基线排；目录行是一枚 SVG 加一段
+// 对齐方式不在这一串里：文件行是「文件名 + 状态位」两段文字，按基线排；目录行是一枚 SVG 加一段
 // 文字，替换元素的基线是它的底边，按基线排三角会整个浮在文字上方，得 `items-center`。两行各补
 // 自己那一个，其余（内边距、焦点环）只此一份
 const ROW_BASE =
@@ -119,7 +127,7 @@ const ROW_CLASS = `${ROW_BASE} items-baseline`;
 /**
  * 一个文件那一行。`treeDepth` 有值即树视图里的一行：按层级缩进、行首多一个与目录行的展开三角
  * 等宽的占位（少了它文件名比同层的目录名往左挪一截，同一层看着像两层）、**不再画目录段**——
- * 祖先节点已经把目录说了。其余（状态位、选中态、重命名标注、整行 `title`）两种版式一字不差。
+ * 祖先节点已经把目录说了。其余（选中态、重命名标注、行尾的状态位、整行 `title`）两种版式一字不差。
  */
 function FileRow({
   file,
@@ -165,15 +173,6 @@ function FileRow({
         style={inTree ? indent(treeDepth) : undefined}
       >
         {inTree && <ChevronPlaceholder />}
-        {/* 每个分组只展示它自己那一侧的状态位——「已暂存」看 X，其余看 Y；冲突条目两侧都不
-            是 `.`，挑哪一位都会丢掉另一半。**「印两位」的判据是条目自己的 `conflicted`，不是它
-            落在哪一组**：按分组判的话，这一行画得对不对就取决于 `groupFiles` 与这里是否一致，
-            而那个一致性没有任何东西在管 */}
-        {file.conflicted ? (
-          <ConflictBadge staged={file.staged} unstaged={file.unstaged} />
-        ) : (
-          <StatusBadge code={group === 'staged' ? file.staged : file.unstaged} />
-        )}
         {/* 文件名在前、目录在后。侧栏定宽 320px，而 `truncate` 的省略号在**右**端——目录排在
             后面时，放不下先没的就是目录、文件名留到最后；改回「目录前缀 + 文件名」的老写法则
             反过来先吃掉文件名，而它才是认出这一行的东西。
@@ -191,6 +190,16 @@ function FileRow({
             ← {file.oldPath}
             {file.renameScore !== undefined && ` (${file.renameScore}%)`}
           </span>
+        )}
+        {/* 状态位是最后一个子项、`ml-auto` 靠右：排在重命名标注之后，前面两个 `min-w-0 truncate`
+            收缩时它 `shrink-0` 不动。每个分组只展示它自己那一侧的状态位——「已暂存」看 X，其余
+            看 Y；冲突条目两侧都不是 `.`，挑哪一位都会丢掉另一半。**「印两位」的判据是条目自己的
+            `conflicted`，不是它落在哪一组**：按分组判的话，这一行画得对不对就取决于 `groupFiles`
+            与这里是否一致，而那个一致性没有任何东西在管 */}
+        {file.conflicted ? (
+          <ConflictBadge staged={file.staged} unstaged={file.unstaged} />
+        ) : (
+          <StatusBadge code={group === 'staged' ? file.staged : file.unstaged} />
         )}
       </button>
     </li>

@@ -5,32 +5,30 @@
 // 一份先拍平再画的清单。
 
 import { useComputed } from '@preact/signals';
-import {
-  type FileEntry,
-  isConflicted,
-  type StatusCode,
-  type TreeEntry,
-} from '../../server/shared/protocol';
-import { fileByPath, fileState, openFile } from '../state/store';
+import type { TreeEntry } from '../../server/shared/protocol';
+import { type ChangeCode, codeByPath, fileState, openFile } from '../state/store';
 import { expandedDirs, ROOT, toggleDir, treeCache, treeErrors } from '../state/tree';
-import { CODE_COLORS } from './ChangeList';
+import { CODE_COLORS, STATUS_SLOT, StatusBadge } from './ChangeList';
 // 行首三样与变更列表的树视图共用一份：各写一份不报错，只是切一次 tab 缩进跳一截、或者一棵树里
 // 文件名比同层的目录名往左挪一截
 import { ChevronPlaceholder, ExpandChevron, indent } from './tree-row';
 
 /**
- * 这个路径在变更列表里对应的状态字母；没有改动就是 `null`。
- *
- * **冲突优先**：冲突条目两侧状态位都不是 `.`，挑哪一位都会说错一半，一律按 `U` 上色。判据走
- * `isConflicted()` 而不是自己读 `conflicted`——那个字段的含义归 `shared/protocol.ts`。其余先看工作区
- * 侧（Y），它是「文件现在长什么样」，正是树上这一行说的东西；Y 干净才退回暂存侧。
+ * 目录行行尾的圆点：只说「底下有事」，**不印字母**——一个目录底下可以同时躺着改过的和没改过的
+ * 文件，挑一个字母就是替用户下结论。外壳与 `StatusBadge` 同一个 `STATUS_SLOT`，两种行的记号才落
+ * 在同一列；圆点用 `bg-current` 取外壳的文字色，颜色于是与那张 `CODE_COLORS` 只写一处。
  */
-function codeOf(entry: FileEntry | undefined): StatusCode | null {
-  if (entry === undefined) return null;
-  if (isConflicted(entry)) return 'U';
-  if (entry.unstaged !== '.') return entry.unstaged;
-  if (entry.staged !== '.') return entry.staged;
-  return null;
+function DirBadge({ code }: { code: ChangeCode }) {
+  return (
+    <span
+      role="img"
+      aria-label="Contains changes"
+      title="Contains changes"
+      class={`${STATUS_SLOT} flex items-center justify-center ${CODE_COLORS[code]}`}
+    >
+      <span class="size-1.5 rounded-full bg-current" />
+    </span>
+  );
 }
 
 // 与变更列表的 ROW_CLASS 同源（focus-visible 那两个类是键盘可达性的最低档，理由写在
@@ -57,18 +55,15 @@ function Row({ entry, depth }: { entry: TreeEntry; depth: number }) {
   });
 
   /**
-   * 名字那一段的类。状态染色**只给文件**：一个目录底下可以同时躺着改过的和没改过的文件，
-   * 给它挑一个字母就是替用户下结论；目录仍可能被忽略，那一档由上面的 tone 承担。
+   * 这一行的状态码，文件与目录同查 `codeByPath`（目录那一格已经把后代归并进去了）；没改动是
+   * `null`。被忽略那一档由上面的 tone 承担，与这里无关。
    *
-   * 同样包成 `computed` 传下去，理由同 `rowClass`——它是每行各一份，只在这一行自己的状态字母
-   * 变了时才产出新值，而 SSE 刷新每次都会换一份全新的 `files` 数组。查表走 `fileByPath`
-   * 而不是在这里 `find`：那是每行一次线性扫描，乘上可见行数就是每个事件几万次比较。
+   * 包成 `computed` 再读 `.value`：它是每行各一份，只在这一行自己的状态码变了时才产出新值，
+   * 别的行变了这一行不跟着重画——而 SSE 刷新每次都会换一份全新的 `files` 数组。名字的类与
+   * 行尾那枚记号都从这一个值派生，不再各包一层。
    */
-  const nameClass = useComputed(() => {
-    if (isDir) return 'min-w-0 truncate';
-    const code = codeOf(fileByPath.value.get(entry.path));
-    return code === null ? 'min-w-0 truncate' : `min-w-0 truncate ${CODE_COLORS[code]}`;
-  });
+  const code = useComputed(() => codeByPath.value.get(entry.path) ?? null).value;
+  const nameClass = code === null ? 'min-w-0 truncate' : `min-w-0 truncate ${CODE_COLORS[code]}`;
 
   // 这一行自己展开着没有。**读 `.value` 会让本行重渲染，但 computed 是记忆化的**：
   // 别处展开时它产出的是同一个布尔，这一行不会跟着重画
@@ -88,6 +83,8 @@ function Row({ entry, depth }: { entry: TreeEntry; depth: number }) {
       >
         {isDir ? <ExpandChevron expanded={isExpanded} /> : <ChevronPlaceholder />}
         <span class={nameClass}>{entry.name}</span>
+        {/* 行尾的状态记号：文件印字母（与变更列表同一枚组件，切 tab 时落在同一列），目录印圆点 */}
+        {code !== null && (isDir ? <DirBadge code={code} /> : <StatusBadge code={code} />)}
       </button>
       {isExpanded && <Level path={entry.path} depth={depth + 1} />}
     </li>

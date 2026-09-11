@@ -1,7 +1,8 @@
 // 文件树画出来的那一行。
 //
-// 三条钉的都是「不报错、只是不对」：被忽略的行没灰显（那一档与普通文件长得一模一样）、状态
-// 染色与变更列表用了两份表（同一个文件在两处不同色）、以及展开时没去取下一层。
+// 几条钉的都是「不报错、只是不对」：被忽略的行没灰显（那一档与普通文件长得一模一样）、状态
+// 染色与变更列表用了两份表（同一个文件在两处不同色）、目录行的圆点归并错了颜色或印成了字母、
+// 以及展开时没去取下一层。
 
 import { render } from 'preact';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -57,24 +58,36 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-/** 按可见文本挑一行的 `<button>`。 */
-function rowOf(text: string): HTMLButtonElement {
-  const found = [...container.querySelectorAll('button')].find(
-    (button) => button.textContent?.trim() === text,
+/**
+ * 一行里装名字的那个 `<span>`——按 `truncate` 挑，**不按位置**：文件那一侧的第一个 span 是等宽
+ * 占位，最后一个则可能是行尾的状态记号，按位置挑到哪个都会让断言说一句与真正原因无关的话。
+ */
+function nameOf(text: string): HTMLSpanElement {
+  const found = [...container.querySelectorAll<HTMLSpanElement>('button .truncate')].find(
+    (span) => span.textContent === text,
   );
   if (!found) throw new Error(`没有画出名为 ${text} 的行`);
   return found;
 }
 
-/**
- * 一行里装名字的那个 `<span>`——**取最后一个**：文件那一侧的第一个 span 是等宽占位，
- * `querySelector('span')` 挑到的会是它，而断言随之说一句与真正原因无关的话。
- */
-function nameOf(text: string): HTMLSpanElement {
-  const spans = rowOf(text).querySelectorAll('span');
-  const last = spans[spans.length - 1];
-  if (!last) throw new Error(`${text} 那一行没有装名字的 span`);
-  return last as HTMLSpanElement;
+/** 按名字挑一行的 `<button>`。走 `nameOf`：整行的文本还带着行尾的状态字母，直接比不齐。 */
+function rowOf(text: string): HTMLButtonElement {
+  const row = nameOf(text).closest('button');
+  if (!row) throw new Error(`${text} 那一段不在任何一行里`);
+  return row;
+}
+
+/** 一行行尾的状态记号（字母或圆点）；没有即 `null`。判据是 `ml-auto`——它是唯一靠右的子项。 */
+const badgeOf = (text: string) => rowOf(text).querySelector<HTMLSpanElement>('.ml-auto');
+
+/** 换一份变更列表。只有 `files` 在用例之间不同，其余字段树上一个都不读。 */
+function withFiles(files: FileEntry[]) {
+  repoState.value = {
+    repoName: 'demo',
+    branch: { head: 'main', detached: false, upstream: null },
+    watch: { mode: 'native', tier: 'A' },
+    files,
+  };
 }
 
 describe('FileTree', () => {
@@ -117,16 +130,11 @@ describe('FileTree', () => {
     treeCache.value = new Map([
       [ROOT, [entry({ name: 'a.ts' }), entry({ name: 'b.ts' }), entry({ name: 'c.ts' })]],
     ]);
-    repoState.value = {
-      repoName: 'demo',
-      branch: { head: 'main', detached: false, upstream: null },
-      watch: { mode: 'native', tier: 'A' },
-      files: [
-        file({ path: 'a.ts', unstaged: 'M' }),
-        // 冲突两侧状态位都不是 `.`，挑哪一位都会说错一半——一律按 U 上色
-        file({ path: 'b.ts', staged: 'D', unstaged: 'D', conflicted: true }),
-      ],
-    };
+    withFiles([
+      file({ path: 'a.ts', unstaged: 'M' }),
+      // 冲突两侧状态位都不是 `.`，挑哪一位都会说错一半——一律按 U 上色
+      file({ path: 'b.ts', staged: 'D', unstaged: 'D', conflicted: true }),
+    ]);
     await waitFor(() => expect(container.textContent).toContain('c.ts'));
 
     expect(nameOf('a.ts').className).toContain('text-git-modified');
@@ -135,16 +143,73 @@ describe('FileTree', () => {
     expect(nameOf('c.ts').className).toBe('min-w-0 truncate');
   });
 
-  it('目录不上状态色——底下可以同时躺着改过的和没改过的文件', async () => {
-    treeCache.value = new Map([[ROOT, [entry({ name: 'src', kind: 'directory' })]]]);
-    repoState.value = {
-      repoName: 'demo',
-      branch: { head: 'main', detached: false, upstream: null },
-      watch: { mode: 'native', tier: 'A' },
-      files: [file({ path: 'src', unstaged: 'M' })],
-    };
-    await waitFor(() => expect(container.textContent).toContain('src'));
-    expect(nameOf('src').className).not.toContain('text-git-modified');
+  /**
+   * 文件行行尾印状态字母，且是变更列表那一枚（同色、带 tooltip）。没改动的行连那个壳也不画——画
+   * 一个空壳不报错，只是每行右端多占 20px。
+   */
+  it('文件行行尾印状态字母，没改动的不印', async () => {
+    treeCache.value = new Map([[ROOT, [entry({ name: 'a.ts' }), entry({ name: 'c.ts' })]]]);
+    withFiles([file({ path: 'a.ts', unstaged: 'M' })]);
+    await waitFor(() => expect(badgeOf('a.ts')).not.toBeNull());
+
+    const badge = badgeOf('a.ts');
+    expect(badge?.textContent).toBe('M');
+    expect(badge?.className).toContain('text-git-modified');
+    expect(badge?.title).toBe('Modified');
+    expect(badgeOf('c.ts')).toBeNull();
+  });
+
+  /**
+   * 目录行：底下有改动就染色 + 行尾一枚圆点，**不印字母**——一个目录底下可以同时躺着改过的和没
+   * 改过的文件，挑一个字母就是替用户下结论。颜色按后代归并、冲突最先；干净的目录什么都不画。
+   */
+  it('目录行按后代归并出颜色、行尾印圆点不印字母，冲突优先', async () => {
+    treeCache.value = new Map([
+      [
+        ROOT,
+        [
+          entry({ name: 'src', kind: 'directory' }),
+          entry({ name: 'lib', kind: 'directory' }),
+          entry({ name: 'docs', kind: 'directory' }),
+        ],
+      ],
+    ]);
+    withFiles([
+      // src 底下既有修改又有冲突：冲突赢
+      file({ path: 'src/a.ts', unstaged: 'M' }),
+      file({ path: 'src/deep/b.ts', staged: 'D', unstaged: 'D', conflicted: true }),
+      // lib 底下只有未跟踪
+      file({ path: 'lib/new.ts', kind: 'untracked', unstaged: '?' }),
+    ]);
+    await waitFor(() => expect(badgeOf('src')).not.toBeNull());
+
+    const dot = badgeOf('src');
+    expect(nameOf('src').className).toContain('text-git-conflicting');
+    expect(dot?.className).toContain('text-git-conflicting');
+    expect(dot?.textContent).toBe('');
+    expect(dot?.getAttribute('aria-label')).toBe('Contains changes');
+
+    expect(nameOf('lib').className).toContain('text-git-untracked');
+    expect(badgeOf('lib')?.className).toContain('text-git-untracked');
+
+    expect(nameOf('docs').className).toBe('min-w-0 truncate');
+    expect(badgeOf('docs')).toBeNull();
+  });
+
+  /**
+   * 「自己的路径也算一份」：submodule 在树上是一条 `directory`，而它的改动在 status 里记在它
+   * **自己**的路径上（`S.M.`），不是任何后代。表只按后代归并时会漏掉它：变更列表说它 `M`，树上
+   * 却什么都不画。
+   */
+  it('submodule 那一行按自己的路径取状态——它是目录，但改动不在后代上', async () => {
+    treeCache.value = new Map([[ROOT, [entry({ name: 'vendor', kind: 'directory' })]]]);
+    withFiles([file({ path: 'vendor', unstaged: 'M' })]);
+    await waitFor(() => expect(badgeOf('vendor')).not.toBeNull());
+
+    expect(nameOf('vendor').className).toContain('text-git-modified');
+    expect(badgeOf('vendor')?.className).toContain('text-git-modified');
+    // 仍是目录的画法：圆点，不是字母
+    expect(badgeOf('vendor')?.textContent).toBe('');
   });
 
   it('展开的目录才画下一层，收起的不画', async () => {
@@ -205,8 +270,8 @@ describe('FileTree', () => {
     expect(rowOf('src').querySelector('svg')).not.toBeNull();
     expect(rowOf('a.ts').querySelector('svg')).toBeNull();
     expect(rowOf('a.ts').querySelector('span')?.className).toContain('w-3');
-    // 占位在前、名字在后：名字那一段永远是最后一个 span
-    expect(nameOf('a.ts').textContent).toBe('a.ts');
+    // 占位在前、名字在后：名字那一段是第二个子项
+    expect(rowOf('a.ts').children[1]).toBe(nameOf('a.ts'));
   });
 });
 
