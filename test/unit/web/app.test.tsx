@@ -139,12 +139,12 @@ describe('侧栏那两个 tab', () => {
   it('切到 Files 换的是左栏列什么', async () => {
     repoState.value = stateWith('demo');
     render(<App />, container);
-    expect(container.querySelector('nav')?.textContent).toContain('Working tree clean');
+    expect(container.querySelector('nav')?.textContent).toContain('No changes');
 
     tabOf('Files').click();
     // 树那一档还没取到第一层，画的是 Loading…
     await waitFor(() => expect(tabOf('Files').getAttribute('aria-selected')).toBe('true'));
-    expect(container.querySelector('nav')?.textContent).not.toContain('Working tree clean');
+    expect(container.querySelector('nav')?.textContent).not.toContain('No changes');
   });
 
   it('**切 tab 不动右侧面板**——每瞄一眼目录树就丢掉正在读的 diff 是不能接受的', async () => {
