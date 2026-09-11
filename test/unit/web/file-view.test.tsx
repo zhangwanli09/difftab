@@ -8,7 +8,7 @@ import { render } from 'preact';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FilePayload } from '../../../src/server/shared/protocol';
 import { FileView } from '../../../src/web/components/FileView';
-import { fileState } from '../../../src/web/state/store';
+import { activeTab, fileState } from '../../../src/web/state/store';
 
 let container: HTMLElement;
 
@@ -34,11 +34,16 @@ beforeEach(() => {
 afterEach(() => {
   render(null, container);
   fileState.value = null;
+  activeTab.value = 'changes';
 });
 
 describe('FileView', () => {
-  it('还没点过文件时是那句空态', async () => {
+  it('还没点过文件时是与 diff 那侧同一块空态', async () => {
+    // 这一路在产品里到不了（为什么在 PanelEmptyState 上），钉的只是「本组件对 null 也有答案，
+    // 且答案与 diff 那侧是同一块」：图标按档位定，与它是哪个视图无关
+    activeTab.value = 'files';
     await waitFor(() => expect(container.textContent).toContain('Select a file on the left.'));
+    expect(container.querySelector('svg.lucide-file-code')).not.toBeNull();
   });
 
   it('loading 与 error 各说各的，且标题上始终是当前那个路径', async () => {

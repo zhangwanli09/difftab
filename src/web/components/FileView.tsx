@@ -10,6 +10,7 @@ import type { FilePayload } from '../../server/shared/protocol';
 import { getHljs, languageOf } from '../diff/hljs';
 import { fileState } from '../state/store';
 import { Notice, Panel, tooLargeNotice } from './DiffView';
+import { PanelEmptyState } from './EmptyState';
 
 /**
  * 正文 + 行号。
@@ -86,8 +87,9 @@ function Payload({ path, payload }: { path: string; payload: FilePayload }) {
 
 export function FileView() {
   const state = fileState.value;
-  // 与 diff 那侧共用同一句：两个 tab 下指的都是左栏，而左栏此刻列的是什么用户自己看得见
-  if (state === null) return <Notice>Select a file on the left.</Notice>;
+  // 与 diff 那侧共用同一块空态。这一路在产品里到不了（为什么在 `PanelEmptyState` 上说了一次），
+  // 留着是让本组件对每个状态都有答案
+  if (state === null) return <PanelEmptyState />;
 
   /**
    * **`w-max` 是行号槽留在原地的前提，不是排版偏好。** 长行会把正文撑得比面板宽，而横向滚动

@@ -8,6 +8,8 @@
 
 变更列表有列表 / 树两种版式（切换在 tab 行右端，状态与建树在 `state/change-tree.ts`）。两棵树（变更树与 `Files` 那档的目录树）的行首三样（缩进量、展开三角、等宽占位）共用 `tree-row.tsx` 那一份——各写一份不报错，只是切一次 tab 缩进跳一截，或一棵树里文件名比同层目录名往左挪一截。
 
+两侧空着时画的那几块在 `EmptyState.tsx`：右侧没选文件时是 `PanelEmptyState`（图标 + 一句，说哪句、配哪枚按侧栏档位定，判据只在它里面写一次），左栏列表区的三句占位共用 `SidebarPlaceholder`；两块各按自己宿主的手段撑满后居中，不合成一个。文件级的提示（loading / error / binary / too-large / symlink）仍走 `Notice` 贴左上。
+
 `FileView` 不走 diff2html，只用 hljs 高亮一次。**容器上不得加 `hljs` 类**：那条规则是 unlayered 的，会压过 `bg-editor-background`，症状只是「文件视图底色跟页面其余部分对不上」。
 
 `Diff2HtmlUI.draw()` 内部是 `innerHTML` 赋值 + 命令式事件绑定，必须放在 Preact 的 ref/effect 之后，不与 vdom 争夺同一棵子树。

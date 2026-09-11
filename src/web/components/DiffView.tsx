@@ -14,11 +14,13 @@ import { useEffect, useRef } from 'preact/hooks';
 import type { DiffPayload } from '../../server/shared/protocol';
 import { renderDiff } from '../diff/render';
 import { diffOutputFormat } from '../state/layout';
-import { diffState, type RenameInfo, repoState } from '../state/store';
+import { diffState, type RenameInfo } from '../state/store';
+import { PanelEmptyState } from './EmptyState';
 
 /**
- * 提示行的统一外观——空态、加载中、错误、二进制、超大文件共用。**导出给文件视图共用**：
+ * 提示行的统一外观——加载中、错误、二进制、超大文件共用。**导出给文件视图共用**：
  * 两边说的都是「这里没有正文可看」，各写一份的症状是同一类提示在两个面板里内边距不一样。
+ * 没选文件那一路不走它（`PanelEmptyState`）：那是面板空着，不是某个文件出了状况。
  */
 export function Notice({ children }: { children: ComponentChildren }) {
   return <p class="p-4 text-sm text-description-foreground">{children}</p>;
@@ -154,18 +156,9 @@ export function DiffView() {
   // `diffState` 一个来源说清「选了谁」与「取到没有」：`selectedPath` 由它派生，
   // 两者不可能错位，组件因此不需要一条防错位的分支（见 store.ts）
   const state = diffState.value;
-  // 没选文件时是**两句话**：「没得选」与「还没选」是两件事——工作区干净时「Select a file on
-  // the left」指着的是一个空列表，等于让用户去点一个不存在的东西。与左栏那句刻意不逐字相同：
-  // 一句说的是列表，一句说的是面板。第一份 state 还没到时走「还没选」那句
-  if (state === null) {
-    return (
-      <Notice>
-        {repoState.value?.files.length === 0
-          ? 'Working tree clean — nothing to show.'
-          : 'Select a file on the left.'}
-      </Notice>
-    );
-  }
+  // 没选文件时说哪句、配哪枚图标的判据在 `PanelEmptyState` 里只写一次：它按侧栏档位定，
+  // 而不是按「此刻是哪个视图」——没选文件时右侧一直是本组件（切 tab 不动 `activePane`）
+  if (state === null) return <PanelEmptyState />;
 
   return (
     <Panel path={state.path}>
