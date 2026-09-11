@@ -103,6 +103,17 @@ describe('ChangeList 的行布局', () => {
 
   // 两条都**锚定整行**而不是 `toContain` 片段：一条正则同时钉住顺序（名在前、状态位在尾）、目录
   // 不带尾部斜杠、两段没连读成一条完整路径。拆成两条反而更弱——后者对「文件名 + 带斜杠的目录」根本判不出来
+  it('工作区干净时那句居中，且撑满列表区', () => {
+    render(<ChangeList files={[]} />, container);
+
+    const empty = container.firstElementChild;
+    expect(empty?.textContent).toBe('Working tree clean — no changes.');
+    // happy-dom 没有排版引擎，能钉的只有类名（撑满为什么是前提在 EmptyState.tsx）
+    for (const cls of ['h-full', 'items-center', 'justify-center']) {
+      expect(empty?.classList.contains(cls)).toBe(true);
+    }
+  });
+
   it('文件名排在目录之前、状态位在行尾，目录不带尾部斜杠', () => {
     render(
       <ChangeList files={[file({ path: 'src/web/components/ChangeList.tsx', staged: 'M' })]} />,

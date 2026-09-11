@@ -24,6 +24,7 @@ import {
   selectedPath,
   selectFile,
 } from '../state/store';
+import { SidebarPlaceholder } from './EmptyState';
 import { ChevronPlaceholder, ExpandChevron, indent } from './tree-row';
 
 /**
@@ -301,9 +302,7 @@ export function ChangeList({ files }: { files: readonly FileEntry[] }) {
   // `GroupTree` 那个按 `group.files` 记忆的树在每次切 tab / 换 pane 时都白建一遍
   const groups = useMemo(() => groupFiles(files), [files]);
   if (files.length === 0) {
-    return (
-      <p class="px-3 py-2 text-sm text-description-foreground">Working tree clean — no changes.</p>
-    );
+    return <SidebarPlaceholder>Working tree clean — no changes.</SidebarPlaceholder>;
   }
   return (
     <div>

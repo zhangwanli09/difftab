@@ -6,10 +6,10 @@
 
 import { render } from 'preact';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { DiffPayload } from '../../../src/server/shared/protocol';
+import type { DiffPayload, RepoState } from '../../../src/server/shared/protocol';
 import { DiffView } from '../../../src/web/components/DiffView';
 import { diffPanelWidth, SIDE_BY_SIDE_MIN_WIDTH } from '../../../src/web/state/layout';
-import { diffState, type RenameInfo, repoState } from '../../../src/web/state/store';
+import { activeTab, diffState, type RenameInfo, repoState } from '../../../src/web/state/store';
 
 /**
  * **那行上下文(`export const keep`)不是凑数的**：happy-dom 的 `Attr.nodeName` 返回空串（机制见
@@ -28,6 +28,14 @@ index 1111111..2222222 100644
 `;
 
 let container: HTMLElement;
+
+/** 一份干净的仓库状态——空态那两条用例要的只是 `files: []`。 */
+const CLEAN_REPO: RepoState = {
+  repoName: 'demo',
+  branch: { head: 'main', detached: false, upstream: null },
+  files: [],
+  watch: { mode: 'native', tier: 'A' },
+};
 
 /**
  * 等到「某个断言成立」，而不是等一个固定的毫秒数。
@@ -71,6 +79,7 @@ afterEach(() => {
   diffState.value = null;
   diffPanelWidth.value = SIDE_BY_SIDE_MIN_WIDTH;
   repoState.value = null;
+  activeTab.value = 'changes';
 });
 
 describe('DiffView', () => {
@@ -78,19 +87,35 @@ describe('DiffView', () => {
     await waitFor(() => expect(container.textContent).toContain('Select a file on the left'));
 
     expect(container.querySelector('.d2h-file-wrapper')).toBeNull();
+    // 空态居中并配图标。happy-dom 没有排版引擎，能钉的只有类名（撑满为什么是前提在 EmptyState.tsx）
+    const box = container.firstElementChild;
+    for (const cls of ['flex-1', 'items-center', 'justify-center']) {
+      expect(box?.classList.contains(cls)).toBe(true);
+    }
+    expect(container.querySelector('svg.lucide-file-diff')).not.toBeNull();
   });
 
   it('工作区干净时换一句——「点左边一个文件」指着的是一个空列表', async () => {
     // 「没得选」与「还没选」是两件事：上一条用例的 repoState 是 null，走的正是「还没选」那句
-    repoState.value = {
-      repoName: 'demo',
-      branch: { head: 'main', detached: false, upstream: null },
-      files: [],
-      watch: { mode: 'native', tier: 'A' },
-    };
+    repoState.value = CLEAN_REPO;
 
     await waitFor(() => expect(container.textContent).toContain('Working tree clean'));
     expect(container.textContent).not.toContain('Select a file on the left');
+    // 图标跟着文案一起换：干净是一个 ✓，不再是那份 diff
+    expect(container.querySelector('svg.lucide-circle-check')).not.toBeNull();
+    expect(container.querySelector('svg.lucide-file-diff')).toBeNull();
+  });
+
+  it('切到 Files 档时空态跟着档走：图标换成全文那枚，干净也照样说「点左边一个」', async () => {
+    // 没选文件时右侧一直是本组件（切 tab 不动 activePane），所以「Files 档下画什么」只能在
+    // 这里断言。干净仓库 + Files 档：那一档列的是整棵目录树，「nothing to show」对着一列能点的
+    // 文件说不通
+    repoState.value = CLEAN_REPO;
+    activeTab.value = 'files';
+
+    await waitFor(() => expect(container.querySelector('svg.lucide-file-code')).not.toBeNull());
+    expect(container.textContent).toContain('Select a file on the left');
+    expect(container.textContent).not.toContain('Working tree clean');
   });
 
   it('text / untracked-text 都走 diff2html', async () => {

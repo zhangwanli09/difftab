@@ -14,6 +14,7 @@ import { collapseAll, loadDir, ROOT, refreshTree, treeCache } from '../state/tre
 import { BranchStatus } from './BranchStatus';
 import { ChangeList } from './ChangeList';
 import { DiffView } from './DiffView';
+import { SidebarPlaceholder } from './EmptyState';
 import { FileTree } from './FileTree';
 import { FileView } from './FileView';
 import { Icon } from './Icon';
@@ -198,11 +199,11 @@ export function App() {
           ) : state === null ? (
             // 第一次就失败时不能继续说「读取中」——那份加载态永远不会结束，
             // 页面看上去像卡住了，而错误条其实已经把原因写在上面了
-            <p class="px-3 py-2 text-sm text-description-foreground">
+            <SidebarPlaceholder>
               {error === null
                 ? 'Loading…'
                 : 'Could not load the change list. Reload the page to retry.'}
-            </p>
+            </SidebarPlaceholder>
           ) : (
             <ChangeList files={state.files} />
           )}
