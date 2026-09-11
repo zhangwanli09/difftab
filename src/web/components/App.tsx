@@ -4,8 +4,9 @@
 // 档位)，与右边看的是哪个文件无关，横跨等于在 diff 面板顶上切一条与 diff 无关的横杠。
 // 两侧的所有权是分开的：列表归 Preact 的 keyed reconcile，单文件 diff 容器归 `Diff2HtmlUI`。
 
-import { ChevronsDownUp, Folder, GitBranch } from 'lucide-preact';
+import { ChevronsDownUp, Folder, GitBranch, List, ListTree, type LucideIcon } from 'lucide-preact';
 import { useEffect, useRef } from 'preact/hooks';
+import { type ChangeView, changeView, toggleChangeView } from '../state/change-tree';
 import { observeDiffPanel } from '../state/layout';
 import { activePane, activeTab, loadError, repoState } from '../state/store';
 import { PRODUCT_NAME } from '../state/title';
@@ -54,12 +55,24 @@ const TABS = [
 const TAB_CLASS =
   '-mb-px flex border-b px-3 py-1.5 focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus-border';
 
+/**
+ * 变更列表的列表 / 树切换，按**当前**版式查出要画的那枚。图标与文案表达的是**目标**视图（照
+ * VS Code 的 View as Tree / View as List）：它是一个动作按钮，不是显示当前档的状态灯——顶栏那个
+ * 三档主题开关显示的是当前档，两者不同类。写成一张 `Record` 与 `ThemeToggle` 的 `MODES` 一致：
+ * 加第三种版式时少填一格是编译错误。
+ */
+const VIEW_TOGGLE: Record<ChangeView, { icon: LucideIcon; label: string }> = {
+  list: { icon: ListTree, label: 'View as tree' },
+  tree: { icon: List, label: 'View as list' },
+};
+
 function SideBarTabRow() {
   const active = activeTab.value;
   return (
-    // **这一层不是 tablist，里面那层才是**：`Files` 档下这一行的右端站着「全部折叠」，而
-    // `role="tablist"` 里躺一个非 tab 元素时读屏会把它当成第三个 tab 报出来——按钮做成 tablist
-    // 的兄弟，两件事就不冲突了。写成孩子时页面上完全看不出来，只有读屏里多一个无名控件。
+    // **这一层不是 tablist，里面那层才是**：这一行的右端按当前档各站一枚按钮（`Changes` 下是
+    // 列表 / 树切换，`Files` 下是「全部折叠」），而 `role="tablist"` 里躺一个非 tab 元素时读屏会
+    // 把它当成第三个 tab 报出来——按钮做成 tablist 的兄弟，两件事就不冲突了。写成孩子时页面上
+    // 完全看不出来，只有读屏里多一个无名控件。
     //
     // 这一串类名逐条是：**通栏那条 `border-b` 归这一层**（留在 tablist 上时它只有两枚 tab 那么
     // 宽）；**不给纵向内边距**——选中 tab 那条 `-mb-px` 压的正是它这条边，中间垫上 padding 就压
@@ -97,6 +110,11 @@ function SideBarTabRow() {
           </button>
         ))}
       </div>
+
+      {/* 列表 / 树切换**只在 `Changes` 那一档画**。版式为什么不进 `localStorage` 见 `change-tree.ts` */}
+      {active === 'changes' && (
+        <IconButton {...VIEW_TOGGLE[changeView.value]} onClick={toggleChangeView} />
+      )}
 
       {/* 「全部折叠」**只在 `Files` 那一档画**：`Changes` 档下它一个动作都放不了。**不订阅
           `expandedDirs` 去做禁用态**——一个目录都没展开时点下去写的是一个空集，而 `FileTree` 每行
