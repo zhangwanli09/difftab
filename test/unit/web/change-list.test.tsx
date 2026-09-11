@@ -6,9 +6,10 @@
 // `UU`（双方都改）从此长得一模一样，而它们要采取的动作完全不同。
 
 import { render } from 'preact';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FileEntry } from '../../../src/server/shared/protocol';
 import { ChangeList } from '../../../src/web/components/ChangeList';
+import { changeView, collapsedChangeDirs } from '../../../src/web/state/change-tree';
 import { diffState } from '../../../src/web/state/store';
 
 const file = (partial: Partial<FileEntry> & { path: string }): FileEntry => ({
@@ -30,6 +31,8 @@ afterEach(() => {
   render(null, container);
   // signals 活在组件树之外，不清就会漏进下一个用例
   diffState.value = null;
+  changeView.value = 'list';
+  collapsedChangeDirs.value = new Set();
 });
 
 /**
@@ -132,5 +135,97 @@ describe('ChangeList 的行布局', () => {
     // 目录段所在的那个截断盒必须**同时装着文件名**：拆成兄弟时 closest 会停在目录段自己身上
     const truncatingBox = dirSegment?.closest('.truncate');
     expect(normalize(truncatingBox)).toContain('List.tsx');
+  });
+});
+
+/**
+ * 树视图。钉的都是「不报错、只是不对」：文件行在树里仍画目录段（同一段路径在祖先节点与文件
+ * 行上各说一遍）、文件行与同层目录行缩进不齐、折 Staged 里的目录连带折掉 Unstaged 里的、
+ * 切到树之后组头没了（分组是 git 语义，不是列表版式的附属）。
+ */
+describe('ChangeList 的树视图', () => {
+  const rows = () => [...container.querySelectorAll('button')];
+  const rowByTitle = (title: string) => rows().find((row) => row.title === title);
+  // signals 驱动的重渲染是异步的，点完要等一拍
+  const waitFor = (assert: () => void) => vi.waitFor(assert, { interval: 5 });
+
+  it('目录行带 aria-expanded、默认展开，其下文件行只画名字不画目录段', () => {
+    changeView.value = 'tree';
+    render(
+      <ChangeList files={[file({ path: 'src/web/components/ChangeList.tsx', staged: 'M' })]} />,
+      container,
+    );
+
+    const dir = rowByTitle('src/web/components');
+    expect(dir?.getAttribute('aria-expanded')).toBe('true');
+    // 单子目录链合并成一个节点，名字连读
+    expect(normalize(dir)).toBe('src/web/components');
+    expect(normalize(rowByTitle('src/web/components/ChangeList.tsx'))).toMatch(
+      /^M\s*ChangeList\.tsx$/,
+    );
+  });
+
+  it('文件行按层级缩进，与同层目录行同一个左内边距', () => {
+    changeView.value = 'tree';
+    render(
+      <ChangeList
+        files={[
+          file({ path: 'src/a.ts', staged: 'M' }),
+          file({ path: 'src/web/b.ts', staged: 'M' }),
+        ]}
+      />,
+      container,
+    );
+
+    // `src` 在第 0 层、它底下的 `web` 与 `a.ts` 同在第 1 层、`b.ts` 在第 2 层
+    expect(rowByTitle('src')?.style.paddingLeft).toBe('12px');
+    expect(rowByTitle('src/web')?.style.paddingLeft).toBe('24px');
+    expect(rowByTitle('src/a.ts')?.style.paddingLeft).toBe('24px');
+    expect(rowByTitle('src/web/b.ts')?.style.paddingLeft).toBe('36px');
+  });
+
+  it('点目录行把它底下的行折起来，再点展开', async () => {
+    changeView.value = 'tree';
+    render(<ChangeList files={[file({ path: 'src/a.ts', staged: 'M' })]} />, container);
+
+    rowByTitle('src')?.click();
+    await waitFor(() => expect(rowByTitle('src')?.getAttribute('aria-expanded')).toBe('false'));
+    expect(rowByTitle('src/a.ts')).toBeUndefined();
+
+    rowByTitle('src')?.click();
+    await waitFor(() => expect(rowByTitle('src/a.ts')).toBeDefined());
+  });
+
+  it('同一目录在 Staged 与 Unstaged 里各折各的', async () => {
+    changeView.value = 'tree';
+    // X=M Y=M：同一个文件同时落在两组
+    render(
+      <ChangeList files={[file({ path: 'src/a.ts', staged: 'M', unstaged: 'M' })]} />,
+      container,
+    );
+
+    const dirs = rows().filter((row) => row.title === 'src');
+    expect(dirs).toHaveLength(2);
+    dirs[0]?.click();
+    await waitFor(() => expect(dirs[0]?.getAttribute('aria-expanded')).toBe('false'));
+    expect(dirs[1]?.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('组头两种版式都留着——分组是 git 语义，树只是组内的排法', () => {
+    changeView.value = 'tree';
+    render(
+      <ChangeList
+        files={[file({ path: 'src/a.ts', staged: 'M' }), file({ path: 'src/b.ts', unstaged: 'M' })]}
+      />,
+      container,
+    );
+    expect(sectionTextOf('Staged')).toContain('a.ts');
+    expect(sectionTextOf('Unstaged')).toContain('b.ts');
+  });
+
+  it('列表版式下没有目录行', () => {
+    render(<ChangeList files={[file({ path: 'src/a.ts', staged: 'M' })]} />, container);
+    expect(rowByTitle('src')).toBeUndefined();
+    expect(rows()).toHaveLength(1);
   });
 });

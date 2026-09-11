@@ -2,10 +2,29 @@
 //
 // 按 path keyed:SSE 刷新时列表会整份换掉，靠 key 让 Preact 只动真正变了的行，
 // 选中态与滚动位置才留得住（——这正是不自己写 reconcile 的理由）。
+//
+// 两种版式（平铺列表 / 目录树）共用同一个 `FileRow`：分组是 git 语义，两种版式都保留组头，树
+// 只是组内的排法。版式与树的折叠态在 `state/change-tree.ts`。
 
 import { useComputed } from '@preact/signals';
+import { useMemo } from 'preact/hooks';
 import type { FileEntry, StatusCode } from '../../server/shared/protocol';
-import { type ChangeGroup, groupFiles, selectedPath, selectFile } from '../state/store';
+import {
+  buildChangeTree,
+  type ChangeDirNode,
+  type ChangeNode,
+  changeView,
+  isChangeDirCollapsed,
+  toggleChangeDir,
+} from '../state/change-tree';
+import {
+  type ChangeGroup,
+  type ChangeGroupId,
+  groupFiles,
+  selectedPath,
+  selectFile,
+} from '../state/store';
+import { ChevronPlaceholder, ExpandChevron, indent } from './tree-row';
 
 /**
  * 状态位的**展示文案**，与解析无关——徽章上印的是 git 自己的字母，这张表只作为 tooltip 把
@@ -89,11 +108,30 @@ function ConflictBadge({ staged, unstaged }: Pick<FileEntry, 'staged' | 'unstage
 // focus-visible 那两个类是键盘可达性的最低档：列表项是 <button>，而 preflight 清掉了
 // UA 默认焦点环。用 focus-border token 画，深浅都跟着翻。手型光标不在这里——那是所有按钮
 // 共有的一件事，`styles/app.css` 里有一条 base 层规则统一给
-const ROW_CLASS =
-  'flex w-full items-baseline gap-2 px-3 py-1 text-left text-sm focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus-border';
+//
+// 对齐方式不在这一串里：文件行是「状态位 + 文件名」两段文字，按基线排；目录行是一枚 SVG 加一段
+// 文字，替换元素的基线是它的底边，按基线排三角会整个浮在文字上方，得 `items-center`。两行各补
+// 自己那一个，其余（内边距、焦点环）只此一份
+const ROW_BASE =
+  'flex w-full gap-2 px-3 py-1 text-left text-sm focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus-border';
+const ROW_CLASS = `${ROW_BASE} items-baseline`;
 
-function FileRow({ file, group }: { file: FileEntry; group: ChangeGroup['id'] }) {
+/**
+ * 一个文件那一行。`treeDepth` 有值即树视图里的一行：按层级缩进、行首多一个与目录行的展开三角
+ * 等宽的占位（少了它文件名比同层的目录名往左挪一截，同一层看着像两层）、**不再画目录段**——
+ * 祖先节点已经把目录说了。其余（状态位、选中态、重命名标注、整行 `title`）两种版式一字不差。
+ */
+function FileRow({
+  file,
+  group,
+  treeDepth,
+}: {
+  file: FileEntry;
+  group: ChangeGroupId;
+  treeDepth?: number;
+}) {
   const { dir, name } = splitForDisplay(file.path);
+  const inTree = treeDepth !== undefined;
   /**
    * 选中态包成 `computed` 再作为 prop 传下去，**不在组件体里读 `selectedPath.value`**：在组件
    * 体里读等于这一行订阅了它，换选中时 320 行全部重新渲染，其中 318 行产出的 vnode 与上一次逐
@@ -124,7 +162,9 @@ function FileRow({ file, group }: { file: FileEntry; group: ChangeGroup['id'] })
         // 挂在整行上补一份。不放在目录那个 span 上：它被裁到零宽时就没得可悬停了
         title={file.path}
         class={rowClass}
+        style={inTree ? indent(treeDepth) : undefined}
       >
+        {inTree && <ChevronPlaceholder />}
         {/* 每个分组只展示它自己那一侧的状态位——「已暂存」看 X，其余看 Y；冲突条目两侧都不
             是 `.`，挑哪一位都会丢掉另一半。**「印两位」的判据是条目自己的 `conflicted`，不是它
             落在哪一组**：按分组判的话，这一行画得对不对就取决于 `groupFiles` 与这里是否一致，
@@ -142,7 +182,7 @@ function FileRow({ file, group }: { file: FileEntry; group: ChangeGroup['id'] })
             `min-w-0` 不能省：flex 子项的 min-width 默认 auto，不给它时 overflow:hidden 收不住 */}
         <span class="min-w-0 truncate">
           {name}
-          {dir && <span class="ml-2 text-xs text-description-foreground">{dir}</span>}
+          {dir && !inTree && <span class="ml-2 text-xs text-description-foreground">{dir}</span>}
         </span>
         {/* 重命名的判据是 oldPath 存在，不是比对路径。这里只把旧路径说清楚，
             点开后的 rename from/to 与相似度标注在 DiffView 那侧 */}
@@ -157,6 +197,73 @@ function FileRow({ file, group }: { file: FileEntry; group: ChangeGroup['id'] })
   );
 }
 
+/**
+ * 树视图里的一个目录行。形状与 `Files` 那档同款：缩进 + 12px 的展开三角（展开时 `rotate-90`）
+ * + 名字。**只改折叠集合，不动选中态与右侧**——折的是左栏在列什么，不是用户此刻在读什么。
+ */
+function DirRow({
+  node,
+  group,
+  depth,
+}: {
+  node: ChangeDirNode;
+  group: ChangeGroupId;
+  depth: number;
+}) {
+  // 与 `FileRow` 的选中态同一条理由包成 computed：别的目录折起来时这一行产出的是同一个布尔，
+  // 不跟着重画
+  const expanded = useComputed(() => !isChangeDirCollapsed(group, node.path)).value;
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => toggleChangeDir(group, node.path)}
+        // 合并后的名字会被 320px 裁掉，完整路径在树上找不回来——与文件行同理挂在整行上
+        title={node.path}
+        aria-expanded={expanded}
+        class={`${ROW_BASE} items-center hover:bg-list-hover-background`}
+        style={indent(depth)}
+      >
+        <ExpandChevron expanded={expanded} />
+        <span class="min-w-0 truncate">{node.name}</span>
+      </button>
+      {expanded && <TreeLevel nodes={node.children} group={group} depth={depth + 1} />}
+    </li>
+  );
+}
+
+function TreeLevel({
+  nodes,
+  group,
+  depth,
+}: {
+  nodes: readonly ChangeNode[];
+  group: ChangeGroupId;
+  depth: number;
+}) {
+  return (
+    <ul>
+      {nodes.map((node) =>
+        node.kind === 'directory' ? (
+          <DirRow key={node.path} node={node} group={group} depth={depth} />
+        ) : (
+          <FileRow key={node.file.path} file={node.file} group={group} treeDepth={depth} />
+        ),
+      )}
+    </ul>
+  );
+}
+
+/**
+ * 树视图下的一组。树由路径**纯算**出来，只在这一组的 `files` 换新时重建，折叠与选中都不碰它。
+ * **是 `useMemo` 不是 `useComputed`**：`files` 是 prop 不是 signal，computed 只跟踪 signal，
+ * 换一份 `files` 它不会重算——页面上就是 SSE 刷新后树停在旧的那份，而列表版式照常在动。
+ */
+function GroupTree({ group }: { group: ChangeGroup }) {
+  const nodes = useMemo(() => buildChangeTree(group.files), [group.files]);
+  return <TreeLevel nodes={nodes} group={group.id} depth={0} />;
+}
+
 function Group({ group }: { group: ChangeGroup }) {
   if (group.files.length === 0) return null;
   return (
@@ -165,16 +272,25 @@ function Group({ group }: { group: ChangeGroup }) {
         {group.title}
         <span class="ml-1">{group.files.length}</span>
       </h2>
-      <ul>
-        {group.files.map((file) => (
-          <FileRow key={file.path} file={file} group={group.id} />
-        ))}
-      </ul>
+      {/* 组头两种版式都留着：分组是 git 语义（XY 两位独立，同一个文件可同时在两组），树只是
+          组内的排法 */}
+      {changeView.value === 'tree' ? (
+        <GroupTree group={group} />
+      ) : (
+        <ul>
+          {group.files.map((file) => (
+            <FileRow key={file.path} file={file} group={group.id} />
+          ))}
+        </ul>
+      )}
     </section>
   );
 }
 
 export function ChangeList({ files }: { files: readonly FileEntry[] }) {
+  // 分组只在 `files` 换新时重算：`groupFiles` 每次都回四份新数组，直接在渲染体里调的话
+  // `GroupTree` 那个按 `group.files` 记忆的树在每次切 tab / 换 pane 时都白建一遍
+  const groups = useMemo(() => groupFiles(files), [files]);
   if (files.length === 0) {
     return (
       <p class="px-3 py-2 text-sm text-description-foreground">Working tree clean — no changes.</p>
@@ -182,7 +298,7 @@ export function ChangeList({ files }: { files: readonly FileEntry[] }) {
   }
   return (
     <div>
-      {groupFiles(files).map((group) => (
+      {groups.map((group) => (
         <Group key={group.id} group={group} />
       ))}
     </div>

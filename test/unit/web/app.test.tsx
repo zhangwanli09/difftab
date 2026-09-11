@@ -13,6 +13,7 @@ import { render } from 'preact';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RepoState } from '../../../src/server/shared/protocol';
 import { App } from '../../../src/web/components/App';
+import { changeView } from '../../../src/web/state/change-tree';
 import {
   activePane,
   activeTab,
@@ -51,6 +52,7 @@ afterEach(() => {
   fileState.value = null;
   activeTab.value = 'changes';
   activePane.value = 'diff';
+  changeView.value = 'list';
   treeCache.value = new Map();
   treeErrors.value = new Map();
   expandedDirs.value = new Set();
@@ -260,5 +262,54 @@ describe('tab 行右端那枚「全部折叠」', () => {
   it('排在滚动容器之外——塞进 nav 里按钮会跟着树滚走', async () => {
     await openFilesTab();
     expect(container.querySelector('nav')?.contains(collapseButton())).toBe(false);
+  });
+});
+
+// tab 行右端那枚列表 / 树切换。与上面「全部折叠」同一组判据：`Files` 档下多出一枚点了没反应的
+// 按钮、读屏把它报成第三个 tab、它掉进滚动容器里跟着列表滚走、只画图标时掉了 `aria-label`。
+// 另加一条这枚独有的：图标与文案表达的是**目标**视图，点一下之后名字要翻过来。
+describe('tab 行右端那枚列表 / 树切换', () => {
+  const viewButton = () =>
+    container.querySelector('[aria-label="View as tree"], [aria-label="View as list"]');
+  const tabList = () => container.querySelector('[role="tablist"]');
+
+  it('只在 Changes 那一档画——Files 档下它一个动作都放不了', async () => {
+    render(<App />, container);
+    expect(viewButton()).not.toBeNull();
+
+    tabOf('Files').click();
+    await waitFor(() => expect(tabOf('Files').getAttribute('aria-selected')).toBe('true'));
+    expect(viewButton()).toBeNull();
+  });
+
+  it('名字说的是目标视图：列表下是 View as tree，点一下变 View as list', async () => {
+    render(<App />, container);
+    expect(viewButton()?.getAttribute('aria-label')).toBe('View as tree');
+    expect(viewButton()?.querySelector('svg')).not.toBeNull();
+
+    (viewButton() as HTMLButtonElement).click();
+    await waitFor(() => expect(viewButton()?.getAttribute('aria-label')).toBe('View as list'));
+    expect(changeView.value).toBe('tree');
+  });
+
+  it('站在 tab 行里，但在 tablist 之外，也不在滚动容器里', () => {
+    render(<App />, container);
+    expect(tabList()?.contains(viewButton())).toBe(false);
+    expect(tabList()?.parentElement?.contains(viewButton())).toBe(true);
+    expect(container.querySelector('nav')?.contains(viewButton())).toBe(false);
+  });
+
+  it('切版式不动右侧面板，也不动选中态', async () => {
+    diffState.value = {
+      status: 'ready',
+      path: 'src/app.ts',
+      rename: null,
+      payload: { kind: 'binary' },
+    };
+    render(<App />, container);
+    (viewButton() as HTMLButtonElement).click();
+    await waitFor(() => expect(changeView.value).toBe('tree'));
+    expect(activePane.value).toBe('diff');
+    expect(container.querySelector('section')?.textContent).toContain('Binary file');
   });
 });
