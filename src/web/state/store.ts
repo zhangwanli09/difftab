@@ -15,6 +15,7 @@ import {
   isConflicted,
   isUntracked,
   type RepoState,
+  type StatusCode,
 } from '../../server/shared/protocol';
 import { getJson, latestWins, toMessage } from './http';
 import { refreshTree } from './tree';
@@ -66,14 +67,62 @@ export const diffState = signal<DiffRequestState | null>(null);
  */
 export const selectedPath = computed(() => diffState.value?.path ?? null);
 
+/** 一个改动条目会有的状态码：`.` 不在其中——它是「这一侧没动」，不是一种改动。 */
+export type ChangeCode = Exclude<StatusCode, '.'>;
+
 /**
- * `path → 条目`。**建一次，不在每一行里现找**：SSE 每换一份 `files` 数组，文件树上每个可见
- * 行都会重算自己那份 computed，各自 `find` 一遍就是 O(行数 × 变更数)——300 个变更、200 行
- * 可见时每个文件系统事件要跑六万次字符串比较，而这条路每次变更都走。
+ * 一个条目在文件树上按哪一位上色。
+ *
+ * **冲突优先**：冲突条目两侧状态位都不是 `.`，挑哪一位都会说错一半，一律按 `U`。判据走
+ * `isConflicted()` 而不是自己读 `conflicted`——那个字段的含义归 `shared/protocol.ts`。其余先看
+ * 工作区侧（Y），它是「文件现在长什么样」，正是树上那一行说的东西；Y 干净才退回暂存侧。两侧
+ * 都是 `.` 的条目不该出现在 status 里，回 `null` 只是不替解析器编一个字母。
  */
-export const fileByPath = computed(
-  () => new Map((repoState.value?.files ?? []).map((file) => [file.path, file])),
-);
+function codeOf(entry: FileEntry): ChangeCode | null {
+  if (isConflicted(entry)) return 'U';
+  if (entry.unstaged !== '.') return entry.unstaged;
+  if (entry.staged !== '.') return entry.staged;
+  return null;
+}
+
+/**
+ * 同一个路径收到多个状态码时的归并优先级，小的赢。冲突最先——那是用户此刻唯一要处理的东西；
+ * 其后修改一档（含改类型、重命名、复制）是绝大多数情形；未跟踪是最弱的主张，排最后。**这是展示
+ * 上的取舍**：混合目录取哪个都对不了所有人，判据只求稳定。写成 `Record` 而不是数组：漏一个码时
+ * 编译器报错，而数组的 `indexOf` 回 -1 会让漏掉的那个静默排到冲突前面。
+ */
+const CODE_RANK: Record<ChangeCode, number> = { U: 0, M: 1, T: 1, R: 1, C: 1, D: 2, A: 3, '?': 4 };
+
+/**
+ * `路径 → 状态码`，文件树上每一行按自己的路径查这一张表。每个改动条目把状态码记到**自己的路径
+ * 与所有祖先目录**上，同一个键按 `CODE_RANK` 归并——于是一张表同时回答文件行（自己那一格）、
+ * 目录行（后代归并）与 submodule（在树上是一条 `directory`，而改动记在它自己的路径上、不在任何
+ * 后代；「自己的路径也算一份」正是让它不需要特判的那一条）。
+ *
+ * **建一次，不在每一行里现找**：SSE 每换一份 `files` 数组，文件树上每个可见行都会重算自己那份
+ * computed，各自扫一遍 `files` 就是 O(行数 × 变更数)——300 个变更、200 行可见时每个文件系统
+ * 事件要跑六万次字符串比较，而这条路每次变更都走。这里是几百个条目乘上三五层，一次可以忽略。
+ */
+export const codeByPath = computed(() => {
+  const codes = new Map<string, ChangeCode>();
+  const claim = (path: string, code: ChangeCode) => {
+    const current = codes.get(path);
+    if (current === undefined || CODE_RANK[code] < CODE_RANK[current]) codes.set(path, code);
+  };
+  for (const file of repoState.value?.files ?? []) {
+    const code = codeOf(file);
+    if (code === null) continue;
+    claim(file.path, code);
+    for (
+      let slash = file.path.indexOf('/');
+      slash !== -1;
+      slash = file.path.indexOf('/', slash + 1)
+    ) {
+      claim(file.path.slice(0, slash), code);
+    }
+  }
+  return codes;
+});
 
 export type ChangeGroupId = 'conflicted' | 'staged' | 'unstaged' | 'untracked';
 

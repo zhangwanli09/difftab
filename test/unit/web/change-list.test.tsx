@@ -90,9 +90,10 @@ describe('ChangeList 的冲突组', () => {
 });
 
 /**
- * 行的两段式展示。钉的是**顺序**：文件名在前、目录在后。上面那两条冲突用例比的是整段
- * textContent，顺序对调它们照样全绿——少了这一条，把两段换回「目录前缀 + 文件名」连读的写法不
- * 会让任何用例变红，而那正是要防的形态（路径一长，truncate 先裁掉文件名）。
+ * 行的两段式展示。钉的是**顺序**：文件名在前、目录在后、状态位在行尾。上面那两条冲突用例比的
+ * 是整段 textContent，顺序对调它们照样全绿——少了这一条，把两段换回「目录前缀 + 文件名」连读的
+ * 写法、或把状态位挪回行首，都不会让任何用例变红，而前者正是要防的形态（路径一长，truncate 先
+ * 裁掉文件名）。
  *
  * 「窄侧栏下先裁掉的是目录」那半条这里验不了：happy-dom 没有排版引擎，归人工那档。
  */
@@ -100,21 +101,21 @@ describe('ChangeList 的行布局', () => {
   /** 某一行（整个 <button>）的可见文本，空白归一。 */
   const rowText = () => normalize(container.querySelector('button'));
 
-  // 两条都**锚定整行**而不是 `toContain` 片段：一条正则同时钉住顺序（名在前）、目录不带尾部斜杠、
-  // 两段没连读成一条完整路径。拆成两条反而更弱——后者对「文件名 + 带斜杠的目录」根本判不出来
-  it('文件名排在目录之前，目录不带尾部斜杠', () => {
+  // 两条都**锚定整行**而不是 `toContain` 片段：一条正则同时钉住顺序（名在前、状态位在尾）、目录
+  // 不带尾部斜杠、两段没连读成一条完整路径。拆成两条反而更弱——后者对「文件名 + 带斜杠的目录」根本判不出来
+  it('文件名排在目录之前、状态位在行尾，目录不带尾部斜杠', () => {
     render(
       <ChangeList files={[file({ path: 'src/web/components/ChangeList.tsx', staged: 'M' })]} />,
       container,
     );
 
-    expect(rowText()).toMatch(/^M\s*ChangeList\.tsx\s*src\/web\/components$/);
+    expect(rowText()).toMatch(/^ChangeList\.tsx\s*src\/web\/components\s*M$/);
   });
 
   it('仓库根下的文件不拖一个空的路径段', () => {
     render(<ChangeList files={[file({ path: 'package.json', staged: 'M' })]} />, container);
 
-    expect(rowText()).toMatch(/^M\s*package\.json$/);
+    expect(rowText()).toMatch(/^package\.json\s*M$/);
   });
 
   /**
@@ -149,7 +150,7 @@ describe('ChangeList 的树视图', () => {
   // signals 驱动的重渲染是异步的，点完要等一拍
   const waitFor = (assert: () => void) => vi.waitFor(assert, { interval: 5 });
 
-  it('目录行带 aria-expanded、默认展开，其下文件行只画名字不画目录段', () => {
+  it('目录行带 aria-expanded、默认展开，其下文件行只画名字与行尾状态位、不画目录段', () => {
     changeView.value = 'tree';
     render(
       <ChangeList files={[file({ path: 'src/web/components/ChangeList.tsx', staged: 'M' })]} />,
@@ -161,7 +162,7 @@ describe('ChangeList 的树视图', () => {
     // 单子目录链合并成一个节点，名字连读
     expect(normalize(dir)).toBe('src/web/components');
     expect(normalize(rowByTitle('src/web/components/ChangeList.tsx'))).toMatch(
-      /^M\s*ChangeList\.tsx$/,
+      /^ChangeList\.tsx\s*M$/,
     );
   });
 
