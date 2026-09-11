@@ -107,7 +107,7 @@ describe('ChangeList 的行布局', () => {
     render(<ChangeList files={[]} />, container);
 
     const empty = container.firstElementChild;
-    expect(empty?.textContent).toBe('Working tree clean — no changes.');
+    expect(empty?.textContent).toBe('No changes.');
     // happy-dom 没有排版引擎，能钉的只有类名（撑满为什么是前提在 EmptyState.tsx）
     for (const cls of ['h-full', 'items-center', 'justify-center']) {
       expect(empty?.classList.contains(cls)).toBe(true);

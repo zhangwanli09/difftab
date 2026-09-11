@@ -108,7 +108,7 @@ describe('DiffView', () => {
 
   it('切到 Files 档时空态跟着档走：图标换成全文那枚，干净也照样说「点左边一个」', async () => {
     // 没选文件时右侧一直是本组件（切 tab 不动 activePane），所以「Files 档下画什么」只能在
-    // 这里断言。干净仓库 + Files 档：那一档列的是整棵目录树，「nothing to show」对着一列能点的
+    // 这里断言。干净仓库 + Files 档：那一档列的是整棵目录树，「Working tree clean」对着一列能点的
     // 文件说不通
     repoState.value = CLEAN_REPO;
     activeTab.value = 'files';

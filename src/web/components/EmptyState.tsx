@@ -55,20 +55,20 @@ function EmptyState({ icon, children }: { icon: LucideIcon; children: ComponentC
  * 会看见 pane 已切而 `fileState` 还是 null。按视图各配时，`Files` 档下画的就永远是 diff 那
  * 枚，页面上只是「图标不太对」。
  *
- * - `Changes` 档且工作区干净：`Working tree clean — nothing to show.` 配一个 ✓。「没得选」与
- *   「还没选」是两件事——干净时「点左边一个文件」指着的是一个空列表。与左栏那句
- *   `Working tree clean — no changes.` 刻意不逐字相同：一句说的是列表，一句说的是面板。
+ * - `Changes` 档且工作区干净：`Working tree clean.` 配一个 ✓。「没得选」与「还没选」是两件
+ *   事——干净时「点左边一个文件」指着的是一个空列表。与左栏那句 `No changes.` 刻意不逐字相
+ *   同：一句说的是列表，一句说的是仓库；✓ 已经把「没得看」带上，不再另说一遍。
  * - 其余一律 `Select a file on the left.`：**`Files` 档下即使干净也走这句**，那一档列的是整棵
- *   目录树，「nothing to show」对着一列能点的文件说不通。图标跟着档走：`Changes` 是一份 diff
- *   （`FileDiff`），`Files` 是一份全文（`FileCode`）——两档打开同一个文件看到的是两样东西，图
- *   标在空着时就把这一点说出来。
+ *   目录树，「Working tree clean」对着一列能点的文件答非所问。图标跟着档走：`Changes` 是一份
+ *   diff（`FileDiff`），`Files` 是一份全文（`FileCode`）——两档打开同一个文件看到的是两样东
+ *   西，图标在空着时就把这一点说出来。
  * - 第一份 state 还没到（`repoState` 为 null）时走「还没选」那句——左栏此时写的正是
  *   `Loading…`，两栏说的是同一件事。
  */
 export function PanelEmptyState() {
   const tab = activeTab.value;
   if (tab === 'changes' && repoState.value?.files.length === 0) {
-    return <EmptyState icon={CircleCheck}>Working tree clean — nothing to show.</EmptyState>;
+    return <EmptyState icon={CircleCheck}>Working tree clean.</EmptyState>;
   }
   return (
     <EmptyState icon={tab === 'files' ? FileCode : FileDiff}>Select a file on the left.</EmptyState>
