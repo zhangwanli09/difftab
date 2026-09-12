@@ -73,6 +73,7 @@
 
 - **`files` 白名单**为 `bin/`、`dist/`、README（含 `README.<lang>.md` 译文）、LICENSE；`prepublishOnly` 执行完整构建。
 - **注意 `files` 不是一份完整的白名单**：npm / pnpm 无条件把根目录下所有 `README*` 打进 tarball，与 `files` 无关。门禁查的是 pack 的实际输出而不是 `files` 字段，所以这类偏差抓得到。
+- **`assets/`（logo、社交预览）刻意不进 `files`**：它只给 GitHub 与 README 用，README 里的相对路径由 npm 改写到 GitHub raw，不需要随包发。
 - **`dependencies` 为空。** 前端依赖在构建期即被打进 `dist/web/app.js`，后端只用 Node 标准库——用户 `npm i -g` 时零传递依赖安装。
 - **`publishConfig.registry` 钉住 `registry.npmjs.org`**：开发机的全局 `~/.npmrc` 可能指向镜像源，不钉住就会发错地方。判据是 `pnpm publish` 打印的 `📦 name@version → <registry>` 那一行。这是 npm 的 manifest 字段，不受「pnpm 设置只写 `pnpm-workspace.yaml`」约束。
 - **`publishBranch: main` 写在 `pnpm-workspace.yaml`**——pnpm 自己的默认值是 `master`。

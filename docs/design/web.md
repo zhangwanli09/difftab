@@ -15,7 +15,7 @@
 
 **外壳是行向 flex：左栏一列（顶栏 → 错误条 → 变更列表 → 状态条），右边是 diff 面板，面板自屏幕顶端满高到底。** 顶栏不横跨全屏——它归左栏。
 
-- **顶栏里是项目名 + 主题开关**，两样而已。项目名是 `RepoState.repoName`（工作区根目录名，与标签页标题里的是同一份），位置对应 VS Code 侧栏顶端那行文件夹名：这一栏要回答的是「我在看哪个项目」，产品名答不了，而它在标签页标题里仍留着一份。拿不到仓库名时退回纯 `difftab`（**共用的是 `PRODUCT_NAME` 那一串，判据两边各写一次**——两处的组合本就不同，理由在 `state/title.ts`）：「第一份 state 还没到」与「根目录没有 basename」在这里同样合成一种情况。
+- **顶栏里是品牌符号 + 项目名 + 主题开关**，三样而已。符号排在最左、16px、`aria-hidden`（名字由标签页标题给），是「品牌标识」那一节里那枚 `DifftabMark`，走 `Icon` 外壳、`shrink-0`——被裁的永远是名字。项目名是 `RepoState.repoName`（工作区根目录名，与标签页标题里的是同一份），位置对应 VS Code 侧栏顶端那行文件夹名：这一栏要回答的是「我在看哪个项目」，产品名答不了，而它在标签页标题里仍留着一份。拿不到仓库名时退回纯 `difftab`（**共用的是 `PRODUCT_NAME` 那一串，判据两边各写一次**——两处的组合本就不同，理由在 `state/title.ts`）：「第一份 state 还没到」与「根目录没有 basename」在这里同样合成一种情况。
 - **`truncate` 必须落在装项目名的那个 `span` 上，不是顶栏本身**：产品名长度恒定，目录名可以任意长，不裁时被撑开的不是顶栏而是文字自己——不带断点的长名漫过右边框压到 diff 面板上，带连字符的则折成第二行把顶栏撑高。顶栏成为 flex 容器之后**这条得再钉一遍**：`truncate` 留在容器上不起作用（子项的自动最小尺寸会把它撑开），症状与从前一模一样，而 `truncate` 字样还在原地，看上去像是已经处理过了。开关那侧 `shrink-0`，被裁的永远是名字不是按钮。
 - **分支状态与监听标注放在左栏底部的状态条**上（位置对应 VS Code 的 status bar）：三样挤进同一行时，320px 减去项目名与间距只剩不到 180px，而收缩优先级由既有机制定死——徽章 `shrink-0`、分支名 `min-w-0` + `truncate`，于是先被裁掉的恰恰是分支名，而它正是这一段存在的理由。沉到状态条后它独占一行。
 - **顶栏之下是一行两个 tab（`Changes` / `Files`）**，排在错误条之上。位置对应 VS Code 的 activity bar，**画成两枚紧挨着靠左的图标、但仍是横排一行，不切一列竖排**：竖排要再占一列宽，而 320px 的侧栏里那一列是从文件名身上扣的，两个视图也用不着一整列。两枚按钮各按自身宽度排、不平分整栏——通栏那条细线是行自己的 `border-b`，选中下划线只是画在它上面的一小段，平分时那一段有半栏宽，看着不像指示器像第二条分隔线。**这一行本身不是那个 tablist**：`role="tablist"` 收在里面只装两枚 tab 的那个 div 上，行的右端按当前档各站一枚按钮：`Changes` 下是列表 / 树的视图切换（见下面「变更列表」的「列表与树两种版式」），`Files` 下是 `Collapse all`（它为什么塞得进见下面「文件浏览器」）；两枚互斥出现、走同一个 `IconButton`，于是位置与外观构造上就相等。外层这一行的类名串因此有三条判据：**通栏那条 `border-b` 归它**（留在 tablist 上时那条线只有两枚 tab 那么宽）；**不给纵向内边距**——中间垫上 padding，下面那条 `-mb-px` 就压不着这条边了；**右内边距是 `pr-3` 不是 `px-3`**，tab 得贴着左边缘起排，而要对齐的本来也只有右边那 12px——那枚按钮与顶栏那个主题开关是同一个 `IconButton`，右 gutter 一致时两枚图标恰好落在同一条竖线上（差几个像素不报错，只是「看着没对齐」，`app.test.tsx` 拿两处的类名钉住它）。**「画在它上面」要靠 `-mb-px` 才成立**：两条边默认上下相邻而非重叠（按钮那条画在自己 border box 内、容器那条画在其外），不压一下时选中那一段是双线、比未选中处厚一倍。**那条短线用前景色**（照 VS Code 经典 Dark+ 的 activity bar 活动边框），不用 `focus-border`：后者是「键盘焦点在这里」的颜色，而这一行的 focus-visible 轮廓正用着它，同色时两件事在页面上化成同一种蓝。默认档是 `Changes`——工具存在的理由仍是「瞥一眼改了什么」，目录树是顺带能做到的第二件事。两个视图**共用中间那一层滚动容器**，不各开一个。
@@ -125,3 +125,14 @@
 - 取不到仓库名时（第一份 state 还没到、或 `repoName` 是空串）退回纯 `difftab`，不画占位符——占位符在那两秒里给的是一段假仓库名，而少一段不是。
 - **仓库名是用户数据，不是界面文案**，因此不受「一律英文」的约束：中文目录名会原样出现在标题里。这与 CJK 门禁不冲突——它查的是产物文件的字面量，而仓库名是运行时才有的值，一个字节都不落在产物里。
 - 接线在 `web/state/title.ts`：一个 signals `effect` 把 `repoState` 接到 `document.title` 上，**标题格式与接线同住一处**。不放进组件：标题不是组件树的产出，挂在 `App` 的 `useEffect` 上等于让一个 document 级副作用跟着某个组件的生命周期走。`index.html` 里的 `<title>difftab</title>` 保留为 JS 跑起来之前的兜底。**`PRODUCT_NAME` 由本文件导出给顶栏共用**——顶栏的兜底与这里逐字同一串，各写一份的症状是改了其中一处之后两个表面互相说着不同的名字。
+
+## 品牌标识
+
+**符号是「一个标签页里的两行 diff」：直角的标签页剪影（顶边、两侧、底部向外的两只脚落在基线上），里面一短一长两条横线。** 规格与界面图标同一套——Lucide 的 24 网格、2 单位描边、`currentColor`——但**方头（`square`）、尖角（`miter`）、零圆角**，刻意比 Lucide 硬一档。字标「difftab」不用字体，由圆角方 bowl + 竖笔 + 横笔三种笔画拼出（`d`/`a`/`b` = bowl + 竖，`i` = 竖 + 方点，`f f t` 三根横笔连成一条贯穿的横线），描边规格与符号一致。为什么是这一版、被排除的几版长什么样，见 [`../decisions.md` 的「前端渲染与体积」](../decisions.md#前端渲染与体积)。
+
+- **几何只有一份，在 `brand/geometry.mjs`**（纯 JS + 旁边一份 `.d.mts`）：`components/Logo.tsx` 从它拿符号，`scripts/logo.mjs` 从它拼出 `assets/` 下的 SVG 与 `index.html` 里的两条 favicon。写成 `.mjs` 是因为脚本零依赖、import 不了 TS；反过来让组件 import 脚本，等于把一个会拉起 Chrome 的模块打进前端产物。字标那段只有脚本用，带 `@__PURE__` 标注让 Rollup 把它从 `app.js` 里摇掉。改符号只改这一份再 `node scripts/logo.mjs`——它重写 `assets/*.svg`，找得到 Chrome 时再渲出社交预览 PNG 与 favicon 的 PNG 兜底并回写 `index.html` 两个标记之间的那段。**几何或 token 改了却没重跑，红的是 `test/unit/web/logo.test.ts`**：它拿 `index.html` 里现成的那条 SVG favicon 与脚本此刻会生成的比。
+- **单色，颜色从 `app.css` 读。** 组件里 `currentColor`；独立 SVG 文件内嵌一条 `@media (prefers-color-scheme: dark)` 在 `--color-editor-foreground` 的两档之间切，脚本生成时用正则从 `app.css` 的 `light-dark()` 里取值，不另抄一份。社交预览固定深底（`--color-editor-background` 的深档）。
+- **顶栏那枚由 `lucide-preact` 导出的 `createLucideIcon` 造出来**，于是它与 `GitBranch` 那些是同一个类型、走同一个 `Icon` 外壳，`size` / `aria-hidden` 不必另写一份；方头尖角**写在每条 `path` 自己的 `stroke-linecap` / `stroke-linejoin` 上**，不在组件上覆写——Lucide 的默认值是圆的、写在 `<svg>` 上，元素自己的属性压过继承值；这样 `iconNode` 就是完整的图形，脚本与测试比对的也是它。
+- **favicon 是两条 `<link rel="icon">`，都是 data URI，不加静态路由**：`security.ts` 的 CSP 早已放行 `img-src data:`，而加文件意味着 `assets.ts` 白名单与冒烟里的 `WEB_ASSETS` 各补一处。**SVG 那条排在 PNG 之后**——Chrome / Firefox 取文档里靠后的那条合适的（SVG 带媒体查询随明暗切），Safari 不认 SVG favicon、退到 32×32 的 PNG（中灰 `#808080`，两档底色上都看得见）。
+- **README 头图是 `assets/logo.svg`**，两份 README 同一路径；npm 包页面按 `repository` 字段把相对路径改写到 GitHub raw，同一份 README 两边通用。**GitHub 社交预览没有 API**：`assets/social-preview.png`（1280×640）要手工上传到仓库 Settings → Social preview，改了 logo 就得再传一次。
+- **`assets/` 刻意不进 `files`**：它只给 GitHub 与 README 用，进 tarball 是白给用户的几十 KB（`check:pack` 查的是 pack 的实际输出，混进去会红）。

@@ -1,9 +1,13 @@
-# difftab
+<p align="center">
+  <img src="assets/logo.svg" width="384" alt="difftab">
+</p>
 
-[![npm](https://img.shields.io/npm/v/difftab)](https://www.npmjs.com/package/difftab)
-[![node](https://img.shields.io/node/v/difftab)](https://nodejs.org)
-[![dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)](#never-writes-to-your-repository)
-[![license](https://img.shields.io/npm/l/difftab)](LICENSE)
+<p align="center">
+  <a href="https://www.npmjs.com/package/difftab"><img src="https://img.shields.io/npm/v/difftab" alt="npm"></a>
+  <a href="https://nodejs.org"><img src="https://img.shields.io/node/v/difftab" alt="node"></a>
+  <a href="#never-writes-to-your-repository"><img src="https://img.shields.io/badge/dependencies-0-brightgreen" alt="dependencies"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/npm/l/difftab" alt="license"></a>
+</p>
 
 **See what your AI coding agent changed — in one tab.**
 

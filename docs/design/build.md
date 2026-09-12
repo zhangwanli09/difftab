@@ -18,6 +18,7 @@ src/server/
   watch/               三档监听 + debounce + 轮询兜底
   shared/              前后端共用的协议类型
 src/web/
+  brand/               logo 的几何（纯 JS，组件与 scripts/logo.mjs 共用同一份）
   components/          变更列表、分支状态、diff 容器
   diff/                diff2html 深导入 + hljs 语言注册
   state/               signals
