@@ -27,7 +27,7 @@
  * preflight（同在 base 层）的一条默认值，同层靠源码顺序胜出；工具类仍在 utilities 层，真要在
  * 某个按钮上改回箭头照旧压得过。逐处贴的写法每加一个按钮就要有人记得再贴一遍，漏了不报错。
  *
- * 页面上的 <button> 全是我们自己的四个：diff2html 渲染出的是 table 与 div，这条命中不到它。
+ * 页面上的 <button> 全是我们自己的：diff2html 渲染出的是 table 与 div，这条命中不到它。
  * `:not(:disabled)` 是因为手型画在禁用按钮上是句假话——本仓库暂时一个禁用按钮都没有，但这半条
  * 的成本只有一个选择器。 */
 @layer base {
@@ -64,6 +64,11 @@
   --color-description-foreground: light-dark(#6f6f6f, #9d9d9d);
   --color-focus-border: light-dark(#005fb8, #0078d4);
   --color-text-link-foreground: light-dark(#005fb8, #4daafc);
+
+  /* 图标按钮的悬停底色（VS Code 的 toolbar.hoverBackground），**半透明叠加、深浅各一份**：它要
+   * 叠在三种底色上——顶栏、tab 行、以及一个本身已经处于 hover 态的编辑器 tab。用不透明的
+   * list-hover 时最后那一处按钮与它所在的 tab 同色，鼠标单独悬在 × 上看不出任何反应。 */
+  --color-toolbar-hover-background: light-dark(rgb(184 184 184 / 0.31), rgb(90 93 94 / 0.31));
 
   /* --- 列表（变更列表整条都归它） ---------------------------------------- */
   --color-list-hover-background: light-dark(#e8e8e8, #2a2d2e);

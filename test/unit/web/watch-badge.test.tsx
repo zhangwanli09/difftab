@@ -12,7 +12,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WatchState } from '../../../src/server/shared/protocol';
 import { App } from '../../../src/web/components/App';
 import { WatchBadge } from '../../../src/web/components/WatchBadge';
-import { diffState, loadError, repoState } from '../../../src/web/state/store';
+import { loadError, repoState } from '../../../src/web/state/store';
+import { resetEditors } from './helpers';
 
 let container: HTMLElement;
 
@@ -26,7 +27,7 @@ afterEach(() => {
   render(null, container);
   repoState.value = null;
   loadError.value = null;
-  diffState.value = null;
+  resetEditors();
 });
 
 const textOf = (node: Element | null): string =>

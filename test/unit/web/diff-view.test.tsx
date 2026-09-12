@@ -2,14 +2,15 @@
 //
 // store 那份用例盯的是「取 diff 时状态怎么转」，本文件盯的是「同一份状态渲染成什么」——「同一个
 // 文件重新取时回退 loading」在 store 层已经钉住了，但**回退之外还有一条同样丢滚动位置的路**：换
-// key 让子树卸载重挂。那只在 DOM 上看得见。
+// key 让子树卸载重挂。那只在 DOM 上看得见。空态不在这里：栏里没有 tab 时由 `App` 画，归 app.test。
 
 import { render } from 'preact';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { DiffPayload, RepoState } from '../../../src/server/shared/protocol';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { DiffPayload } from '../../../src/server/shared/protocol';
 import { DiffView } from '../../../src/web/components/DiffView';
 import { diffPanelWidth, SIDE_BY_SIDE_MIN_WIDTH } from '../../../src/web/state/layout';
-import { activeTab, diffState, type RenameInfo, repoState } from '../../../src/web/state/store';
+import { diffStates, type RenameInfo } from '../../../src/web/state/store';
+import { waitFor } from './helpers';
 
 /**
  * **那行上下文(`export const keep`)不是凑数的**：happy-dom 的 `Attr.nodeName` 返回空串（机制见
@@ -29,33 +30,19 @@ index 1111111..2222222 100644
 
 let container: HTMLElement;
 
-/** 一份干净的仓库状态——空态那两条用例要的只是 `files: []`。 */
-const CLEAN_REPO: RepoState = {
-  repoName: 'demo',
-  branch: { head: 'main', detached: false, upstream: null },
-  files: [],
-  watch: { mode: 'native', tier: 'A' },
-};
-
-/**
- * 等到「某个断言成立」，而不是等一个固定的毫秒数。
- *
- * 为什么要等：一个微任务不够——signals 触发重渲染是微任务，但 `useEffect` 里的 `renderDiff` 由
- * Preact 排到 `requestAnimationFrame`（happy-dom 实现成约 16ms 的定时器），另有一条 35ms 的兜底。
- * 等得不够只能看到 `<h2>` 那半个 DiffView、diff 容器还是空的。
- *
- * 为什么不写死等 50ms：那样对 35ms 的兜底只剩 15ms 余量，CI worker 被压住时就会以「渲染没发生」
- * 这个**误导性理由**变红。`interval` 必须调小：默认 50ms 的轮询格子比实际就绪时间（happy-dom 的
- * rAF 实测约 1ms）粗得多，五个走 effect 的用例于是各睡满一格——白等约 250ms。调 interval 不动
- * `timeout`，慢机器的余量分毫不减。
- */
-const waitFor = (assert: () => void) => vi.waitFor(assert, { interval: 5 });
-
+/** 把这个路径的缓存写成 ready。**不重新 render**：视图在渲染体里订阅 map，写了它自己会重画。 */
 const ready = (path: string, payload: DiffPayload, rename: RenameInfo | null = null) => {
-  diffState.value = { status: 'ready', path, rename, payload };
+  diffStates.value = new Map(diffStates.value).set(path, {
+    status: 'ready',
+    rename,
+    payload,
+  });
 };
 
-/** 标题栏的兄弟，也是唯一滚的那一层；它的最后一个元素就是 payload 那一档（提示行或 diff 容器）。 */
+/** 让视图画这个路径——产品里由 `App` 按活动 tab 给 `path`，这里直接换 prop。 */
+const show = (path: string) => render(<DiffView path={path} />, container);
+
+/** 唯一滚的那一层；它的最后一个元素就是 payload 那一档（提示行或 diff 容器）。 */
 const scroller = () => container.querySelector('.overflow-auto');
 const payloadNode = () => scroller()?.lastElementChild ?? null;
 
@@ -63,59 +50,25 @@ beforeEach(() => {
   document.body.innerHTML = '';
   container = document.createElement('div');
   document.body.appendChild(container);
-  diffState.value = null;
+  diffStates.value = new Map();
   // 面板宽度也要复位：它是模块级 signal，上一个用例写进去的值会跨用例串味，而串味的表现是「某条
-  // 用例单跑绿、整档跑红」。`repoState` 同理——空态那两句里有一句要读它
+  // 用例单跑绿、整档跑红」
   diffPanelWidth.value = SIDE_BY_SIDE_MIN_WIDTH;
-  repoState.value = null;
-  // 只挂载一次，之后各用例只写 state。**别在用例里补 render()**:DiffView 在渲染体里订阅
-  // diffState，状态一变自己就重画——手动补一次会把「状态变了会不会重画」替它做掉，而最后两条用
-  // 例正是要证这个
-  render(<DiffView />, container);
 });
 
 afterEach(() => {
   render(null, container);
-  diffState.value = null;
+  diffStates.value = new Map();
   diffPanelWidth.value = SIDE_BY_SIDE_MIN_WIDTH;
-  repoState.value = null;
-  activeTab.value = 'changes';
 });
 
 describe('DiffView', () => {
-  it('没选文件时给一句提示，不渲染空的 diff 容器', async () => {
-    await waitFor(() => expect(container.textContent).toContain('Select a file on the left'));
-
+  it('缓存里还没有这个路径时画一行加载中，不渲染空的 diff 容器', async () => {
+    show('a.ts');
+    await waitFor(() => expect(container.textContent).toContain('Loading…'));
     expect(container.querySelector('.d2h-file-wrapper')).toBeNull();
-    // 空态居中并配图标。happy-dom 没有排版引擎，能钉的只有类名（撑满为什么是前提在 EmptyState.tsx）
-    const box = container.firstElementChild;
-    for (const cls of ['flex-1', 'items-center', 'justify-center']) {
-      expect(box?.classList.contains(cls)).toBe(true);
-    }
-    expect(container.querySelector('svg.lucide-file-diff')).not.toBeNull();
-  });
-
-  it('工作区干净时换一句——「点左边一个文件」指着的是一个空列表', async () => {
-    // 「没得选」与「还没选」是两件事：上一条用例的 repoState 是 null，走的正是「还没选」那句
-    repoState.value = CLEAN_REPO;
-
-    await waitFor(() => expect(container.textContent).toContain('Working tree clean'));
-    expect(container.textContent).not.toContain('Select a file on the left');
-    // 图标跟着文案一起换：干净是一个 ✓，不再是那份 diff
-    expect(container.querySelector('svg.lucide-circle-check')).not.toBeNull();
-    expect(container.querySelector('svg.lucide-file-diff')).toBeNull();
-  });
-
-  it('切到 Files 档时空态跟着档走：图标换成全文那枚，干净也照样说「点左边一个」', async () => {
-    // 没选文件时右侧一直是本组件（切 tab 不动 activePane），所以「Files 档下画什么」只能在
-    // 这里断言。干净仓库 + Files 档：那一档列的是整棵目录树，「Working tree clean」对着一列能点的
-    // 文件说不通
-    repoState.value = CLEAN_REPO;
-    activeTab.value = 'files';
-
-    await waitFor(() => expect(container.querySelector('svg.lucide-file-code')).not.toBeNull());
-    expect(container.textContent).toContain('Select a file on the left');
-    expect(container.textContent).not.toContain('Working tree clean');
+    // 提示行在滚动层里、贴左上（`Notice`），不是居中的空态——面板不是空着，是这个文件还没来
+    expect(scroller()?.textContent).toContain('Loading…');
   });
 
   it('text / untracked-text 都走 diff2html', async () => {
@@ -134,6 +87,7 @@ describe('DiffView', () => {
       },
     ] satisfies { path: string; marker: string; payload: DiffPayload }[]) {
       ready(path, payload);
+      show(path);
 
       // 三条一起等：高亮是 draw() 内部同一次调用里做的，容器出现时 span 必然已经在了
       await waitFor(() => {
@@ -144,20 +98,21 @@ describe('DiffView', () => {
     }
   });
 
-  it('路径横杠排在滚动容器之外', async () => {
+  it('视图只有滚动那一层，不再画路径横杠——「在看哪个文件」由标签栏答', async () => {
     ready('a.ts', { kind: 'text', patch: patchFor('const x = 1;') });
-    await waitFor(() => expect(container.querySelector('h2')).not.toBeNull());
+    show('a.ts');
+    await waitFor(() => expect(container.querySelector('.d2h-file-wrapper')).not.toBeNull());
 
-    // 面板是一列 flex，横杠与滚动容器是两个兄弟——竖着滚几千行时它留在原处，靠的不再是
-    // `sticky top-0` + `z-10`（那一套要去躲 diff2html 那列绝对定位的行号）。塞回滚动容器里
-    // 页面不会报错，只是横杠跟着代码滚走
-    const bar = container.querySelector('h2');
-    expect(scroller()?.contains(bar)).toBe(false);
-    expect(bar?.nextElementSibling).toBe(scroller());
+    // 滚动层是视图的根：它与标签栏在 `App` 那个 `<section>` 里是两个兄弟，类名两个视图必须
+    // 逐字相同（`Panel` 只此一份）——漂开的症状是其中一个面板底下那半屏不跟着滚
+    expect(container.querySelector('h2')).toBeNull();
+    expect(container.firstElementChild).toBe(scroller());
+    expect(scroller()?.className).toBe('min-h-0 flex-1 overflow-auto');
   });
 
   it('diff2html 的宿主容器带着 relative——行号列的包含块', async () => {
     ready('a.ts', { kind: 'text', patch: patchFor('const x = 1;') });
+    show('a.ts');
     await waitFor(() => expect(container.querySelector('.d2h-file-wrapper')).not.toBeNull());
 
     // 少了这个包含块，右侧一滚整列行号就原地钉死、与代码行错开。**断言只能压在类名上**：
@@ -170,6 +125,7 @@ describe('DiffView', () => {
 
   it('binary 只提示，不画 diff', async () => {
     ready('logo.png', { kind: 'binary' });
+    show('logo.png');
     await waitFor(() => expect(container.textContent).toContain('Binary file'));
 
     expect(container.querySelector('.d2h-file-wrapper')).toBeNull();
@@ -178,11 +134,13 @@ describe('DiffView', () => {
   it('too-large 的两个触发口给出不同的话，小文件不会被说成 MB', async () => {
     // 体积那一路：5MB 出头，按 MB 说得通
     ready('huge.log', { kind: 'too-large', size: 6 * 1024 * 1024, reason: 'size' });
+    show('huge.log');
     await waitFor(() => expect(container.textContent).toContain('File too large'));
     const bySize = container.textContent ?? '';
 
     // 行数那一路：100 KB 的窄文件
     ready('many-lines.txt', { kind: 'too-large', size: 100 * 1024, reason: 'lines' });
+    show('many-lines.txt');
     await waitFor(() => expect(container.textContent).toContain('Too many lines'));
     const byLines = container.textContent ?? '';
 
@@ -199,6 +157,7 @@ describe('DiffView', () => {
       oldPath: 'src/old name.ts',
       score: 95,
     } satisfies RenameInfo);
+    show('src/new name.ts');
 
     await waitFor(() => expect(container.textContent).toContain('Renamed from'));
     expect(container.textContent).toContain('src/old name.ts');
@@ -207,6 +166,7 @@ describe('DiffView', () => {
 
   it('相似度取不到时只说旧路径，不编一个百分比出来', async () => {
     ready('b.ts', { kind: 'binary' }, { oldPath: 'a.ts', score: null });
+    show('b.ts');
     await waitFor(() => expect(container.textContent).toContain('Renamed from'));
     // 「相似度 null%」「相似度 0%」都是在说一件 git 没说过的事；而 binary 这一路
     // 压根没有补丁头，标注要是也跟着丢，页面上就再没有任何地方提过它是重命名
@@ -216,6 +176,7 @@ describe('DiffView', () => {
 
   it('普通文件不出现重命名标注——判据是 rename 而不是路径长得像', async () => {
     ready('a.ts', { kind: 'text', patch: patchFor('const x = 1;') });
+    show('a.ts');
     await waitFor(() => expect(container.textContent).toContain('const x'));
     expect(container.textContent).not.toContain('Renamed');
   });
@@ -224,10 +185,12 @@ describe('DiffView', () => {
     // 已被删除的文件在工作区没有体积，后端给的是 0;`Math.max(1, …)` 会把它说成「1 KB」——编出来
     // 的一个数
     ready('gone.txt', { kind: 'too-large', size: 0, reason: 'lines' });
+    show('gone.txt');
     await waitFor(() => expect(container.textContent).toContain('Too many lines'));
     expect(container.textContent).not.toContain('KB');
 
     ready('also-gone.txt', { kind: 'too-large', size: 0, reason: 'size' });
+    show('also-gone.txt');
     await waitFor(() => expect(container.textContent).toContain('File too large'));
     expect(container.textContent).not.toContain('KB');
     expect(container.textContent).not.toContain('MB');
@@ -235,9 +198,12 @@ describe('DiffView', () => {
 
   it('同一个文件换补丁：容器留在原地，不卸载重挂', async () => {
     ready('a.ts', { kind: 'text', patch: patchFor('const first = 1;') });
+    show('a.ts');
     await waitFor(() => expect(container.textContent).toContain('const first'));
     const before = payloadNode();
 
+    // **只写 map、不补 render**：视图在渲染体里订阅 map，状态一变自己就重画——手动补一次会把
+    // 「状态变了会不会重画」替它做掉，而这条与下一条正是要证这个
     ready('a.ts', { kind: 'text', patch: patchFor('const second = 2;') });
     await waitFor(() => expect(container.textContent).toContain('const second'));
 
@@ -253,6 +219,7 @@ describe('DiffView', () => {
     // 是个空壳、也没有布局引擎，那一段归肉眼项
     diffPanelWidth.value = 700;
     ready('a.ts', { kind: 'text', patch: patchFor('const first = 1;') });
+    show('a.ts');
     await waitFor(() => expect(container.querySelectorAll('.d2h-diff-table')).toHaveLength(1));
     const before = payloadNode();
     expect(container.querySelectorAll('.d2h-file-side-diff')).toHaveLength(0);
@@ -264,16 +231,5 @@ describe('DiffView', () => {
     // diff2html 画好的 DOM 连同滚动位置一起丢掉（同上一条用例的判据）
     expect(payloadNode()).toBe(before);
     expect(container.textContent).toContain('const first');
-  });
-
-  it('换文件：容器换新的，不会在新标题下留着上一个文件的 DOM', async () => {
-    ready('a.ts', { kind: 'text', patch: patchFor('const first = 1;') });
-    await waitFor(() => expect(container.textContent).toContain('const first'));
-    const before = payloadNode();
-
-    ready('b.ts', { kind: 'text', patch: patchFor('const other = 9;') });
-    await waitFor(() => expect(container.textContent).toContain('const other'));
-
-    expect(payloadNode()).not.toBe(before);
   });
 });

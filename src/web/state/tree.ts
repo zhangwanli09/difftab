@@ -9,6 +9,7 @@
 import { signal } from '@preact/signals';
 import type { TreeEntry, TreePayload } from '../../server/shared/protocol';
 import { getJson, latestWins, toMessage } from './http';
+import { removeFrom, setIn } from './immutable';
 
 /** 仓库根那一层的键。空串就是后端的口径，不另造一个 `'/'`。 */
 export const ROOT = '';
@@ -28,19 +29,6 @@ export const treeErrors = signal<ReadonlyMap<string, string>>(new Map());
  * agent 那一串写入的最后一个事件，这一层就一直停在旧内容上，直到用户手动收起再展开。
  */
 const dirTickets = latestWins();
-
-function setIn<V>(map: ReadonlyMap<string, V>, key: string, value: V): ReadonlyMap<string, V> {
-  const next = new Map(map);
-  next.set(key, value);
-  return next;
-}
-
-function removeFrom<V>(map: ReadonlyMap<string, V>, key: string): ReadonlyMap<string, V> {
-  if (!map.has(key)) return map;
-  const next = new Map(map);
-  next.delete(key);
-  return next;
-}
 
 /**
  * 取一层。

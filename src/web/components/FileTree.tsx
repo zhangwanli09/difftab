@@ -6,7 +6,8 @@
 
 import { useComputed } from '@preact/signals';
 import type { TreeEntry } from '../../server/shared/protocol';
-import { type ChangeCode, codeByPath, fileState, openFile } from '../state/store';
+import { activeFilePath, editorKey, pinEditor } from '../state/editors';
+import { type ChangeCode, codeByPath, openFile } from '../state/store';
 import { expandedDirs, ROOT, toggleDir, treeCache, treeErrors } from '../state/tree';
 import { CODE_COLORS, STATUS_SLOT, StatusBadge } from './ChangeList';
 // 行首三样与变更列表的树视图共用一份：各写一份不报错，只是切一次 tab 缩进跳一截、或者一棵树里
@@ -46,7 +47,7 @@ function Row({ entry, depth }: { entry: TreeEntry; depth: number }) {
    * 产出的 vnode 与上一次逐字相同。
    */
   const rowClass = useComputed(() => {
-    const selected = !isDir && fileState.value?.path === entry.path;
+    const selected = !isDir && activeFilePath.value === entry.path;
     // 被忽略的灰显（次要色 + 降透明度），与 VS Code 一致。选中时不灰——那一行此刻是主角
     const tone = selected
       ? 'bg-list-active-selection-background text-list-active-selection-foreground'
@@ -74,6 +75,9 @@ function Row({ entry, depth }: { entry: TreeEntry; depth: number }) {
       <button
         type="button"
         onClick={() => (isDir ? toggleDir(entry.path) : openFile(entry.path))}
+        // 单击预览、双击固定（目录行没有 tab 可固定）：双击到来时前两个 click 已经把 tab 开好
+        // 并各取过一趟，这一下只幂等地置 pinned、不再取第三趟
+        onDblClick={isDir ? undefined : () => pinEditor(editorKey('file', entry.path))}
         // 名字会被 320px 裁掉，而完整路径在树上找不回来——与变更列表同理挂在整行上，
         // 不挂在被裁的那一段上（它被裁到零宽时就没得可悬停了）
         title={entry.path}

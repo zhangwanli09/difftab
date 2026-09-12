@@ -11,10 +11,20 @@ import type {
   RepoState,
 } from '../../../src/server/shared/protocol';
 import {
-  activePane,
+  activeDiffPath,
+  activeEditorKey,
+  activeFilePath,
+  editors,
+  keyOf,
+  openEditor,
+  pinEditor,
+} from '../../../src/web/state/editors';
+import {
+  activateEditor,
   activeTab,
-  diffState,
-  fileState,
+  closeEditor,
+  diffStates,
+  fileStates,
   groupFiles,
   loadDiff,
   loadError,
@@ -22,17 +32,17 @@ import {
   openFile,
   refresh,
   repoState,
-  selectedPath,
   selectFile,
 } from '../../../src/web/state/store';
 import { expandedDirs, loadDir, ROOT, treeCache } from '../../../src/web/state/tree';
+import { file, openPinned, resetEditors, stubJson } from './helpers';
 
-const file = (partial: Partial<FileEntry> & { path: string }): FileEntry => ({
-  kind: 'tracked',
-  staged: '.',
-  unstaged: '.',
-  ...partial,
-});
+/** 栏里的 tab 键，按显示顺序。 */
+const tabs = () => editors.value.map(keyOf);
+
+/** 记下来的那串调用里打到某个端点的次数。 */
+const count = (calls: readonly string[], endpoint: string) =>
+  calls.filter((url) => url.startsWith(endpoint)).length;
 
 const byId = (files: readonly FileEntry[]) =>
   Object.fromEntries(groupFiles(files).map((g) => [g.id, g.files.map((f) => f.path)]));
@@ -45,24 +55,6 @@ const diffQuery = (calls: readonly string[]): URLSearchParams | null => {
   const call = calls.find((url) => url.startsWith('/api/diff?'));
   return call === undefined ? null : query(call);
 };
-
-/**
- * 把 fetch 换成一个只回这一份正文的桩，并把它收到的 URL 全部记下来。
- *
- * 两个 describe 共用一份：`new Response(JSON.stringify(…))` 抄第五遍的时候，改一处
- * 请求头或错误形状就得记得另外四处也在。
- */
-function stubJson(payload: unknown, status = 200): string[] {
-  const calls: string[] = [];
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async (url: string) => {
-      calls.push(url);
-      return new Response(JSON.stringify(payload), { status });
-    }),
-  );
-  return calls;
-}
 
 /**
  * 第一次发的慢、第二次快——于是「先发后到」。
@@ -236,10 +228,10 @@ describe('loadState', () => {
 
 describe('loadDiff（按文件懒加载）', () => {
   const text: DiffPayload = { kind: 'text', patch: 'diff --git a/a.txt b/a.txt\n' };
+  const diffOf = (path: string) => diffStates.value.get(path);
 
   beforeEach(() => {
-    // selectedPath 由 diffState 派生，清掉后者即可
-    diffState.value = null;
+    resetEditors();
     loadError.value = null;
   });
 
@@ -273,7 +265,7 @@ describe('loadDiff（按文件懒加载）', () => {
     expect(query(calls[0] as string).get('path')).toBe(path);
   });
 
-  test('payload 原样落进 diffState——binary / too-large 不例外', async () => {
+  test('payload 原样落进这个路径的缓存——binary / too-large 不例外', async () => {
     // 四个分支后端都会真的返回（已跟踪那侧走 numstat，未跟踪那侧走 NUL 探测与体积），store 一律原
     // 样透传——判别原因属后端知识
     for (const payload of [
@@ -286,40 +278,61 @@ describe('loadDiff（按文件懒加载）', () => {
     ] satisfies DiffPayload[]) {
       stubJson(payload);
       await loadDiff(file({ path: 'a.bin', unstaged: 'M' }));
-      expect(diffState.value).toEqual({ status: 'ready', path: 'a.bin', rename: null, payload });
+      expect(diffOf('a.bin')).toEqual({ status: 'ready', rename: null, payload });
     }
   });
 
   test('重命名条目把旧路径与相似度一并带进状态，普通条目是 null', async () => {
-    // 标注跟着请求走，而不是渲染时回列表里现找：选中的文件随时可能从下一份列表里消失，那时右侧刻
-    // 意留着最后那份 diff——现找的写法会让标注单独消失，补丁里还带着 rename from/to
+    // 标注跟着请求走，而不是渲染时回列表里现找：两份来源错位的窗口是真实存在的——`refresh`
+    // 先换上新列表、`loadDiff` 还没回来的那一段里，右侧显示的仍是旧补丁
     stubJson(text);
     await loadDiff(
       file({ path: 'src/new.ts', oldPath: 'src/old.ts', staged: 'R', renameScore: 87 }),
     );
-    expect(diffState.value?.rename).toEqual({ oldPath: 'src/old.ts', score: 87 });
+    expect(diffOf('src/new.ts')?.rename).toEqual({ oldPath: 'src/old.ts', score: 87 });
 
     // git 没给相似度就不编一个：`?? 0` 会让页面说出「相似度 0%」这句 git 没说过的话
     await loadDiff(file({ path: 'src/new.ts', oldPath: 'src/old.ts', staged: 'R' }));
-    expect(diffState.value?.rename).toEqual({ oldPath: 'src/old.ts', score: null });
+    expect(diffOf('src/new.ts')?.rename).toEqual({ oldPath: 'src/old.ts', score: null });
 
     await loadDiff(file({ path: 'plain.ts', unstaged: 'M' }));
-    expect(diffState.value?.rename).toBeNull();
+    expect(diffOf('plain.ts')?.rename).toBeNull();
   });
 
-  test('两次点击重叠时后点的赢——先发后到不会盖掉当前文件的 diff', async () => {
+  test('同一个路径两次请求重叠时后发的赢——先发后到不会盖掉新补丁', async () => {
     const slow: DiffPayload = { kind: 'text', patch: 'stale\n' };
     const fast: DiffPayload = { kind: 'text', patch: 'fresh\n' };
     stubSlowThenFast(slow, fast);
 
     await Promise.all([
-      loadDiff(file({ path: 'stale.txt', unstaged: 'M' })),
-      loadDiff(file({ path: 'fresh.txt', unstaged: 'M' })),
+      loadDiff(file({ path: 'a.txt', unstaged: 'M' })),
+      loadDiff(file({ path: 'a.txt', unstaged: 'M' })),
     ]);
-    // 状态里的 path 与 payload 必须是同一个文件的：错位的症状是标题写着 A、底下渲染的是 B
-    expect(diffState.value).toEqual({
+    expect(diffOf('a.txt')).toEqual({
       status: 'ready',
-      path: 'fresh.txt',
+      rename: null,
+      payload: fast,
+    });
+  });
+
+  test('两个不同路径的请求各落各的槽，互不顶掉', async () => {
+    // 票按路径计数：两个 tab 各自的请求互不相干。全局一张票的写法会让先点的那个 tab 永远停在
+    // loading 上
+    const slow: DiffPayload = { kind: 'text', patch: 'a\n' };
+    const fast: DiffPayload = { kind: 'text', patch: 'b\n' };
+    stubSlowThenFast(slow, fast);
+
+    await Promise.all([
+      loadDiff(file({ path: 'a.txt', unstaged: 'M' })),
+      loadDiff(file({ path: 'b.txt', unstaged: 'M' })),
+    ]);
+    expect(diffOf('a.txt')).toEqual({
+      status: 'ready',
+      rename: null,
+      payload: slow,
+    });
+    expect(diffOf('b.txt')).toEqual({
+      status: 'ready',
       rename: null,
       payload: fast,
     });
@@ -330,62 +343,239 @@ describe('loadDiff（按文件懒加载）', () => {
     stubJson({ error: { code: 'not-found', message: '文件不在了' } }, 400);
 
     await loadDiff(file({ path: 'gone.txt', unstaged: 'D' }));
-    expect(diffState.value).toEqual({
+    expect(diffOf('gone.txt')).toEqual({
       status: 'error',
-      path: 'gone.txt',
       rename: null,
       message: '文件不在了',
     });
     expect(loadError.value).toBeNull();
   });
 
-  test('请求发出前就进 loading 态，且带的是新文件的 path', async () => {
-    // 切换文件的那一瞬间若还留着上一个文件的 payload，渲染出来就是张冠李戴
-    diffState.value = { status: 'ready', path: 'old.txt', rename: null, payload: text };
+  test('请求发出前就进 loading 态，且带的是这个文件的 path', async () => {
     stubJson(text);
     const pending = loadDiff(file({ path: 'new.txt', unstaged: 'M' }));
-    expect(diffState.value).toEqual({ status: 'loading', path: 'new.txt', rename: null });
+    expect(diffOf('new.txt')).toEqual({ status: 'loading', rename: null });
     await pending;
   });
 
   test('同一个文件重新取时不回退到 loading——否则每次刷新都把画好的 diff 拆掉重画', async () => {
     // 回退的代价不是闪一下：ready → loading 会让渲染 diff 的子树整个卸载，滚动位置随之丢失。每个
-    // SSE change 事件都会走这里，而要求刷新不丢滚动位置
-    diffState.value = { status: 'ready', path: 'a.txt', rename: null, payload: text };
+    // SSE change 事件与每次切回这个 tab 都会走这里，而要求刷新不丢滚动位置
+    diffStates.value = new Map([['a.txt', { status: 'ready', rename: null, payload: text }]]);
     const fresh: DiffPayload = { kind: 'text', patch: 'updated\n' };
     stubJson(fresh);
 
     const pending = loadDiff(file({ path: 'a.txt', unstaged: 'M' }));
     // 请求在飞的这段时间里，上一份仍然挂着
-    expect(diffState.value).toEqual({
+    expect(diffOf('a.txt')).toEqual({
       status: 'ready',
-      path: 'a.txt',
       rename: null,
       payload: text,
     });
     await pending;
-    expect(diffState.value).toEqual({
+    expect(diffOf('a.txt')).toEqual({
       status: 'ready',
-      path: 'a.txt',
       rename: null,
       payload: fresh,
     });
   });
+});
 
-  test('selectFile 同时更新选中态并拉 diff——组件不必知道这是两件事', async () => {
+describe('selectFile / openFile（预览与固定）', () => {
+  const text: DiffPayload = { kind: 'text', patch: 'x\n' };
+
+  beforeEach(() => {
+    resetEditors();
+    loadError.value = null;
+  });
+
+  test('selectFile 开一个预览 diff tab、激活它并拉 diff——组件不必知道这是三件事', async () => {
     const calls = stubJson(text);
     selectFile(file({ path: 'src/new.ts', oldPath: 'src/old.ts', staged: 'R' }));
 
-    expect(selectedPath.value).toBe('src/new.ts');
+    expect(editors.value).toEqual([{ kind: 'diff', path: 'src/new.ts', pinned: false }]);
+    expect(activeDiffPath.value).toBe('src/new.ts');
     // 微任务排空，让上面那个 void 出去的请求落地
-    await vi.waitFor(() => expect(diffState.value?.status).toBe('ready'));
+    await vi.waitFor(() => expect(diffStates.value.get('src/new.ts')?.status).toBe('ready'));
     expect(query(calls[0] as string).get('oldPath')).toBe('src/old.ts');
+  });
+
+  test('同一个文件点几次只有一个 tab；固定之后再点仍是固定', async () => {
+    stubJson(text);
+    selectFile(file({ path: 'a.ts', unstaged: 'M' }));
+    pinEditor('diff:a.ts');
+    selectFile(file({ path: 'a.ts', unstaged: 'M' }));
+    expect(editors.value).toEqual([{ kind: 'diff', path: 'a.ts', pinned: true }]);
+    await vi.waitFor(() => expect(diffStates.value.get('a.ts')?.status).toBe('ready'));
+  });
+
+  test('再单击别的文件顶掉预览 tab，被顶掉那份的缓存与在途结果一起作废', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.includes('path=a.ts')) await gate;
+        return new Response(JSON.stringify(text), { status: 200 });
+      }),
+    );
+    selectFile(file({ path: 'a.ts', unstaged: 'M' }));
+    selectFile(file({ path: 'b.ts', unstaged: 'M' }));
+    expect(tabs()).toEqual(['diff:b.ts']);
+    expect(diffStates.value.has('a.ts')).toBe(false);
+
+    release();
+    await vi.waitFor(() => expect(diffStates.value.get('b.ts')?.status).toBe('ready'));
+    // a.ts 那次请求回来了，但它的 tab 早已不在栏里——不许写回缓存
+    expect(diffStates.value.has('a.ts')).toBe(false);
+  });
+
+  test('openFile 开一个预览 file tab 并取内容；此时变更列表那侧不高亮', async () => {
+    const calls = stubJson({ kind: 'text', content: 'hello\n' } satisfies FilePayload);
+    openFile('src/app.ts');
+    expect(editors.value).toEqual([{ kind: 'file', path: 'src/app.ts', pinned: false }]);
+    expect(activeFilePath.value).toBe('src/app.ts');
+    expect(activeDiffPath.value).toBeNull();
+    await vi.waitFor(() => expect(fileStates.value.get('src/app.ts')?.status).toBe('ready'));
+    expect(query(calls[0] as string).get('path')).toBe('src/app.ts');
+  });
+
+  test('同一路径从两边点开是两个 tab', async () => {
+    stubJson({ kind: 'text', content: '' } satisfies FilePayload);
+    selectFile(file({ path: 'a.ts', unstaged: 'M' }));
+    pinEditor('diff:a.ts');
+    openFile('a.ts');
+    expect(tabs()).toEqual(['diff:a.ts', 'file:a.ts']);
+  });
+
+  test('取不到时错误落在右侧自己的位置上，不写进那条全局错误条', async () => {
+    stubJson({ error: { code: 'not-found', message: 'file no longer exists' } }, 404);
+
+    openFile('gone.ts');
+    await vi.waitFor(() => expect(fileStates.value.get('gone.ts')?.status).toBe('error'));
+    expect(loadError.value).toBeNull();
+  });
+
+  test('同一个文件重新取时不回退 loading——一回退高亮好的 DOM 连同滚动位置一起没了', async () => {
+    stubJson({ kind: 'text', content: 'a\n' } satisfies FilePayload);
+    openFile('a.ts');
+    await vi.waitFor(() => expect(fileStates.value.get('a.ts')?.status).toBe('ready'));
+
+    const seen: string[] = [];
+    const stop = effect(() => {
+      const state = fileStates.value.get('a.ts');
+      if (state !== undefined) seen.push(state.status);
+    });
+    openFile('a.ts');
+    await vi.waitFor(() => expect(fileStates.value.get('a.ts')?.status).toBe('ready'));
+    stop();
+    expect(seen).not.toContain('loading');
+  });
+});
+
+describe('activateEditor / closeEditor', () => {
+  const text: DiffPayload = { kind: 'text', patch: 'x\n' };
+  const stateWith = (files: FileEntry[]): RepoState => ({
+    repoName: 'demo',
+    branch: { head: 'main', detached: false, upstream: null },
+    files,
+    watch: { mode: 'native', tier: 'A' },
+  });
+
+  beforeEach(() => {
+    resetEditors();
+    loadError.value = null;
+    repoState.value = stateWith([
+      file({ path: 'a.ts', unstaged: 'M' }),
+      file({ path: 'b.ts', oldPath: 'b0.ts', staged: 'R' }),
+    ]);
+  });
+
+  test('切到一个后台 diff tab 时重取它，条目从新列表里拿（oldPath 跟着）', async () => {
+    openPinned('diff', 'a.ts');
+    openPinned('diff', 'b.ts');
+    openPinned('diff', 'a.ts');
+    diffStates.value = new Map([['b.ts', { status: 'ready', rename: null, payload: text }]]);
+    const calls = stubJson({ kind: 'text', patch: 'fresh\n' } satisfies DiffPayload);
+
+    activateEditor('diff:b.ts');
+    expect(activeEditorKey.value).toBe('diff:b.ts');
+    // 重取期间缓存的那份照常挂着
+    expect(diffStates.value.get('b.ts')?.status).toBe('ready');
+    await vi.waitFor(() => expect(count(calls, '/api/diff')).toBe(1));
+    expect(diffQuery(calls)?.get('oldPath')).toBe('b0.ts');
+  });
+
+  test('切到一个后台 file tab 时重取它', async () => {
+    openPinned('file', 'a.ts');
+    openPinned('diff', 'a.ts');
+    const calls = stubJson({ kind: 'text', content: '' } satisfies FilePayload);
+    activateEditor('file:a.ts');
+    await vi.waitFor(() => expect(count(calls, '/api/file')).toBe(1));
+  });
+
+  test('键不在栏里时什么都不做', () => {
+    openPinned('diff', 'a.ts');
+    const calls = stubJson(text);
+    activateEditor('diff:zzz');
+    expect(activeEditorKey.value).toBe('diff:a.ts');
+    expect(calls).toEqual([]);
+  });
+
+  test('关掉活动 tab：删缓存、邻居顶上并重取一次', async () => {
+    openPinned('diff', 'a.ts');
+    openPinned('diff', 'b.ts');
+    openPinned('diff', 'a.ts');
+    diffStates.value = new Map([['a.ts', { status: 'ready', rename: null, payload: text }]]);
+    const calls = stubJson(text);
+
+    closeEditor('diff:a.ts');
+    expect(tabs()).toEqual(['diff:b.ts']);
+    expect(activeEditorKey.value).toBe('diff:b.ts');
+    expect(diffStates.value.has('a.ts')).toBe(false);
+    await vi.waitFor(() => expect(count(calls, '/api/diff')).toBe(1));
+    expect(diffQuery(calls)?.get('path')).toBe('b.ts');
+  });
+
+  test('关掉非活动 tab 一个请求都不发', () => {
+    openPinned('diff', 'a.ts');
+    openPinned('diff', 'b.ts');
+    const calls = stubJson(text);
+    closeEditor('diff:a.ts');
+    expect(activeEditorKey.value).toBe('diff:b.ts');
+    expect(calls).toEqual([]);
+  });
+
+  test('关掉之后，在途的那次请求不许把缓存写回来', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        await gate;
+        return new Response(JSON.stringify(text), { status: 200 });
+      }),
+    );
+    openPinned('diff', 'a.ts');
+    const inFlight = loadDiff(file({ path: 'a.ts', unstaged: 'M' }));
+    expect(diffStates.value.get('a.ts')?.status).toBe('loading');
+    closeEditor('diff:a.ts');
+    expect(diffStates.value.has('a.ts')).toBe(false);
+
+    release();
+    await inFlight;
+    expect(diffStates.value.has('a.ts')).toBe(false);
   });
 });
 
 describe('refresh（一次 SSE change 之后要重取什么）', () => {
   const text: DiffPayload = { kind: 'text', patch: 'old\n' };
   const fresh: DiffPayload = { kind: 'text', patch: 'new\n' };
+  const ready = (path: string) => [path, { status: 'ready', rename: null, payload: text }] as const;
 
   const stateWith = (files: FileEntry[]): RepoState => ({
     repoName: 'demo',
@@ -416,37 +606,59 @@ describe('refresh（一次 SSE change 之后要重取什么）', () => {
   }
 
   beforeEach(() => {
+    resetEditors();
     repoState.value = null;
-    diffState.value = null;
     loadError.value = null;
   });
 
-  test('没有选中文件时只重取列表', async () => {
+  test('栏里没有 tab 时只重取列表', async () => {
     const calls = stubEndpoints(stateWith([file({ path: 'a.txt', unstaged: 'M' })]), fresh);
 
     await refresh();
     expect(calls).toEqual(['/api/state']);
-    expect(diffState.value).toBeNull();
+    expect(diffStates.value.size).toBe(0);
   });
 
-  test('打开着的 diff 也重取——只刷列表的话右侧会停在旧补丁上', async () => {
+  test('活动的 diff tab 也重取——只刷列表的话右侧会停在旧补丁上', async () => {
     // 文件内容变了而列表条目没变（还是那个 `1 .M`）是最常见的形态，页面看不出异样
-    diffState.value = { status: 'ready', path: 'a.txt', rename: null, payload: text };
+    openPinned('diff', 'a.txt');
+    diffStates.value = new Map([ready('a.txt')]);
     const calls = stubEndpoints(stateWith([file({ path: 'a.txt', unstaged: 'M' })]), fresh);
 
     await refresh();
-    expect(calls.some((url) => url.startsWith('/api/diff?'))).toBe(true);
-    expect(diffState.value).toEqual({
+    expect(count(calls, '/api/diff')).toBe(1);
+    expect(diffStates.value.get('a.txt')).toEqual({
       status: 'ready',
-      path: 'a.txt',
       rename: null,
       payload: fresh,
     });
   });
 
+  test('只重取活动那一个——后台 tab 不取，切过去时再取', async () => {
+    // agent 跑动期间事件密集，挂着 10 个 diff tab 时每个事件就是 10 趟 git diff
+    openPinned('diff', 'a.txt');
+    openPinned('diff', 'b.txt');
+    openPinned('diff', 'c.txt');
+    diffStates.value = new Map([ready('a.txt'), ready('b.txt'), ready('c.txt')]);
+    const calls = stubEndpoints(
+      stateWith([
+        file({ path: 'a.txt', unstaged: 'M' }),
+        file({ path: 'b.txt', unstaged: 'M' }),
+        file({ path: 'c.txt', unstaged: 'M' }),
+      ]),
+      fresh,
+    );
+
+    await refresh();
+    expect(count(calls, '/api/diff')).toBe(1);
+    expect(diffQuery(calls)?.get('path')).toBe('c.txt');
+    expect(tabs()).toEqual(['diff:a.txt', 'diff:b.txt', 'diff:c.txt']);
+  });
+
   test('重取用的是新列表里的条目——oldPath 跟着变，不能拿旧条目去取', async () => {
     // 相似度与配对结果都会随改动变化。用旧条目取等于用过期的 oldPath（双路径）
-    diffState.value = { status: 'ready', path: 'new.ts', rename: null, payload: text };
+    openPinned('diff', 'new.ts');
+    diffStates.value = new Map([ready('new.ts')]);
     const calls = stubEndpoints(
       stateWith([file({ path: 'new.ts', oldPath: 'renamed-again.ts', staged: 'R' })]),
       fresh,
@@ -456,10 +668,11 @@ describe('refresh（一次 SSE change 之后要重取什么）', () => {
     expect(diffQuery(calls)?.get('oldPath')).toBe('renamed-again.ts');
   });
 
-  test('选中的文件被改名了——跟着重命名走，不当成消失', async () => {
-    // 改名后选中的路径成了新列表里那一行的 `oldPath`，只按 `path` 找必然扑空——
-    // 而那一行还在左栏列着，此时清空右侧，「左栏正断言这些改动不存在」根本不成立
-    diffState.value = { status: 'ready', path: 'old.ts', rename: null, payload: text };
+  test('活动 tab 的文件被改名了——跟着重命名走，不当成消失；预览仍是预览', async () => {
+    // 改名后那个路径成了新列表里那一行的 `oldPath`，只按 `path` 找必然扑空——
+    // 而那一行还在左栏列着，此时关掉 tab，「左栏正断言这些改动不存在」根本不成立
+    openEditor('diff', 'old.ts');
+    diffStates.value = new Map([ready('old.ts')]);
     const calls = stubEndpoints(
       stateWith([file({ path: 'new.ts', oldPath: 'old.ts', staged: 'R', renameScore: 100 })]),
       fresh,
@@ -469,32 +682,101 @@ describe('refresh（一次 SSE change 之后要重取什么）', () => {
     // 双路径都得带上，否则重命名退化成全新增
     expect(diffQuery(calls)?.get('path')).toBe('new.ts');
     expect(diffQuery(calls)?.get('oldPath')).toBe('old.ts');
-    // 选中态跟着落到新路径上（`selectedPath` 由 path 派生，不单独断言）
-    expect(diffState.value).toEqual({
+    expect(editors.value).toEqual([{ kind: 'diff', path: 'new.ts', pinned: false }]);
+    expect(activeEditorKey.value).toBe('diff:new.ts');
+    // 旧路径上的缓存忘掉，新路径上是取回来的那份
+    expect(diffStates.value.has('old.ts')).toBe(false);
+    expect(diffStates.value.get('new.ts')).toEqual({
       status: 'ready',
-      path: 'new.ts',
       rename: { oldPath: 'old.ts', score: 100 },
       payload: fresh,
     });
   });
 
-  test('选中的文件从列表里消失了——不去取它，并把右侧连同选中态一起清空', async () => {
+  test('后台 tab 被改名也跟着走，但不重取', async () => {
+    openPinned('diff', 'old.ts');
+    openPinned('diff', 'keep.ts');
+    diffStates.value = new Map([ready('old.ts'), ready('keep.ts')]);
+    const calls = stubEndpoints(
+      stateWith([
+        file({ path: 'new.ts', oldPath: 'old.ts', staged: 'R' }),
+        file({ path: 'keep.ts', unstaged: 'M' }),
+      ]),
+      fresh,
+    );
+
+    await refresh();
+    expect(tabs()).toEqual(['diff:new.ts', 'diff:keep.ts']);
+    expect(count(calls, '/api/diff')).toBe(1);
+    expect(diffQuery(calls)?.get('path')).toBe('keep.ts');
+    expect(diffStates.value.has('old.ts')).toBe(false);
+  });
+
+  test('改名撞上已经开着的 tab 时并入它', async () => {
+    openPinned('diff', 'b.ts');
+    openEditor('diff', 'a.ts');
+    stubEndpoints(stateWith([file({ path: 'b.ts', oldPath: 'a.ts', staged: 'R' })]), fresh);
+
+    await refresh();
+    expect(tabs()).toEqual(['diff:b.ts']);
+    expect(activeEditorKey.value).toBe('diff:b.ts');
+  });
+
+  test('活动 tab 的文件从列表里消失了——关掉它、不去取，邻居顶上并只取一次', async () => {
     // 改动被撤销或被 commit 掉了。留着最后那份 diff 时，左栏正断言这些改动不存在、右栏还展示着其
     // 中一份；也不能合成一个不带 oldPath 的条目去重取——那正好是「重命名退化成全新增」那条路
-    diffState.value = { status: 'ready', path: 'gone.txt', rename: null, payload: text };
+    openPinned('diff', 'gone.txt');
+    openPinned('diff', 'other.txt');
+    openPinned('diff', 'gone.txt');
+    diffStates.value = new Map([ready('gone.txt'), ready('other.txt')]);
+    const calls = stubEndpoints(stateWith([file({ path: 'other.txt', unstaged: 'M' })]), fresh);
+
+    await refresh();
+    expect(tabs()).toEqual(['diff:other.txt']);
+    expect(activeEditorKey.value).toBe('diff:other.txt');
+    expect(diffStates.value.has('gone.txt')).toBe(false);
+    expect(count(calls, '/api/diff')).toBe(1);
+    expect(diffQuery(calls)?.get('path')).toBe('other.txt');
+  });
+
+  test('最后一个 tab 消失后栏空了，一个 diff 都不取', async () => {
+    openPinned('diff', 'gone.txt');
+    diffStates.value = new Map([ready('gone.txt')]);
     const calls = stubEndpoints(stateWith([file({ path: 'other.txt', unstaged: 'M' })]), fresh);
 
     await refresh();
     expect(calls).toEqual(['/api/state']);
-    // 选中态一并没了——`selectedPath` 由 `diffState` 派生，清空即两者同时成立
-    expect(diffState.value).toBeNull();
+    expect(editors.value).toEqual([]);
+    expect(activeEditorKey.value).toBeNull();
   });
 
-  test('清空之后，在途的那次取 diff 不许把右侧写回来', async () => {
+  test('后台 tab 的文件消失了也要关掉——只看活动 tab 时它会一直挂着一份不再刷新的补丁', async () => {
+    openPinned('diff', 'gone.txt');
+    openPinned('diff', 'a.txt');
+    diffStates.value = new Map([ready('gone.txt'), ready('a.txt')]);
+    const calls = stubEndpoints(stateWith([file({ path: 'a.txt', unstaged: 'M' })]), fresh);
+
+    await refresh();
+    expect(tabs()).toEqual(['diff:a.txt']);
+    expect(diffStates.value.has('gone.txt')).toBe(false);
+    expect(count(calls, '/api/diff')).toBe(1);
+  });
+
+  test('file tab 不在变更列表里也留着——目录树列的是整棵仓库', async () => {
+    openPinned('file', 'untouched.ts');
+    fileStates.value = new Map([
+      ['untouched.ts', { status: 'ready', payload: { kind: 'binary' } }],
+    ]);
+    stubEndpoints(stateWith([]), fresh);
+
+    await refresh();
+    expect(tabs()).toEqual(['file:untouched.ts']);
+  });
+
+  test('关掉之后，在途的那次取 diff 不许把缓存写回来', async () => {
     /**
      * 点开 X 之后、响应回来之前 X 从列表里没了。不作废那次在途请求的话，它回来
-     * 照旧写成 `ready`，右侧刚清掉又长回来——**不报错**，而复现要正好卡在一次
-     * 请求的往返窗口里，肉眼几乎撞不上。
+     * 照旧写进缓存——**不报错**，而复现要正好卡在一次请求的往返窗口里，肉眼几乎撞不上。
      */
     let releaseDiff!: () => void;
     const pending = new Promise<void>((resolve) => {
@@ -502,26 +784,27 @@ describe('refresh（一次 SSE change 之后要重取什么）', () => {
     });
     stubEndpoints(stateWith([file({ path: 'other.txt', unstaged: 'M' })]), fresh, pending);
 
+    openPinned('diff', 'gone.txt');
     const inFlight = loadDiff(file({ path: 'gone.txt', unstaged: 'M' }));
-    expect(diffState.value?.status).toBe('loading');
+    expect(diffStates.value.get('gone.txt')?.status).toBe('loading');
     await refresh();
-    expect(diffState.value).toBeNull();
+    expect(diffStates.value.has('gone.txt')).toBe(false);
 
     releaseDiff();
     await inFlight;
-    expect(diffState.value).toBeNull();
+    expect(diffStates.value.has('gone.txt')).toBe(false);
   });
 
-  test('列表取不到时不去取 diff——手上那份列表已经是过期的了', async () => {
+  test('列表取不到时不动 tab 也不取 diff——手上那份列表已经是过期的了', async () => {
     /**
      * **`repoState` 必须先有一份旧快照**，否则这条用例是假绿的：`loadState()` 失败
      * 时它保持原值，只有原值非 null 才走得到「照着旧列表找条目」那一步——而生产里
-     * 它一直是非 null（第一帧就取过了）。第一版把它留在 null 上，拿掉产品里的
-     * 提前返回照样全绿。旧列表的 oldPath 是过期的，拿它取 diff 正是重命名退化成
-     * 全新增那条路。
+     * 它一直是非 null（第一帧就取过了）。旧列表的 oldPath 是过期的，拿它取 diff 正是
+     * 重命名退化成全新增那条路。
      */
     repoState.value = stateWith([file({ path: 'a.txt', oldPath: 'stale.txt', staged: 'R' })]);
-    diffState.value = { status: 'ready', path: 'a.txt', rename: null, payload: text };
+    openPinned('diff', 'a.txt');
+    diffStates.value = new Map([ready('a.txt')]);
     const calls: string[] = [];
     vi.stubGlobal(
       'fetch',
@@ -534,16 +817,16 @@ describe('refresh（一次 SSE change 之后要重取什么）', () => {
     await refresh();
     expect(calls).toEqual(['/api/state']);
     expect(loadError.value).toBe('Request failed (HTTP 500).');
-    expect(diffState.value).toEqual({
+    expect(tabs()).toEqual(['diff:a.txt']);
+    expect(diffStates.value.get('a.txt')).toEqual({
       status: 'ready',
-      path: 'a.txt',
       rename: null,
       payload: text,
     });
   });
 });
 
-/** 一份最小的 `/api/state` 正文，给下面两个 describe 里那些不关心列表内容的用例用。 */
+/** 一份最小的 `/api/state` 正文，给下面那个 describe 里那些不关心列表内容的用例用。 */
 const emptyState: RepoState = {
   repoName: 'demo',
   branch: { head: 'main', detached: false, upstream: null },
@@ -551,81 +834,17 @@ const emptyState: RepoState = {
   watch: { mode: 'native', tier: 'A' },
 };
 
-describe('文件视图与右侧面板的归属', () => {
-  beforeEach(() => {
-    diffState.value = null;
-    fileState.value = null;
-    activePane.value = 'diff';
-    loadError.value = null;
-    treeCache.value = new Map();
-    expandedDirs.value = new Set();
-  });
-
-  test('在树上点开文件：取它的内容，并把右侧切到文件视图', async () => {
-    const calls = stubJson({ kind: 'text', content: 'hello\n' } satisfies FilePayload);
-
-    openFile('src/app.ts');
-    // **两件必须同时发生**：只取不切的症状是点了没反应（内容取回来了，右边还画着上一份 diff）
-    expect(activePane.value).toBe('file');
-    await vi.waitFor(() => expect(fileState.value?.status).toBe('ready'));
-    expect(query(calls[0] as string).get('path')).toBe('src/app.ts');
-  });
-
-  test('点变更列表把右侧切回 diff——从文件视图点一条变更时右边得跟着动', async () => {
-    activePane.value = 'file';
-    stubJson({ kind: 'text', patch: '' } satisfies DiffPayload);
-
-    selectFile(file({ path: 'a.ts', unstaged: 'M' }));
-    expect(activePane.value).toBe('diff');
-    await vi.waitFor(() => expect(diffState.value?.status).toBe('ready'));
-  });
-
-  test('取不到时错误落在右侧自己的位置上，不写进那条全局错误条', async () => {
-    stubJson({ error: { code: 'not-found', message: 'file no longer exists' } }, 404);
-
-    openFile('gone.ts');
-    await vi.waitFor(() => expect(fileState.value?.status).toBe('error'));
-    expect(loadError.value).toBeNull();
-  });
-
-  test('同一个文件重新取时不回退 loading——一回退高亮好的 DOM 连同滚动位置一起没了', async () => {
-    stubJson({ kind: 'text', content: 'a\n' } satisfies FilePayload);
-    openFile('a.ts');
-    await vi.waitFor(() => expect(fileState.value?.status).toBe('ready'));
-
-    const seen: string[] = [];
-    const stop = effect(() => {
-      if (fileState.value !== null) seen.push(fileState.value.status);
-    });
-    openFile('a.ts');
-    await vi.waitFor(() => expect(fileState.value?.status).toBe('ready'));
-    stop();
-    expect(seen).not.toContain('loading');
-  });
-
-  test('换文件必须清空——留着上一份正文，新标题下会短暂挂着旧内容', async () => {
-    stubJson({ kind: 'text', content: 'a\n' } satisfies FilePayload);
-    openFile('a.ts');
-    await vi.waitFor(() => expect(fileState.value?.status).toBe('ready'));
-
-    openFile('b.ts');
-    expect(fileState.value).toEqual({ status: 'loading', path: 'b.ts' });
-  });
-});
-
 describe('refresh 对树与文件视图那一半', () => {
   const treeCalls = (calls: readonly string[]) =>
     calls.filter((url) => url.startsWith('/api/tree')).map((url) => query(url).get('path'));
 
   beforeEach(() => {
-    diffState.value = null;
-    fileState.value = null;
+    resetEditors();
     treeCache.value = new Map();
     expandedDirs.value = new Set();
     repoState.value = null;
     loadError.value = null;
     activeTab.value = 'changes';
-    activePane.value = 'diff';
   });
 
   test('不看 Files 那一档时一次 `/api/tree` 都不发——看不见的面板不付钱', async () => {
@@ -665,20 +884,37 @@ describe('refresh 对树与文件视图那一半', () => {
     expect(treeCache.value.get(ROOT)?.map((item) => item.name)).toEqual(['new.ts']);
   });
 
-  test('右侧画的是 diff 时不重取那份全文——最多 5MB 的往返，而它此刻不在屏幕上', async () => {
-    fileState.value = { status: 'ready', path: 'a.ts', payload: { kind: 'text', content: 'old' } };
-    const calls = stubJson(emptyState);
+  test('活动的是 diff tab 时不重取后台那份全文——最多 5MB 的往返，而它此刻不在屏幕上', async () => {
+    openPinned('file', 'a.ts');
+    openPinned('diff', 'b.ts');
+    fileStates.value = new Map([
+      ['a.ts', { status: 'ready', payload: { kind: 'text', content: 'old' } }],
+    ]);
+    // b.ts 得还在列表里，否则那个 diff tab 会被收编关掉、file tab 顶上——那是另一条用例
+    const calls = stubJson({ ...emptyState, files: [file({ path: 'b.ts', unstaged: 'M' })] });
 
     await refresh();
     expect(calls.some((url) => url.startsWith('/api/file'))).toBe(false);
   });
 
-  test('右侧画的就是那份全文时才重取——内容变了而树没变是最常见的形态', async () => {
-    activePane.value = 'file';
-    fileState.value = { status: 'ready', path: 'a.ts', payload: { kind: 'text', content: 'old' } };
+  test('活动的就是那份全文时才重取——内容变了而树没变是最常见的形态', async () => {
+    openPinned('file', 'a.ts');
+    fileStates.value = new Map([
+      ['a.ts', { status: 'ready', payload: { kind: 'text', content: 'old' } }],
+    ]);
     const calls = stubJson(emptyState);
 
     await refresh();
-    await vi.waitFor(() => expect(calls.some((url) => url.startsWith('/api/file'))).toBe(true));
+    await vi.waitFor(() => expect(count(calls, '/api/file')).toBe(1));
+  });
+
+  test('活动的 diff tab 被关掉、顶上来的是 file tab 时补取那份全文，且只取一次', async () => {
+    openPinned('file', 'a.ts');
+    openPinned('diff', 'gone.ts');
+    const calls = stubJson(emptyState);
+
+    await refresh();
+    expect(activeEditorKey.value).toBe('file:a.ts');
+    await vi.waitFor(() => expect(count(calls, '/api/file')).toBe(1));
   });
 });

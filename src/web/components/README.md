@@ -1,6 +1,6 @@
 # web/components
 
-变更列表、分支状态、diff 容器、顶栏那个明暗开关，以及侧栏 `Files` 那一档的文件树与只读文件视图。
+变更列表、分支状态、右侧那条编辑器标签栏与 diff 容器、顶栏那个明暗开关，以及侧栏 `Files` 那一档的文件树与只读文件视图。
 
 界面上那几枚图标一律走 `Icon`，图形由调用方传一个 Lucide 组件进来。外壳只统一 `size` 与 `aria-hidden`——与 `Badge` 同一条理由：这两样在六处各写一遍时，漏掉一处不报错、也不画错，只是那一枚比旁边的大一圈，或者被读屏多读一遍。
 
@@ -8,7 +8,9 @@
 
 变更列表有列表 / 树两种版式（切换在 tab 行右端，状态与建树在 `state/change-tree.ts`）。两棵树（变更树与 `Files` 那档的目录树）的行首三样（缩进量、展开三角、等宽占位）共用 `tree-row.tsx` 那一份——各写一份不报错，只是切一次 tab 缩进跳一截，或一棵树里文件名比同层目录名往左挪一截。
 
-两侧空着时画的那几块在 `EmptyState.tsx`：右侧没选文件时是 `PanelEmptyState`（图标 + 一句，说哪句、配哪枚按侧栏档位定，判据只在它里面写一次），左栏列表区的三句占位共用 `SidebarPlaceholder`；两块各按自己宿主的手段撑满后居中，不合成一个。文件级的提示（loading / error / binary / too-large / symlink）仍走 `Notice` 贴左上。
+`EditorTabs` 是右侧面板顶上那条标签栏，也是面板唯一的 chrome：`role="tablist"` 里一排 tab，每个 tab 是一个外壳 div 里并排的两枚 `<button>`——`role="tab"` 那枚装图标与名字，走 `IconButton` 的关闭按钮在它旁边、**不套在里面**。套在里面时 tab 不能是按钮，键盘、光标、「来自 × 的事件不落到 tab 上」三样都得手写；并排之后 × 的事件压根不经过 tab 按钮。`DiffView` / `FileView` 接 `path` prop、在渲染体里按它读缓存；`Panel` 只剩两个视图共用的那层滚动容器。
+
+两侧空着时画的那几块在 `EmptyState.tsx`：右侧一个 tab 都没有时 `App` 画 `PanelEmptyState`（图标 + 一句，说哪句、配哪枚按侧栏档位定，判据只在它里面写一次），左栏列表区的三句占位共用 `SidebarPlaceholder`；两块各按自己宿主的手段撑满后居中，不合成一个。文件级的提示（loading / error / binary / too-large / symlink）仍走 `Notice` 贴左上。
 
 `FileView` 不走 diff2html，只用 hljs 高亮一次。**容器上不得加 `hljs` 类**：那条规则是 unlayered 的，会压过 `bg-editor-background`，症状只是「文件视图底色跟页面其余部分对不上」。
 

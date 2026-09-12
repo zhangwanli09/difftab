@@ -25,12 +25,16 @@ export function IconButton({
 }) {
   // preflight 清掉了 UA 默认焦点环，键盘可达性得自己画回来。用的 token 与变更列表那行
   // （ChangeList 的 ROW_CLASS）是同一个，但**不带它那个 -outline-offset-2**：列表项是通栏的、
-  // 环画在里侧才不被邻行盖住，而这几枚按钮四周有空隙，环画在外面
+  // 环画在里侧才不被邻行盖住，而这几枚按钮四周有空隙，环画在外面。
+  //
+  // 悬停底色是 `toolbar-hover-background`（半透明叠加），**不是列表行那个 `list-hover`**：编辑器
+  // tab 上那枚关闭按钮坐在一个自己就会 hover 变色的 tab 里，两处同色时鼠标单独悬在 × 上看不出
+  // 任何反应；半透明的叠在哪种底色上都比周围深一档
   return (
     <button
       type="button"
       onClick={onClick}
-      class="shrink-0 rounded-sm p-0.5 text-description-foreground hover:bg-list-hover-background focus-visible:outline-2 focus-visible:outline-focus-border"
+      class="shrink-0 rounded-sm p-0.5 text-description-foreground hover:bg-toolbar-hover-background focus-visible:outline-2 focus-visible:outline-focus-border"
       title={label}
       aria-label={label}
     >

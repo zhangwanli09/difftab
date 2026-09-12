@@ -1,4 +1,4 @@
-// 应用外壳：左栏一列（顶栏、错误条、变更列表、状态条），右边是 diff 容器。
+// 应用外壳：左栏一列（顶栏、错误条、变更列表、状态条），右边是编辑器面板（标签栏 + 一个视图）。
 //
 // 顶栏与状态条都归左栏、不横跨全屏：两处画的都是「这个仓库现在怎么样」(项目名、分支、监听
 // 档位)，与右边看的是哪个文件无关，横跨等于在 diff 面板顶上切一条与 diff 无关的横杠。
@@ -7,14 +7,16 @@
 import { ChevronsDownUp, Folder, GitBranch, List, ListTree, type LucideIcon } from 'lucide-preact';
 import { useEffect, useRef } from 'preact/hooks';
 import { type ChangeView, changeView, toggleChangeView } from '../state/change-tree';
+import { activeEditor, keyOf } from '../state/editors';
 import { observeDiffPanel } from '../state/layout';
-import { activePane, activeTab, loadError, repoState } from '../state/store';
+import { activeTab, loadError, repoState } from '../state/store';
 import { PRODUCT_NAME } from '../state/title';
 import { collapseAll, loadDir, ROOT, refreshTree, treeCache } from '../state/tree';
 import { BranchStatus } from './BranchStatus';
 import { ChangeList } from './ChangeList';
 import { DiffView } from './DiffView';
-import { SidebarPlaceholder } from './EmptyState';
+import { EditorTabs } from './EditorTabs';
+import { PanelEmptyState, SidebarPlaceholder } from './EmptyState';
 import { FileTree } from './FileTree';
 import { FileView } from './FileView';
 import { Icon } from './Icon';
@@ -95,7 +97,7 @@ function SideBarTabRow() {
             aria-label={tab.label}
             title={tab.label}
             /**
-             * **只改 `activeTab`，绝不碰 `activePane`**：换的是左栏在列什么，不是用户此刻在读
+             * **只改 `activeTab`，绝不碰 `activeEditor`**：换的是左栏在列什么，不是用户此刻在读
              * 什么——写成「切到 Files 就清空右侧」时页面看着完全正常，只是每瞄一眼目录树就丢掉
              * 正在读的那份 diff。
              */
@@ -133,7 +135,7 @@ export function App() {
   const state = repoState.value;
   const error = loadError.value;
   const tab = activeTab.value;
-  const pane = activePane.value;
+  const active = activeEditor.value;
   const diffPanel = useRef<HTMLElement>(null);
 
   /**
@@ -223,12 +225,28 @@ export function App() {
         )}
       </aside>
 
-      {/* **面板这一层自己不滚**：滚动容器在两个视图内部，路径横杠排在它之外（两者由
-          `DiffView` 导出的 `Panel` 一起给），于是这里只剩一列 flex——横杠 `shrink-0`，底下那层
-          `min-h-0 flex-1 overflow-auto`。左右两栏仍是两个各自独立的滚动容器：列表侧的滚动位置
-          在 SSE 刷新时要留住，两侧共用一个就做不到 */}
+      {/* **面板这一层自己不滚**：滚动容器在两个视图内部（`DiffView` 导出的 `Panel`），标签栏
+          排在它之外，于是这里只剩一列 flex——标签栏 `shrink-0`，底下那层 `min-h-0 flex-1
+          overflow-auto`。左右两栏仍是两个各自独立的滚动容器：列表侧的滚动位置在 SSE 刷新时要
+          留住，两侧共用一个就做不到。画哪个视图由活动 tab 的 `kind` 定；栏里一个 tab 都没有时
+          画空态，说哪句、配哪枚的判据在 `PanelEmptyState` 里只写一次。
+          **视图按 tab 键 `key` 住**：只换 `path` prop 时组件不卸载，滚动容器连同 `scrollTop`
+          一起留着——在 A 里滚到三千像素再切到同种的 B，B 会从同一个偏移量打开；而切到另一种
+          视图因为换了组件类型是从顶部开始，两种切法一个样子才对。同一个 tab 内换补丁不换键，
+          容器照旧留在原地 */}
       <section ref={diffPanel} class="flex min-w-0 flex-1 flex-col">
-        {pane === 'file' ? <FileView /> : <DiffView />}
+        {active === null ? (
+          <PanelEmptyState />
+        ) : (
+          <>
+            <EditorTabs />
+            {active.kind === 'file' ? (
+              <FileView key={keyOf(active)} path={active.path} />
+            ) : (
+              <DiffView key={keyOf(active)} path={active.path} />
+            )}
+          </>
+        )}
       </section>
     </div>
   );

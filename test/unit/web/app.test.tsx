@@ -14,15 +14,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RepoState } from '../../../src/server/shared/protocol';
 import { App } from '../../../src/web/components/App';
 import { changeView } from '../../../src/web/state/change-tree';
-import {
-  activePane,
-  activeTab,
-  diffState,
-  fileState,
-  repoState,
-} from '../../../src/web/state/store';
+import { activeEditorKey, editors } from '../../../src/web/state/editors';
+import { activeTab, diffStates, fileStates, repoState } from '../../../src/web/state/store';
 import { PRODUCT_NAME } from '../../../src/web/state/title';
 import { expandedDirs, ROOT, treeCache, treeErrors } from '../../../src/web/state/tree';
+import { openPinned, resetEditors, waitFor } from './helpers';
 
 const stateWith = (repoName: string): RepoState => ({
   repoName,
@@ -48,10 +44,8 @@ afterEach(() => {
   render(null, container);
   // signals 活在组件树之外，不清就会漏进下一个用例
   repoState.value = null;
-  diffState.value = null;
-  fileState.value = null;
+  resetEditors();
   activeTab.value = 'changes';
-  activePane.value = 'diff';
   changeView.value = 'list';
   treeCache.value = new Map();
   treeErrors.value = new Map();
@@ -61,6 +55,15 @@ afterEach(() => {
 
 const header = () => container.querySelector('header');
 const headerText = () => header()?.textContent?.trim();
+const section = () => container.querySelector('section');
+
+/** 开一个 diff tab 并把它的缓存写成一份 binary——右侧因此画得出 `Binary file` 那句。 */
+function openBinaryDiff(path: string): void {
+  openPinned('diff', path);
+  diffStates.value = new Map([
+    [path, { status: 'ready', rename: null, payload: { kind: 'binary' } }],
+  ]);
+}
 
 describe('左栏顶栏', () => {
   it('写的是项目名——不是产品名', () => {
@@ -109,8 +112,6 @@ describe('顶栏的形状', () => {
   });
 });
 
-const waitFor = (assert: () => void) => vi.waitFor(assert, { interval: 5 });
-
 // 只画图标，于是 textContent 是空的——名字只能从 aria-label 上找
 const tabOf = (label: string): HTMLButtonElement => {
   const found = [...container.querySelectorAll('[role="tab"]')].find(
@@ -148,30 +149,23 @@ describe('侧栏那两个 tab', () => {
   });
 
   it('**切 tab 不动右侧面板**——每瞄一眼目录树就丢掉正在读的 diff 是不能接受的', async () => {
-    diffState.value = {
-      status: 'ready',
-      path: 'src/app.ts',
-      rename: null,
-      payload: { kind: 'binary' },
-    };
+    openBinaryDiff('src/app.ts');
     render(<App />, container);
-    expect(container.querySelector('section')?.textContent).toContain('Binary file');
+    expect(section()?.textContent).toContain('Binary file');
 
     tabOf('Files').click();
     await waitFor(() => expect(tabOf('Files').getAttribute('aria-selected')).toBe('true'));
-    expect(activePane.value).toBe('diff');
-    expect(container.querySelector('section')?.textContent).toContain('Binary file');
+    expect(activeEditorKey.value).toBe('diff:src/app.ts');
+    expect(section()?.textContent).toContain('Binary file');
   });
 
-  it('右侧画哪一个由 activePane 定，与停在哪个 tab 上无关', async () => {
-    fileState.value = { status: 'ready', path: 'a.ts', payload: { kind: 'binary' } };
-    activePane.value = 'file';
+  it('右侧画哪一个由活动 tab 的 kind 定，与停在哪个侧栏 tab 上无关', async () => {
+    openPinned('file', 'a.ts');
+    fileStates.value = new Map([['a.ts', { status: 'ready', payload: { kind: 'binary' } }]]);
     render(<App />, container);
     // 侧栏还停在 Changes 上，右边已经是文件视图了——两者本就不是一回事
     await waitFor(() =>
-      expect(container.querySelector('section')?.textContent).toContain(
-        'Binary file — contents are not shown.',
-      ),
+      expect(section()?.textContent).toContain('Binary file — contents are not shown.'),
     );
     expect(tabOf('Changes').getAttribute('aria-selected')).toBe('true');
   });
@@ -300,16 +294,107 @@ describe('tab 行右端那枚列表 / 树切换', () => {
   });
 
   it('切版式不动右侧面板，也不动选中态', async () => {
-    diffState.value = {
-      status: 'ready',
-      path: 'src/app.ts',
-      rename: null,
-      payload: { kind: 'binary' },
-    };
+    openBinaryDiff('src/app.ts');
     render(<App />, container);
     (viewButton() as HTMLButtonElement).click();
     await waitFor(() => expect(changeView.value).toBe('tree'));
-    expect(activePane.value).toBe('diff');
-    expect(container.querySelector('section')?.textContent).toContain('Binary file');
+    expect(activeEditorKey.value).toBe('diff:src/app.ts');
+    expect(section()?.textContent).toContain('Binary file');
+  });
+});
+
+/**
+ * 右侧面板：空态与标签栏的位置。空态那三句从 diff-view 那份搬过来——它们现在归 `App`，两个视图
+ * 自己不再有空态分支。
+ */
+describe('右侧面板', () => {
+  const tabStrip = () => section()?.querySelector('[role="tablist"]');
+  const scroller = () => section()?.querySelector('.overflow-auto');
+
+  it('栏里没有 tab 时给一句提示，居中并配一枚图标', async () => {
+    render(<App />, container);
+    await waitFor(() => expect(section()?.textContent).toContain('Select a file on the left'));
+
+    // 空态居中并配图标。happy-dom 没有排版引擎，能钉的只有类名（撑满为什么是前提在 EmptyState.tsx）
+    const box = section()?.firstElementChild;
+    for (const cls of ['flex-1', 'items-center', 'justify-center']) {
+      expect(box?.classList.contains(cls)).toBe(true);
+    }
+    expect(section()?.querySelector('svg.lucide-file-diff')).not.toBeNull();
+    expect(tabStrip()).toBeNull();
+  });
+
+  it('工作区干净时换一句——「点左边一个文件」指着的是一个空列表', async () => {
+    // 「没得选」与「还没选」是两件事：上一条用例的 repoState 是 null，走的正是「还没选」那句
+    repoState.value = stateWith('demo');
+    render(<App />, container);
+
+    await waitFor(() => expect(section()?.textContent).toContain('Working tree clean'));
+    expect(section()?.textContent).not.toContain('Select a file on the left');
+    // 图标跟着文案一起换：干净是一个 ✓，不再是那份 diff
+    expect(section()?.querySelector('svg.lucide-circle-check')).not.toBeNull();
+    expect(section()?.querySelector('svg.lucide-file-diff')).toBeNull();
+  });
+
+  it('切到 Files 档时空态跟着档走：图标换成全文那枚，干净也照样说「点左边一个」', async () => {
+    // 干净仓库 + Files 档：那一档列的是整棵目录树，「Working tree clean」对着一列能点的文件说不通
+    repoState.value = stateWith('demo');
+    activeTab.value = 'files';
+    render(<App />, container);
+
+    await waitFor(() => expect(section()?.querySelector('svg.lucide-file-code')).not.toBeNull());
+    expect(section()?.textContent).toContain('Select a file on the left');
+    expect(section()?.textContent).not.toContain('Working tree clean');
+  });
+
+  it('有 tab 时标签栏排在面板顶上、滚动层之外——面板仍是一列 flex', async () => {
+    openBinaryDiff('src/app.ts');
+    render(<App />, container);
+    await waitFor(() => expect(section()?.textContent).toContain('Binary file'));
+
+    expect(section()?.classList.contains('flex-col')).toBe(true);
+    // 标签栏与滚动层是 `<section>` 的两个直接子项，前者在前：塞进滚动层里页面不报错，只是
+    // 往下翻两屏就再也找不着它
+    expect(tabStrip()?.parentElement).toBe(section());
+    expect(tabStrip()?.nextElementSibling).toBe(scroller());
+    expect(tabStrip()?.textContent).toContain('app.ts');
+    expect(section()?.textContent).not.toContain('Select a file on the left');
+  });
+
+  it('切到同种的另一个 tab 时滚动容器换新的——不然 B 会从 A 的滚动偏移量打开', async () => {
+    openBinaryDiff('src/a.ts');
+    openPinned('diff', 'src/b.ts');
+    diffStates.value = new Map(diffStates.value).set('src/b.ts', {
+      status: 'ready',
+      rename: null,
+      payload: { kind: 'binary' },
+    });
+    activeEditorKey.value = 'diff:src/a.ts';
+    render(<App />, container);
+    await waitFor(() => expect(scroller()).not.toBeNull());
+    const before = scroller();
+
+    activeEditorKey.value = 'diff:src/b.ts';
+    await waitFor(() => expect(scroller()).not.toBe(before));
+
+    // 同一个 tab 内换补丁不换键：容器留在原地（另一半在 diff-view 那份用例里）
+    const after = scroller();
+    diffStates.value = new Map(diffStates.value).set('src/b.ts', {
+      status: 'ready',
+      rename: null,
+      payload: { kind: 'too-large', size: 0, reason: 'size' },
+    });
+    await waitFor(() => expect(section()?.textContent).toContain('File too large'));
+    expect(scroller()).toBe(after);
+  });
+
+  it('关掉最后一个 tab 之后右侧回到空态', async () => {
+    openBinaryDiff('src/app.ts');
+    render(<App />, container);
+    await waitFor(() => expect(section()?.textContent).toContain('Binary file'));
+
+    container.querySelector<HTMLButtonElement>('section button[aria-label="Close"]')?.click();
+    await waitFor(() => expect(section()?.textContent).toContain('Select a file on the left'));
+    expect(editors.value).toEqual([]);
   });
 });

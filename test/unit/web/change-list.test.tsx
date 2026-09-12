@@ -7,17 +7,10 @@
 
 import { render } from 'preact';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { FileEntry } from '../../../src/server/shared/protocol';
 import { ChangeList } from '../../../src/web/components/ChangeList';
 import { changeView, collapsedChangeDirs } from '../../../src/web/state/change-tree';
-import { diffState } from '../../../src/web/state/store';
-
-const file = (partial: Partial<FileEntry> & { path: string }): FileEntry => ({
-  kind: 'tracked',
-  staged: '.',
-  unstaged: '.',
-  ...partial,
-});
+import { activeEditorKey, editors } from '../../../src/web/state/editors';
+import { file, openPinned, resetEditors, waitFor } from './helpers';
 
 let container: HTMLElement;
 
@@ -30,7 +23,7 @@ beforeEach(() => {
 afterEach(() => {
   render(null, container);
   // signals 活在组件树之外，不清就会漏进下一个用例
-  diffState.value = null;
+  resetEditors();
   changeView.value = 'list';
   collapsedChangeDirs.value = new Set();
 });
@@ -239,5 +232,48 @@ describe('ChangeList 的树视图', () => {
     render(<ChangeList files={[file({ path: 'src/a.ts', staged: 'M' })]} />, container);
     expect(rowByTitle('src')).toBeUndefined();
     expect(rows()).toHaveLength(1);
+  });
+});
+
+/**
+ * 选中态与标签栏的接线。钉的是「不报错、只是不对」：高亮只认活动的 **diff** tab——同一路径的
+ * file tab 活动时这一行不亮（那一行说的是这份补丁，而此刻在读的是全文）；单击开预览、双击固定。
+ */
+describe('ChangeList 的选中态', () => {
+  const rows = () => [...container.querySelectorAll('button')];
+  const rowByTitle = (title: string) => rows().find((row) => row.title === title);
+  const SELECTED = 'bg-list-active-selection-background';
+
+  beforeEach(() => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{"kind":"binary"}', { status: 200 })),
+    );
+  });
+
+  it('高亮跟着活动的 diff tab 走；同一路径的 file tab 不算', async () => {
+    render(<ChangeList files={[file({ path: 'a.ts', staged: 'M' })]} />, container);
+    expect(rowByTitle('a.ts')?.className).not.toContain(SELECTED);
+
+    openPinned('file', 'a.ts');
+    await waitFor(() => expect(activeEditorKey.value).toBe('file:a.ts'));
+    expect(rowByTitle('a.ts')?.className).not.toContain(SELECTED);
+
+    openPinned('diff', 'a.ts');
+    await waitFor(() => expect(rowByTitle('a.ts')?.className).toContain(SELECTED));
+  });
+
+  it('单击开一个预览 tab，双击把它固定——且双击那一下不再取第三趟', async () => {
+    render(<ChangeList files={[file({ path: 'a.ts', staged: 'M' })]} />, container);
+    const row = rowByTitle('a.ts');
+    row?.click();
+    expect(editors.value).toEqual([{ kind: 'diff', path: 'a.ts', pinned: false }]);
+
+    // 浏览器的一次双击：click、click、dblclick。前两个各取一趟，dblclick 只置 pinned
+    row?.click();
+    row?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    expect(editors.value).toEqual([{ kind: 'diff', path: 'a.ts', pinned: true }]);
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(row?.className).toContain(SELECTED));
   });
 });

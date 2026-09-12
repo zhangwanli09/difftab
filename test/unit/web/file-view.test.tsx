@@ -5,20 +5,22 @@
 // 未知扩展名没退回 `plaintext` 时 `hljs.highlight` 直接抛，炸掉的是整个文件视图。
 
 import { render } from 'preact';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FilePayload } from '../../../src/server/shared/protocol';
 import { FileView } from '../../../src/web/components/FileView';
-import { activeTab, fileState } from '../../../src/web/state/store';
+import { type FileRequestState, fileStates } from '../../../src/web/state/store';
+import { waitFor } from './helpers';
 
 let container: HTMLElement;
 
-const waitFor = (assert: () => void) => vi.waitFor(assert, { interval: 5 });
-
-const ready = (path: string, payload: FilePayload) => {
-  fileState.value = { status: 'ready', path, payload };
+/** 写这个路径的缓存，并让视图画它（产品里 `path` 由 `App` 按活动 tab 给）。 */
+const set = (path: string, state: FileRequestState) => {
+  fileStates.value = new Map(fileStates.value).set(path, state);
+  render(<FileView path={path} />, container);
 };
+const ready = (path: string, payload: FilePayload) => set(path, { status: 'ready', payload });
 
-/** 滚动容器（标题栏的兄弟），以及它里面那个「按内容撑宽」的盒子。 */
+/** 滚动容器（视图的根），以及它里面那个「按内容撑宽」的盒子。 */
 const scroller = () => container.querySelector('.overflow-auto');
 const wideBox = () => scroller()?.firstElementChild ?? null;
 
@@ -26,32 +28,28 @@ beforeEach(() => {
   document.body.innerHTML = '';
   container = document.createElement('div');
   document.body.appendChild(container);
-  fileState.value = null;
-  // 只挂载一次，之后各用例只写 state——手动补 render 会把「状态变了会不会重画」替它做掉
-  render(<FileView />, container);
+  fileStates.value = new Map();
 });
 
 afterEach(() => {
   render(null, container);
-  fileState.value = null;
-  activeTab.value = 'changes';
+  fileStates.value = new Map();
 });
 
 describe('FileView', () => {
-  it('还没点过文件时是与 diff 那侧同一块空态', async () => {
-    // 这一路在产品里到不了（为什么在 PanelEmptyState 上），钉的只是「本组件对 null 也有答案，
-    // 且答案与 diff 那侧是同一块」：图标按档位定，与它是哪个视图无关
-    activeTab.value = 'files';
-    await waitFor(() => expect(container.textContent).toContain('Select a file on the left.'));
-    expect(container.querySelector('svg.lucide-file-code')).not.toBeNull();
+  it('缓存里还没有这个路径时画一行加载中', async () => {
+    // 这一路在产品里到不了（`openEditor` 与写 loading 同一个 tick），钉的只是「本组件对缺项也
+    // 有答案」，且答案是提示行不是空态——面板不是空着，是这个文件还没来
+    render(<FileView path="src/app.ts" />, container);
+    await waitFor(() => expect(container.textContent).toContain('Loading…'));
+    expect(container.querySelector('svg')).toBeNull();
   });
 
-  it('loading 与 error 各说各的，且标题上始终是当前那个路径', async () => {
-    fileState.value = { status: 'loading', path: 'src/app.ts' };
+  it('loading 与 error 各说各的', async () => {
+    set('src/app.ts', { status: 'loading' });
     await waitFor(() => expect(container.textContent).toContain('Loading…'));
-    expect(container.querySelector('h2')?.textContent).toBe('src/app.ts');
 
-    fileState.value = { status: 'error', path: 'src/app.ts', message: 'file no longer exists' };
+    set('src/app.ts', { status: 'error', message: 'file no longer exists' });
     await waitFor(() => expect(container.textContent).toContain('Could not load this file'));
     expect(container.textContent).toContain('file no longer exists');
   });
@@ -64,27 +62,22 @@ describe('FileView', () => {
     await waitFor(() => expect(container.textContent).toContain('Symbolic link to'));
     expect(wideBox()?.className).toBe('');
 
-    fileState.value = { status: 'error', path: 'a.ts', message: 'x' };
+    set('a.ts', { status: 'error', message: 'x' });
     await waitFor(() => expect(container.textContent).toContain('Could not load this file'));
     expect(wideBox()?.className).toBe('');
   });
 
-  it('滚动时留在原处的那几样：标题栏在滚动容器之外、外层 w-max、行号槽', async () => {
+  it('滚动时留在原处的那几样：视图只有滚动那一层、外层 w-max、行号槽', async () => {
     ready('a.ts', { kind: 'text', content: 'const x = 1;\n' });
     await waitFor(() => expect(container.textContent).toContain('const x = 1;'));
 
-    // 标题栏与滚动容器是两个兄弟：横杠因此既不竖向滚也不横向滚，从前那套（`sticky top-0`
-    // + `z-10` + 一个 `sticky left-0` 的 span）整片不再需要。这一条正是本形状的全部意义
-    const bar = container.querySelector('h2');
-    expect(scroller()?.contains(bar)).toBe(false);
-    expect(bar?.querySelector('span')).toBeNull();
-    // 内边距回到 `<h2>` 自己身上：不再有 `px-4` / `left-4` 两个必须相等的数字
-    expect(bar?.classList.contains('px-4')).toBe(true);
-    for (const cls of ['sticky', 'top-0', 'z-10']) {
-      expect(bar?.classList.contains(cls)).toBe(false);
-    }
+    // 视图的根就是滚动层，没有自己的标题栏：「在看哪个文件」由标签栏答，它在 `App` 里是滚动层
+    // 的兄弟，因此既不竖向滚也不横向滚。滚动层的类名与 diff 那侧逐字相同（`Panel` 只此一份）
+    expect(container.querySelector('h2')).toBeNull();
+    expect(container.firstElementChild).toBe(scroller());
+    expect(scroller()?.className).toBe('min-h-0 flex-1 overflow-auto');
 
-    // 横向滚动发生在标题栏底下那层容器上，而这一层若只有面板那么宽，行号槽那条 `sticky` 的
+    // 横向滚动发生在标签栏底下那层容器上，而这一层若只有面板那么宽，行号槽那条 `sticky` 的
     // 滑动余量就是 0——粘不粘一个样。happy-dom 没有排版引擎，能断言的只有类名在不在
     //（同 branch-status）
     expect(wideBox()?.classList.contains('w-max')).toBe(true);
@@ -142,7 +135,7 @@ describe('FileView', () => {
     );
   });
 
-  it('换文件走卸载重挂——两份正文不会落在同一棵子树上', async () => {
+  it('换文件时新正文换掉旧的（卸载重挂那半归 App 按 tab 键给的 key，在 app.test 里钉）', async () => {
     ready('a.ts', { kind: 'text', content: 'const first = 1;\n' });
     await waitFor(() => expect(container.textContent).toContain('const first'));
     ready('b.ts', { kind: 'text', content: 'const second = 2;\n' });

@@ -17,13 +17,8 @@ import {
   isChangeDirCollapsed,
   toggleChangeDir,
 } from '../state/change-tree';
-import {
-  type ChangeGroup,
-  type ChangeGroupId,
-  groupFiles,
-  selectedPath,
-  selectFile,
-} from '../state/store';
+import { activeDiffPath, editorKey, pinEditor } from '../state/editors';
+import { type ChangeGroup, type ChangeGroupId, groupFiles, selectFile } from '../state/store';
 import { SidebarPlaceholder } from './EmptyState';
 import { ChevronPlaceholder, ExpandChevron, indent } from './tree-row';
 
@@ -46,9 +41,10 @@ const CODE_LABELS: Record<StatusCode, string> = {
 /**
  * 路径拆成目录与文件名两段展示。分隔符恒为 `/`（由后端保证），因此这里不需要也不应该考虑平台
  * 差异——那属于 git 知识。**目录段不含尾部斜杠**（它排在文件名之后、单独成一段），于是
- * `dir + name` 拼不回 `path`——名字里的 ForDisplay 就是这个意思。
+ * `dir + name` 拼不回 `path`——名字里的 ForDisplay 就是这个意思。**导出给标签栏共用**：tab 上的
+ * 名字与目录要与这一行是同一种拆法，各写一份时漂开的症状是同一个文件在两处显示成两个名字。
  */
-function splitForDisplay(path: string): { dir: string; name: string } {
+export function splitForDisplay(path: string): { dir: string; name: string } {
   const slash = path.lastIndexOf('/');
   return slash === -1
     ? { dir: '', name: path }
@@ -142,7 +138,7 @@ function FileRow({
   const { dir, name } = splitForDisplay(file.path);
   const inTree = treeDepth !== undefined;
   /**
-   * 选中态包成 `computed` 再作为 prop 传下去，**不在组件体里读 `selectedPath.value`**：在组件
+   * 选中态包成 `computed` 再作为 prop 传下去，**不在组件体里读 `activeDiffPath.value`**：在组件
    * 体里读等于这一行订阅了它，换选中时 320 行全部重新渲染，其中 318 行产出的 vnode 与上一次逐
    * 字相同。作为 prop 传时 signals 把更新直接绑到 DOM 属性上，只写两个 class。
    *
@@ -155,7 +151,7 @@ function FileRow({
   const rowClass = useComputed(
     () =>
       `${ROW_CLASS} ${
-        selectedPath.value === file.path
+        activeDiffPath.value === file.path
           ? 'bg-list-active-selection-background text-list-active-selection-foreground'
           : 'hover:bg-list-hover-background'
       }`,
@@ -165,8 +161,10 @@ function FileRow({
       <button
         type="button"
         // 整个条目交回 store——取 diff 要带哪些参数（重命名的 oldPath）属 git 知识，不在组件
-        // 里重写一遍
+        // 里重写一遍。单击预览、双击固定：双击到来时前两个 click 已经把 tab 开好并各取过一趟，
+        // 这一下只幂等地置 pinned、不再取第三趟
         onClick={() => selectFile(file)}
+        onDblClick={() => pinEditor(editorKey('diff', file.path))}
         // 目录段被裁掉是**设计中的常态**（见下），完整路径于是在列表里找不回来了——
         // 挂在整行上补一份。不放在目录那个 span 上：它被裁到零宽时就没得可悬停了
         title={file.path}
