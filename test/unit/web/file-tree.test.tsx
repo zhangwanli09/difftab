@@ -8,7 +8,8 @@ import { render } from 'preact';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FileEntry, TreeEntry } from '../../../src/server/shared/protocol';
 import { FileTree } from '../../../src/web/components/FileTree';
-import { fileState, repoState } from '../../../src/web/state/store';
+import { activeEditorKey, editors } from '../../../src/web/state/editors';
+import { repoState } from '../../../src/web/state/store';
 import {
   collapseAll,
   expandedDirs,
@@ -16,18 +17,12 @@ import {
   treeCache,
   treeErrors,
 } from '../../../src/web/state/tree';
+import { file, openPinned, resetEditors, waitFor } from './helpers';
 
 const entry = (partial: Partial<TreeEntry> & { name: string }): TreeEntry => ({
   path: partial.name,
   kind: 'file',
   ignored: false,
-  ...partial,
-});
-
-const file = (partial: Partial<FileEntry> & { path: string }): FileEntry => ({
-  kind: 'tracked',
-  staged: '.',
-  unstaged: '.',
   ...partial,
 });
 
@@ -37,8 +32,6 @@ let container: HTMLElement;
  * 等到某个断言成立。**不在用例里补 `render()`**：树在渲染体里订阅那几个 signal，状态一变自己
  * 就重画——手动补一次会把「状态变了会不会重画」替它做掉。`interval` 调小的理由同 diff-view。
  */
-const waitFor = (assert: () => void) => vi.waitFor(assert, { interval: 5 });
-
 beforeEach(() => {
   document.body.innerHTML = '';
   container = document.createElement('div');
@@ -47,7 +40,7 @@ beforeEach(() => {
   treeCache.value = new Map();
   treeErrors.value = new Map();
   expandedDirs.value = new Set();
-  fileState.value = null;
+  resetEditors();
   repoState.value = null;
   vi.stubGlobal('fetch', vi.fn());
   render(<FileTree />, container);
@@ -241,15 +234,42 @@ describe('FileTree', () => {
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain('path=src');
   });
 
-  it('选中的文件高亮，且判据是 fileState 而不是变更列表那份选中态', async () => {
+  it('选中的文件高亮，且判据是活动的 file tab 而不是同一路径的 diff tab', async () => {
     treeCache.value = new Map([[ROOT, [entry({ name: 'a.ts' })]]]);
     await waitFor(() => expect(container.textContent).toContain('a.ts'));
     expect(rowOf('a.ts').className).not.toContain('bg-list-active-selection-background');
 
-    fileState.value = { status: 'ready', path: 'a.ts', payload: { kind: 'text', content: '' } };
+    // 变更列表那侧点开的 diff tab 活动时，树上这一行不亮——两处看到的是两样东西
+    openPinned('diff', 'a.ts');
+    await waitFor(() => expect(activeEditorKey.value).toBe('diff:a.ts'));
+    expect(rowOf('a.ts').className).not.toContain('bg-list-active-selection-background');
+
+    openPinned('file', 'a.ts');
     await waitFor(() =>
       expect(rowOf('a.ts').className).toContain('bg-list-active-selection-background'),
     );
+  });
+
+  it('单击开一个预览 tab，双击把它固定；目录行双击什么都不开', async () => {
+    treeCache.value = new Map([
+      [ROOT, [entry({ name: 'src', kind: 'directory' }), entry({ name: 'a.ts' })]],
+    ]);
+    await waitFor(() => expect(container.textContent).toContain('a.ts'));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{"kind":"binary"}', { status: 200 })),
+    );
+
+    rowOf('a.ts').click();
+    expect(editors.value).toEqual([{ kind: 'file', path: 'a.ts', pinned: false }]);
+    // 浏览器的一次双击：click、click、dblclick。前两个各取一趟，dblclick 只置 pinned
+    rowOf('a.ts').click();
+    rowOf('a.ts').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    expect(editors.value).toEqual([{ kind: 'file', path: 'a.ts', pinned: true }]);
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);
+
+    rowOf('src').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    expect(editors.value).toHaveLength(1);
   });
 
   it('整行挂完整路径——名字会被 320px 裁掉，路径在树上找不回来', async () => {
@@ -317,15 +337,11 @@ describe('collapseAll()', () => {
 
   it('不动右侧选中态——折的是左栏在列什么，不是用户此刻在读什么', async () => {
     twoLevelsOpen();
-    fileState.value = {
-      status: 'ready',
-      path: 'src/web/App.tsx',
-      payload: { kind: 'text', content: '' },
-    };
+    openPinned('file', 'src/web/App.tsx');
     await waitFor(() => expect(container.textContent).toContain('App.tsx'));
 
     collapseAll();
     await waitFor(() => expect(container.textContent).not.toContain('App.tsx'));
-    expect(fileState.value?.path).toBe('src/web/App.tsx');
+    expect(activeEditorKey.value).toBe('file:src/web/App.tsx');
   });
 });

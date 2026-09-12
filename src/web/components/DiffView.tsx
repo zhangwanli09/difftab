@@ -14,13 +14,13 @@ import { useEffect, useRef } from 'preact/hooks';
 import type { DiffPayload } from '../../server/shared/protocol';
 import { renderDiff } from '../diff/render';
 import { diffOutputFormat } from '../state/layout';
-import { diffState, type RenameInfo } from '../state/store';
-import { PanelEmptyState } from './EmptyState';
+import { diffStates, type RenameInfo } from '../state/store';
 
 /**
  * 提示行的统一外观——加载中、错误、二进制、超大文件共用。**导出给文件视图共用**：
  * 两边说的都是「这里没有正文可看」，各写一份的症状是同一类提示在两个面板里内边距不一样。
- * 没选文件那一路不走它（`PanelEmptyState`）：那是面板空着，不是某个文件出了状况。
+ * 栏里一个 tab 都没有那一路不走它（`App` 画 `PanelEmptyState`）：那是面板空着，不是某个文件
+ * 出了状况。
  */
 export function Notice({ children }: { children: ComponentChildren }) {
   return <p class="p-4 text-sm text-description-foreground">{children}</p>;
@@ -101,43 +101,20 @@ function RenameNotice({ rename }: { rename: RenameInfo }) {
 }
 
 /**
- * 右侧面板顶上那条路径。**只由下面的 `Panel` 用**，两个视图因此拿到的是同一条——它是面板唯一
- * 的 chrome，各写一份的症状是两边不一样。
+ * 面板里唯一滚的那一层。**两个视图共用**，理由与 `Notice` 一字不差——它是 `App` 那个
+ * `<section>`（一列 flex：标签栏 `shrink-0` 占第一行，这一层 `min-h-0 flex-1 overflow-auto`）
+ * 的直接子项，类名必须逐字相同：各写一份时漂开的症状是「其中一个面板底下那半屏不跟着滚」，
+ * 不报错。滚动区里放什么由调用方给：diff 那侧是补丁与提示行，文件视图那侧还要多一层按内容
+ * 撑宽的盒子。
  *
- * **它排在滚动区域之外**：面板（`App` 那个 `<section>`）是一列 flex，本组件 `shrink-0` 占第一
- * 行，底下那层 `min-h-0 flex-1 overflow-auto` 才是滚的那一个。因此这里既不需要 `sticky top-0`
+ * 面板的 chrome 只有 `EditorTabs` 那一条，它排在滚动区域之外，因此这里既不需要 `sticky top-0`
  * 也不需要 `z-10`——从前两者是一对：diff2html 的行号列是 `position: absolute`、`Patch` 的宿主
  * div 又带着 `relative`，两者都排在横杠之后，而定位元素之间 z-index 为 auto 时按 DOM 顺序绘
  * 制，于是粘住的横杠会被滚上来的代码整条盖住；现在那些盒子被滚动容器的 `overflow` 裁掉，压根
- * 够不着这一层。
- *
- * **横向内边距因此就写在 `<h2>` 上**：文件视图那一路的长行会把正文撑得比面板宽（见
- * `FileView`），但横向滚动同样发生在下面那层容器里——横杠恒等于面板宽，底色与下边框天然铺满。
- * 从前它在滚动区内时得拆成两个盒子（底色归 `<h2>`、`sticky left-0` 与 `px-4` 归里面一个
- * `inline-block` 的 span），而内边距一旦留在 `<h2>` 上就要改写成 `left-4` 去抵消，那两个数字从
- * 此必须一直相等，谁也不会在改其中一个时想起另一个。
+ * 够不着标签栏。
  */
-function PathHeader({ path }: { path: string }) {
-  return (
-    <h2 class="shrink-0 border-b border-panel-border bg-title-bar-background px-4 py-2 font-mono text-sm break-all">
-      {path}
-    </h2>
-  );
-}
-
-/**
- * 面板的外壳：横杠 + 唯一滚的那一层。**两个视图共用**，理由与 `Notice` / `PathHeader` 一字不
- * 差——这两行是 `App` 那个 `<section>`（一列 flex）的直接子项，而它们的类名必须逐字相同：各写
- * 一份时漂开的症状是「其中一个面板底下那半屏不跟着滚」或「横杠被内容挤扁」，两样都不报错。
- * 滚动区里放什么由调用方给：diff 那侧是补丁与提示行，文件视图那侧还要多一层按内容撑宽的盒子。
- */
-export function Panel({ path, children }: { path: string; children: ComponentChildren }) {
-  return (
-    <>
-      <PathHeader path={path} />
-      <div class="min-h-0 flex-1 overflow-auto">{children}</div>
-    </>
-  );
+export function Panel({ children }: { children: ComponentChildren }) {
+  return <div class="min-h-0 flex-1 overflow-auto">{children}</div>;
 }
 
 function Payload({ path, payload }: { path: string; payload: DiffPayload }) {
@@ -152,27 +129,29 @@ function Payload({ path, payload }: { path: string; payload: DiffPayload }) {
   }
 }
 
-export function DiffView() {
-  // `diffState` 一个来源说清「选了谁」与「取到没有」：`selectedPath` 由它派生，
-  // 两者不可能错位，组件因此不需要一条防错位的分支（见 store.ts）
-  const state = diffState.value;
-  // 没选文件时说哪句、配哪枚图标的判据在 `PanelEmptyState` 里只写一次：它按侧栏档位定，
-  // 而不是按「此刻是哪个视图」——没选文件时右侧一直是本组件（切 tab 不动 `activePane`）
-  if (state === null) return <PanelEmptyState />;
+/**
+ * 活动 diff tab 的视图。`path` 由 `App` 从活动 tab 给，本组件按它读缓存。**在渲染体里读 map，
+ * 不用 `useComputed` 包一层**：`useComputed` 只在 signal 依赖变了时重算，`path` prop 换了而
+ * map 没写时它停在上一个 tab 的正文上——页面上就是「切了 tab 标题变了正文没变」。本组件只是
+ * 一个订阅者，每次 map 写入重渲染一次，代价可以忽略。
+ */
+export function DiffView({ path }: { path: string }) {
+  // 缓存里没有这一项就按加载中画：`openEditor` 与写 loading 在同一个同步 tick 里，产品里到不了，
+  // 兜底只为让组件对每个状态都有答案
+  const state = diffStates.value.get(path) ?? { status: 'loading', rename: null };
 
   return (
-    <Panel path={state.path}>
-      {/* 三个状态下都标注：标注属于「选了哪个条目」，与补丁取到没有无关。**它留在滚动区
-          里**：钉住的只有那条路径——这一行说的是这份补丁的来历，不是「我在看哪个文件」 */}
+    <Panel>
+      {/* 三个状态下都标注：标注属于「选了哪个条目」，与补丁取到没有无关。它跟着补丁一起滚
+          ——这一行说的是这份补丁的来历，不是「我在看哪个文件」，后者由标签栏答 */}
       {state.rename && <RenameNotice rename={state.rename} />}
       {state.status === 'loading' && <Notice>Loading…</Notice>}
       {state.status === 'error' && (
         <Notice>Could not load the diff for this file: {state.message}</Notice>
       )}
-      {/* key 让换文件走卸载重挂，两次 draw() 因此不可能落在同一个元素上 */}
-      {state.status === 'ready' && (
-        <Payload key={state.path} path={state.path} payload={state.payload} />
-      )}
+      {/* 换文件走的是卸载重挂——`App` 按 tab 键给本组件 `key`，本组件挂着期间 `path` 不会变，
+          两次 draw() 因此不可能落在同一个元素上 */}
+      {state.status === 'ready' && <Payload path={path} payload={state.payload} />}
     </Panel>
   );
 }

@@ -1,11 +1,12 @@
 // 前端状态。signals 而非 useState:SSE 刷新要在**不丢失当前选中文件与滚动位置**的前提下
-// 更新列表，状态必须活在组件树之外。
+// 更新列表，状态必须活在组件树之外。右侧那条标签栏的列表模型在 `editors.ts`，本文件只管
+// 「打开 / 切到 / 关掉一个 tab 要发哪些请求、缓存怎么进出」。
 //
 // **前端不内联任何 git 知识**：「这一侧算不算有改动」的判据在 `shared/protocol.ts`——
 // 那三个谓词看着像 `!== '.'` 的同义反复，其实不是，`?` 与 `U` 都不能按字面读。本文件只把
 // 它们组织成三组；「重命名」同理看 `oldPath` 而不比对路径。
 
-import { computed, signal } from '@preact/signals';
+import { batch, computed, type Signal, signal } from '@preact/signals';
 import {
   type DiffPayload,
   type FileEntry,
@@ -17,7 +18,19 @@ import {
   type RepoState,
   type StatusCode,
 } from '../../server/shared/protocol';
-import { getJson, latestWins, toMessage } from './http';
+import {
+  activeEditor,
+  type Editor,
+  type EditorKey,
+  editors,
+  focusEditor,
+  keyOf,
+  openEditor,
+  removeEditor,
+  renameEditor,
+} from './editors';
+import { getJson, latestWins, type Tickets, toMessage } from './http';
+import { removeFrom, setIn } from './immutable';
 import { refreshTree } from './tree';
 
 /** `GET /api/state` 的结果。null 表示还没拿到第一份。 */
@@ -38,15 +51,15 @@ export interface RenameInfo {
 }
 
 /**
- * 当前选中文件的 diff 请求状态。三态显式建模而不是「payload + 一个 loading 布尔」：后者在
+ * 一个 diff tab 的请求状态。三态显式建模而不是「payload + 一个 loading 布尔」：后者在
  * 切换文件的那一瞬间会同时持有上一个文件的 payload 与 loading=true，而写错的症状是**在 A
- * 文件的标题下显示 B 文件的 diff**——不报错，只是不对。每一态都带着 `path`，渲染前因此能
- * 确认「这份结果属于当前选中的文件」。
+ * 文件的标题下显示 B 文件的 diff**——不报错，只是不对。「这份结果属于哪个 tab」由它在
+ * `diffStates` 里的键回答，状态自己不再带一份 `path`。
  */
 export type DiffRequestState =
-  | { status: 'loading'; path: string; rename: RenameInfo | null }
-  | { status: 'ready'; path: string; rename: RenameInfo | null; payload: DiffPayload }
-  | { status: 'error'; path: string; rename: RenameInfo | null; message: string };
+  | { status: 'loading'; rename: RenameInfo | null }
+  | { status: 'ready'; rename: RenameInfo | null; payload: DiffPayload }
+  | { status: 'error'; rename: RenameInfo | null; message: string };
 
 /**
  * `FileEntry` 的重命名两个字段 → 一个可选对象。判据是 `oldPath` 存在，**不是比对新旧路径**
@@ -57,15 +70,43 @@ function renameOf(entry: FileEntry): RenameInfo | null {
   return { oldPath: entry.oldPath, score: entry.renameScore ?? null };
 }
 
-/** null 表示还没选过任何文件。 */
-export const diffState = signal<DiffRequestState | null>(null);
-
 /**
- * 当前选中的文件路径——**派生量，不是第二份状态**。两个来源就有「谁是真的」这个问题，组件
- * 里因此长出一条防两者错位的分支，而那条分支既走不到、又得让后来的人反复确认它走不到。存
- * path 而不是 `FileEntry` 对象：列表刷新后条目是新对象，存对象等于每次刷新都丢选中。
+ * 一种 tab 的按路径缓存：状态 map + 那一份「后发的说了算」的票。**按路径而不是按 tab 对象**：
+ * 列表刷新后条目是新对象，存对象等于每次刷新都丢选中；而 tab 的身份本来就是路径。Map 每次写
+ * 都换一份新的（signals 只认引用变化）——栏里就几个 tab，拷贝可以忽略。
+ *
+ * `forget` 把删缓存与**作废在途的那一次请求**成对做掉，调用方不展开：漏掉作废那一半的症状是
+ * 「关掉的 tab 偶尔又长回来」——关掉 X 之后、响应回来之前，那次请求回来照旧写进缓存，下次再
+ * 打开 X 先看到的就是那份过期的。票不 `release`：`latestWins` 那张表随本次会话触过的路径增长，
+ * 有界，不为它加一道清理。
  */
-export const selectedPath = computed(() => diffState.value?.path ?? null);
+interface PathCache<T> {
+  readonly states: Signal<ReadonlyMap<string, T>>;
+  readonly tickets: Tickets;
+  set(path: string, state: T): void;
+  forget(path: string): void;
+}
+
+function pathCache<T>(): PathCache<T> {
+  const states = signal<ReadonlyMap<string, T>>(new Map());
+  const tickets = latestWins();
+  return {
+    states,
+    tickets,
+    set(path, state) {
+      states.value = setIn(states.value, path, state);
+    },
+    forget(path) {
+      tickets.claim(path);
+      states.value = removeFrom(states.value, path);
+    },
+  };
+}
+
+const diffCache = pathCache<DiffRequestState>();
+
+/** 栏里每个 diff tab 的请求状态，按路径存。缺项即「没取过 / 已被作废」，视图按加载中画。 */
+export const diffStates = diffCache.states;
 
 /** 一个改动条目会有的状态码：`.` 不在其中——它是「这一侧没动」，不是一种改动。 */
 export type ChangeCode = Exclude<StatusCode, '.'>;
@@ -185,18 +226,11 @@ export async function loadState(): Promise<boolean> {
   }
 }
 
-/** diff 那一份。三份各有各的计数，互不影响。 */
-const diffTickets = latestWins();
+/** 一个 tab 归哪份缓存，按 `kind` 分派——这是 `kind` 在本文件里唯一要分支的地方。 */
+const cacheOf = (editor: Editor): PathCache<DiffRequestState> | PathCache<FileRequestState> =>
+  editor.kind === 'diff' ? diffCache : fileCache;
 
-/**
- * 清空右侧：置空 + **作废在途的那一次取 diff**，两件必须同时发生。成对写在这里而不是在调用
- * 方展开：漏掉作废那一半的症状是「清空偶尔不生效」——点开 X 之后、响应回来之前 X 从列表里
- * 没了，那次请求回来照旧写成 `ready`，右侧刚清掉又长回来。
- */
-function clearDiff(): void {
-  diffTickets.claim();
-  diffState.value = null;
-}
+const forget = (editor: Editor): void => cacheOf(editor).forget(editor.path);
 
 /**
  * 取**一个**文件的 diff（按文件懒加载）。两处不能省的细节：
@@ -208,57 +242,60 @@ function clearDiff(): void {
  *   冻结浏览器主线程数秒到数十秒
  */
 export async function loadDiff(entry: FileEntry): Promise<void> {
-  const ticket = diffTickets.claim();
-  const current = diffState.value;
+  const { path } = entry;
+  const ticket = diffCache.tickets.claim(path);
   const rename = renameOf(entry);
   /**
    * **同一个文件重新取时不回退到 loading 态**：`ready` 变 `loading` 会让渲染 diff 的那棵子树
    * 整个卸载，diff2html 画好的 DOM 连同滚动位置一起没了，补丁回来后从零重画。每个 SSE
-   * `change` 事件都会走这里，而要求刷新**不丢选中文件与滚动位置**。换文件才必须清空：留着
-   * 上一个文件的 payload，新标题下会短暂挂着旧 diff。
+   * `change` 事件与每次切回这个 tab 都会走这里，而要求刷新**不丢选中文件与滚动位置**。
    */
-  if (current?.status !== 'ready' || current.path !== entry.path) {
-    diffState.value = { status: 'loading', path: entry.path, rename };
-  }
+  if (diffStates.value.get(path)?.status !== 'ready')
+    diffCache.set(path, { status: 'loading', rename });
   try {
-    const query = new URLSearchParams({ path: entry.path });
+    const query = new URLSearchParams({ path });
     if (entry.oldPath) query.set('oldPath', entry.oldPath);
     const payload = await getJson<DiffPayload>(`/api/diff?${query}`);
-    // 用户在等待期间点了别的文件——这份结果已经是过期的那一个
-    if (!diffTickets.isCurrent(ticket)) return;
-    diffState.value = { status: 'ready', path: entry.path, rename, payload };
+    // 这个路径上又发了一次、或 tab 已被关掉——这份结果已经是过期的那一个
+    if (!diffCache.tickets.isCurrent(ticket, path)) return;
+    diffCache.set(path, { status: 'ready', rename, payload });
   } catch (cause) {
-    if (!diffTickets.isCurrent(ticket)) return;
-    diffState.value = { status: 'error', path: entry.path, rename, message: toMessage(cause) };
+    if (!diffCache.tickets.isCurrent(ticket, path)) return;
+    diffCache.set(path, { status: 'error', rename, message: toMessage(cause) });
   }
 }
 
 /**
- * 选中一个文件并拉它的 diff。列表只把 `FileEntry` 交回来，「取 diff 要带哪些参数」留在本文件
- *——组件里再写一遍就等于把双路径要求复制了一份，而两份里漏改一份是不会报错的。
+ * 在变更列表上点一个文件：开（或切到）它的 diff tab 并拉 diff。列表只把 `FileEntry` 交回来，
+ * 「取 diff 要带哪些参数」留在本文件——组件里再写一遍就等于把双路径要求复制了一份，而两份里
+ * 漏改一份是不会报错的。
  *
- * diff 的错误**不写进 `loadError`**：那条横幅说的是「列表取不到」，一个文件的 diff 失败不该
- * 让整个页面看起来坏掉，它显示在右侧自己的位置上。点当前这一行照样重新取，上面那条「同一个
- * path 不回退 loading」正好让它不闪。
+ * 开出来的一律是预览 tab；固定归 `pinEditor`，双击那一路只调它、不再取一趟——双击是 click、
+ * click、dblclick 三个事件，前两个已经各取过一次。被顶掉的预览 tab 由 `openEditor` 交回来，这
+ * 里把它忘掉——「这次会不会顶掉预览」只在那一处判。diff 的错误**不写进 `loadError`**：那条横
+ * 幅说的是「列表取不到」，一个文件的 diff 失败不该让整个页面看起来坏掉，它显示在右侧自己的位
+ * 置上。点当前这一行照样重新取，上面那条「同一个 path 不回退 loading」正好让它不闪。
  */
 export function selectFile(entry: FileEntry): void {
-  // 与 `openFile` 对称：点变更列表就把右侧切回 diff。少了这一句，从文件视图点一条变更
-  // 时列表高亮动了而右边纹丝不动——不报错，只是像点空了
-  activePane.value = 'diff';
+  const replaced = openEditor('diff', entry.path);
+  if (replaced !== null) forget(replaced);
   void loadDiff(entry);
 }
 
 /**
- * 一次 SSE `change` 之后要重取的东西。三条不显然的地方：
+ * 一次 SSE `change` 之后要重取的东西。四条不显然的地方：
  *
- * - **打开着的 diff 也要重取**，不能只刷列表：文件内容变了而列表条目没变（还是那个 `1 .M`）
+ * - **活动的 diff tab 也要重取**，不能只刷列表：文件内容变了而列表条目没变（还是那个 `1 .M`）
  *   是最常见的形态，只刷列表的话右侧停在旧补丁上，而页面看不出任何异样
  * - **先 state 后 diff，且用新列表里的条目**：重命名条目取 diff 必须带 `oldPath`，而相似度
  *   是会变的。**列表没换上新的就整个不取**——`loadState()` 失败时 `repoState` 留着的是上一
  *   份快照，照着它找条目取 diff 就是用过期的 `oldPath`（重命名退化成全新增），而它不报错
- * - **选中的文件从列表里消失了（改动被撤销、或被 commit 掉了），就连选中态一起清空**：判据是
- *   左栏此刻正在断言这些改动不存在，而右栏还在展示其中一份——工作区整个变干净时最刺眼。
+ * - **收编要过一遍栏里全部 diff tab，不只活动那一个**：改动被撤销、或被 commit 掉了的 tab
+ *   关掉——判据是左栏此刻正在断言这些改动不存在，而右栏还挂着其中一份；只看活动 tab 时后台
+ *   tab 里那份补丁照样留着，切过去看到的是一份左栏已经说不存在的东西，且它再也不会被刷新。
  *   **重命名不算消失**：那一行还在左栏列着，跟着它走到新路径上即可
+ * - **只重取活动那一个 tab，其余切过去时再取**（`activateEditor` 每次都真的去取）：agent 跑动
+ *   期间事件密集，挂着 10 个 diff tab 时每个事件就是 10 趟 `git diff`
  */
 export async function refresh(): Promise<void> {
   /**
@@ -268,34 +305,80 @@ export async function refresh(): Promise<void> {
    * **但只给看得见的那一半付钱。** 两处都不是白省：树那一次是 `1 + 展开层数` 个请求、每个
    * 再起三个 `ls-files` 子进程；文件那一次是一次磁盘读加最多 5MB 的 JSON 往返。而 agent
    * 跑动期间这条路每次文件变更都走一遍。看不见时不取也不会留下陈旧内容——切回 `Files` 由
-   * `App` 那个 tab effect 补一次，而右侧要换成文件视图只有 `openFile()` 一条路，它自己就取。
+   * `App` 那个 tab effect 补一次，而后台的 file tab 切过去时 `activateEditor` 自己就取。
    */
   if (activeTab.value === 'files') refreshTree();
-  const openFile = fileState.value;
-  // **打开着的文件也要重取**，与「打开着的 diff 也要重取」同源：内容变了而树没变是最常见的
+  const before = activeEditor.value;
+  // **活动的文件也要重取**，与「活动的 diff 也要重取」同源：内容变了而树没变是最常见的
   // 形态，只刷树的话右侧停在旧内容上，而页面看不出任何异样
-  if (openFile !== null && activePane.value === 'file') void loadFile(openFile.path);
+  if (before?.kind === 'file') void loadFile(before.path);
 
   if (!(await loadState())) return;
-  const path = selectedPath.value;
-  if (path === null) return;
   const files = repoState.value?.files ?? [];
-  // 第二次 find 是**跟着重命名走**：改名之后选中的那个路径成了新列表里那一行的 `oldPath`，
-  // 按 `path` 找必然扑空，而改动并没有消失。拿到的是**新条目**，双路径齐全，不会走到「重命名
-  // 退化成全新增」那条路。**两趟而不是一趟带 `||` 的谓词**：A→B 改名之后又在 A 位置新建一个
-  // 文件时，两条都能命中同一个 `path`，而该选的是路径就是 A 的那条
-  const entry =
-    files.find((file) => file.path === path) ?? files.find((file) => file.oldPath === path);
-  if (entry === undefined) return clearDiff();
-  await loadDiff(entry);
+  /**
+   * 对着**收编之前那份列表**走一遍（`editors.value` 在循环开始时就取定了，改名并入掉的 tab 不会
+   * 被再访一次）。第二次 find 是**跟着重命名走**：改名之后那个路径成了新列表里那一行的
+   * `oldPath`，按 `path` 找必然扑空，而改动并没有消失。拿到的是**新条目**，双路径齐全，不会
+   * 走到「重命名退化成全新增」那条路。**两趟而不是一趟带 `||` 的谓词**：A→B 改名之后又在 A
+   * 位置新建一个文件时，两条都能命中同一个 `path`，而该跟的是路径就是 A 的那条。
+   */
+  batch(() => {
+    for (const editor of editors.value) {
+      if (editor.kind !== 'diff') continue;
+      const entry =
+        files.find((file) => file.path === editor.path) ??
+        files.find((file) => file.oldPath === editor.path);
+      if (entry === undefined) {
+        // 用列表层的 `removeEditor` 而不是 `closeEditor`：后者会顺手重取新邻居，而下面本来
+        // 就要取一次活动 tab，两处各取一趟就是一次事件两趟请求
+        forget(editor);
+        removeEditor(keyOf(editor));
+      } else if (entry.path !== editor.path) {
+        // 旧路径上的缓存与在途请求一并忘掉，新路径由下面（活动时）或切过去时再取
+        forget(editor);
+        renameEditor('diff', editor.path, entry.path);
+      }
+    }
+  });
+
+  // 活动的 file tab 上面已经取过：收编只动 diff tab，活动的 file tab 前后是同一个。其余（活动的
+  // diff tab；活动的 diff tab 被关、file tab 顶上）都要取一次
+  const after = activeEditor.value;
+  if (after === null || (after.kind === 'file' && before?.kind === 'file')) return;
+  await refetch(after);
 }
 
 /**
- * 右侧面板此刻在展示哪一种东西。**它与侧栏在列什么是两件事**：切 tab 换的是「左边列什么」，
- * 不是「用户此刻在读什么」——VS Code 里换侧栏视图同样不会换掉编辑器。写成「切到 Files 就
- * 清空右侧」时页面看着完全正常，只是每瞄一眼目录树就丢掉正在读的那份 diff。
+ * 切到栏里的一个 tab，并**重取它**：后台 tab 在 SSE 时不重取，切过去时它手上那份是离开那一刻
+ * 的旧内容。缓存的那份照常显示、新的回来再换掉——「同一个 path 已 ready 不回退 loading」那条
+ * 让它不闪。diff 那一路要在新列表里找条目（`oldPath` 要从那里拿），找不到就不取——收编那一步
+ * 已经把消失的 tab 关掉了，这里找不到只能是两次刷新之间的窗口，下一次 SSE 会关掉它。
  */
-export const activePane = signal<'diff' | 'file'>('diff');
+export function activateEditor(key: EditorKey): void {
+  const editor = focusEditor(key);
+  if (editor !== null) void refetch(editor);
+}
+
+/** 重取一个 tab。diff 那一路条目取不到时什么都不发，回一个已完成的 promise。 */
+function refetch(editor: Editor): Promise<void> {
+  if (editor.kind === 'file') return loadFile(editor.path);
+  const entry = repoState.value?.files.find((file) => file.path === editor.path);
+  return entry === undefined ? Promise.resolve() : loadDiff(entry);
+}
+
+/**
+ * 关掉一个 tab：从栏里移除、忘掉它的缓存与在途请求；关的是活动 tab 时顶上来的邻居也要重取
+ *——它是后台 tab，手上那份是旧的（理由同 `activateEditor`）。判据是「活动键换了人」，与
+ * `refresh()` 同一个写法；写成「活动键 ≠ 被关的键」时关一个后台 tab 也会白取一趟。
+ */
+export function closeEditor(key: EditorKey): void {
+  const before = activeEditor.value;
+  const removed = removeEditor(key);
+  if (removed === null) return;
+  forget(removed);
+  const after = activeEditor.value;
+  if (after !== null && after !== before) void refetch(after);
+}
 
 /**
  * 侧栏此刻列的是哪一档。默认 `changes`——工具存在的理由仍是「瞥一眼改了什么」，目录树是顺带
@@ -305,52 +388,51 @@ export const activePane = signal<'diff' | 'file'>('diff');
 export const activeTab = signal<'changes' | 'files'>('changes');
 
 /**
- * 只读文件内容的请求状态。形状与 `DiffRequestState` 逐字同构，理由也一样：三态显式建模而不是
- * 「payload + 一个 loading 布尔」，每一态都带着 `path`，渲染前因此能确认「这份结果属于当前
- * 打开的文件」——写错的症状是**在 A 文件的标题下显示 B 文件的内容**，不报错，只是不对。
+ * 只读文件内容的请求状态。形状与 `DiffRequestState` 同构，理由也一样：三态显式建模而不是
+ * 「payload + 一个 loading 布尔」——写错的症状是**在 A 文件的标题下显示 B 文件的内容**，不报错，
+ * 只是不对。
  */
 export type FileRequestState =
-  | { status: 'loading'; path: string }
-  | { status: 'ready'; path: string; payload: FilePayload }
-  | { status: 'error'; path: string; message: string };
+  | { status: 'loading' }
+  | { status: 'ready'; payload: FilePayload }
+  | { status: 'error'; message: string };
 
-/** null 表示还没在树上点过任何文件。 */
-export const fileState = signal<FileRequestState | null>(null);
+const fileCache = pathCache<FileRequestState>();
 
-/** 只读全文那一份。 */
-const contentTickets = latestWins();
+/** 栏里每个 file tab 的请求状态，按路径存；形状与 `diffStates` 同，理由同。 */
+export const fileStates = fileCache.states;
 
 /**
  * 取一个文件的只读全文。
  *
  * **同一个文件重新取时不回退到 loading 态**，与 `loadDiff` 一字不差：一回退，渲染那棵子树整个
- * 卸载，高亮好的 DOM 连同滚动位置一起没了。每个 SSE `change` 事件都会走这里。
+ * 卸载，高亮好的 DOM 连同滚动位置一起没了。每个 SSE `change` 事件与每次切回这个 tab 都会走这里。
  */
 export async function loadFile(path: string): Promise<void> {
-  const ticket = contentTickets.claim();
-  if (fileState.value?.status !== 'ready' || fileState.value.path !== path) {
-    fileState.value = { status: 'loading', path };
-  }
+  const ticket = fileCache.tickets.claim(path);
+  if (fileStates.value.get(path)?.status !== 'ready') fileCache.set(path, { status: 'loading' });
   try {
     const query = new URLSearchParams({ path });
     const payload = await getJson<FilePayload>(`/api/file?${query}`);
-    // 用户在等待期间点了别的文件——这份结果已经是过期的那一个
-    if (!contentTickets.isCurrent(ticket)) return;
-    fileState.value = { status: 'ready', path, payload };
+    // 这个路径上又发了一次、或 tab 已被关掉——这份结果已经是过期的那一个
+    if (!fileCache.tickets.isCurrent(ticket, path)) return;
+    fileCache.set(path, { status: 'ready', payload });
   } catch (cause) {
-    if (!contentTickets.isCurrent(ticket)) return;
-    fileState.value = { status: 'error', path, message: toMessage(cause) };
+    if (!fileCache.tickets.isCurrent(ticket, path)) return;
+    fileCache.set(path, { status: 'error', message: toMessage(cause) });
   }
 }
 
 /**
- * 在树上点开一个文件：取它的内容，并**把右侧切到文件视图**。两件必须同时发生——只取不切的
- * 症状是点了没反应（内容取回来了，右边还画着上一份 diff）。
+ * 在树上点开一个文件：开（或切到）它的 file tab 并取内容。两件必须同时发生——只取不切的症状
+ * 是点了没反应（内容取回来了，右边还画着上一份 diff）。
  *
  * 与 `selectFile` 分开而不是合成一个：同一个文件从两处点进去看到的是两样东西（补丁 / 全文），
- * 合成一个就得再补一条「这次是从哪点进来的」，而那与 `activePane` 是同一个信息的两处实现。
+ * 在栏里是两个 tab；合成一个就得再补一条「这次是从哪点进来的」，而那与 tab 的 `kind` 是同一个
+ * 信息的两处实现。
  */
 export function openFile(path: string): void {
-  activePane.value = 'file';
+  const replaced = openEditor('file', path);
+  if (replaced !== null) forget(replaced);
   void loadFile(path);
 }

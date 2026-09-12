@@ -14,7 +14,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BranchState } from '../../../src/server/shared/protocol';
 import { App } from '../../../src/web/components/App';
 import { BranchStatus } from '../../../src/web/components/BranchStatus';
-import { diffState, loadError, repoState } from '../../../src/web/state/store';
+import { loadError, repoState } from '../../../src/web/state/store';
+import { resetEditors } from './helpers';
 
 const branch = (partial: Partial<BranchState> = {}): BranchState => ({
   head: 'main',
@@ -45,7 +46,7 @@ afterEach(() => {
   // signals 活在组件树之外，不清就会漏进下一个用例
   repoState.value = null;
   loadError.value = null;
-  diffState.value = null;
+  resetEditors();
 });
 
 /** 渲染后的可见文本，空白归一——断言压的是「用户看到什么」，不是 DOM 结构。 */

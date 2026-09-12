@@ -8,7 +8,8 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { RepoState } from '../../../src/server/shared/protocol';
 import { connectEvents, MAX_RETRIES, RECONNECT_MS, STALE_MS } from '../../../src/web/state/events';
-import { diffState, loadError, repoState } from '../../../src/web/state/store';
+import { loadError, repoState } from '../../../src/web/state/store';
+import { resetEditors } from './helpers';
 
 const CONNECTING = 0;
 const OPEN = 1;
@@ -98,7 +99,7 @@ afterEach(() => {
 beforeEach(() => {
   sources.length = 0;
   repoState.value = null;
-  diffState.value = null;
+  resetEditors();
   loadError.value = null;
   vi.stubGlobal('EventSource', FakeEventSource);
 });

@@ -8,9 +8,8 @@
 import { useMemo } from 'preact/hooks';
 import type { FilePayload } from '../../server/shared/protocol';
 import { getHljs, languageOf } from '../diff/hljs';
-import { fileState } from '../state/store';
+import { fileStates } from '../state/store';
 import { Notice, Panel, tooLargeNotice } from './DiffView';
-import { PanelEmptyState } from './EmptyState';
 
 /**
  * 正文 + 行号。
@@ -85,15 +84,15 @@ function Payload({ path, payload }: { path: string; payload: FilePayload }) {
   }
 }
 
-export function FileView() {
-  const state = fileState.value;
-  // 与 diff 那侧共用同一块空态。这一路在产品里到不了（为什么在 `PanelEmptyState` 上说了一次），
-  // 留着是让本组件对每个状态都有答案
-  if (state === null) return <PanelEmptyState />;
+/** 活动 file tab 的视图。按 `path` 在渲染体里读缓存，不用 `useComputed`——理由在 `DiffView`。 */
+export function FileView({ path }: { path: string }) {
+  // 缓存里没有这一项就按加载中画：产品里到不了（`openEditor` 与写 loading 同一个 tick），兜底只
+  // 为让本组件对每个状态都有答案
+  const state = fileStates.value.get(path) ?? { status: 'loading' };
 
   /**
    * **`w-max` 是行号槽留在原地的前提，不是排版偏好。** 长行会把正文撑得比面板宽，而横向滚动
-   * 发生在标题栏底下那层滚动容器上。这一层若是普通块盒，它的宽度只有面板那么宽：行号槽的
+   * 发生在标签栏底下那层滚动容器上。这一层若是普通块盒，它的宽度只有面板那么宽：行号槽的
    * `sticky left-0` 于是一点滑动余量都没有（粘不粘都是同一个位置），横向一滚整列行号跟着内容
    * 滑出视口。`w-max` 让这一层长到与最长那行齐平，它才有地方可粘。**从前与它并写的
    * `min-w-full` 已经去掉**：那半条挡的是「短文件下标题栏缩成半截」，而标题栏搬出滚动区之后
@@ -106,16 +105,15 @@ export function FileView() {
    */
   const wide = state.status === 'ready' && NEEDS_WIDE_BOX[state.payload.kind];
 
-  // 按内容撑宽的那个盒子在滚动容器**里面**（外壳那两层由 `Panel` 给），它只管正文
+  // 按内容撑宽的那个盒子在滚动容器**里面**（滚动那一层由 `Panel` 给），它只管正文
   return (
-    <Panel path={state.path}>
+    <Panel>
       <div class={wide ? 'w-max' : ''}>
         {state.status === 'loading' && <Notice>Loading…</Notice>}
         {state.status === 'error' && <Notice>Could not load this file: {state.message}</Notice>}
-        {/* key 让换文件走卸载重挂，两份正文因此不可能落在同一棵子树上 */}
-        {state.status === 'ready' && (
-          <Payload key={state.path} path={state.path} payload={state.payload} />
-        )}
+        {/* 换文件走的是卸载重挂——`App` 按 tab 键给本组件 `key`，两份正文因此不可能落在同一棵
+            子树上 */}
+        {state.status === 'ready' && <Payload path={path} payload={state.payload} />}
       </div>
     </Panel>
   );

@@ -53,7 +53,7 @@
 |---|---|
 | git 封装层、status/diff 解析、二进制与体积闸、git 异常状态、目录树的 `ls-files`、只读读文件 | `docs/design/git.md` |
 | 文件监听、三档策略、自动刷新、轮询兜底 | `docs/design/watch.md` |
-| 前端组件与 signals、界面文案、页面骨架、变更列表、侧栏 tab、文件树与文件视图、标签页标题、logo / favicon / 品牌资产 | `docs/design/web.md` |
+| 前端组件与 signals、界面文案、页面骨架、变更列表、侧栏 tab、文件树、标签页标题、logo / favicon / 品牌资产 | `docs/design/web.md`；右侧面板、编辑器标签页（预览 / 固定 / 关闭 / SSE 收编）、文件视图读 `docs/design/editors.md` |
 | diff2html 渲染、hljs 清单、版式切换、产物体积 | `docs/design/diff-render.md` |
 | Tailwind token、样式层叠与主题、`--d2h-*` 覆写 | `docs/design/style.md` |
 | CLI 入口与 Node 下限、进程生命周期与单实例、HTTP/SSE 协议、token 与 CSP | `docs/design/server.md` |
@@ -131,7 +131,8 @@
 - **变更列表一行的文件名与目录必须同住一个 `truncate` span**（名在前、目录在后）——拆成平级 flex 子项会让两段按底边对齐，页面上只是「看着没对齐」
 - **文件视图的容器不得加 `hljs` 类**——那条规则是 unlayered 的，会压过 Tailwind 的 `bg-editor-background`，症状只是「文件视图底色跟页面对不上」；15 条 token 规则不挂容器类照样生效
 - **变更列表树视图的折叠态记 collapsed 集合、键带分组 id**——记 expanded 时 SSE 新冒出来的目录默认收起，不带分组时折 Staged 里的 `src` 连 Unstaged 里的一起没了
-- **切侧栏 tab 不得改 `activePane`**——写成「切到 Files 就清空右侧」时页面看着正常，只是每瞄一眼目录树就丢掉正在读的 diff
+- **切侧栏 tab / 切版式 / 全部折叠都不得改 `activeEditor`**——写成「切到 Files 就清空右侧」时页面看着正常，只是每瞄一眼目录树就丢掉正在读的 diff
+- **SSE 后的收编要过一遍栏里全部 diff tab，不只活动那一个**——只看活动 tab 时后台 tab 里被撤销的改动照样留着，切过去看到的是一份左栏已断言不存在的补丁，且它再也不会被刷新
 - **`Diff2HtmlUI` 的 `colorScheme` 必须传 `'light'`**——传 `'auto'` 会让深色一条都不生效，而页面只是「深色不太像 VS Code」
 - **界面文案一律英文**（`docs/`、代码注释、测试名仍中文）——冒烟里那条「前端产物 CJK 计数为 0」拦得住，但**后端那侧拦不到**（`sendError` 与各 `*Error` 的字面量）
 - **`@theme` 里没人引用的 token 会被 Tailwind 裁掉**，引用名写错则产物里留下无定义的 `var()`、属性静默变 unset（两者都由 `check:css` 拦）
