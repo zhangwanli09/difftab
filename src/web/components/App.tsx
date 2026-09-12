@@ -19,6 +19,7 @@ import { FileTree } from './FileTree';
 import { FileView } from './FileView';
 import { Icon } from './Icon';
 import { IconButton } from './IconButton';
+import { DifftabMark } from './Logo';
 import { ThemeToggle } from './ThemeToggle';
 import { WatchBadge } from './WatchBadge';
 
@@ -169,12 +170,13 @@ export function App() {
     <div class="flex h-screen bg-editor-background text-editor-foreground">
       {/* 左栏自己是一列：顶栏、错误条与状态条都 shrink-0 钉住，中间那层列表独自滚 */}
       <aside class="flex w-80 shrink-0 flex-col border-r border-panel-border bg-side-bar-background">
-        {/* 顶栏写的是项目名（工作区根目录名），不是产品名——这一栏回答的是「我在看哪个
-            项目」。**`truncate` 落在装名字的那个 span 上，不是 header 上**：顶栏是 flex 容器，
+        {/* 顶栏最左是品牌符号（16px、`aria-hidden`，名字由标签页标题给），然后写的是项目名
+            （工作区根目录名），不是产品名——这一栏回答的是「我在看哪个项目」。**`truncate` 落在装名字的那个 span 上，不是 header 上**：顶栏是 flex 容器，
             而 `truncate` 写在容器上不起作用，子项的自动最小尺寸照样把它撑开（长名漫过右边框
             压到 diff 面板上），而 `truncate` 字样还在原地、看着像是已经处理过了。
             `min-w-0` 是那个 span 能真的裁的前提；开关 `shrink-0`，被裁的永远是名字 */}
         <header class="flex shrink-0 items-center gap-2 border-b border-panel-border bg-title-bar-background px-3 py-2 text-sm font-medium">
+          <Icon icon={DifftabMark} class="shrink-0" />
           <span class="min-w-0 flex-1 truncate">{state?.repoName || PRODUCT_NAME}</span>
           <ThemeToggle />
         </header>

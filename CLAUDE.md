@@ -38,6 +38,7 @@
 | 测试仓库 fixture 生成 | `pnpm fixtures`（默认写 `test/fixtures/repos/`；测试自己调 `makeFixtures()` 写临时目录） |
 | 其余门禁（冷启动 ≤300ms / 体积 / 样式层叠 / 发布产物 / bin mode） | `pnpm bench:startup`、`size`、`check:css`、`check:pack`、`check:bin`——各自挡什么见 `docs/gates.md` |
 | 全局安装验收（打包 → `npm i -g` → 用 PATH 上那个名字跑通 → 卸掉） | **先 `pnpm build`**，再 `pnpm check:global`；要求全局**尚未**装着 difftab，否则脚本直接拒跑 |
+| 重生成 logo 资产（`assets/*.svg`、社交预览 PNG、`index.html` 的 favicon） | `node scripts/logo.mjs`——不是 pnpm script；PNG 那两步要本机有 Chrome，没有就只写 SVG |
 | inotify 配额耗尽时降级为轮询（Linux + 免密 sudo） | **先 `pnpm build`**，再 `pnpm check:inotify`；**不进冒烟套件**，非 Linux 直接 SKIP |
 
 `fixtures` / `bench:startup` / `size` / `check:css` / `check:global` / `check:inotify` **只是别名**——脚本本体必须是零依赖纯 JS、可由 `node <路径>` 直接执行，因为它们要在没有 pnpm、没有 `node_modules` 的 CI matrix 机器上跑。`check:pack` / `check:bin` 需要 pnpm，只在 CI 的 build 作业跑。
@@ -52,7 +53,7 @@
 |---|---|
 | git 封装层、status/diff 解析、二进制与体积闸、git 异常状态、目录树的 `ls-files`、只读读文件 | `docs/design/git.md` |
 | 文件监听、三档策略、自动刷新、轮询兜底 | `docs/design/watch.md` |
-| 前端组件与 signals、界面文案、页面骨架、变更列表、侧栏 tab、文件树与文件视图、标签页标题 | `docs/design/web.md` |
+| 前端组件与 signals、界面文案、页面骨架、变更列表、侧栏 tab、文件树与文件视图、标签页标题、logo / favicon / 品牌资产 | `docs/design/web.md` |
 | diff2html 渲染、hljs 清单、版式切换、产物体积 | `docs/design/diff-render.md` |
 | Tailwind token、样式层叠与主题、`--d2h-*` 覆写 | `docs/design/style.md` |
 | CLI 入口与 Node 下限、进程生命周期与单实例、HTTP/SSE 协议、token 与 CSP | `docs/design/server.md` |
@@ -192,6 +193,7 @@
 - **semver：0.x 保留破坏性余地（尤其 CLI 参数与端口/token 行为），1.0.0 是结论不是起点**——等验收全通过且三端真机验过再发
 - **不建 `CHANGELOG.md`**：GitHub Releases 的 notes 就是变更日志
 - **README 的特性列表只收差异点，不是功能清单**——加了新功能默认**不动** README，除非它本身就是个卖点；功能的事实来源是 `docs/spec.md` 的功能范围表，机制在 `docs/design/`
+- **改 logo 只改 `src/web/brand/geometry.mjs` 再 `node scripts/logo.mjs`**——几何或 token 改了没重跑由 `logo.test.ts` 拦；社交预览 PNG 得重新手工上传到 GitHub Settings
 - **真要改 README 则两份一起改**：`README.zh-CN.md` **不是自动生成的**，只改英文那份不会有任何门禁变红
 - **贡献者规范在 `CONTRIBUTING.md` 与 `.github/`**，产品承诺（只读、Non-goals）在那里也写了一遍给外部读者——改第 6 节时要跟着改
 - **未完事项见 `docs/history.md`**（两件都等首个真实 Linux 桌面，都不阻塞发布）
