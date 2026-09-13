@@ -1,5 +1,5 @@
 <h1 align="center">
-  <img src="assets/mark.svg" width="40" align="middle" alt="">
+  <img src="assets/mark.svg" width="40" align="top" alt="">
   difftab
 </h1>
 
