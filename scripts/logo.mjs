@@ -80,18 +80,22 @@ export const svgDataUri = (svg) =>
  */
 export function socialSvg() {
   const FONT = "ui-sans-serif, -apple-system, 'Segoe UI', 'Noto Sans', sans-serif";
-  // 符号 24 网格 ×8 = 192px，与 132px 的粗体产品名之间留 40px，整组水平居中
+  // 符号的可见包围盒（网格单位）从几何自己算：间距与居中按它量，不按 24 网格——网格右侧那 4.5
+  // 单位是留白，按网格量时它会叠进间距，40px 就成了 76px
+  const markL = Math.min(...MARK.map(([, a]) => Number(a.x))),
+    markR = Math.max(...MARK.map(([, a]) => Number(a.x) + Number(a.width)));
+  // 符号 ×8 后可见宽 120px，色条右缘与 132px 的粗体产品名之间留 40px，整组水平居中
   const scale = 8,
-    markW = 24 * scale,
+    markW = (markR - markL) * scale,
     gap = 40,
-    nameW = 410,
+    nameW = 390, // 「difftab」在 Chrome 里的实测字宽，居中靠它
     x0 = (1280 - (markW + gap + nameW)) / 2,
     y0 = 180;
   return (
     `<svg ${XMLNS} viewBox="0 0 1280 640" width="1280" height="640">` +
     '<title>difftab — See what your AI coding agent changed, in one tab</title>' +
     `<rect width="1280" height="640" fill="${COLORS.darkBg}"/>` +
-    `<g transform="translate(${x0} ${y0}) scale(${scale})" color="${COLORS.dark}">${markShapes()}</g>` +
+    `<g transform="translate(${x0 - markL * scale} ${y0}) scale(${scale})" color="${COLORS.dark}">${markShapes()}</g>` +
     `<text x="${x0 + markW + gap}" y="${y0 + 142}" fill="${COLORS.dark}" font-family="${FONT}" font-weight="700" font-size="132" letter-spacing="-4">difftab</text>` +
     `<text x="640" y="470" text-anchor="middle" fill="${COLORS.darkMuted}" font-family="${FONT}" font-size="30">See what your AI coding agent changed — in one tab.</text>` +
     '</svg>\n'
