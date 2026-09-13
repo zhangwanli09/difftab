@@ -104,7 +104,7 @@
 
 ## 品牌标识
 
-**符号是「一段 diff hunk」：三条圆角色条，上下文（灰）、删除（红）、新增（绿），没有外框，没有字标。** 24 网格（与 Lucide 的界面图标同一坐标系），三条各高 4、`rx=1.5`、左缘齐在 `x=3`，宽 10 / 15 / 12，整体 4..20 以 12 为中心。由填充不由描边——16px 下 2 单位描边的线稿糊成一团，色块还是三条。为什么从「标签页里两行」换成这版、颜色为什么固定、字标为什么退役，见 [`../decisions.md` 的「前端渲染与体积」](../decisions.md#前端渲染与体积)。
+**符号是「一段 diff hunk」：三条圆角色条，上下文（灰）、删除（红）、新增（绿），没有外框，没有字标。** 24 网格（与 Lucide 的界面图标同一坐标系），三条各高 4、`rx=1.5`、左缘齐在 `x=4.5`，宽 10 / 15 / 12，包围盒 4.5..19.5 × 4..20、横竖都以 12 为中心——左缘是按包围盒算出来的，不是「代码行从左起」的习惯值，写 3 时整体偏左 1.5 单位。由填充不由描边——16px 下 2 单位描边的线稿糊成一团，色块还是三条。为什么从「标签页里两行」换成这版、颜色为什么固定、字标为什么退役，见 [`../decisions.md` 的「前端渲染与体积」](../decisions.md#前端渲染与体积)。
 
 - **几何只有一份，在 `brand/geometry.mjs`**（纯 JS + 旁边一份 `.d.mts`）：`components/Logo.tsx` 从它拿符号，`scripts/logo.mjs` 从它拼出 `assets/` 下的 SVG 与 `index.html` 里的两条 favicon。写成 `.mjs` 是因为脚本零依赖、import 不了 TS；反过来让组件 import 脚本，等于把一个会拉起 Chrome 的模块打进前端产物。改符号只改这一份再 `node scripts/logo.mjs`——它重写 `assets/*.svg`，找得到 Chrome 时再渲出社交预览 PNG 与 favicon 的 PNG 兜底并回写 `index.html` 两个标记之间的那段。**几何或 token 改了却没重跑，红的是 `test/unit/web/logo.test.ts`**：它拿 `index.html` 里现成的那条 SVG favicon 与脚本此刻会生成的比。
 - **红绿是固定的品牌色，明暗两档不切，常量与几何同住 `geometry.mjs`，不进 `app.css`。** 删除 `#e5484d`、新增 `#30a46c`，选的是在纯白与 `#1f1f1f` 上对比都够的中等明度；于是 favicon 的 PNG 兜底、社交预览、README 头图三处的红绿逐字节相同。不用 `--color-git-added` / `--color-git-deleted`：那两个 token 是给文件名文字调的，铺成色块亮档偏泥、暗档偏粉。也不另立 token：`@theme` 里 CSS 没引用的 token 会被 Tailwind 裁掉，而它们在 CSS 里本来就没有引用处——唯一的读者是 `geometry.mjs` 与脚本；放进去只是给 `check:css` 多两个「深浅共用同一取值」的计数。**只有上下文那条跟主题走**：`fill: currentColor` + `fill-opacity: 0.35`，组件里跟着顶栏文字色翻深浅；独立 SVG 文件在根元素写 `color` 并内嵌一条 `@media (prefers-color-scheme: dark)` 在 `--color-editor-foreground` 的两档之间切，脚本生成时用正则从 `app.css` 的 `light-dark()` 里取值，不另抄一份。

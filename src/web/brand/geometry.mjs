@@ -18,8 +18,10 @@
 const MARK_COLORS = { removed: '#e5484d', added: '#30a46c' };
 
 /**
- * 符号：一段 diff hunk——上下文、删除、新增三条圆角色条，左缘齐在 x=3，整体 4..20 以 12 为中心。
- * 形状与 lucide 的 IconNode 一致（`[tag, attrs][]`），可直接喂给 `createLucideIcon`。
+ * 符号：一段 diff hunk——上下文、删除、新增三条圆角色条，左缘齐在 x=4.5、最长那条到 19.5，包围盒
+ * 横竖都以 12 为中心。左缘是按包围盒算出来的：写成「代码行从左起」的 3 时整体偏左 1.5 单位，
+ * 96px 的 README 头图上就是 6px。形状与 lucide 的 IconNode 一致（`[tag, attrs][]`），可直接喂给
+ * `createLucideIcon`。
  *
  * 每条自带 `stroke: 'none'`：Lucide 把 `stroke="currentColor" stroke-width="2"` 写在 `<svg>` 上
  * 给描边图标用，rect 会继承它、被描上一圈 2 单位的边，而这一圈在 16px 下只是「色条比预想的
@@ -27,7 +29,7 @@ const MARK_COLORS = { removed: '#e5484d', added: '#30a46c' };
  */
 const bar = (y, width, fill) => [
   'rect',
-  { x: '3', y: String(y), width: String(width), height: '4', rx: '1.5', ...fill, stroke: 'none' },
+  { x: '4.5', y: String(y), width: String(width), height: '4', rx: '1.5', ...fill, stroke: 'none' },
 ];
 
 export const MARK = [
