@@ -17,6 +17,15 @@
 
 ## 发布日志
 
+### 0.3.0（2026-09-13）
+
+- **拿 minor 号，判据与 0.2.1 那条不同、要写清楚**：0.2.1 把「全落在界面层的 feat」收进 patch，本版改动同样没碰端点、CLI 参数与只读承诺，但编辑器标签页改的是**交互模型**（单击预览、双击固定、多个文件同时打开、SSE 后逐 tab 收编），用户原来的用法（点一下换一个）在新版里行为不同——这不是加一个开关，是换了一层交互，按 0.x 的口径值一个 minor。判据于是有两条：新端点，或交互模型变了；纯加开关、纯样式仍是 patch。
+- **CI 卡住的第三种样子：不红、也不结束**。发布 PR 上 `build` 与两个版本守卫几秒内绿了，其后 13 个 matrix job 在 `queued` 里躺了 68 分钟、`runner_name` 一直是 null，三种平台全部如此；4 分钟前 main 上同样的 job 排队只用 3–7 秒，GitHub 状态页全程写着 All Systems Operational。`gh run cancel` 再 `gh run rerun` 当场解开，重跑 5 分钟绿。`RELEASING.md` 那条「`build` 绿了说明不了 matrix」原本讲的是红，这回是**永远不落地**——`gh run watch` 会一直等，看着像自己的命令挂了。
+- **`pnpm publish` 成功后紧接着 `npm view` 会回 404，看着像没发出去**：直接打 `--registry=https://registry.npmjs.org` 查，`dist-tags.latest` 仍是 0.2.2、`difftab@0.3.0` 回 `No match found for version`，40 秒后才同步过来。判据是多等一分钟再下结论，不是重发。
+- **README 那条人读的数字检查这次漏了，且漏在发布之前**：正文写 gzip 72KB，本版 `pnpm size` 实测 74.4KB（编辑器标签页与树视图加的），发布前只核了「有没有与新功能相左的描述」没核数字，发出去的 tarball 里那份 README 于是带着旧数字。0.2.2 那条写着「这类检查有没有用只有隔版之后才验得出来」——这一版验出来的是它**靠人记着才会跑**。修正随本条一起进 main，下版随包。冷启动那个数字仍准（约 40ms，实测中位 43.5ms）。
+- **「先建分支再提交」第四次走通**：本地 `main` 上一个提交都没有，`gh pr merge --rebase --delete-branch` 快进本地 `main`，两侧 tree 哈希相同，tag 打在远端那一份上。
+- **发布后四条验收一次过**：`npm view` 回 0.3.0 且 `dist.tarball` 在 npmjs 上、全局装完底下没有传递依赖、在一个新建的临时仓库里 `npx difftab@0.3.0 --no-open` 打印 URL 并按 `DIFFTAB_IDLE_MS` 自行退出、Release 建在 tag `v0.3.0` 上。
+
 ### 0.2.2（2026-09-09）
 
 - **README 那条靠人读的检查第二次真的拦下了东西**：正文写着 gzip 71KB，本版 `pnpm size` 实测 72.0KB。`size` 只管 120KB 上限、`bench:startup` 只管 300ms 上限，README 正文里那两个**具体**数字两道门禁都不查。0.2.0 立下这条时它拦的是 68→71，0.2.1 那次跑出绿（数字当时仍准）——**这类检查有没有用，同样只有隔版之后才验得出来**。顺带一条会骗人一程的线索：同一次构建里 `vite build` 打印的 gzip 是 74.32KB，而 `size` 报 72.0KB（两者压缩级别不同）；README 从头到尾用的是 `size` 那份口径，抄错哪一份都不会有任何门禁响。
