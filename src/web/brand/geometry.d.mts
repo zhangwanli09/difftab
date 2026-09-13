@@ -3,13 +3,4 @@
 
 import type { IconNode } from 'lucide-preact';
 
-export const MARK_FOOT_Y: number;
 export const MARK: IconNode;
-export const WORDMARK_BASELINE: number;
-export const WORDMARK: {
-  paths: string[];
-  dot: { x: number; y: number; size: number };
-  width: number;
-};
-export const WORDMARK_X: number;
-export const MARK_BASELINE_SHIFT: number;
