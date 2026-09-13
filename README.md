@@ -1,6 +1,7 @@
 <p align="center">
-  <img src="assets/logo.svg" width="384" alt="difftab">
+  <img src="assets/mark.svg" width="96" alt="">
 </p>
+<h1 align="center">difftab</h1>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/difftab"><img src="https://img.shields.io/npm/v/difftab" alt="npm"></a>

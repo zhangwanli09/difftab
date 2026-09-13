@@ -100,7 +100,7 @@
 
 - **界面图标统一到 Lucide，装包由构建期 tree-shake，不再手抄 path**：原先那 6 枚抄自两个上游、两种版式（Octicons 的 16 + `fill` 两枚，Heroicons v2 的 24 + `stroke` 四枚），同一个界面里两种质感并存，`stroke-width` 还在两处不一致（1.5 / 2）。统一时**连「复制 path 而不装包」一起翻掉**，是因为那条的理由在 Lucide 下不再成立：它的 `git-branch`（5 个子元素）、`sun`（4）、`monitor`（4）**不是单条 path**，手抄意味着把「一个常量字符串」升级成「一段 JSX 子树」，而那正是装包本该省掉的东西。**体积实测反而更省**：`lucide-preact@1.41.0`（ISC，零运行时依赖，`sideEffects: false`）在 barrel 入口下由 Rollup tree-shake，6 枚组件连同 `createLucideIcon` 运行时合计 **+1.4 KB 明文 / +0.5 KB gzip**（211.4 → 212.8 KB，门禁 350 KB），与原先六条 path 的 **1,335 B** 基本持平（343 + 326 + 25 + 268 + 193 + 180），CSS 一字未增——「装包会把体积顶上去」这半条顾虑实测不成立。换来的还有一处**静态可查的增强**：状态条与侧栏 `Changes` 那个 tab 共用同一枚分支图标，从前靠共用一条导出的 path 字符串（两份漂开时静默画成两个图形），现在是两处 import 同一个具名组件，拼错即编译错误。
 
-- **logo 的几版是画出来看过才定的，不是推出来的**（headless Chrome 渲 16 / 24 / 32 / 64 / 160 px，亮暗两档并列）：第一版照 Lucide 的圆头 + 3 单位圆角画一个拱形标签页、里面放 `±`，**读出来是墓碑**（拱形外框 + 顶上一个十字），宽扁一点像游戏手柄，换成方框加 `+` 又像急救箱；里面换成 `≠` 能把语义救回来，但圆头 + 圆角 + 正圆 bowl 三样叠起来整套仍软。改方头 + 直角之后 `+`/`−` 与两行横线都成立，`≠` 反倒多余。定稿是「直角标签页 + 一短一长两行」——两行是 diff 最省的画法，语义靠标签页外形给。favicon 的两条 data URI 实测合计约 1 KB，进 `index.html` 不进任何体积门禁的匹配范围。
+- **logo 的几版是画出来看过才定的，不是推出来的**（headless Chrome 渲 16 / 24 / 32 / 64 / 160 px，亮暗两档并列）：第一版照 Lucide 的圆头 + 3 单位圆角画一个拱形标签页、里面放 `±`，**读出来是墓碑**（拱形外框 + 顶上一个十字），宽扁一点像游戏手柄，换成方框加 `+` 又像急救箱；里面换成 `≠` 能把语义救回来，但圆头 + 圆角 + 正圆 bowl 三样叠起来整套仍软。改方头 + 直角之后 `+`/`−` 与两行横线都成立，`≠` 反倒多余。那一版定稿是「直角标签页 + 一短一长两行」——两行是 diff 最省的画法，语义靠标签页外形给。favicon 的两条 data URI 实测合计约 1 KB，进 `index.html` 不进任何体积门禁的匹配范围。**第二轮换成「三条 hunk」，同样是四个方向并排渲出来才定的**（实心负形方块 / 三条 hunk / 圆润并排视图 / 半空半实方框，各带 64 / 32 / 16 px 与标签页、顶栏的模拟）：去掉外框之后语义直接由红绿给，不再靠剪影解释「这是一个标签页」，而 16px 下三条色块比 2 单位描边稳得多。颜色试了六套：直接读 `--color-git-deleted` / `--color-git-added` 亮档偏泥、暗档偏粉——那两个 token 是给文件名文字调的，铺成色块饱和度不够；GitHub 那对红绿、橙青、低饱和、单色加一枚蓝各有取舍，定的是**一套固定色明暗不切**（`#e5484d` / `#30a46c`），省掉整层「两档描边色」的机制，只让上下文那条跟 `currentColor`。**字标一并退役**：界面里本来只用符号，README 与 npm 页面本就是文字，社交预览的名字由 Chrome 用系统字体渲进 PNG——那几十行几何字标唯一的读者是 README 头图。
 
 ### 被排除的做法
 
@@ -136,8 +136,9 @@
 | 变更列表的树视图复用 `state/tree.ts` 的 `expandedDirs` | 那份默认收起、键是仓库路径、`refreshTree` 按它发请求——混进去每折一个变更目录就多一趟 `ls-files`；且同一个目录在 Staged 与 Unstaged 两组里是两棵子树，键不带分组 id 时折一处连带折另一处 |
 | 变更列表的版式开关写 `localStorage` | 后端 `listen(0)` 端口随机，`localStorage` 按 origin（含端口）隔离，写了也只活到同一实例的刷新（`difftab:theme` 已经这样，见 [`history.md`](history.md) 的「未完事项」）。为一份跨不了实例的偏好搭一套读写 try/catch 不划算，与 `activeTab` 同一形状的内存 signal 即可 |
 | 监听 `storage` 事件做多标签页同步 | difftab 一个仓库只跑一个实例、正常只有一个标签页，为此接一条跨标签通道是给一个不存在的场景付代价 |
-| logo 字标用字体：SVG `<text>`、Google Fonts、或先转曲再入库 | `<text>` 在 GitHub 的 `<img>` 沙箱里拿不到网页字体，各端各画各的；转曲要一份字体工具链，而仓库连 devDependencies 里都没有；Google Fonts 是外链。七个小写字母全由圆角方 + 竖 + 横拼出，几何在 `src/web/brand/geometry.mjs` 里几十行，与符号同一套描边规格 |
+| logo 带字标（几何拼字，或 SVG `<text>`、Google Fonts、转曲入库） | 界面只用符号，README 与 npm 页面本就是文字，字标唯一的读者是 README 头图——为它养几十行几何不值。用字体的几条各自也不成立：`<text>` 在 GitHub 的 `<img>` 沙箱里拿不到网页字体，各端各画各的；转曲要一份字体工具链，而仓库连 devDependencies 里都没有；Google Fonts 是外链。于是 `assets/mark.svg` 里一个字都没有；社交预览的 `<text>` 只在 Chrome 截成的 PNG 里定型，不受那条沙箱限制 |
 | README 头图用 `<picture>` 配亮暗两份 SVG | 同一组坐标要养两份文件，只为让 GitHub 的手动主题也能命中；单文件内嵌 `prefers-color-scheme` 已覆盖跟随系统的多数人，npm 包页面也照常认 |
+| 品牌红绿进 `app.css` 当 token（`--color-brand-*`） | 它们在 CSS 里没有引用处（组件的 `fill` 写在 IconNode 上，脚本用正则读文件），而 `@theme` 里没人引用的 token 会被 Tailwind 裁掉，脚本读到的与产物里的从此是两回事；两个不进 CSS 的常量与几何同住 `geometry.mjs` 就够，脚本与组件都从那里读 |
 | favicon 走静态文件（`/favicon.svg` 进 `assets.ts` 白名单） | 白名单 Map、冒烟里的 `WEB_ASSETS`、Vite 的产物拷贝各补一处，而 CSP 早已放行 `img-src data:`，两条 data URI 合计约 1 KB、连 `size` 门禁的匹配范围都不在 |
 | 只给 SVG favicon 不给 PNG 兜底 | Safari 不认 `<link rel="icon" type="image/svg+xml">`，标签页上是默认地球；32×32 的 PNG 几百字节 |
 | 统一到 Heroicons v2 或 Codicons | **Heroicons 整套没有任何 git 图标**（就 Iconify 的 316 枚清单逐条核对），而分支图标是这个产品最核心的语义——统一到它等于把唯一一枚不可替代的图标永久留在混用状态。Codicons 是 VS Code 自家那套、视觉取向最贴，但**没有 sun / moon / desktop**（651 枚里只有一枚 `color-mode`），三档主题开关画不出来；它还是 CC BY 4.0 而非 MIT / ISC，是本仓库唯一一处要求署名的依赖。Tabler（6184 枚，MIT）全覆盖、也够格，落选只因 Lucide 的线性观感更接近 VS Code，两者差别不构成理由 |
