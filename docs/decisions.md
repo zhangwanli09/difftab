@@ -130,6 +130,10 @@
 | 后台 tab 用一个 stale 标记记「SSE 后没重取」，激活时按标记决定取不取 | 多一份要在收编、改名、关闭各处维护的状态，而它省下的只是「切过去时内容没变也发一趟」那一次请求。`activateEditor` 每次都真的去取，与目录树的 `loadDir` 同一取向 |
 | 关掉活动 tab 后按最近使用顺序（MRU）选下一个 | 要多维护一份访问序列，换来的只是关掉一个刚从别处切过来的 tab 时少切一次。右邻居优先、否则左邻居，一眼能预期 |
 | 同一路径的 diff 与全文共用一个 tab、从哪边点开就切成哪种 | 要多记一份「这个 tab 此刻显示哪种」，切换时另一种的滚动位置也跟着丢；VS Code 里 diff editor 与普通 editor 本来就是两个 tab |
+| 编辑器标签栏用 `overflow-x-hidden` 去掉滚动条 | `scrollIntoView` 照样能把活动 tab 滚进来，但用户自己滚不了——溢出之后前面的 tab 只能靠关掉后面的才够得着。`scrollbar-width: none` 只是不画滚动条，滚动能力一样不少 |
+| 编辑器标签栏外面再套一层 wrapper，栏留 `border-b`、tab 留 `-mb-px` | 多一层 div，且 tablist 不再是面板 `<section>` 的直接子项（`app.test.tsx` 钉着这条）。栏自己画一条 inset 阴影当分隔线，tab 的 `border-b` 落在 padding box 最后 1px 上盖过它，一层就够（`divider-b`） |
+| 侧栏那行 tab 保留「行 `border-b` + tab `-mb-px`」的教科书写法，只有编辑器标签栏改 inset 阴影 | 同一种视觉（下划线盖在通栏分隔线上）两套机制、两段互相矛盾的注释与两段文档，动其中一行的人得同时记住两套；两行都走 `divider-b` 后 `-mb-px` 在仓库里一处都不剩 |
+| 分隔线写成内联的 `shadow-[inset_0_-1px_var(--color-panel-border)]` | Tailwind 的 `shadow-*` 会把整套 shadow / ring 变量机制拖进产物：实测 CSS +2.2 KB（14 条 `@property` 注册、`@layer properties` 兜底块翻倍、五段式 `box-shadow` 里四段是 `0 0 #0000` 空转），吃掉 40 KB 门禁三成余量；一条 `@utility divider-b { box-shadow: … }` 是 200 字节，测试也能钉一个名字而不是一段任意值的拼写 |
 | 标签栏底下再留一行完整路径（面包屑） | 每个文件的名字在栏里与栏下各写一遍；完整路径挂在 tab 的 `title` 上已经够用，而多一行就少一行正文 |
 | `DiffView` / `FileView` 用 `useComputed(() => diffStates.value.get(path))` 按 prop 取缓存 | `@preact/signals` 的 `useComputed` 只在 signal 依赖变了时重算，`path` prop 换了而 map 没写时它停在上一个 tab 的正文上——页面上就是「切了 tab 标题变了正文没变」。视图只是一个订阅者，在渲染体里直接读 |
 | 变更列表的树视图把折叠态记成 expanded 集合 | 默认全展开时每个新目录都得在建树时补登记一次，漏了就默认收起——SSE 刷新新冒出来的目录在页面上只是「刚改的那几个文件没显示出来」，而 agent 跑动期间新目录是常态。记 collapsed 集合则空集即全展开，新目录零登记 |

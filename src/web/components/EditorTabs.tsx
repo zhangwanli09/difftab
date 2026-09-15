@@ -14,13 +14,16 @@ import { splitForDisplay } from './ChangeList';
 import { Icon } from './Icon';
 import { IconButton } from './IconButton';
 
-// 外壳：下划线机制与侧栏那两枚 tab 同一套（`-mb-px border-b` 压在栏的 `border-b` 上，选中
-// `border-editor-foreground`），外加 `bg-editor-background` 让活动 tab 与底下的正文连成一片
-// ——VS Code 活动 tab 的底色就是编辑器底色。类名不与 `App.tsx` 的 `TAB_CLASS` 共用一个常量：
-// 那一套连焦点环一起写在按钮上，这里焦点环归里面的 tab 按钮、底色与下划线归外壳，两处的切分
-// 不同。`shrink-0`：tab 多了往横向滚，不压扁。`group`：关闭按钮的显隐跟着整个 tab 的悬停走。
-// 手型光标不在这里写：两枚都是 `<button>`，`app.css` 那条 `@layer base` 规则收了它们。
-const TAB_CLASS = 'group -mb-px flex shrink-0 items-center border-b text-sm';
+// 外壳：下划线是自己的 `border-b`（选中 `border-editor-foreground`、未选中透明），盖在栏那条
+// `divider-b` 上——外壳被 flex 拉满栏高（不写 `h-full`，flex 默认就拉），这条边于是落在栏
+// padding box 的最后 1px 上，与那条 inset 阴影同一个位置；不用负外边距往下压，压出去的那 1px
+// 会被滚动容器裁掉（为什么整套机制是这样，写在 `app.css` 那条 `@utility divider-b` 上）。外加
+// `bg-editor-background` 让活动 tab 与底下的正文连成一片——VS Code 活动 tab 的底色就是编辑器
+// 底色。类名不与 `App.tsx` 的 `TAB_CLASS` 共用一个常量：那一套连焦点环一起写在按钮上，这里焦点
+// 环归里面的 tab 按钮、底色与下划线归外壳，两处的切分不同。`shrink-0`：tab 多了往横向滚，不压
+// 扁。`group`：关闭按钮的显隐跟着整个 tab 的悬停走。手型光标不在这里写：两枚都是 `<button>`，
+// `app.css` 那条 `@layer base` 规则收了它们。
+const TAB_CLASS = 'group flex shrink-0 items-center border-b text-sm';
 
 function Tab({ editor, active }: { editor: Editor; active: boolean }) {
   const key = keyOf(editor);
@@ -54,7 +57,9 @@ function Tab({ editor, active }: { editor: Editor; active: boolean }) {
         onAuxClick={(event) => {
           if (event.button === 1) closeEditor(key);
         }}
-        class="flex items-center gap-1.5 py-1.5 pl-3 focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus-border"
+        // `self-stretch` 不是 `py-*`：点击区要铺满整栏高度，外壳 div 自己不接事件，按钮矮一截
+        // 就是上下各一条点不到的死区
+        class="flex items-center gap-1.5 self-stretch pl-3 focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus-border"
       >
         {/* 种类图标是同一路径两个 tab 之间唯一的视觉差别，与空态那两枚同源 */}
         <Icon icon={editor.kind === 'diff' ? FileDiff : FileCode} class="shrink-0" />
@@ -83,11 +88,13 @@ function Tab({ editor, active }: { editor: Editor; active: boolean }) {
 
 export function EditorTabs() {
   const active = activeEditorKey.value;
+  // `h-9` 与左栏顶栏同一个值（理由写在那边）；`scrollbar-none`：横向滚照旧、只是不画滚动条——
+  // 画出来会把栏撑高；通栏那条分隔线是 `divider-b`，tab 自己的 `border-b` 盖在它上面（见 TAB_CLASS）
   return (
     <div
       role="tablist"
       aria-label="Open editors"
-      class="flex shrink-0 overflow-x-auto border-b border-panel-border bg-title-bar-background"
+      class="flex h-9 shrink-0 overflow-x-auto scrollbar-none divider-b bg-title-bar-background"
     >
       {editors.value.map((editor) => {
         const key = keyOf(editor);

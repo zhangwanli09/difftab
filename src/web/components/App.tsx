@@ -53,11 +53,13 @@ const TABS = [
 // 正用着它——两处同色时，「选中的是哪个 tab」与「焦点在哪个 tab 上」在页面上化成同一种蓝。
 // 与选中图标本身同色，一枚图标加它底下那条线于是连成一体。
 //
-// **`-mb-px` 让这条边压在容器那条 `border-b` 上**：两条边本来上下相邻而不是重叠（按钮的画在
-// 自己 border box 内、容器的画在其外），于是选中那一段是 1px 前景色 + 1px 分隔线的双线，比未
-// 选中处厚一倍——不报错，只是那条线看着没做细
+// **这条边盖在行那条 `divider-b` 上**：行的通栏线是 inset 阴影、画在它 padding box 内侧的最后
+// 1px，而 tab 是行里最高的孩子、底边正贴着那一行——两条线同一个位置，选中那一段就是单线。行的
+// 线要是写成 `border-b`（画在 padding box 之外），两条边上下相邻，选中那一段是 1px 前景色 + 1px
+// 分隔线的双线，比未选中处厚一倍——不报错，只是那条线看着没做细（整套机制为什么是这样，写在
+// `app.css` 那条 `@utility divider-b` 上：它与右侧编辑器标签栏共用，全仓库只此一种）
 const TAB_CLASS =
-  '-mb-px flex border-b px-3 py-1.5 focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus-border';
+  'flex border-b px-3 py-1.5 focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus-border';
 
 /**
  * 变更列表的列表 / 树切换，按**当前**版式查出要画的那枚。图标与文案表达的是**目标**视图（照
@@ -78,14 +80,14 @@ function SideBarTabRow() {
     // 把它当成第三个 tab 报出来——按钮做成 tablist 的兄弟，两件事就不冲突了。写成孩子时页面上
     // 完全看不出来，只有读屏里多一个无名控件。
     //
-    // 这一串类名逐条是：**通栏那条 `border-b` 归这一层**（留在 tablist 上时它只有两枚 tab 那么
-    // 宽）；**不给纵向内边距**——选中 tab 那条 `-mb-px` 压的正是它这条边，中间垫上 padding 就压
-    // 不着了；`items-center` 是给那枚矮按钮的（tab 连图标带 `py-1.5` 有 28px，`IconButton` 只有
+    // 这一串类名逐条是：**通栏那条线（`divider-b`）归这一层**（留在 tablist 上时它只有两枚 tab
+    // 那么宽）；**不给纵向内边距**——tab 的 `border-b` 要落在这一行的最后 1px 上才盖得住那条线，
+    // 中间垫上 padding 就错开成双线了；`items-center` 是给那枚矮按钮的（tab 连图标带 `py-1.5` 有 28px，`IconButton` 只有
     // 20px），行高因此仍由 tab 定，按钮进出时这一行一个像素都不动；**`pr-3` 而不是 `px-3`**——tab
     // 得贴着左边缘起排，要对齐的本来也只有右边那 12px，而顶栏那个主题开关与这枚是同一个
     // `IconButton`，右 gutter 一致时两枚图标恰好落在同一条竖线上；`justify-between` 而不是给按钮
     // 加 `ml-auto`：`IconButton` 不收 `class`，不必为这一处扩它。
-    <div class="flex shrink-0 items-center justify-between border-b border-panel-border pr-3">
+    <div class="flex shrink-0 items-center justify-between divider-b pr-3">
       {/* tablist/tab 三件套：两个按钮控制的是同一片区域，只靠视觉差异说不清这件事 */}
       <div class="flex" role="tablist">
         {TABS.map((tab) => (
@@ -176,8 +178,10 @@ export function App() {
             （工作区根目录名），不是产品名——这一栏回答的是「我在看哪个项目」。**`truncate` 落在装名字的那个 span 上，不是 header 上**：顶栏是 flex 容器，
             而 `truncate` 写在容器上不起作用，子项的自动最小尺寸照样把它撑开（长名漫过右边框
             压到 diff 面板上），而 `truncate` 字样还在原地、看着像是已经处理过了。
-            `min-w-0` 是那个 span 能真的裁的前提；开关 `shrink-0`，被裁的永远是名字 */}
-        <header class="flex shrink-0 items-center gap-2 border-b border-panel-border bg-title-bar-background px-3 py-2 text-sm font-medium">
+            `min-w-0` 是那个 span 能真的裁的前提；开关 `shrink-0`，被裁的永远是名字。
+            **高度显式钉 `h-9`，不写纵向内边距**：右侧编辑器标签栏钉的是同一个值，两条底边才落在
+            同一条水平线上——靠内容撑高时两边各按各的行高与内边距算，差出来的几像素不报错 */}
+        <header class="flex h-9 shrink-0 items-center gap-2 border-b border-panel-border bg-title-bar-background px-3 text-sm font-medium">
           <Icon icon={DifftabMark} class="shrink-0" />
           <span class="min-w-0 flex-1 truncate">{state?.repoName || PRODUCT_NAME}</span>
           <ThemeToggle />

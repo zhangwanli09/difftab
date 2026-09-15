@@ -26,6 +26,8 @@ const tabByTitle = (title: string): HTMLButtonElement => {
 const shellOf = (tab: HTMLElement) => tab.parentElement as HTMLElement;
 const closeOf = (tab: HTMLElement) =>
   shellOf(tab).querySelector('button[aria-label="Close"]') as HTMLButtonElement;
+/** 标签栏本身（tablist）。 */
+const strip = () => container.querySelector('[role="tablist"]');
 
 const mouse = (type: string, button = 0) => new MouseEvent(type, { bubbles: true, button });
 
@@ -84,9 +86,7 @@ describe('EditorTabs', () => {
     expect(tab.tagName).toBe('BUTTON');
     expect(tab.querySelector('button')).toBeNull();
     expect(closeOf(tab).parentElement?.parentElement).toBe(shellOf(tab));
-    expect(container.querySelector('[role="tablist"]')?.getAttribute('aria-label')).toBe(
-      'Open editors',
-    );
+    expect(strip()?.getAttribute('aria-label')).toBe('Open editors');
   });
 
   it('aria-selected 跟着活动键走', () => {
@@ -196,12 +196,22 @@ describe('EditorTabs', () => {
     scrolled.mockRestore();
   });
 
-  it('栏横向滚、tab 不压扁——happy-dom 里只能钉类名', () => {
+  it('栏横向滚但不画滚动条、tab 不压扁——happy-dom 里只能钉类名', () => {
     pinned('diff', 'src/a.ts');
-    const strip = container.querySelector('[role="tablist"]');
-    for (const cls of ['shrink-0', 'overflow-x-auto']) {
-      expect(strip?.classList.contains(cls)).toBe(true);
+    // 栏高与顶栏相等那条在 app.test.tsx 里钉，这里不重复钉一个字面量
+    for (const cls of ['shrink-0', 'overflow-x-auto', 'scrollbar-none']) {
+      expect(strip()?.classList.contains(cls)).toBe(true);
     }
     expect(shellOf(tabByTitle('src/a.ts')).classList.contains('shrink-0')).toBe(true);
+  });
+
+  it('分隔线是栏的 divider-b，tab 不 -mb-px——栏是滚动容器，伸进 border 带的那 1px 会被裁掉', () => {
+    pinned('diff', 'src/a.ts');
+    // 按教科书写法「修回去」（栏 border-b + tab -mb-px）时下划线看不见，还多出 1px 纵向可滚溢出
+    expect(strip()?.classList.contains('divider-b')).toBe(true);
+    expect(strip()?.classList.contains('border-b')).toBe(false);
+    const shell = shellOf(tabByTitle('src/a.ts'));
+    expect(shell.classList.contains('border-b')).toBe(true);
+    expect(shell.classList.contains('-mb-px')).toBe(false);
   });
 });

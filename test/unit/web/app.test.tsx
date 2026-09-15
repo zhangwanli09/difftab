@@ -253,6 +253,17 @@ describe('tab 行右端那枚「全部折叠」', () => {
     expect(collapseButton()?.parentElement?.className).toContain('pr-3');
   });
 
+  it('通栏那条线是行的 divider-b，tab 不 -mb-px——与右侧编辑器标签栏同一套压线机制', async () => {
+    await openFilesTab();
+    const row = collapseButton()?.parentElement;
+    expect(row?.classList.contains('divider-b')).toBe(true);
+    expect(row?.classList.contains('border-b')).toBe(false);
+    for (const tab of tabList()?.querySelectorAll('[role="tab"]') ?? []) {
+      expect(tab.classList.contains('border-b')).toBe(true);
+      expect(tab.classList.contains('-mb-px')).toBe(false);
+    }
+  });
+
   it('排在滚动容器之外——塞进 nav 里按钮会跟着树滚走', async () => {
     await openFilesTab();
     expect(container.querySelector('nav')?.contains(collapseButton())).toBe(false);
@@ -359,6 +370,16 @@ describe('右侧面板', () => {
     expect(tabStrip()?.nextElementSibling).toBe(scroller());
     expect(tabStrip()?.textContent).toContain('app.ts');
     expect(section()?.textContent).not.toContain('Select a file on the left');
+  });
+
+  it('标签栏与左栏顶栏钉同一个高度——漂开时不报错，只是两条底边看着不齐', async () => {
+    openBinaryDiff('src/app.ts');
+    render(<App />, container);
+    await waitFor(() => expect(tabStrip()).not.toBeNull());
+
+    const heightOf = (el: Element | null | undefined) => el?.className.match(/\bh-\d+\b/)?.[0];
+    expect(heightOf(header())).toBeDefined();
+    expect(heightOf(tabStrip())).toBe(heightOf(header()));
   });
 
   it('切到同种的另一个 tab 时滚动容器换新的——不然 B 会从 A 的滚动偏移量打开', async () => {
