@@ -9,7 +9,7 @@ import { useMemo } from 'preact/hooks';
 import type { FilePayload } from '../../server/shared/protocol';
 import { getHljs, languageOf } from '../diff/hljs';
 import { fileStates } from '../state/store';
-import { Notice, Panel, tooLargeNotice } from './DiffView';
+import { ErrorDetail, Notice, Panel, tooLargeNotice } from './DiffView';
 
 /**
  * 正文 + 行号。
@@ -80,7 +80,7 @@ function Payload({ path, payload }: { path: string; payload: FilePayload }) {
     case 'binary':
       return <Notice>Binary file — contents are not shown.</Notice>;
     case 'too-large':
-      return <Notice>{tooLargeNotice(payload, 'show')}</Notice>;
+      return <Notice>{tooLargeNotice(payload, 'file')}</Notice>;
   }
 }
 
@@ -110,7 +110,12 @@ export function FileView({ path }: { path: string }) {
     <Panel>
       <div class={wide ? 'w-max' : ''}>
         {state.status === 'loading' && <Notice>Loading…</Notice>}
-        {state.status === 'error' && <Notice>Could not load this file: {state.message}</Notice>}
+        {state.status === 'error' && (
+          <Notice>
+            Could not load this file
+            <ErrorDetail message={state.message} />
+          </Notice>
+        )}
         {/* 换文件走的是卸载重挂——`App` 按 tab 键给本组件 `key`，两份正文因此不可能落在同一棵
             子树上 */}
         {state.status === 'ready' && <Payload path={path} payload={state.payload} />}

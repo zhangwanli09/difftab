@@ -130,9 +130,7 @@ describe('FileView', () => {
 
     // 行数那一路的体积可能只有几百 KB，按 MB 取整会显示「0 MB」
     ready('wide.txt', { kind: 'too-large', size: 300 * 1024, reason: 'lines' });
-    await waitFor(() =>
-      expect(container.textContent).toContain('Too many lines to show (300 KB in total)'),
-    );
+    await waitFor(() => expect(container.textContent).toContain('Too many lines to show (300 KB)'));
   });
 
   it('换文件时新正文换掉旧的（卸载重挂那半归 App 按 tab 键给的 key，在 app.test 里钉）', async () => {

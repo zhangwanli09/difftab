@@ -27,6 +27,17 @@ export function Notice({ children }: { children: ComponentChildren }) {
 }
 
 /**
+ * 出错提示的第二段：原因逐字放在引导句底下，**不拼进同一句话里**。原因的来处不止一个——后端
+ * `sendError` 的片段（`file no longer exists`）、浏览器自己的 `TypeError: Failed to fetch`、
+ * 500 那一路转发来的 `ENOENT: …`——大小写与句点各成一派，接在「Could not load …: 」后面
+ * 总有一种读起来像两句话撞在一起，而前端管不到那几个来处。同一条消息在左栏错误条与目录树里
+ * 是裸着显示的，因此也不能反过来把兜底改成小写片段去迁就冒号。
+ */
+export function ErrorDetail({ message }: { message: string }) {
+  return <span class="mt-1 block font-mono break-words">{message}</span>;
+}
+
+/**
  * 把一段 unified diff 交给 diff2html 渲染。
  *
  * **同一个文件拿到新补丁**（SSE 刷新）时容器留在原地，靠 `[patch]` 依赖重跑本 effect，
@@ -65,24 +76,31 @@ export function formatSize(bytes: number): string {
 }
 
 /**
- * 拒绝预览的原因(`reason`)。两个触发口的文案必须不同：行数那一路的体积可能只有几百 KB，单说
+ * 拒绝渲染的原因(`reason`)。两个触发口的文案必须不同：行数那一路的体积可能只有几百 KB，单说
  * 「文件过大」会让用户对着一个不大的数字发愣。**具体阈值（5MB / 50,000 行）刻意不写在这里**
  *——它属 server/git 那一侧的判据，复述一遍就是第二份事实来源。
  *
- * `verb` 是两个面板唯一的差别：diff 那侧说的是「不预览这份补丁」，文件视图说的是「不显示
- * 这份正文」。**其余（含 `size > 0` 那道）必须共用**——各写一份时漂开的正是那一道。
+ * `view` 是两个面板唯一的差别，而且差在**主语**不在动词：diff 那侧 5MB 卡的是**补丁字节**，
+ * `size` 却是文件体积——一个 3 MB 的文件整个重写，补丁 6 MB 被掐断，说「File too large (3 MB)」
+ * 的同时 Files 档里同一个文件照常显示，用户看到的是自相矛盾。所以 diff 那侧说的是「这份 diff
+ * 太大」，括号里注明「文件是多大」；文件视图说的才是「这个文件太大」。**其余（含 `size > 0`
+ * 那道）必须共用**——各写一份时漂开的正是那一道。
  */
 export function tooLargeNotice(
   payload: Extract<DiffPayload, { kind: 'too-large' }>,
-  verb: 'preview' | 'show',
+  view: 'diff' | 'file',
 ): string {
   // 体积可能压根取不到：已被删除的文件在工作区已经没有了，后端给的是 0。那时不能照着
   // formatSize 报一个「1 KB」——编一个数出来比不说更糟。两个 reason 都会遇上，判据只写一次
   const size = payload.size > 0 ? formatSize(payload.size) : null;
-  if (payload.reason === 'lines') {
-    return size ? `Too many lines to ${verb} (${size} in total).` : `Too many lines to ${verb}.`;
-  }
-  return size ? `File too large to ${verb} (${size}).` : `File too large to ${verb}.`;
+  const lines = payload.reason === 'lines';
+  const head = lines
+    ? `Too many lines to ${view === 'diff' ? 'diff' : 'show'}`
+    : `${view === 'diff' ? 'Diff' : 'File'} too large to show`;
+  // 行数那一路括号里仍是体积（payload 没有行数），所以不写「in total」那种像在汇总前文的
+  // 说法——前面没有分项可汇总
+  const detail = !lines && view === 'diff' ? `file is ${size}` : size;
+  return size ? `${head} (${detail}).` : `${head}.`;
 }
 
 /**
@@ -125,7 +143,7 @@ function Payload({ path, payload }: { path: string; payload: DiffPayload }) {
     case 'binary':
       return <Notice>Binary file — contents are not compared.</Notice>;
     case 'too-large':
-      return <Notice>{tooLargeNotice(payload, 'preview')}</Notice>;
+      return <Notice>{tooLargeNotice(payload, 'diff')}</Notice>;
   }
 }
 
@@ -147,7 +165,10 @@ export function DiffView({ path }: { path: string }) {
       {state.rename && <RenameNotice rename={state.rename} />}
       {state.status === 'loading' && <Notice>Loading…</Notice>}
       {state.status === 'error' && (
-        <Notice>Could not load the diff for this file: {state.message}</Notice>
+        <Notice>
+          Could not load the diff
+          <ErrorDetail message={state.message} />
+        </Notice>
       )}
       {/* 换文件走的是卸载重挂——`App` 按 tab 键给本组件 `key`，本组件挂着期间 `path` 不会变，
           两次 draw() 因此不可能落在同一个元素上 */}
