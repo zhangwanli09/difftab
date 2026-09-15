@@ -103,6 +103,16 @@
 - **命中范围只有我们自己的按钮**：diff2html 渲染出的是 table 与 div，一个 `<button>` 都没有，所以这条不会漏进那片受「只能改 `--d2h-*`」约束的子树。
 - `:not(:disabled)` 挡的是「手型画在禁用按钮上」这句假话。本仓库暂时一个禁用按钮都没有，留着它的成本只有一个选择器。
 
+## 滚动条变细只写一条
+
+**页面上的两个滚动容器（左栏 `<nav>`、右侧 `Panel`）画的是原生滚动条，粗细由一条 `@layer base { * { scrollbar-width: thin } }` 收全部。** `scrollbar-width` 不继承，逐个滚动容器贴类的写法每加一个滚动容器就要有人记得再贴一遍，漏了不报错——与上面按钮手型光标那条同一取向。
+
+- **必须落在 `@layer base`，不能 unlayered**：编辑器标签栏的 `scrollbar-none`（`scrollbar-width: none`）是 `@layer utilities` 里的工具类，无层规则会压过它——症状是标签栏画出一条细滚动条、被它撑高、与左栏顶栏错开，而 `editor-tabs.test.tsx` 钉的只是类名还在。
+- **只管粗细，不管颜色**：滚动条颜色跟的是 `:root` 上的 `color-scheme`（见上面「明暗切换」），手动档照旧翻。
+- **刻意不写 `::-webkit-scrollbar` 那套**：给宽度、滑块、轨道各写一条固然能精确到 VS Code 那个 10px，但一旦出现 `::-webkit-scrollbar` 规则，macOS 上的 overlay 滚动条就被强制成经典滚动条——常显、占布局宽度；且 Chrome 121+ 在元素设了 `scrollbar-width` / `scrollbar-color` 之后本就忽略 webkit 伪元素，两套写法只有旧 Safari 一处能看到差别，却要同步维护。
+- **兼容面**：Chrome 121+ / Firefox / Safari 18.2+；更旧的 Safari 忽略这条、退回默认宽度，不加兜底。
+- **不加断言**：失效的症状是滚动条回到默认宽度，肉眼可见，不属于门禁要防的那类静默故障。
+
 ## 行号列需要一个 positioned 祖先
 
 **diff2html 的行号列是 `position: absolute`，滚动容器内部必须有一个 positioned 祖先。** 这与「两侧各自滚」是同一个决定的两半：diff2html 把行号做成绝对定位、偏移量全 auto，靠的是「包含块 = 初始包含块，而滚的就是整个文档」这个前提；我们为了让 SSE 刷新时留住列表侧的滚动位置，把滚动收进了内层的 `overflow-auto` 容器（见 [`web.md`](web.md) 的「页面骨架」），那个前提就不再成立——**包含块在滚动容器之外的绝对定位盒不随该容器的内容滚动**，于是一滚代码行就跑了、整列行号原地不动，页面不报任何错。
