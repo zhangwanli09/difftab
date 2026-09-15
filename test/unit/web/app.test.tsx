@@ -137,6 +137,14 @@ describe('侧栏那两个 tab', () => {
     expect(tabOf('Files').getAttribute('aria-selected')).toBe('false');
   });
 
+  // 行高在 `<nav>` 一处给、底下全靠继承：这一条掉了不报错，只是每一行缩回 20px、`Files` 那档的
+  // 占位与 `Changes` 的行不再等高。happy-dom 没有排版引擎，能钉的只有类名
+  it('列表区那一层带 text-sm/6——行高是容器的属性，不是每行各抄一遍', () => {
+    repoState.value = stateWith('demo');
+    render(<App />, container);
+    expect(container.querySelector('nav')?.classList.contains('text-sm/6')).toBe(true);
+  });
+
   it('切到 Files 换的是左栏列什么', async () => {
     repoState.value = stateWith('demo');
     render(<App />, container);

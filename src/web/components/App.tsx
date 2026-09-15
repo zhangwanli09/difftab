@@ -200,8 +200,14 @@ export function App() {
         {/* 两个视图**共用这一层滚动容器**：左右两栏各一个滚动容器是既有约定（SSE 刷新要留住
             列表的滚动位置），tab 不是第三个。flex 的自动最小尺寸只在该轴 overflow:visible 时
             才解析成 min-content，所以 `min-h-0` 与 `overflow-auto` 各自都足以把它归零——两个
-            都没有时列表会把整列撑高、把状态条挤出屏幕底部 */}
-        <nav class="min-h-0 flex-1 overflow-auto">
+            都没有时列表会把整列撑高、把状态条挤出屏幕底部。
+            **字号与行高（`text-sm/6`，14px / 24px）给在这一层，底下的行、占位与空态全靠继承**
+            （行是 <button>，preflight 的 `font: inherit` 让它连 line-height 一起继承）：行高由
+            line-height 撑而不是各行自己 `py-*` 凑，「左栏所有行 24px」于是是容器的一条属性，不是
+            每个元素各抄一遍的约定。24px 取 JetBrains / Zed 树行那档；VS Code 是 22px，但 Tailwind
+            预设里没有 13px / 22px，不为 2px 另加 token。**分组标题是例外**：它自己写 `text-xs`，而
+            Tailwind 的 `text-*` 会把 line-height 一并重设（`--tw-leading` 不继承），得自带 `/6` */}
+        <nav class="min-h-0 flex-1 overflow-auto text-sm/6">
           {tab === 'files' ? (
             <FileTree />
           ) : state === null ? (

@@ -20,7 +20,7 @@ import {
 import { activeDiffPath, editorKey, pinEditor } from '../state/editors';
 import { type ChangeGroup, type ChangeGroupId, groupFiles, selectFile } from '../state/store';
 import { SidebarPlaceholder } from './EmptyState';
-import { ChevronPlaceholder, ExpandChevron, indent } from './tree-row';
+import { ChevronPlaceholder, ExpandChevron, indent, ROW_BASE } from './tree-row';
 
 /**
  * 状态位的**展示文案**，与解析无关——徽章上印的是 git 自己的字母，这张表只作为 tooltip 把
@@ -115,16 +115,10 @@ function ConflictBadge({ staged, unstaged }: Pick<FileEntry, 'staged' | 'unstage
   );
 }
 
-// focus-visible 那两个类是键盘可达性的最低档：列表项是 <button>，而 preflight 清掉了
-// UA 默认焦点环。用 focus-border token 画，深浅都跟着翻。手型光标不在这里——那是所有按钮
-// 共有的一件事，`styles/app.css` 里有一条 base 层规则统一给
-//
-// 对齐方式不在这一串里：文件行是「文件名 + 状态位」两段文字，按基线排；目录行是一枚 SVG 加一段
-// 文字，替换元素的基线是它的底边，按基线排三角会整个浮在文字上方，得 `items-center`。两行各补
-// 自己那一个，其余（内边距、焦点环）只此一份
-const ROW_BASE =
-  'flex w-full gap-2 px-3 py-1 text-left text-sm focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus-border';
+// 行的骨架是 `tree-row.tsx` 那份 `ROW_BASE`，与 `Files` 那档同一份；对齐方式为什么不在骨架里、
+// 文件行为什么按基线而目录行按居中，都写在它上面。左内边距两种行都由 `indent()` 给，不在类名里
 const ROW_CLASS = `${ROW_BASE} items-baseline`;
+const DIR_ROW_CLASS = `${ROW_BASE} items-center hover:bg-list-hover-background`;
 
 /**
  * 一个文件那一行。`treeDepth` 有值即树视图里的一行：按层级缩进、行首多一个与目录行的展开三角
@@ -174,7 +168,8 @@ function FileRow({
         // 挂在整行上补一份。不放在目录那个 span 上：它被裁到零宽时就没得可悬停了
         title={file.path}
         class={rowClass}
-        style={inTree ? indent(treeDepth) : undefined}
+        // 平铺列表也走 `indent()`，取第 0 层：左内边距于是三种视图只此一个来源
+        style={indent(treeDepth ?? 0)}
       >
         {inTree && <ChevronPlaceholder />}
         {/* 文件名在前、目录在后。侧栏定宽 320px，而 `truncate` 的省略号在**右**端——目录排在
@@ -234,7 +229,7 @@ function DirRow({
         // 合并后的名字会被 320px 裁掉，完整路径在树上找不回来——与文件行同理挂在整行上
         title={node.path}
         aria-expanded={expanded}
-        class={`${ROW_BASE} items-center hover:bg-list-hover-background`}
+        class={DIR_ROW_CLASS}
         style={indent(depth)}
       >
         <ExpandChevron expanded={expanded} />
@@ -281,7 +276,9 @@ function Group({ group }: { group: ChangeGroup }) {
   if (group.files.length === 0) return null;
   return (
     <section>
-      <h2 class="sticky top-0 bg-side-bar-section-header-background px-3 py-1 text-xs font-medium text-description-foreground">
+      {/* 与文件行同高（24px）、不给纵向内边距。`/6` 不能省：`text-xs` 会把从 `<nav>` 继承来的
+          line-height 一并重设，漏了它这一行就缩成 16px */}
+      <h2 class="sticky top-0 bg-side-bar-section-header-background px-3 text-xs/6 font-medium text-description-foreground">
         {group.title}
         <span class="ml-1">{group.files.length}</span>
       </h2>

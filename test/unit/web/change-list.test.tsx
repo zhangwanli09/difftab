@@ -8,6 +8,7 @@
 import { render } from 'preact';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChangeList } from '../../../src/web/components/ChangeList';
+import { ROW_BASE } from '../../../src/web/components/tree-row';
 import { changeView, collapsedChangeDirs } from '../../../src/web/state/change-tree';
 import { activeEditorKey, editors } from '../../../src/web/state/editors';
 import { file, openPinned, resetEditors, waitFor } from './helpers';
@@ -140,6 +141,17 @@ describe('ChangeList 的行布局', () => {
     // 目录段所在的那个截断盒必须**同时装着文件名**：拆成兄弟时 closest 会停在目录段自己身上
     const truncatingBox = dirSegment?.closest('.truncate');
     expect(normalize(truncatingBox)).toContain('List.tsx');
+  });
+
+  // 行的骨架（间距、焦点环）与 `Files` 那档共用 `tree-row.tsx` 那一份：各写一份时漂开不报错，只是
+  // 切一次 tab 三角间距跳一截。happy-dom 没有排版引擎，能钉的只有类名。树视图一次画出目录行与文件
+  // 行两种，平铺版式的文件行与树里的是同一个 `ROW_CLASS`，不必再渲染一遍
+  it('目录行与文件行都取 tree-row 那份 ROW_BASE——各写一份时切 tab 会跳', () => {
+    changeView.value = 'tree';
+    render(<ChangeList files={[file({ path: 'src/a.ts', staged: 'M' })]} />, container);
+    const rows = [...container.querySelectorAll('button')];
+    expect(rows).toHaveLength(2);
+    for (const row of rows) expect(row.className).toContain(ROW_BASE);
   });
 });
 

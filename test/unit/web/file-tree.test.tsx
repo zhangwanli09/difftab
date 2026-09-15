@@ -8,6 +8,7 @@ import { render } from 'preact';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FileEntry, TreeEntry } from '../../../src/server/shared/protocol';
 import { FileTree } from '../../../src/web/components/FileTree';
+import { ROW_BASE } from '../../../src/web/components/tree-row';
 import { activeEditorKey, editors } from '../../../src/web/state/editors';
 import { repoState } from '../../../src/web/state/store';
 import {
@@ -292,6 +293,14 @@ describe('FileTree', () => {
     expect(rowOf('a.ts').querySelector('span')?.className).toContain('w-3');
     // 占位在前、名字在后：名字那一段是第二个子项
     expect(rowOf('a.ts').children[1]).toBe(nameOf('a.ts'));
+  });
+
+  // 行的骨架与变更列表共用 `tree-row.tsx` 那一份：各写一份时漂开不报错，只是切一次 tab 三角与
+  // 名字的间距跳一截。happy-dom 没有排版引擎，能钉的只有类名；目录行与文件行是同一个 `Row`，钉一行够
+  it('行取 tree-row 那份 ROW_BASE——各写一份时切 tab 会跳', async () => {
+    treeCache.value = new Map([[ROOT, [entry({ name: 'a.ts' })]]]);
+    await waitFor(() => expect(container.textContent).toContain('a.ts'));
+    expect(rowOf('a.ts').className).toContain(ROW_BASE);
   });
 });
 

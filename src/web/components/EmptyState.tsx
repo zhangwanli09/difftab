@@ -26,7 +26,7 @@ export function SidebarPlaceholder({ children }: { children: ComponentChildren }
   return (
     // 宿主 `<nav>` 是普通块盒（`min-h-0 flex-1 overflow-auto`），撑满靠 `h-full`；它能解析是因为
     // `<nav>` 自己是定高 flex 列里的一项
-    <p class="flex h-full items-center justify-center px-3 text-center text-sm text-description-foreground">
+    <p class="flex h-full items-center justify-center px-3 text-center text-description-foreground">
       {children}
     </p>
   );
