@@ -110,13 +110,9 @@ English, [Conventional Commits](https://www.conventionalcommits.org/):
 `<type>(<scope>): <description>`, where type is one of `feat` / `fix` / `docs` /
 `refactor` / `perf` / `test` / `build` / `ci` / `chore`, with `!` for breaking changes.
 
-Imperative mood, subject ≤ 50 characters with no trailing period, body wrapped at 72 and
-covering what and why rather than how. One commit does one thing — don't mix a refactor
-into a feature change.
-
-A squash merge appends ` (#N)` to the subject, and the 50 characters have to cover that
-too. Pass your own subject with `gh pr merge --squash --subject '…'`, or merge with
-`--rebase`.
+Imperative mood, subject with no trailing period, body wrapped at 72 and covering what
+and why rather than how. One commit does one thing — don't mix a refactor into a feature
+change.
 
 ## Reporting bugs
 
