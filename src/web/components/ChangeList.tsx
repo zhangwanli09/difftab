@@ -7,8 +7,13 @@
 // 只是组内的排法。版式与树的折叠态在 `state/change-tree.ts`。
 
 import { useComputed } from '@preact/signals';
+import { FileInput } from 'lucide-preact';
 import { useMemo } from 'preact/hooks';
-import type { FileEntry, StatusCode } from '../../server/shared/protocol';
+import {
+  type FileEntry,
+  isAbsentFromWorktree,
+  type StatusCode,
+} from '../../server/shared/protocol';
 import {
   buildChangeTree,
   type ChangeDirNode,
@@ -17,9 +22,16 @@ import {
   isChangeDirCollapsed,
   toggleChangeDir,
 } from '../state/change-tree';
-import { activeDiffPath, editorKey, pinEditor } from '../state/editors';
-import { type ChangeGroup, type ChangeGroupId, groupFiles, selectFile } from '../state/store';
+import { activeEditorPath, editorKey, pinEditor } from '../state/editors';
+import {
+  type ChangeGroup,
+  type ChangeGroupId,
+  groupFiles,
+  openFile,
+  selectFile,
+} from '../state/store';
 import { SidebarPlaceholder } from './EmptyState';
+import { IconButton } from './IconButton';
 import { ChevronPlaceholder, ExpandChevron, indent, ROW_BASE } from './tree-row';
 
 /**
@@ -121,6 +133,18 @@ const ROW_CLASS = `${ROW_BASE} items-baseline`;
 const DIR_ROW_CLASS = `${ROW_BASE} items-center hover:bg-list-hover-background`;
 
 /**
+ * 文件行上 `Open file` 那枚按钮的显隐：悬停整行或键盘焦点落在行内时才进流，其余时刻
+ * `display: none`。**走 `display` 不走透明度**（编辑器 tab 上那枚 × 用透明度是为了留住位置）：
+ * 这里按钮悬在文字上方，透明就是一块看不见却能点的死区，点到目录段的尾巴会误开文件。
+ * `group-focus-within` 那半条给键盘——Tab 从行按钮移过去时它得先显示出来才接得住焦点。
+ *
+ * **占位与按钮外壳共用这一个常量**：占位在行按钮里、把文字挤开，按钮绝对定位在它上面，两处的
+ * 显隐必须是同一对变体。各写一份时漂开不报错，只是文字被挤开了而按钮没出来，或反过来按钮盖
+ * 在文字上。
+ */
+const REVEAL = 'hidden group-hover:flex group-focus-within:flex';
+
+/**
  * 一个文件那一行。`treeDepth` 有值即树视图里的一行：按层级缩进、行首多一个与目录行的展开三角
  * 等宽的占位（少了它文件名比同层的目录名往左挪一截，同一层看着像两层）、**不再画目录段**——
  * 祖先节点已经把目录说了。其余（选中态、重命名标注、行尾的状态位、整行 `title`）两种版式一字不差。
@@ -136,8 +160,10 @@ function FileRow({
 }) {
   const { dir, name } = splitForDisplay(file.path);
   const inTree = treeDepth !== undefined;
+  // 工作区里已不存在的文件不给 `Open file`：它唯一能打开的是一条错误。判据是 git 知识，在协议层
+  const canOpen = !isAbsentFromWorktree(file);
   /**
-   * 选中态包成 `computed` 再作为 prop 传下去，**不在组件体里读 `activeDiffPath.value`**：在组件
+   * 选中态包成 `computed` 再作为 prop 传下去，**不在组件体里读 `activeEditorPath.value`**：在组件
    * 体里读等于这一行订阅了它，换选中时 320 行全部重新渲染，其中 318 行产出的 vnode 与上一次逐
    * 字相同。作为 prop 传时 signals 把更新直接绑到 DOM 属性上，只写两个 class。
    *
@@ -146,17 +172,22 @@ function FileRow({
    *
    * 基础类只写一次，三元里只放选中/未选中的**差量**：两个分支各拼一遍 ROW_CLASS 的话，以后
    * 「选中行也加个 X」要改两处，而 diff 上也看不出到底哪个分支变了。
+   *
+   * 悬停底色是 `group-hover:` 不是 `hover:`（group 是外面那个 `<li>`）：`Open file` 是行按钮的
+   * 兄弟，指针从行上移到它身上时已经离开了 `<button>`，用 `hover:` 时行底色在那一刻消失、按钮
+   * 悬在一块没底色的行上。
    */
   const rowClass = useComputed(
     () =>
       `${ROW_CLASS} ${
-        activeDiffPath.value === file.path
+        activeEditorPath.value === file.path
           ? 'bg-list-active-selection-background text-list-active-selection-foreground'
-          : 'hover:bg-list-hover-background'
+          : 'group-hover:bg-list-hover-background'
       }`,
   );
   return (
-    <li>
+    // `group`：`Open file` 的显隐与行的悬停底色都跟着整个 `<li>` 走；`relative`：按钮外壳的包含块
+    <li class="group relative">
       <button
         type="button"
         // 整个条目交回 store——取 diff 要带哪些参数（重命名的 oldPath）属 git 知识，不在组件
@@ -195,12 +226,35 @@ function FileRow({
             看 Y；冲突条目两侧都不是 `.`，挑哪一位都会丢掉另一半。**「印两位」的判据是条目自己的
             `conflicted`，不是它落在哪一组**：按分组判的话，这一行画得对不对就取决于 `groupFiles`
             与这里是否一致，而那个一致性没有任何东西在管 */}
+        {/* `Open file` 的占位：与按钮等宽（`IconButton` 是 p-0.5 + 16px 图标 = 20px），悬停时进流
+            把前面两个截断盒挤开——省略号于是提前 26px，文字是真的重排，照 VS Code。不常驻预留：
+            那是每行永久少 26px 文字宽度，320px 侧栏里是一成 */}
+        {canOpen && <span class={`${REVEAL} w-5 shrink-0`} />}
         {file.conflicted ? (
           <ConflictBadge staged={file.staged} unstaged={file.unstaged} />
         ) : (
           <StatusBadge code={group === 'staged' ? file.staged : file.unstaged} />
         )}
       </button>
+      {/* 按钮是行按钮的**兄弟**，不套在里面：按钮里不能套按钮，理由与编辑器 tab 上那枚 × 一字
+          不差；它的事件压根不经过行按钮，点它不会顺带开一个 diff tab。绝对定位在状态位左侧：
+          `right-9.5`（38px）= ROW_BASE 的 `pr-3`（12）+ 状态位 `w-5`（20）+ `gap-1.5`（6）。文字被
+          截断的行里占位正好在它底下；短行里占位贴着文字、按钮悬在空白上，两种情况都盖不到字——
+          改行骨架的间距或状态位宽度时这道加法要跟着改，症状只是与字母挨着或错开几像素。
+          图标是 `FileInput`（文件 + 一支进入文件的箭头），Lucide 里最贴近 codicon `go-to-file` 的一枚
+          ——它是一个「跳过去」的动作，不用 file tab 那枚 `FileCode`：那是种类标识，画在动作按钮上
+          读不出「点了会发生什么」。位置照 VS Code Source Control 的 inline action；点它开的是**固定**
+          的 file tab（VS Code `git.openFile` 是 `preview: false`——一个明确的「我要这个文件」的动作
+          不该被下一次单击顶掉），不切侧栏档位 */}
+      {canOpen && (
+        <span class={`${REVEAL} absolute inset-y-0 right-9.5 items-center`}>
+          <IconButton
+            icon={FileInput}
+            label="Open file"
+            onClick={() => openFile(file.path, { pinned: true })}
+          />
+        </span>
+      )}
     </li>
   );
 }

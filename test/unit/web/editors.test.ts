@@ -6,10 +6,9 @@
 
 import { afterEach, describe, expect, it } from 'vitest';
 import {
-  activeDiffPath,
   activeEditor,
   activeEditorKey,
-  activeFilePath,
+  activeEditorPath,
   type Editor,
   editorKey,
   editors,
@@ -64,6 +63,24 @@ describe('openEditor', () => {
     expect(openEditor('diff', 'b.ts')).toBeNull();
     expect(keys()).toEqual(['diff:a.ts', 'diff:b.ts']);
     expect(preview()?.path).toBe('b.ts');
+  });
+
+  it('固定档：键不存在时追加一个固定 tab、现有预览不动；键存在时就地固定', () => {
+    openEditor('diff', 'a.ts');
+    expect(openEditor('file', 'b.ts', true)).toBeNull();
+    expect(editors.value).toEqual([
+      { kind: 'diff', path: 'a.ts', pinned: false },
+      { kind: 'file', path: 'b.ts', pinned: true },
+    ]);
+    expect(activeEditorKey.value).toBe('file:b.ts');
+
+    // 预览 a.ts 再以固定档打开：不追加、就地转正、切过去
+    expect(openEditor('diff', 'a.ts', true)).toBeNull();
+    expect(editors.value).toEqual([
+      { kind: 'diff', path: 'a.ts', pinned: true },
+      { kind: 'file', path: 'b.ts', pinned: true },
+    ]);
+    expect(activeEditorKey.value).toBe('diff:a.ts');
   });
 
   it('同一路径的 diff 与全文是两个 tab', () => {
@@ -186,12 +203,13 @@ describe('renameEditor', () => {
 });
 
 describe('两栏的高亮路径', () => {
-  it('按活动 tab 的 kind 恰有一个非空', () => {
+  it('是活动 tab 的路径，不看它是 diff 还是全文；没有 tab 时为空', () => {
+    expect(activeEditorPath.value).toBeNull();
     openPinned('diff', 'a.ts');
-    expect(activeDiffPath.value).toBe('a.ts');
-    expect(activeFilePath.value).toBeNull();
-    openPinned('file', 'a.ts');
-    expect(activeDiffPath.value).toBeNull();
-    expect(activeFilePath.value).toBe('a.ts');
+    expect(activeEditorPath.value).toBe('a.ts');
+    openPinned('file', 'b.ts');
+    expect(activeEditorPath.value).toBe('b.ts');
+    focusEditor('diff:a.ts');
+    expect(activeEditorPath.value).toBe('a.ts');
   });
 });

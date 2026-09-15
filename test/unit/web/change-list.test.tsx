@@ -10,8 +10,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChangeList } from '../../../src/web/components/ChangeList';
 import { ROW_BASE } from '../../../src/web/components/tree-row';
 import { changeView, collapsedChangeDirs } from '../../../src/web/state/change-tree';
-import { activeEditorKey, editors } from '../../../src/web/state/editors';
-import { file, openPinned, resetEditors, waitFor } from './helpers';
+import { editors } from '../../../src/web/state/editors';
+import { file, openPinned, resetEditors, stubJson, waitFor } from './helpers';
 
 let container: HTMLElement;
 
@@ -45,6 +45,14 @@ function sectionTextOf(title: string): string {
     ),
   );
 }
+
+/**
+ * 列表里的**行**按钮（文件行与目录行）。`Open file` 那枚也是 `<button>`，但它带 `aria-label`（只画
+ * 图标的按钮名字只能由它给），行按钮的名字来自可见文本、没有——按这一条把两种按钮分开，而不是
+ * 按 DOM 位置数。
+ */
+const ROW_SELECTOR = 'button:not([aria-label])';
+const rowButtons = () => [...container.querySelectorAll<HTMLButtonElement>(ROW_SELECTOR)];
 
 describe('ChangeList 的冲突组', () => {
   it('冲突行印出 XY 两位，而不是只挑一位', () => {
@@ -93,7 +101,7 @@ describe('ChangeList 的冲突组', () => {
  */
 describe('ChangeList 的行布局', () => {
   /** 某一行（整个 <button>）的可见文本，空白归一。 */
-  const rowText = () => normalize(container.querySelector('button'));
+  const rowText = () => normalize(container.querySelector(ROW_SELECTOR));
 
   // 两条都**锚定整行**而不是 `toContain` 片段：一条正则同时钉住顺序（名在前、状态位在尾）、目录
   // 不带尾部斜杠、两段没连读成一条完整路径。拆成两条反而更弱——后者对「文件名 + 带斜杠的目录」根本判不出来
@@ -131,7 +139,7 @@ describe('ChangeList 的行布局', () => {
    */
   it('文件名与目录同住一个 truncate span，而不是两个平级的 flex 子项', () => {
     render(<ChangeList files={[file({ path: 'src/web/List.tsx', staged: 'M' })]} />, container);
-    const row = container.querySelector('button');
+    const row = container.querySelector(ROW_SELECTOR);
 
     const dirSegment = [...(row?.querySelectorAll('span') ?? [])].find(
       (node) => normalize(node) === 'src/web',
@@ -149,7 +157,7 @@ describe('ChangeList 的行布局', () => {
   it('目录行与文件行都取 tree-row 那份 ROW_BASE——各写一份时切 tab 会跳', () => {
     changeView.value = 'tree';
     render(<ChangeList files={[file({ path: 'src/a.ts', staged: 'M' })]} />, container);
-    const rows = [...container.querySelectorAll('button')];
+    const rows = rowButtons();
     expect(rows).toHaveLength(2);
     for (const row of rows) expect(row.className).toContain(ROW_BASE);
   });
@@ -161,7 +169,7 @@ describe('ChangeList 的行布局', () => {
  * 切到树之后组头没了（分组是 git 语义，不是列表版式的附属）。
  */
 describe('ChangeList 的树视图', () => {
-  const rows = () => [...container.querySelectorAll('button')];
+  const rows = rowButtons;
   const rowByTitle = (title: string) => rows().find((row) => row.title === title);
   // signals 驱动的重渲染是异步的，点完要等一拍
   const waitFor = (assert: () => void) => vi.waitFor(assert, { interval: 5 });
@@ -248,12 +256,12 @@ describe('ChangeList 的树视图', () => {
 });
 
 /**
- * 选中态与标签栏的接线。钉的是「不报错、只是不对」：高亮只认活动的 **diff** tab——同一路径的
- * file tab 活动时这一行不亮（那一行说的是这份补丁，而此刻在读的是全文）；单击开预览、双击固定。
+ * 选中态与标签栏的接线。钉的是「不报错、只是不对」：高亮按活动 tab 的**路径**判、不看种类——
+ * 同一路径的 file tab 活动时这一行也亮（点了行内 `Open file` 之后那一行不能熄）；单击开预览、
+ * 双击固定。
  */
 describe('ChangeList 的选中态', () => {
-  const rows = () => [...container.querySelectorAll('button')];
-  const rowByTitle = (title: string) => rows().find((row) => row.title === title);
+  const rowByTitle = (title: string) => rowButtons().find((row) => row.title === title);
   const SELECTED = 'bg-list-active-selection-background';
 
   beforeEach(() => {
@@ -263,16 +271,22 @@ describe('ChangeList 的选中态', () => {
     );
   });
 
-  it('高亮跟着活动的 diff tab 走；同一路径的 file tab 不算', async () => {
-    render(<ChangeList files={[file({ path: 'a.ts', staged: 'M' })]} />, container);
+  it('高亮跟着活动 tab 的路径走，diff 与 file tab 都算；别的路径活动时不亮', async () => {
+    render(
+      <ChangeList
+        files={[file({ path: 'a.ts', staged: 'M' }), file({ path: 'b.ts', staged: 'M' })]}
+      />,
+      container,
+    );
     expect(rowByTitle('a.ts')?.className).not.toContain(SELECTED);
 
     openPinned('file', 'a.ts');
-    await waitFor(() => expect(activeEditorKey.value).toBe('file:a.ts'));
-    expect(rowByTitle('a.ts')?.className).not.toContain(SELECTED);
-
-    openPinned('diff', 'a.ts');
     await waitFor(() => expect(rowByTitle('a.ts')?.className).toContain(SELECTED));
+    expect(rowByTitle('b.ts')?.className).not.toContain(SELECTED);
+
+    openPinned('diff', 'b.ts');
+    await waitFor(() => expect(rowByTitle('b.ts')?.className).toContain(SELECTED));
+    expect(rowByTitle('a.ts')?.className).not.toContain(SELECTED);
   });
 
   it('单击开一个预览 tab，双击把它固定——且双击那一下不再取第三趟', async () => {
@@ -287,5 +301,110 @@ describe('ChangeList 的选中态', () => {
     expect(editors.value).toEqual([{ kind: 'diff', path: 'a.ts', pinned: true }]);
     expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);
     await waitFor(() => expect(row?.className).toContain(SELECTED));
+  });
+});
+
+/**
+ * 每行悬停露出的 `Open file`（照 VS Code Source Control 的 inline action）。钉的都是「不报错、只是
+ * 不对」：按钮套进行按钮里（按钮里套按钮，点它顺带开一个 diff tab）；占位与按钮外壳的显隐变体漂开
+ * （文字被挤开了而按钮没出来）；行底色用 `hover:`（指针移到按钮上那一刻行底色消失）；已删除的文件
+ * 也画（点了只有一条错误）。happy-dom 没有排版引擎，能钉的只有树形与类名。
+ */
+describe('ChangeList 的 Open file 行内动作', () => {
+  const rowByTitle = (title: string) => rowButtons().find((row) => row.title === title);
+  const openButtons = () => [
+    ...container.querySelectorAll<HTMLButtonElement>('button[aria-label="Open file"]'),
+  ];
+  const openButtonOf = (path: string) =>
+    openButtons().find((button) => button.closest('li') === rowByTitle(path)?.closest('li'));
+
+  it('按钮是行按钮的兄弟、同住一个 <li>，不套在行按钮里', () => {
+    render(<ChangeList files={[file({ path: 'src/a.ts', staged: 'M' })]} />, container);
+    const row = rowByTitle('src/a.ts');
+    const button = openButtonOf('src/a.ts');
+
+    expect(button).toBeDefined();
+    expect(button?.title).toBe('Open file');
+    expect(row?.contains(button ?? null)).toBe(false);
+    expect(row?.closest('li')?.classList.contains('group')).toBe(true);
+  });
+
+  it('点它开一个**固定**的 file tab 并取全文，不顶掉现有预览、也不顺带开 diff tab', async () => {
+    const calls = stubJson({ kind: 'text', content: '' });
+    render(
+      <ChangeList
+        files={[file({ path: 'src/a.ts', staged: 'M' }), file({ path: 'src/b.ts', staged: 'M' })]}
+      />,
+      container,
+    );
+    // 先单击一行开一个预览 diff tab：照 VS Code `git.openFile` 的 `preview: false`，Open file
+    // 追加一个固定 tab、这个预览留在原地
+    rowByTitle('src/b.ts')?.click();
+
+    openButtonOf('src/a.ts')?.click();
+    expect(editors.value).toEqual([
+      { kind: 'diff', path: 'src/b.ts', pinned: false },
+      { kind: 'file', path: 'src/a.ts', pinned: true },
+    ]);
+    await waitFor(() => expect(calls).toContain('/api/file?path=src%2Fa.ts'));
+  });
+
+  it('占位与按钮外壳共用同一对显隐变体，行底色是 group-hover 不是 hover', () => {
+    render(<ChangeList files={[file({ path: 'src/a.ts', staged: 'M' })]} />, container);
+    const row = rowByTitle('src/a.ts');
+    const shell = openButtonOf('src/a.ts')?.parentElement;
+    // 占位是行按钮里紧挨着状态位、宽度与按钮相同的那个空 span
+    const spacer = [...(row?.querySelectorAll('span') ?? [])].find(
+      (node) => node.classList.contains('w-5') && node.textContent === '',
+    );
+
+    for (const node of [shell, spacer]) {
+      expect(node).toBeDefined();
+      for (const cls of ['hidden', 'group-hover:flex', 'group-focus-within:flex']) {
+        expect(node?.classList.contains(cls)).toBe(true);
+      }
+    }
+    expect(row?.className).toContain('group-hover:bg-list-hover-background');
+    expect(row?.className).not.toContain(' hover:bg-list-hover-background');
+  });
+
+  it('工作区里已不存在的文件不画；冲突里只有 DD 算不存在', () => {
+    render(
+      <ChangeList
+        files={[
+          file({ path: 'wt-deleted.ts', unstaged: 'D' }),
+          file({ path: 'rm.ts', staged: 'D' }),
+          file({ path: 'added-then-deleted.ts', staged: 'A', unstaged: 'D' }),
+          file({ path: 'both-deleted.ts', staged: 'D', unstaged: 'D', conflicted: true }),
+          file({ path: 'deleted-by-them.ts', staged: 'U', unstaged: 'D', conflicted: true }),
+          file({ path: 'deleted-by-us.ts', staged: 'D', unstaged: 'U', conflicted: true }),
+          file({ path: 'modified.ts', unstaged: 'M' }),
+          file({ path: 'renamed.ts', staged: 'R', oldPath: 'old.ts' }),
+          file({ path: 'new.ts', kind: 'untracked', unstaged: '?' }),
+        ]}
+      />,
+      container,
+    );
+
+    for (const path of ['wt-deleted.ts', 'rm.ts', 'added-then-deleted.ts', 'both-deleted.ts']) {
+      expect(openButtonOf(path), path).toBeUndefined();
+    }
+    for (const path of [
+      'deleted-by-them.ts',
+      'deleted-by-us.ts',
+      'modified.ts',
+      'renamed.ts',
+      'new.ts',
+    ]) {
+      expect(openButtonOf(path), path).toBeDefined();
+    }
+  });
+
+  it('树视图下的文件行同样有这枚按钮，目录行没有', () => {
+    changeView.value = 'tree';
+    render(<ChangeList files={[file({ path: 'src/a.ts', staged: 'M' })]} />, container);
+
+    expect(openButtonOf('src/a.ts')).toBeDefined();
+    expect(openButtons()).toHaveLength(1);
   });
 });
