@@ -10,9 +10,9 @@ import { activeFilePath, editorKey, pinEditor } from '../state/editors';
 import { type ChangeCode, codeByPath, openFile } from '../state/store';
 import { expandedDirs, ROOT, toggleDir, treeCache, treeErrors } from '../state/tree';
 import { CODE_COLORS, STATUS_SLOT, StatusBadge } from './ChangeList';
-// 行首三样与变更列表的树视图共用一份：各写一份不报错，只是切一次 tab 缩进跳一截、或者一棵树里
-// 文件名比同层的目录名往左挪一截
-import { ChevronPlaceholder, ExpandChevron, indent } from './tree-row';
+// 行的骨架与行首三样都与变更列表的树视图共用一份：各写一份不报错，只是切一次 tab 行高或缩进跳一
+// 截、或者一棵树里文件名比同层的目录名往左挪一截
+import { ChevronPlaceholder, ExpandChevron, indent, ROW_BASE } from './tree-row';
 
 /**
  * 目录行行尾的圆点：只说「底下有事」，**不印字母**——一个目录底下可以同时躺着改过的和没改过的
@@ -32,10 +32,8 @@ function DirBadge({ code }: { code: ChangeCode }) {
   );
 }
 
-// 与变更列表的 ROW_CLASS 同源（focus-visible 那两个类是键盘可达性的最低档，理由写在
-// ChangeList.tsx 那份上）。这里多一个 `gap-1`：三角与名字之间比列表那两段更紧
-const ROW_CLASS =
-  'flex w-full items-center gap-1 py-0.5 pr-3 text-left text-sm focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus-border';
+// 骨架之上只补对齐（为什么按居中，写在 `ROW_BASE` 上）：这里每一行都是 SVG 加一段文字
+const ROW_CLASS = `${ROW_BASE} items-center`;
 
 function Row({ entry, depth }: { entry: TreeEntry; depth: number }) {
   const isDir = entry.kind === 'directory';
@@ -125,7 +123,7 @@ function Level({ path, depth }: { path: string; depth: number }) {
     entries === undefined ? (error ?? 'Loading…') : entries.length === 0 ? 'Empty' : null;
   if (entries === undefined || placeholder !== null) {
     return (
-      <p class="py-0.5 pr-3 text-sm break-words text-description-foreground" style={indent(depth)}>
+      <p class="pr-3 break-words text-description-foreground" style={indent(depth)}>
         {placeholder}
       </p>
     );
