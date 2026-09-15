@@ -34,11 +34,24 @@
   button:not(:disabled) {
     cursor: pointer;
   }
+
+  /* 滚动条变细，一条收全部滚动容器（左栏 <nav>、右侧 Panel）。`scrollbar-width` 不继承，逐个
+   * 容器贴类的写法每加一个滚动容器就要有人记得再贴一遍，漏了不报错——与上面那条同一取向。
+   *
+   * **必须留在 base 层**：编辑器标签栏的 `scrollbar-none` 在 utilities 层，无层规则会压过它，
+   * 症状是标签栏画出一条细滚动条、被撑高、与左栏顶栏错开。只管粗细不管颜色——颜色跟的是
+   * :root 的 color-scheme。**刻意不写 `::-webkit-scrollbar` 那套**：一出现那条伪元素规则，macOS
+   * 的 overlay 滚动条就被强制成常显、占布局宽度的经典滚动条；Chrome 121+ 设了标准属性后本就
+   * 忽略它，两套写法只有旧 Safari（18.2 前不认 scrollbar-width，退回默认宽度）一处看得出差别。 */
+  * {
+    scrollbar-width: thin;
+  }
 }
 
 /* 不画滚动条、滚动能力照旧。只给编辑器标签栏用：它横向滚，而画出来的滚动条会把栏撑高、与左栏
  * 顶栏错开——VS Code 的标签栏也不占这一份高度。`scrollbar-width` Safari 18.2 起才认，
- * `::-webkit-scrollbar` 那半条是老 Safari 的兜底。@utility 进 utilities 层，与别的工具类同级。 */
+ * `::-webkit-scrollbar` 那半条是老 Safari 的兜底。@utility 进 utilities 层，与别的工具类同级——
+ * 因此压得过 base 层那条通配的 `scrollbar-width: thin`。 */
 @utility scrollbar-none {
   scrollbar-width: none;
   &::-webkit-scrollbar {

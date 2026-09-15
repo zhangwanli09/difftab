@@ -130,6 +130,7 @@
 | 后台 tab 用一个 stale 标记记「SSE 后没重取」，激活时按标记决定取不取 | 多一份要在收编、改名、关闭各处维护的状态，而它省下的只是「切过去时内容没变也发一趟」那一次请求。`activateEditor` 每次都真的去取，与目录树的 `loadDir` 同一取向 |
 | 关掉活动 tab 后按最近使用顺序（MRU）选下一个 | 要多维护一份访问序列，换来的只是关掉一个刚从别处切过来的 tab 时少切一次。右邻居优先、否则左邻居，一眼能预期 |
 | 同一路径的 diff 与全文共用一个 tab、从哪边点开就切成哪种 | 要多记一份「这个 tab 此刻显示哪种」，切换时另一种的滚动位置也跟着丢；VS Code 里 diff editor 与普通 editor 本来就是两个 tab |
+| 仿 VS Code 用 `::-webkit-scrollbar` 自绘滚动条（10px、半透明滑块、无轨道） | 一旦出现 `::-webkit-scrollbar` 规则，macOS 上的 overlay 滚动条就被强制成经典滚动条——常显、占布局宽度；Chrome 121+ 在设了 `scrollbar-width` / `scrollbar-color` 之后本就忽略 webkit 伪元素，两套写法只有旧 Safari 一处能看到差别，却要同步维护。一条 `scrollbar-width: thin` 保留原生外观与 overlay 行为，粗细由浏览器定 |
 | 编辑器标签栏用 `overflow-x-hidden` 去掉滚动条 | `scrollIntoView` 照样能把活动 tab 滚进来，但用户自己滚不了——溢出之后前面的 tab 只能靠关掉后面的才够得着。`scrollbar-width: none` 只是不画滚动条，滚动能力一样不少 |
 | 编辑器标签栏外面再套一层 wrapper，栏留 `border-b`、tab 留 `-mb-px` | 多一层 div，且 tablist 不再是面板 `<section>` 的直接子项（`app.test.tsx` 钉着这条）。栏自己画一条 inset 阴影当分隔线，tab 的 `border-b` 落在 padding box 最后 1px 上盖过它，一层就够（`divider-b`） |
 | 侧栏那行 tab 保留「行 `border-b` + tab `-mb-px`」的教科书写法，只有编辑器标签栏改 inset 阴影 | 同一种视觉（下划线盖在通栏分隔线上）两套机制、两段互相矛盾的注释与两段文档，动其中一行的人得同时记住两套；两行都走 `divider-b` 后 `-mb-px` 在仓库里一处都不剩 |
