@@ -405,7 +405,7 @@ describe('右侧面板', () => {
       rename: null,
       payload: { kind: 'too-large', size: 0, reason: 'size' },
     });
-    await waitFor(() => expect(section()?.textContent).toContain('File too large'));
+    await waitFor(() => expect(section()?.textContent).toContain('Diff too large'));
     expect(scroller()).toBe(after);
   });
 

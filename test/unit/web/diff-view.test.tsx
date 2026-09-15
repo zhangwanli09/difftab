@@ -135,7 +135,7 @@ describe('DiffView', () => {
     // 体积那一路：5MB 出头，按 MB 说得通
     ready('huge.log', { kind: 'too-large', size: 6 * 1024 * 1024, reason: 'size' });
     show('huge.log');
-    await waitFor(() => expect(container.textContent).toContain('File too large'));
+    await waitFor(() => expect(container.textContent).toContain('Diff too large'));
     const bySize = container.textContent ?? '';
 
     // 行数那一路：100 KB 的窄文件
@@ -146,8 +146,8 @@ describe('DiffView', () => {
 
     expect(bySize).toContain('6.0 MB');
     expect(byLines).toContain('100 KB');
-    // 少了 reason（或 formatSize 选错量级）时，100 KB 那条会被说成「File too large to preview
-    // (0 MB)」。判据钉在「这条里根本不该出现 MB」上——早先那版把标点也抄进断言里(`'0 MB,'`)，
+    // 少了 reason（或 formatSize 选错量级）时，100 KB 那条会被说成「Diff too large to show
+    // (file is 0 MB)」。判据钉在「这条里根本不该出现 MB」上——早先那版把标点也抄进断言里(`'0 MB,'`)，
     // **一次都不可能失败**：模板里那两个字符之间还隔着别的东西
     expect(byLines).not.toContain('MB');
   });
@@ -191,7 +191,7 @@ describe('DiffView', () => {
 
     ready('also-gone.txt', { kind: 'too-large', size: 0, reason: 'size' });
     show('also-gone.txt');
-    await waitFor(() => expect(container.textContent).toContain('File too large'));
+    await waitFor(() => expect(container.textContent).toContain('Diff too large'));
     expect(container.textContent).not.toContain('KB');
     expect(container.textContent).not.toContain('MB');
   });

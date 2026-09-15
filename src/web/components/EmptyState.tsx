@@ -53,10 +53,10 @@ function EmptyState({ icon, children }: { icon: LucideIcon; children: ComponentC
  * 说哪句、配哪枚**按侧栏此刻列的是哪一档定**：空着时右侧没有「此刻是哪个视图」可言，而侧栏
  * 档位说的正是「用户接下来会点开哪种东西」。
  *
- * - `Changes` 档且工作区干净：`Working tree clean.` 配一个 ✓。「没得选」与「还没选」是两件
- *   事——干净时「点左边一个文件」指着的是一个空列表。与左栏那句 `No changes.` 刻意不逐字相
+ * - `Changes` 档且工作区干净：`Working tree clean` 配一个 ✓。「没得选」与「还没选」是两件
+ *   事——干净时「点左边一个文件」指着的是一个空列表。与左栏那句 `No changes` 刻意不逐字相
  *   同：一句说的是列表，一句说的是仓库；✓ 已经把「没得看」带上，不再另说一遍。
- * - 其余一律 `Select a file on the left.`：**`Files` 档下即使干净也走这句**，那一档列的是整棵
+ * - 其余一律 `Select a file on the left`：**`Files` 档下即使干净也走这句**，那一档列的是整棵
  *   目录树，「Working tree clean」对着一列能点的文件答非所问。图标跟着档走：`Changes` 是一份
  *   diff（`FileDiff`），`Files` 是一份全文（`FileCode`）——两档打开同一个文件看到的是两样东
  *   西，图标在空着时就把这一点说出来。
@@ -66,9 +66,9 @@ function EmptyState({ icon, children }: { icon: LucideIcon; children: ComponentC
 export function PanelEmptyState() {
   const tab = activeTab.value;
   if (tab === 'changes' && repoState.value?.files.length === 0) {
-    return <EmptyState icon={CircleCheck}>Working tree clean.</EmptyState>;
+    return <EmptyState icon={CircleCheck}>Working tree clean</EmptyState>;
   }
   return (
-    <EmptyState icon={tab === 'files' ? FileCode : FileDiff}>Select a file on the left.</EmptyState>
+    <EmptyState icon={tab === 'files' ? FileCode : FileDiff}>Select a file on the left</EmptyState>
   );
 }
