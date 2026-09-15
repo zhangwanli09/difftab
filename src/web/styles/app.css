@@ -36,6 +36,32 @@
   }
 }
 
+/* 不画滚动条、滚动能力照旧。只给编辑器标签栏用：它横向滚，而画出来的滚动条会把栏撑高、与左栏
+ * 顶栏错开——VS Code 的标签栏也不占这一份高度。`scrollbar-width` Safari 18.2 起才认，
+ * `::-webkit-scrollbar` 那半条是老 Safari 的兜底。@utility 进 utilities 层，与别的工具类同级。 */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* 一行 tab 底下那条通栏分隔线，给「tab 自己的 `border-b` 盖在它上面」用（顶栏之下那行
+ * `Changes` / `Files`，与右侧编辑器标签栏——全仓库只此一种压线机制）。**是 inset 阴影不是
+ * `border-b`**：容器的 border 画在 padding box 之外，孩子的 `border-b` 够不着它，两条边上下相邻，
+ * 选中那一段就是双线；教科书写法是孩子用 1px 负外边距往下压，但编辑器标签栏是滚动容器，滚动容器
+ * 按 padding box 裁内容，压出去的那 1px 会被整个裁掉——下划线看不见，还留下 1px 纵向可滚溢出。
+ * inset 阴影画在 padding box 内侧的最后 1px、背景之上内容之下，孩子被 flex 拉满高度后那条
+ * `border-b` 正好盖住它，谁都不必越界。（那个负外边距的类名刻意不在 src/web 的注释里拼出来：
+ * Tailwind 连注释一起扫，拼出来产物里就多一条没人用的规则。）
+ *
+ * **写成一条裸 `box-shadow`，不用 `shadow-[…]`**：Tailwind 的 `shadow-*` 会把整套 shadow / ring
+ * 变量机制拖进产物（14 条 `@property`、翻倍的 `@layer properties` 兜底块、五段式 box-shadow），
+ * 为一条 1px 的线多出 2 KB CSS。 */
+@utility divider-b {
+  box-shadow: inset 0 -1px var(--color-panel-border);
+}
+
 /* 设计 token。
  *
  * 命名照搬 VS Code 的颜色 token(`editor.background` → `--color-editor-background`)，取值
