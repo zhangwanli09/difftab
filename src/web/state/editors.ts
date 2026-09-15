@@ -47,36 +47,37 @@ export const activeEditor = computed<Editor | null>(() => {
 });
 
 /**
- * 两栏的高亮各认自己那一种：变更列表按 diff、目录树按 file。活动 tab 是 `file:src/a.ts` 时
- * 变更列表里那一行不亮——那一行说的是「这份补丁」，而此刻在读的是全文。
+ * 两栏（变更列表、目录树）高亮的判据：活动 tab 的路径，**不看它是 diff 还是全文**。从前按种类
+ * 各认各的——活动 tab 是 `file:src/a.ts` 时变更列表里那一行不亮，理由是「那一行说的是这份补丁」
+ *——直接的症状是点了行内 `Open file` 之后那一行就熄了：用户刚从这一行出发、右侧正显示着这个
+ * 文件，左栏却说「你没在看它」。高亮回答的是「右侧此刻是哪个文件」，两栏各拿自己的路径去比
+ * 同一个值；VS Code 的列表选中态同样不随编辑器种类变。
  */
-export const activeDiffPath = computed<string | null>(() => {
-  const active = activeEditor.value;
-  return active?.kind === 'diff' ? active.path : null;
-});
-
-export const activeFilePath = computed<string | null>(() => {
-  const active = activeEditor.value;
-  return active?.kind === 'file' ? active.path : null;
-});
+export const activeEditorPath = computed<string | null>(() => activeEditor.value?.path ?? null);
 
 /**
- * 打开（或切到）一个 tab。开出来的一律是预览 tab，固定归 `pinEditor`。返回**被顶掉的预览
- * tab**（没有则 null）：调用方要作废它的在途请求与缓存，而「这次会不会顶掉预览」只该在这里判
+ * 打开（或切到）一个 tab。缺省开出来的是预览 tab，固定归双击那一路的 `pinEditor`。返回**被顶掉的
+ * 预览 tab**（没有则 null）：调用方要作废它的在途请求与缓存，而「这次会不会顶掉预览」只该在这里判
  * 一次——让调用方自己再推一遍，两处的判据会漂开。
  *
+ * 预览档（`pinned` 缺省）：
  * - 键已存在：只激活（它是预览就还是预览）
  * - 键不存在：有预览 tab 就**原位**替换它（位置不跳；预览 tab 的判据是 `pinned === false` 的那
  *   一项，不是「最后打开的」），否则追加
+ *
+ * 固定档（`pinned: true`，VS Code `git.openFile` 的 `preview: false`）：
+ * - 键已存在：固定它并激活
+ * - 键不存在：**追加一个固定 tab，不碰现有的预览 tab**——「先开预览再 pin」会先顶掉一个无辜的
+ *   预览 tab、再把顶掉它的那个固定住，两步都在这里判才不会那样
  */
-export function openEditor(kind: EditorKind, path: string): Editor | null {
+export function openEditor(kind: EditorKind, path: string, pinned = false): Editor | null {
   const key = editorKey(kind, path);
   const list = editors.value;
   let replaced: Editor | null = null;
   batch(() => {
     if (indexOfKey(list, key) === -1) {
-      const next: Editor = { kind, path, pinned: false };
-      const previewIndex = list.findIndex((editor) => !editor.pinned);
+      const next: Editor = { kind, path, pinned };
+      const previewIndex = pinned ? -1 : list.findIndex((editor) => !editor.pinned);
       const preview = list[previewIndex];
       if (preview === undefined) {
         editors.value = [...list, next];
@@ -84,6 +85,8 @@ export function openEditor(kind: EditorKind, path: string): Editor | null {
         replaced = preview;
         editors.value = replaceAt(list, previewIndex, next);
       }
+    } else if (pinned) {
+      pinEditor(key);
     }
     activeEditorKey.value = key;
   });

@@ -235,20 +235,22 @@ describe('FileTree', () => {
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain('path=src');
   });
 
-  it('选中的文件高亮，且判据是活动的 file tab 而不是同一路径的 diff tab', async () => {
-    treeCache.value = new Map([[ROOT, [entry({ name: 'a.ts' })]]]);
+  it('选中的文件高亮，判据是活动 tab 的路径——变更列表那侧点开的 diff tab 活动时也亮', async () => {
+    treeCache.value = new Map([[ROOT, [entry({ name: 'a.ts' }), entry({ name: 'b.ts' })]]]);
     await waitFor(() => expect(container.textContent).toContain('a.ts'));
     expect(rowOf('a.ts').className).not.toContain('bg-list-active-selection-background');
 
-    // 变更列表那侧点开的 diff tab 活动时，树上这一行不亮——两处看到的是两样东西
     openPinned('diff', 'a.ts');
-    await waitFor(() => expect(activeEditorKey.value).toBe('diff:a.ts'));
-    expect(rowOf('a.ts').className).not.toContain('bg-list-active-selection-background');
-
-    openPinned('file', 'a.ts');
     await waitFor(() =>
       expect(rowOf('a.ts').className).toContain('bg-list-active-selection-background'),
     );
+    expect(rowOf('b.ts').className).not.toContain('bg-list-active-selection-background');
+
+    openPinned('file', 'b.ts');
+    await waitFor(() =>
+      expect(rowOf('b.ts').className).toContain('bg-list-active-selection-background'),
+    );
+    expect(rowOf('a.ts').className).not.toContain('bg-list-active-selection-background');
   });
 
   it('单击开一个预览 tab，双击把它固定；目录行双击什么都不开', async () => {

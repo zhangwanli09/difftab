@@ -424,15 +424,17 @@ export async function loadFile(path: string): Promise<void> {
 }
 
 /**
- * 在树上点开一个文件：开（或切到）它的 file tab 并取内容。两件必须同时发生——只取不切的症状
- * 是点了没反应（内容取回来了，右边还画着上一份 diff）。
+ * 点开一个文件的全文：开（或切到）它的 file tab 并取内容。两件必须同时发生——只取不切的症状
+ * 是点了没反应（内容取回来了，右边还画着上一份 diff）。目录树上单击走缺省的预览档；变更列表
+ * 那枚 `Open file` 走 `pinned`（VS Code `git.openFile` 是 `preview: false`），开出来就是固定 tab、
+ * 不顶掉现有的预览——两档的差别全在 `openEditor` 里，这里只透传。
  *
  * 与 `selectFile` 分开而不是合成一个：同一个文件从两处点进去看到的是两样东西（补丁 / 全文），
  * 在栏里是两个 tab；合成一个就得再补一条「这次是从哪点进来的」，而那与 tab 的 `kind` 是同一个
  * 信息的两处实现。
  */
-export function openFile(path: string): void {
-  const replaced = openEditor('file', path);
+export function openFile(path: string, { pinned = false } = {}): void {
+  const replaced = openEditor('file', path, pinned);
   if (replaced !== null) forget(replaced);
   void loadFile(path);
 }

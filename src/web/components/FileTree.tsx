@@ -6,7 +6,7 @@
 
 import { useComputed } from '@preact/signals';
 import type { TreeEntry } from '../../server/shared/protocol';
-import { activeFilePath, editorKey, pinEditor } from '../state/editors';
+import { activeEditorPath, editorKey, pinEditor } from '../state/editors';
 import { type ChangeCode, codeByPath, openFile } from '../state/store';
 import { expandedDirs, ROOT, toggleDir, treeCache, treeErrors } from '../state/tree';
 import { CODE_COLORS, STATUS_SLOT, StatusBadge } from './ChangeList';
@@ -45,7 +45,7 @@ function Row({ entry, depth }: { entry: TreeEntry; depth: number }) {
    * 产出的 vnode 与上一次逐字相同。
    */
   const rowClass = useComputed(() => {
-    const selected = !isDir && activeFilePath.value === entry.path;
+    const selected = !isDir && activeEditorPath.value === entry.path;
     // 被忽略的灰显（次要色 + 降透明度），与 VS Code 一致。选中时不灰——那一行此刻是主角
     const tone = selected
       ? 'bg-list-active-selection-background text-list-active-selection-foreground'

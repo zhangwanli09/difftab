@@ -11,9 +11,8 @@ import type {
   RepoState,
 } from '../../../src/server/shared/protocol';
 import {
-  activeDiffPath,
   activeEditorKey,
-  activeFilePath,
+  activeEditorPath,
   editors,
   keyOf,
   openEditor,
@@ -394,7 +393,7 @@ describe('selectFile / openFile（预览与固定）', () => {
     selectFile(file({ path: 'src/new.ts', oldPath: 'src/old.ts', staged: 'R' }));
 
     expect(editors.value).toEqual([{ kind: 'diff', path: 'src/new.ts', pinned: false }]);
-    expect(activeDiffPath.value).toBe('src/new.ts');
+    expect(activeEditorPath.value).toBe('src/new.ts');
     // 微任务排空，让上面那个 void 出去的请求落地
     await vi.waitFor(() => expect(diffStates.value.get('src/new.ts')?.status).toBe('ready'));
     expect(query(calls[0] as string).get('oldPath')).toBe('src/old.ts');
@@ -432,12 +431,11 @@ describe('selectFile / openFile（预览与固定）', () => {
     expect(diffStates.value.has('a.ts')).toBe(false);
   });
 
-  test('openFile 开一个预览 file tab 并取内容；此时变更列表那侧不高亮', async () => {
+  test('openFile 开一个预览 file tab 并取内容', async () => {
     const calls = stubJson({ kind: 'text', content: 'hello\n' } satisfies FilePayload);
     openFile('src/app.ts');
     expect(editors.value).toEqual([{ kind: 'file', path: 'src/app.ts', pinned: false }]);
-    expect(activeFilePath.value).toBe('src/app.ts');
-    expect(activeDiffPath.value).toBeNull();
+    expect(activeEditorPath.value).toBe('src/app.ts');
     await vi.waitFor(() => expect(fileStates.value.get('src/app.ts')?.status).toBe('ready'));
     expect(query(calls[0] as string).get('path')).toBe('src/app.ts');
   });

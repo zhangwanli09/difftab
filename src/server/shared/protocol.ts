@@ -63,6 +63,22 @@ export function isConflicted(entry: FileEntry): boolean {
   return entry.conflicted === true;
 }
 
+/**
+ * 该条目的文件在**工作区里已不存在**——打开它的全文只会得到一条错误，变更列表因此不给它画
+ * `Open file`。判据分两支，且**不能只看 `unstaged === 'D'`**：
+ * - 冲突条目（`u` 记录）的 XY 是合并阶段码，不是索引 / 工作区状态位：`DD` 双方都删、文件不在；
+ *   `DU`（deleted by us）/ `UD`（deleted by them）工作区各留着另一方的版本。只看 Y 位会把 `UD`
+ *   误判成不在；
+ * - 其余条目 Y 位是 `D` 即工作区删了（含 `AD`）；`D.` 按 `git rm` 处理。**这一支是取舍不是事实**：
+ *   索引里没有的路径 git 不再比对工作区，Y 恒为 `.`，`git rm --cached` 后文件其实还在——非忽略时
+ *   它另有一条 `?` 记录、Untracked 那一行照常给按钮；被 `.gitignore` 忽略时连那条也没有，于是少一枚
+ *   按钮（`Files` 档里它仍灰显可点）。反过来对 `D.` 放行，会让最常见的 `git rm` 点出一条错误。
+ */
+export function isAbsentFromWorktree(entry: FileEntry): boolean {
+  if (isConflicted(entry)) return entry.staged === 'D' && entry.unstaged === 'D';
+  return entry.unstaged === 'D' || (entry.staged === 'D' && entry.unstaged === '.');
+}
+
 export interface BranchState {
   /**
    * 分支名；detached 时为 `# branch.head` 给出的字面量（git 输出 `(detached)`）。**空串的
