@@ -77,8 +77,13 @@ export const CODE_COLORS: Record<StatusCode, string> = {
  *
  * **三枚记号（字母、冲突两位、`Files` 那档目录行的圆点）共用这一个常量**：各写一份时不一致不报错，
  * 只是某一组或某一档那一列横着挪一截。
+ *
+ * 外壳还负责 `opacity-75`：颜色 token 与 VS Code `gitDecoration.*` 逐字相同，但 VS Code 行尾那枚
+ * decoration 字母（`.monaco-icon-label::after`）是 0.75 不透明度、比染色的文件名淡一档，画成满色
+ * 时记号看着比编辑器里重。**是 `opacity` 不是 token 的 `/75` 修饰符**：双值 token 经 `color-mix()`
+ * 会让整条声明作废。圆点是 `bg-current`，跟着外壳一起淡，不必各写。
  */
-export const STATUS_SLOT = 'ml-auto w-5 shrink-0';
+export const STATUS_SLOT = 'ml-auto w-5 shrink-0 opacity-75';
 const LETTER_CLASS = `${STATUS_SLOT} text-center font-mono text-xs`;
 
 /**
