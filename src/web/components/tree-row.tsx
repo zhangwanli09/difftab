@@ -87,6 +87,20 @@ export const REVEAL = 'hidden group-hover:flex group-has-focus-visible:flex poin
 export const ROW_GROUP = 'group relative hover:bg-list-hover-background';
 
 /**
+ * 行内动作的外壳：绝对定位在状态位左侧（那道 `right-9.5` 的加法见 `TreeRow`），**并把站进来的每一枚
+ * 按钮静止时淡到 `opacity-75`、指针悬到或键盘焦点落到那一枚上时恢复满色**。lucide 2px 描边在
+ * 16px 下比同色文字看着重，满色时比旁边那枚同样 `opacity-75` 的状态字母（`STATUS_SLOT`）抢眼；
+ * 同值同机制，一行里的从属记号于是只有一档淡。
+ *
+ * **淡化画在外壳上、按子选择器逐枚生效，不做成 `IconButton` 的一档**：「与状态字母同档」是这个
+ * 槽位的不变量——凡站进来的都得如此、站在别处的（顶栏开关、`Collapse all`、编辑器 tab 的 ×）都
+ * 不该如此，写成按钮的 prop 时第三枚动作忘传不报错，只是比邻居重一档。**恢复是逐枚的**
+ * （`[&>*:hover]` 而不是外壳自己的 `hover:`）：两枚并排时悬停的那一枚亮、旁边那枚仍淡。
+ * **是 `opacity` 不是 token 的 `/75` 修饰符**，理由与 `STATUS_SLOT` 那处一字不差。导出只为让用例钉住。
+ */
+export const ACTION_SHELL = `${REVEAL} absolute inset-y-0 right-9.5 items-center [&>*]:opacity-75 [&>*:hover]:opacity-100 [&>*:focus-visible]:opacity-100`;
+
+/**
  * 行按钮里、状态位之前的占位宽度，按外壳里真画的枚数取（`IconButton` 是 p-0.5 + 16px 图标 = 20px
  * 一枚）：悬停时进流把前面的截断盒挤开——省略号于是提前，文字是真的重排，照 VS Code。不常驻预留：
  * 那是每行永久少几十像素文字宽度，320px 侧栏里是一到两成。写成一张表而不是算：Tailwind 只产出源码
@@ -135,7 +149,7 @@ export function TreeRow({
           {list.length > 0 && <span class={`${REVEAL} shrink-0 ${SPACER_WIDTH[list.length]}`} />}
           {badge}
         </button>
-        <span class={`${REVEAL} absolute inset-y-0 right-9.5 items-center`}>{list}</span>
+        <span class={ACTION_SHELL}>{list}</span>
       </div>
       {sublevel}
     </li>

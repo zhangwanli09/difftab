@@ -7,8 +7,8 @@
 
 import { render } from 'preact';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ChangeList } from '../../../src/web/components/ChangeList';
-import { ROW_BASE, ROW_GROUP } from '../../../src/web/components/tree-row';
+import { ChangeList, STATUS_SLOT } from '../../../src/web/components/ChangeList';
+import { ACTION_SHELL, ROW_BASE, ROW_GROUP } from '../../../src/web/components/tree-row';
 import { changeView, collapsedChangeDirs } from '../../../src/web/state/change-tree';
 import { editors } from '../../../src/web/state/editors';
 import {
@@ -381,6 +381,27 @@ describe('ChangeList 的 Open file 行内动作', () => {
     expect(groupOf(row)?.className).toBe(ROW_GROUP);
     expect(ROW_GROUP).toContain('hover:bg-list-hover-background');
     expect(row?.className).not.toContain('bg-list-hover-background');
+  });
+
+  it('外壳把每一枚按钮静止淡到与状态字母同一档，悬停 / 键盘焦点逐枚恢复；按钮自己不带淡化', () => {
+    render(<ChangeList files={[file({ path: 'src/a.ts', staged: 'M' })]} />, container);
+    const shell = openButtonOf('src/a.ts')?.parentElement;
+
+    expect(shell?.className).toBe(ACTION_SHELL);
+    // 「同值」钉在两个常量之间：一处改成 60 另一处还是 75 时页面只是「两枚比字母淡（或重）一档」
+    const dim = /(?:^|\s)opacity-\d+/;
+    expect(ACTION_SHELL).toMatch(/\[&>\*\]:opacity-75/);
+    expect(STATUS_SLOT.match(dim)?.[0].trim()).toBe('opacity-75');
+    // 逐枚恢复靠子选择器，不是外壳自己的 hover:——后者让两枚一起亮
+    expect(ACTION_SHELL).toContain('[&>*:hover]:opacity-100');
+    expect(ACTION_SHELL).toContain('[&>*:focus-visible]:opacity-100');
+    expect(ACTION_SHELL).not.toMatch(/(?:^|\s)hover:opacity/);
+    for (const button of [
+      actionOf(rowByTitle('src/a.ts'), 'Copy path'),
+      openButtonOf('src/a.ts'),
+    ]) {
+      expect(button?.className).not.toContain('opacity-');
+    }
   });
 
   it('工作区里已不存在的文件不画；冲突里只有 DD 算不存在', () => {
