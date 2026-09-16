@@ -8,7 +8,7 @@ import { render } from 'preact';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FileEntry, TreeEntry } from '../../../src/server/shared/protocol';
 import { FileTree } from '../../../src/web/components/FileTree';
-import { ROW_BASE } from '../../../src/web/components/tree-row';
+import { REVEAL, ROW_BASE, ROW_GROUP } from '../../../src/web/components/tree-row';
 import { activeEditorKey, editors } from '../../../src/web/state/editors';
 import { repoState } from '../../../src/web/state/store';
 import {
@@ -18,7 +18,16 @@ import {
   treeCache,
   treeErrors,
 } from '../../../src/web/state/tree';
-import { file, openPinned, resetEditors, waitFor } from './helpers';
+import {
+  actionOf,
+  file,
+  groupOf,
+  openPinned,
+  resetEditors,
+  spacerIn,
+  stubClipboard,
+  waitFor,
+} from './helpers';
 
 const entry = (partial: Partial<TreeEntry> & { name: string }): TreeEntry => ({
   path: partial.name,
@@ -50,6 +59,7 @@ beforeEach(() => {
 afterEach(() => {
   render(null, container);
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 /**
@@ -303,6 +313,65 @@ describe('FileTree', () => {
     treeCache.value = new Map([[ROOT, [entry({ name: 'a.ts' })]]]);
     await waitFor(() => expect(container.textContent).toContain('a.ts'));
     expect(rowOf('a.ts').className).toContain(ROW_BASE);
+  });
+});
+
+/**
+ * 文件行与目录行悬停露出的 `Copy path`，机制与变更列表那枚共用（`TreeRow`）。钉的是「不报错、只是
+ * 不对」：这棵树的行没走 `TreeRow`（group 挂回 `<li>` 上——目录行套着子 `<ul>`，悬停任一后代时整段
+ * 目录行一起亮；底色回到行按钮上——指针移到按钮上那一刻行底色消失；占位与外壳的显隐变体漂开）；
+ * 复制的不是仓库相对路径。变体本身是哪几个由 `change-list.test.tsx` 钉，这里只钉「与外壳同一份」。
+ */
+describe('FileTree 的 Copy path 行内动作', () => {
+  const copyButtonOf = (text: string) => actionOf(rowOf(text), 'Copy path');
+
+  it('文件行与目录行都有；group 是行按钮的父 div 而不是 <li>，目录行的 group 不含子层', async () => {
+    treeCache.value = new Map([
+      [ROOT, [entry({ name: 'src', kind: 'directory' }), entry({ name: 'a.ts' })]],
+      ['src', [entry({ name: 'app.ts', path: 'src/app.ts' })]],
+    ]);
+    expandedDirs.value = new Set(['src']);
+    await waitFor(() => expect(container.textContent).toContain('app.ts'));
+
+    for (const text of ['a.ts', 'src']) {
+      const button = copyButtonOf(text);
+      expect(button?.title, text).toBe('Copy path');
+      expect(rowOf(text).contains(button)).toBe(false);
+      expect(groupOf(rowOf(text))).toBe(rowOf(text).parentElement);
+      expect(groupOf(rowOf(text))?.className).toBe(ROW_GROUP);
+      expect(rowOf(text).closest('li')?.classList.contains('group')).toBe(false);
+      expect(rowOf(text).className).not.toContain('bg-list-hover-background');
+    }
+    expect(groupOf(rowOf('src'))?.contains(rowOf('app.ts'))).toBe(false);
+  });
+
+  it('占位与按钮外壳共用同一对显隐变体，占位一枚宽', async () => {
+    treeCache.value = new Map([[ROOT, [entry({ name: 'a.ts' })]]]);
+    await waitFor(() => expect(container.textContent).toContain('a.ts'));
+    const shell = copyButtonOf('a.ts')?.parentElement;
+    const spacer = spacerIn(rowOf('a.ts'));
+
+    for (const node of [shell, spacer]) {
+      expect(node?.className).toContain(REVEAL);
+    }
+    expect(spacer?.classList.contains('w-5')).toBe(true);
+  });
+
+  it('点它把仓库相对路径写进剪贴板，不开 tab 也不折叠目录', async () => {
+    const writeText = stubClipboard();
+    treeCache.value = new Map([
+      [ROOT, [entry({ name: 'src', kind: 'directory' })]],
+      ['src', [entry({ name: 'app.ts', path: 'src/app.ts' })]],
+    ]);
+    expandedDirs.value = new Set(['src']);
+    await waitFor(() => expect(container.textContent).toContain('app.ts'));
+
+    copyButtonOf('app.ts')?.click();
+    expect(writeText).toHaveBeenCalledWith('src/app.ts');
+    copyButtonOf('src')?.click();
+    expect(writeText).toHaveBeenCalledWith('src');
+    expect(editors.value).toEqual([]);
+    expect(expandedDirs.value.has('src')).toBe(true);
   });
 });
 

@@ -11,6 +11,7 @@
 // 只抽外观与命名，不抽语义：画哪一枚、点了做什么，仍归调用方。
 
 import type { LucideIcon } from 'lucide-preact';
+import { useMemo } from 'preact/hooks';
 import { Icon } from './Icon';
 
 export function IconButton({
@@ -27,6 +28,10 @@ export function IconButton({
   // （ChangeList 的 ROW_CLASS）是同一个，但**不带它那个 -outline-offset-2**：列表项是通栏的、
   // 环画在里侧才不被邻行盖住，而这几枚按钮四周有空隙，环画在外面。
   //
+  // 图标的 vnode 按 `icon` 记忆：Preact 拿到同一个 vnode 引用时整棵子树直接跳过（`_original`
+  // 相等即 bail out），否则 Icon → lucide 的 Glyph → svg 这一串每次都重新 diff——而这枚按钮如今
+  // 每行两枚、每个 SSE 事件 320 行全部重画，那一串是逐字相同的输出
+  const glyph = useMemo(() => <Icon icon={icon} />, [icon]);
   // 悬停底色是 `toolbar-hover-background`（半透明叠加），**不是列表行那个 `list-hover`**：编辑器
   // tab 上那枚关闭按钮坐在一个自己就会 hover 变色的 tab 里，两处同色时鼠标单独悬在 × 上看不出
   // 任何反应；半透明的叠在哪种底色上都比周围深一档
@@ -38,7 +43,7 @@ export function IconButton({
       title={label}
       aria-label={label}
     >
-      <Icon icon={icon} />
+      {glyph}
     </button>
   );
 }
