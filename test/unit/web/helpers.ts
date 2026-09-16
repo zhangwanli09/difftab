@@ -59,3 +59,34 @@ export function stubJson(payload: unknown, status = 200): string[] {
   );
   return calls;
 }
+
+/**
+ * 把 `navigator.clipboard.writeText` 换成一个只记参数的桩并返回它。happy-dom 自带这个对象，于是
+ * 走仓库里给浏览器 API 打桩的惯例 `vi.spyOn`——由 `afterEach` 的 `vi.restoreAllMocks()` 恢复，
+ * 不像 `defineProperty` 那样把整个对象换掉后没人放回去。
+ */
+export function stubClipboard(error?: Error) {
+  // 每次调用才造 promise：预先造好一个 rejected 的，在没人接住之前就是一条 unhandledRejection
+  return vi
+    .spyOn(navigator.clipboard, 'writeText')
+    .mockImplementation(() => (error ? Promise.reject(error) : Promise.resolve()));
+}
+
+/**
+ * 下面三个都在描述 `TreeRow` 的 DOM 形状（`<li><div class="group"><button 行/>…<span 外壳>动作
+ * 按钮</span></div>子层</li>`），两棵树的用例共用：形状一改，改这里一处，而不是两份文件里四种
+ * 各自推导的查找一起坏、各报一句不同的错。
+ */
+
+/** 一行的 group div：行按钮与它的行内动作同住的那个 `<div>`。按类名往上找，不按层数数。 */
+export const groupOf = (node: Element | null | undefined) => node?.closest('.group') ?? null;
+
+/** 某一行的某枚行内动作按钮（按 `aria-label` 挑），没有即 `null`。 */
+export const actionOf = (row: Element | null | undefined, label: string) =>
+  groupOf(row)?.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`) ?? null;
+
+/** 行按钮里行内动作的占位：没有内容、带显隐变体的那个空 span。 */
+export const spacerIn = (row: Element | null | undefined) =>
+  [...(row?.querySelectorAll('span') ?? [])].find(
+    (node) => node.classList.contains('hidden') && node.textContent === '',
+  );

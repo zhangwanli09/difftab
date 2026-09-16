@@ -32,7 +32,14 @@ import {
 } from '../state/store';
 import { SidebarPlaceholder } from './EmptyState';
 import { IconButton } from './IconButton';
-import { ChevronPlaceholder, ExpandChevron, indent, ROW_BASE } from './tree-row';
+import {
+  ChevronPlaceholder,
+  CopyPathButton,
+  ExpandChevron,
+  indent,
+  ROW_BASE,
+  TreeRow,
+} from './tree-row';
 
 /**
  * 状态位的**展示文案**，与解析无关——徽章上印的是 git 自己的字母，这张表只作为 tooltip 把
@@ -130,19 +137,7 @@ function ConflictBadge({ staged, unstaged }: Pick<FileEntry, 'staged' | 'unstage
 // 行的骨架是 `tree-row.tsx` 那份 `ROW_BASE`，与 `Files` 那档同一份；对齐方式为什么不在骨架里、
 // 文件行为什么按基线而目录行按居中，都写在它上面。左内边距两种行都由 `indent()` 给，不在类名里
 const ROW_CLASS = `${ROW_BASE} items-baseline`;
-const DIR_ROW_CLASS = `${ROW_BASE} items-center hover:bg-list-hover-background`;
-
-/**
- * 文件行上 `Open file` 那枚按钮的显隐：悬停整行或键盘焦点落在行内时才进流，其余时刻
- * `display: none`。**走 `display` 不走透明度**（编辑器 tab 上那枚 × 用透明度是为了留住位置）：
- * 这里按钮悬在文字上方，透明就是一块看不见却能点的死区，点到目录段的尾巴会误开文件。
- * `group-focus-within` 那半条给键盘——Tab 从行按钮移过去时它得先显示出来才接得住焦点。
- *
- * **占位与按钮外壳共用这一个常量**：占位在行按钮里、把文字挤开，按钮绝对定位在它上面，两处的
- * 显隐必须是同一对变体。各写一份时漂开不报错，只是文字被挤开了而按钮没出来，或反过来按钮盖
- * 在文字上。
- */
-const REVEAL = 'hidden group-hover:flex group-focus-within:flex';
+const DIR_ROW_CLASS = `${ROW_BASE} items-center`;
 
 /**
  * 一个文件那一行。`treeDepth` 有值即树视图里的一行：按层级缩进、行首多一个与目录行的展开三角
@@ -160,7 +155,8 @@ function FileRow({
 }) {
   const { dir, name } = splitForDisplay(file.path);
   const inTree = treeDepth !== undefined;
-  // 工作区里已不存在的文件不给 `Open file`：它唯一能打开的是一条错误。判据是 git 知识，在协议层
+  // 工作区里已不存在的文件不给 `Open file`：它唯一能打开的是一条错误。判据是 git 知识，在协议层。
+  // `Copy path` 照给——`git checkout -- <path>` 正要这条路径
   const canOpen = !isAbsentFromWorktree(file);
   /**
    * 选中态包成 `computed` 再作为 prop 传下去，**不在组件体里读 `activeEditorPath.value`**：在组件
@@ -170,92 +166,78 @@ function FileRow({
    * **实测（本机 320 文件仓库，点击到高亮移动）**：组件体里读 0.8ms 中位 / 1.5ms p90，换成本
    * 写法后 0.2ms / 0.5ms。绝对值都不大——记在这里是因为这条路径每个 SSE 事件都要走一遍。
    *
-   * 基础类只写一次，三元里只放选中/未选中的**差量**：两个分支各拼一遍 ROW_CLASS 的话，以后
-   * 「选中行也加个 X」要改两处，而 diff 上也看不出到底哪个分支变了。
-   *
-   * 悬停底色是 `group-hover:` 不是 `hover:`（group 是外面那个 `<li>`）：`Open file` 是行按钮的
-   * 兄弟，指针从行上移到它身上时已经离开了 `<button>`，用 `hover:` 时行底色在那一刻消失、按钮
-   * 悬在一块没底色的行上。
+   * 基础类只写一次，只在选中时追加**差量**（悬停底色不在这里——它画在 `TreeRow` 的 group div 上）。
    */
   const rowClass = useComputed(
     () =>
       `${ROW_CLASS} ${
         activeEditorPath.value === file.path
           ? 'bg-list-active-selection-background text-list-active-selection-foreground'
-          : 'group-hover:bg-list-hover-background'
+          : ''
       }`,
   );
   return (
-    // `group`：`Open file` 的显隐与行的悬停底色都跟着整个 `<li>` 走；`relative`：按钮外壳的包含块
-    <li class="group relative">
-      <button
-        type="button"
-        // 整个条目交回 store——取 diff 要带哪些参数（重命名的 oldPath）属 git 知识，不在组件
-        // 里重写一遍。单击预览、双击固定：双击到来时前两个 click 已经把 tab 开好并各取过一趟，
-        // 这一下只幂等地置 pinned、不再取第三趟
-        onClick={() => selectFile(file)}
-        onDblClick={() => pinEditor(editorKey('diff', file.path))}
-        // 目录段被裁掉是**设计中的常态**（见下），完整路径于是在列表里找不回来了——
-        // 挂在整行上补一份。不放在目录那个 span 上：它被裁到零宽时就没得可悬停了
-        title={file.path}
-        class={rowClass}
-        // 平铺列表也走 `indent()`，取第 0 层：左内边距于是三种视图只此一个来源
-        style={indent(treeDepth ?? 0)}
-      >
-        {inTree && <ChevronPlaceholder />}
-        {/* 文件名在前、目录在后。侧栏定宽 320px，而 `truncate` 的省略号在**右**端——目录排在
-            后面时，放不下先没的就是目录、文件名留到最后；改回「目录前缀 + 文件名」的老写法则
-            反过来先吃掉文件名，而它才是认出这一行的东西。
-            **两段必须同住这一个 truncate span**：拆成两个平级的 flex 子项会静默毁掉基线对齐，
-            还得靠 flex-basis 去调谁先被裁、连带把下面那段重命名标注推到侧栏最右。
-            `min-w-0` 不能省：flex 子项的 min-width 默认 auto，不给它时 overflow:hidden 收不住 */}
-        <span class="min-w-0 truncate">
-          {name}
-          {dir && !inTree && <span class="ml-2 text-xs text-description-foreground">{dir}</span>}
-        </span>
-        {/* 重命名的判据是 oldPath 存在，不是比对路径。这里只把旧路径说清楚，
-            点开后的 rename from/to 与相似度标注在 DiffView 那侧 */}
-        {file.oldPath && (
-          <span class="min-w-0 truncate text-xs text-description-foreground">
-            ← {file.oldPath}
-            {file.renameScore !== undefined && ` (${file.renameScore}%)`}
-          </span>
-        )}
-        {/* 状态位是最后一个子项、`ml-auto` 靠右：排在重命名标注之后，前面两个 `min-w-0 truncate`
-            收缩时它 `shrink-0` 不动。每个分组只展示它自己那一侧的状态位——「已暂存」看 X，其余
-            看 Y；冲突条目两侧都不是 `.`，挑哪一位都会丢掉另一半。**「印两位」的判据是条目自己的
-            `conflicted`，不是它落在哪一组**：按分组判的话，这一行画得对不对就取决于 `groupFiles`
-            与这里是否一致，而那个一致性没有任何东西在管 */}
-        {/* `Open file` 的占位：与按钮等宽（`IconButton` 是 p-0.5 + 16px 图标 = 20px），悬停时进流
-            把前面两个截断盒挤开——省略号于是提前 26px，文字是真的重排，照 VS Code。不常驻预留：
-            那是每行永久少 26px 文字宽度，320px 侧栏里是一成 */}
-        {canOpen && <span class={`${REVEAL} w-5 shrink-0`} />}
-        {file.conflicted ? (
+    <TreeRow
+      // 整个条目交回 store——取 diff 要带哪些参数（重命名的 oldPath）属 git 知识，不在组件
+      // 里重写一遍。单击预览、双击固定：双击到来时前两个 click 已经把 tab 开好并各取过一趟，
+      // 这一下只幂等地置 pinned、不再取第三趟
+      onClick={() => selectFile(file)}
+      onDblClick={() => pinEditor(editorKey('diff', file.path))}
+      // 目录段被裁掉是**设计中的常态**（见下），完整路径于是在列表里找不回来了——
+      // 挂在整行上补一份。不放在目录那个 span 上：它被裁到零宽时就没得可悬停了
+      title={file.path}
+      class={rowClass}
+      // 平铺列表也走 `indent()`，取第 0 层：左内边距于是三种视图只此一个来源
+      style={indent(treeDepth ?? 0)}
+      // 状态位靠右（`ml-auto`）：前面两个 `min-w-0 truncate` 收缩时它 `shrink-0` 不动。每个分组只
+      // 展示它自己那一侧的状态位——「已暂存」看 X，其余看 Y；冲突条目两侧都不是 `.`，挑哪一位都会
+      // 丢掉另一半。**「印两位」的判据是条目自己的 `conflicted`，不是它落在哪一组**：按分组判的话，
+      // 这一行画得对不对就取决于 `groupFiles` 与这里是否一致，而那个一致性没有任何东西在管
+      badge={
+        file.conflicted ? (
           <ConflictBadge staged={file.staged} unstaged={file.unstaged} />
         ) : (
           <StatusBadge code={group === 'staged' ? file.staged : file.unstaged} />
-        )}
-      </button>
-      {/* 按钮是行按钮的**兄弟**，不套在里面：按钮里不能套按钮，理由与编辑器 tab 上那枚 × 一字
-          不差；它的事件压根不经过行按钮，点它不会顺带开一个 diff tab。绝对定位在状态位左侧：
-          `right-9.5`（38px）= ROW_BASE 的 `pr-3`（12）+ 状态位 `w-5`（20）+ `gap-1.5`（6）。文字被
-          截断的行里占位正好在它底下；短行里占位贴着文字、按钮悬在空白上，两种情况都盖不到字——
-          改行骨架的间距或状态位宽度时这道加法要跟着改，症状只是与字母挨着或错开几像素。
-          图标是 `FileInput`（文件 + 一支进入文件的箭头），Lucide 里最贴近 codicon `go-to-file` 的一枚
-          ——它是一个「跳过去」的动作，不用 file tab 那枚 `FileCode`：那是种类标识，画在动作按钮上
-          读不出「点了会发生什么」。位置照 VS Code Source Control 的 inline action；点它开的是**固定**
-          的 file tab（VS Code `git.openFile` 是 `preview: false`——一个明确的「我要这个文件」的动作
-          不该被下一次单击顶掉），不切侧栏档位 */}
-      {canOpen && (
-        <span class={`${REVEAL} absolute inset-y-0 right-9.5 items-center`}>
+        )
+      }
+      // 行内动作，位置照 VS Code Source Control 的 inline action。`Copy path` 在左、`Open file` 留在
+      // 紧贴状态位的位置。`Open file` 的图标是 `FileInput`（文件 + 一支进入文件的箭头），Lucide 里
+      // 最贴近 codicon `go-to-file` 的一枚——它是一个「跳过去」的动作，不用 file tab 那枚 `FileCode`：
+      // 那是种类标识，画在动作按钮上读不出「点了会发生什么」。点它开的是**固定**的 file tab（VS Code
+      // `git.openFile` 是 `preview: false`——一个明确的「我要这个文件」的动作不该被下一次单击顶掉），
+      // 不切侧栏档位
+      actions={[
+        <CopyPathButton key="copy" path={file.path} />,
+        canOpen && (
           <IconButton
+            key="open"
             icon={FileInput}
             label="Open file"
             onClick={() => openFile(file.path, { pinned: true })}
           />
+        ),
+      ]}
+    >
+      {inTree && <ChevronPlaceholder />}
+      {/* 文件名在前、目录在后。侧栏定宽 320px，而 `truncate` 的省略号在**右**端——目录排在
+          后面时，放不下先没的就是目录、文件名留到最后；改回「目录前缀 + 文件名」的老写法则
+          反过来先吃掉文件名，而它才是认出这一行的东西。
+          **两段必须同住这一个 truncate span**：拆成两个平级的 flex 子项会静默毁掉基线对齐，
+          还得靠 flex-basis 去调谁先被裁、连带把下面那段重命名标注推到侧栏最右。
+          `min-w-0` 不能省：flex 子项的 min-width 默认 auto，不给它时 overflow:hidden 收不住 */}
+      <span class="min-w-0 truncate">
+        {name}
+        {dir && !inTree && <span class="ml-2 text-xs text-description-foreground">{dir}</span>}
+      </span>
+      {/* 重命名的判据是 oldPath 存在，不是比对路径。这里只把旧路径说清楚，
+          点开后的 rename from/to 与相似度标注在 DiffView 那侧 */}
+      {file.oldPath && (
+        <span class="min-w-0 truncate text-xs text-description-foreground">
+          ← {file.oldPath}
+          {file.renameScore !== undefined && ` (${file.renameScore}%)`}
         </span>
       )}
-    </li>
+    </TreeRow>
   );
 }
 
@@ -276,21 +258,20 @@ function DirRow({
   // 不跟着重画
   const expanded = useComputed(() => !isChangeDirCollapsed(group, node.path)).value;
   return (
-    <li>
-      <button
-        type="button"
-        onClick={() => toggleChangeDir(group, node.path)}
-        // 合并后的名字会被 320px 裁掉，完整路径在树上找不回来——与文件行同理挂在整行上
-        title={node.path}
-        aria-expanded={expanded}
-        class={DIR_ROW_CLASS}
-        style={indent(depth)}
-      >
-        <ExpandChevron expanded={expanded} />
-        <span class="min-w-0 truncate">{node.name}</span>
-      </button>
-      {expanded && <TreeLevel nodes={node.children} group={group} depth={depth + 1} />}
-    </li>
+    <TreeRow
+      onClick={() => toggleChangeDir(group, node.path)}
+      // 合并后的名字会被 320px 裁掉，完整路径在树上找不回来——与文件行同理挂在整行上
+      title={node.path}
+      aria-expanded={expanded}
+      class={DIR_ROW_CLASS}
+      style={indent(depth)}
+      // 目录只有 `Copy path`（合并节点复制链尾那个 `path`）：目录没有 diff 也没有全文可开
+      actions={<CopyPathButton path={node.path} />}
+      sublevel={expanded && <TreeLevel nodes={node.children} group={group} depth={depth + 1} />}
+    >
+      <ExpandChevron expanded={expanded} />
+      <span class="min-w-0 truncate">{node.name}</span>
+    </TreeRow>
   );
 }
 

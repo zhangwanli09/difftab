@@ -12,7 +12,14 @@ import { expandedDirs, ROOT, toggleDir, treeCache, treeErrors } from '../state/t
 import { CODE_COLORS, STATUS_SLOT, StatusBadge } from './ChangeList';
 // 行的骨架与行首三样都与变更列表的树视图共用一份：各写一份不报错，只是切一次 tab 行高或缩进跳一
 // 截、或者一棵树里文件名比同层的目录名往左挪一截
-import { ChevronPlaceholder, ExpandChevron, indent, ROW_BASE } from './tree-row';
+import {
+  ChevronPlaceholder,
+  CopyPathButton,
+  ExpandChevron,
+  indent,
+  ROW_BASE,
+  TreeRow,
+} from './tree-row';
 
 /**
  * 目录行行尾的圆点：只说「底下有事」，**不印字母**——一个目录底下可以同时躺着改过的和没改过的
@@ -46,10 +53,13 @@ function Row({ entry, depth }: { entry: TreeEntry; depth: number }) {
    */
   const rowClass = useComputed(() => {
     const selected = !isDir && activeEditorPath.value === entry.path;
-    // 被忽略的灰显（次要色 + 降透明度），与 VS Code 一致。选中时不灰——那一行此刻是主角
+    // 被忽略的灰显（次要色 + 降透明度），与 VS Code 一致。选中时不灰——那一行此刻是主角。
+    // 悬停底色不在这里，它画在 `TreeRow` 的 group div 上
     const tone = selected
       ? 'bg-list-active-selection-background text-list-active-selection-foreground'
-      : `hover:bg-list-hover-background ${entry.ignored ? 'text-description-foreground opacity-60' : ''}`;
+      : entry.ignored
+        ? 'text-description-foreground opacity-60'
+        : '';
     return `${ROW_CLASS} ${tone}`;
   });
 
@@ -69,27 +79,26 @@ function Row({ entry, depth }: { entry: TreeEntry; depth: number }) {
   const isExpanded = isDir && expanded.value;
 
   return (
-    <li>
-      <button
-        type="button"
-        onClick={() => (isDir ? toggleDir(entry.path) : openFile(entry.path))}
-        // 单击预览、双击固定（目录行没有 tab 可固定）：双击到来时前两个 click 已经把 tab 开好
-        // 并各取过一趟，这一下只幂等地置 pinned、不再取第三趟
-        onDblClick={isDir ? undefined : () => pinEditor(editorKey('file', entry.path))}
-        // 名字会被 320px 裁掉，而完整路径在树上找不回来——与变更列表同理挂在整行上，
-        // 不挂在被裁的那一段上（它被裁到零宽时就没得可悬停了）
-        title={entry.path}
-        aria-expanded={isDir ? isExpanded : undefined}
-        class={rowClass}
-        style={indent(depth)}
-      >
-        {isDir ? <ExpandChevron expanded={isExpanded} /> : <ChevronPlaceholder />}
-        <span class={nameClass}>{entry.name}</span>
-        {/* 行尾的状态记号：文件印字母（与变更列表同一枚组件，切 tab 时落在同一列），目录印圆点 */}
-        {code !== null && (isDir ? <DirBadge code={code} /> : <StatusBadge code={code} />)}
-      </button>
-      {isExpanded && <Level path={entry.path} depth={depth + 1} />}
-    </li>
+    <TreeRow
+      onClick={() => (isDir ? toggleDir(entry.path) : openFile(entry.path))}
+      // 单击预览、双击固定（目录行没有 tab 可固定）：双击到来时前两个 click 已经把 tab 开好
+      // 并各取过一趟，这一下只幂等地置 pinned、不再取第三趟
+      onDblClick={isDir ? undefined : () => pinEditor(editorKey('file', entry.path))}
+      // 名字会被 320px 裁掉，而完整路径在树上找不回来——与变更列表同理挂在整行上，
+      // 不挂在被裁的那一段上（它被裁到零宽时就没得可悬停了）
+      title={entry.path}
+      aria-expanded={isDir ? isExpanded : undefined}
+      class={rowClass}
+      style={indent(depth)}
+      // 行尾的状态记号：文件印字母（与变更列表同一枚组件，切 tab 时落在同一列），目录印圆点
+      badge={code !== null && (isDir ? <DirBadge code={code} /> : <StatusBadge code={code} />)}
+      // 只有 `Copy path`；`Open file` 这里不画——点行开的本来就是全文
+      actions={<CopyPathButton path={entry.path} />}
+      sublevel={isExpanded && <Level path={entry.path} depth={depth + 1} />}
+    >
+      {isDir ? <ExpandChevron expanded={isExpanded} /> : <ChevronPlaceholder />}
+      <span class={nameClass}>{entry.name}</span>
+    </TreeRow>
   );
 }
 

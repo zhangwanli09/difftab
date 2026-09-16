@@ -8,10 +8,20 @@
 import { render } from 'preact';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChangeList } from '../../../src/web/components/ChangeList';
-import { ROW_BASE } from '../../../src/web/components/tree-row';
+import { ROW_BASE, ROW_GROUP } from '../../../src/web/components/tree-row';
 import { changeView, collapsedChangeDirs } from '../../../src/web/state/change-tree';
 import { editors } from '../../../src/web/state/editors';
-import { file, openPinned, resetEditors, stubJson, waitFor } from './helpers';
+import {
+  actionOf,
+  file,
+  groupOf,
+  openPinned,
+  resetEditors,
+  spacerIn,
+  stubClipboard,
+  stubJson,
+  waitFor,
+} from './helpers';
 
 let container: HTMLElement;
 
@@ -27,6 +37,7 @@ afterEach(() => {
   resetEditors();
   changeView.value = 'list';
   collapsedChangeDirs.value = new Set();
+  vi.restoreAllMocks();
 });
 
 /**
@@ -47,12 +58,14 @@ function sectionTextOf(title: string): string {
 }
 
 /**
- * 列表里的**行**按钮（文件行与目录行）。`Open file` 那枚也是 `<button>`，但它带 `aria-label`（只画
+ * 列表里的**行**按钮（文件行与目录行）。行内动作那两枚也是 `<button>`，但它们带 `aria-label`（只画
  * 图标的按钮名字只能由它给），行按钮的名字来自可见文本、没有——按这一条把两种按钮分开，而不是
  * 按 DOM 位置数。
  */
 const ROW_SELECTOR = 'button:not([aria-label])';
 const rowButtons = () => [...container.querySelectorAll<HTMLButtonElement>(ROW_SELECTOR)];
+/** 按整行的 `title`（完整路径）挑一行；目录行的 `title` 是合并后的目录路径。 */
+const rowByTitle = (title: string) => rowButtons().find((row) => row.title === title);
 
 describe('ChangeList 的冲突组', () => {
   it('冲突行印出 XY 两位，而不是只挑一位', () => {
@@ -169,8 +182,6 @@ describe('ChangeList 的行布局', () => {
  * 切到树之后组头没了（分组是 git 语义，不是列表版式的附属）。
  */
 describe('ChangeList 的树视图', () => {
-  const rows = rowButtons;
-  const rowByTitle = (title: string) => rows().find((row) => row.title === title);
   // signals 驱动的重渲染是异步的，点完要等一拍
   const waitFor = (assert: () => void) => vi.waitFor(assert, { interval: 5 });
 
@@ -229,7 +240,7 @@ describe('ChangeList 的树视图', () => {
       container,
     );
 
-    const dirs = rows().filter((row) => row.title === 'src');
+    const dirs = rowButtons().filter((row) => row.title === 'src');
     expect(dirs).toHaveLength(2);
     dirs[0]?.click();
     await waitFor(() => expect(dirs[0]?.getAttribute('aria-expanded')).toBe('false'));
@@ -251,7 +262,7 @@ describe('ChangeList 的树视图', () => {
   it('列表版式下没有目录行', () => {
     render(<ChangeList files={[file({ path: 'src/a.ts', staged: 'M' })]} />, container);
     expect(rowByTitle('src')).toBeUndefined();
-    expect(rows()).toHaveLength(1);
+    expect(rowButtons()).toHaveLength(1);
   });
 });
 
@@ -261,7 +272,6 @@ describe('ChangeList 的树视图', () => {
  * 双击固定。
  */
 describe('ChangeList 的选中态', () => {
-  const rowByTitle = (title: string) => rowButtons().find((row) => row.title === title);
   const SELECTED = 'bg-list-active-selection-background';
 
   beforeEach(() => {
@@ -311,22 +321,21 @@ describe('ChangeList 的选中态', () => {
  * 也画（点了只有一条错误）。happy-dom 没有排版引擎，能钉的只有树形与类名。
  */
 describe('ChangeList 的 Open file 行内动作', () => {
-  const rowByTitle = (title: string) => rowButtons().find((row) => row.title === title);
   const openButtons = () => [
     ...container.querySelectorAll<HTMLButtonElement>('button[aria-label="Open file"]'),
   ];
-  const openButtonOf = (path: string) =>
-    openButtons().find((button) => button.closest('li') === rowByTitle(path)?.closest('li'));
+  const openButtonOf = (path: string) => actionOf(rowByTitle(path), 'Open file');
 
-  it('按钮是行按钮的兄弟、同住一个 <li>，不套在行按钮里', () => {
+  it('按钮是行按钮的兄弟、同住一个 group div，不套在行按钮里；group 不是 <li>', () => {
     render(<ChangeList files={[file({ path: 'src/a.ts', staged: 'M' })]} />, container);
     const row = rowByTitle('src/a.ts');
     const button = openButtonOf('src/a.ts');
 
-    expect(button).toBeDefined();
     expect(button?.title).toBe('Open file');
     expect(row?.contains(button ?? null)).toBe(false);
-    expect(row?.closest('li')?.classList.contains('group')).toBe(true);
+    expect(groupOf(row)?.classList.contains('group')).toBe(true);
+    expect(groupOf(row)?.tagName).toBe('DIV');
+    expect(row?.closest('li')?.classList.contains('group')).toBe(false);
   });
 
   it('点它开一个**固定**的 file tab 并取全文，不顶掉现有预览、也不顺带开 diff tab', async () => {
@@ -349,23 +358,29 @@ describe('ChangeList 的 Open file 行内动作', () => {
     await waitFor(() => expect(calls).toContain('/api/file?path=src%2Fa.ts'));
   });
 
-  it('占位与按钮外壳共用同一对显隐变体，行底色是 group-hover 不是 hover', () => {
+  it('占位与按钮外壳共用同一对显隐变体，悬停底色在 group div 上而不在行按钮上', () => {
     render(<ChangeList files={[file({ path: 'src/a.ts', staged: 'M' })]} />, container);
     const row = rowByTitle('src/a.ts');
     const shell = openButtonOf('src/a.ts')?.parentElement;
-    // 占位是行按钮里紧挨着状态位、宽度与按钮相同的那个空 span
-    const spacer = [...(row?.querySelectorAll('span') ?? [])].find(
-      (node) => node.classList.contains('w-5') && node.textContent === '',
-    );
+    const spacer = spacerIn(row);
 
+    // 键盘那半条钉的是 `has-focus-visible` 不是 `focus-within`：后者在鼠标点过按钮之后一直成立，
+    // 鼠标移开按钮还钉在行上
     for (const node of [shell, spacer]) {
       expect(node).toBeDefined();
-      for (const cls of ['hidden', 'group-hover:flex', 'group-focus-within:flex']) {
+      for (const cls of [
+        'hidden',
+        'group-hover:flex',
+        'group-has-focus-visible:flex',
+        'pointer-coarse:flex',
+      ]) {
         expect(node?.classList.contains(cls)).toBe(true);
       }
     }
-    expect(row?.className).toContain('group-hover:bg-list-hover-background');
-    expect(row?.className).not.toContain(' hover:bg-list-hover-background');
+    // 底色挂在行按钮上时，指针移到按钮上那一刻行底色就消失
+    expect(groupOf(row)?.className).toBe(ROW_GROUP);
+    expect(ROW_GROUP).toContain('hover:bg-list-hover-background');
+    expect(row?.className).not.toContain('bg-list-hover-background');
   });
 
   it('工作区里已不存在的文件不画；冲突里只有 DD 算不存在', () => {
@@ -387,7 +402,7 @@ describe('ChangeList 的 Open file 行内动作', () => {
     );
 
     for (const path of ['wt-deleted.ts', 'rm.ts', 'added-then-deleted.ts', 'both-deleted.ts']) {
-      expect(openButtonOf(path), path).toBeUndefined();
+      expect(openButtonOf(path), path).toBeNull();
     }
     for (const path of [
       'deleted-by-them.ts',
@@ -396,7 +411,7 @@ describe('ChangeList 的 Open file 行内动作', () => {
       'renamed.ts',
       'new.ts',
     ]) {
-      expect(openButtonOf(path), path).toBeDefined();
+      expect(openButtonOf(path), path).not.toBeNull();
     }
   });
 
@@ -404,7 +419,89 @@ describe('ChangeList 的 Open file 行内动作', () => {
     changeView.value = 'tree';
     render(<ChangeList files={[file({ path: 'src/a.ts', staged: 'M' })]} />, container);
 
-    expect(openButtonOf('src/a.ts')).toBeDefined();
+    expect(openButtonOf('src/a.ts')).not.toBeNull();
     expect(openButtons()).toHaveLength(1);
+  });
+});
+
+/**
+ * 每行悬停露出的另一枚 `Copy path`。钉的同样是「不报错、只是不对」：两枚各起一个外壳（位置各算
+ * 各的）；占位的宽度与真画的枚数不一致（省略号多退或少退 20px）；已删除的行漏掉它（那正是要贴给
+ * `git checkout --` 的路径）；复制成功没有反馈、或反馈永远不复原；写失败时换了图标（用户以为复制
+ * 成了）。
+ */
+describe('ChangeList 的 Copy path 行内动作', () => {
+  const copyButtons = () => [
+    ...container.querySelectorAll<HTMLButtonElement>('button[aria-label="Copy path"]'),
+  ];
+  const copyButtonOf = (path: string) => actionOf(rowByTitle(path), 'Copy path');
+  const openButtonOf = (path: string) => actionOf(rowByTitle(path), 'Open file');
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('与 Open file 同住一个外壳、排在它左边；占位两枚宽', () => {
+    render(<ChangeList files={[file({ path: 'src/a.ts', staged: 'M' })]} />, container);
+    const copy = copyButtonOf('src/a.ts');
+    const open = openButtonOf('src/a.ts');
+
+    expect(copy?.title).toBe('Copy path');
+    expect(copy?.parentElement).toBe(open?.parentElement);
+    expect(copy?.nextElementSibling).toBe(open);
+    expect(spacerIn(rowByTitle('src/a.ts'))?.classList.contains('w-10')).toBe(true);
+  });
+
+  it('已删除的行照画，此时只有它一枚、占位一枚宽', () => {
+    render(<ChangeList files={[file({ path: 'rm.ts', staged: 'D' })]} />, container);
+
+    expect(copyButtonOf('rm.ts')).not.toBeNull();
+    expect(openButtonOf('rm.ts')).toBeNull();
+    expect(spacerIn(rowByTitle('rm.ts'))?.classList.contains('w-5')).toBe(true);
+  });
+
+  it('点它把仓库相对路径写进剪贴板，不开 tab；图标短暂换成 Copied 再复原', async () => {
+    vi.useFakeTimers();
+    const writeText = stubClipboard();
+    render(<ChangeList files={[file({ path: 'src/a.ts', staged: 'M' })]} />, container);
+
+    copyButtonOf('src/a.ts')?.click();
+    expect(writeText).toHaveBeenCalledWith('src/a.ts');
+    expect(editors.value).toEqual([]);
+    // 反馈等 writeText 的 promise 落定才画
+    await vi.advanceTimersByTimeAsync(0);
+    const button = actionOf(rowByTitle('src/a.ts'), 'Copied');
+    expect(button?.getAttribute('aria-label')).toBe('Copied');
+    expect(button?.getAttribute('title')).toBe('Copied');
+
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(button?.getAttribute('aria-label')).toBe('Copy path');
+  });
+
+  it('写失败时静默，不换成 Copied', async () => {
+    vi.useFakeTimers();
+    stubClipboard(new Error('denied'));
+    render(<ChangeList files={[file({ path: 'src/a.ts', staged: 'M' })]} />, container);
+
+    copyButtonOf('src/a.ts')?.click();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(copyButtonOf('src/a.ts')).not.toBeNull();
+  });
+
+  it('树视图下文件行与目录行都有；目录行复制合并节点的链尾路径，且它的 group 不含子层', () => {
+    changeView.value = 'tree';
+    const writeText = stubClipboard();
+    render(<ChangeList files={[file({ path: 'src/web/a.ts', staged: 'M' })]} />, container);
+    const dirRow = rowByTitle('src/web');
+
+    expect(copyButtonOf('src/web/a.ts')).not.toBeNull();
+    expect(copyButtons()).toHaveLength(2);
+    // 目录行的 group 里只有它自己那一行：子层 `<ul>` 在外面，悬停后代不会把它一起点亮
+    expect(groupOf(dirRow)?.contains(rowByTitle('src/web/a.ts') ?? null)).toBe(false);
+    expect(groupOf(dirRow)?.className).toBe(ROW_GROUP);
+
+    copyButtonOf('src/web')?.click();
+    expect(writeText).toHaveBeenCalledWith('src/web');
+    expect(editors.value).toEqual([]);
   });
 });

@@ -142,8 +142,13 @@
 | 变更列表的版式开关写 `localStorage` | 后端 `listen(0)` 端口随机，`localStorage` 按 origin（含端口）隔离，写了也只活到同一实例的刷新（`difftab:theme` 已经这样，见 [`history.md`](history.md) 的「未完事项」）。为一份跨不了实例的偏好搭一套读写 try/catch 不划算，与 `activeTab` 同一形状的内存 signal 即可 |
 | 变更列表行尾为 `Open file` 按钮常驻预留一个 20px 空位 | 每行永久少 26px 文字宽度（占位 + 间距），320px 侧栏里是一成，换来的只是「悬停时省略号不动」；VS Code 的 inline action 本就是悬停时才进流、文字跟着重排 |
 | `Open file` 按钮直接盖在文字尾巴上、外壳补一块与行底色相同的遮罩 | 遮罩色随选中态变（悬停底 / 选中底两档）、键盘焦点而未悬停时又是第三种；覆盖处没有省略号只有一道硬边。行按钮里放一个与按钮等宽、同一对变体显隐的占位，文字就真的重排了，遮罩整层不需要 |
-| `Open file` 按钮用透明度藏（照编辑器 tab 上那枚 ×） | × 那里透明是为了留住位置、悬停时 tab 宽度不跳；这里按钮悬在文字上方，透明就是一块看不见却能点的死区——点到目录段尾巴会误开文件。`display` 切换配 `group-focus-within` 一样接得住键盘焦点 |
+| `Open file` 按钮用透明度藏（照编辑器 tab 上那枚 ×） | × 那里透明是为了留住位置、悬停时 tab 宽度不跳；这里按钮悬在文字上方，透明就是一块看不见却能点的死区——点到目录段尾巴会误开文件。`display` 切换配 `group-has-focus-visible` 一样接得住键盘焦点 |
 | 已删除的条目照 VS Code 也画 `Open file` | 工作区里没有这个文件，点了只有一条 `Could not load this file`；VS Code 那边同样是报错。判据 `isAbsentFromWorktree` 放 `shared/protocol.ts`——`UD`（deleted by them）工作区留着我们这一方的版本，只看 `unstaged === 'D'` 会把它误判成不在 |
+| `Copy path` 放右键上下文菜单（VS Code 的 `Copy Path` 住在那里） | 仓库里没有任何菜单先例，为一项功能起整套定位、Escape、点外关闭、键盘导航；一项的菜单打开后还得再点一次。行内动作的机制上一版已为 `Open file` 铺好，第二枚只是往里再站一个，键盘可达性也一并继承（触屏靠 `pointer-coarse:flex` 常驻显示，见 `web.md`） |
+| `Copy path` 复制绝对路径，或两种路径各一枚（照 VS Code 的 Copy Path / Copy Relative Path） | 贴给 agent 与 `git` 子命令要的都是仓库相对路径，而它就是页面上现成的 `path`；绝对路径要给 `RepoState` 加 `root`（协议、冒烟断言各补一处）。再多一枚按钮时悬停要退 60px，320px 侧栏里近两成 |
+| `Copy path` 点后弹一条 toast 说「Copied」 | 320px 侧栏里没有地方放，且反馈该出现在手指底下：图标换 `Check`、label 换 `Copied` 1.5s，照 GitHub 代码块上那枚复制按钮。写失败（`writeText` reject）静默不换——服务绑定 `127.0.0.1`，loopback 是 secure context，失败只剩用户拒了权限这一种 |
+| 行内动作的键盘那半条用 `group-focus-within`（照编辑器 tab 上那枚 ×） | 鼠标点一下按钮，Chrome / Firefox 把焦点留在它身上，`:focus-within` 一直成立，鼠标移开后按钮钉在行上直到点别处。× 那里没这个问题只是因为活动 tab 本来就常亮着 ×。`:has(:focus-visible)` 只认键盘来的焦点，鼠标走了就收；点击后 `blur()` 也能收，但键盘用户按 Enter 之后焦点就没了 |
+| 行内动作的 `group` 挂在 `<li>` 上（文件行沿用、目录行不画按钮） | 目录行的 `<li>` 里套着子 `<ul>`，group 挂在它上面时悬停任一后代整棵子树的目录行都会亮出按钮、底色一起变；文件行与目录行各一种形状则两棵树的用例与文档各要说两遍。收到行按钮与外壳同住的内层 `<div>` 上，四种行一个形状，目录行也就能有 `Copy path` |
 | 监听 `storage` 事件做多标签页同步 | difftab 一个仓库只跑一个实例、正常只有一个标签页，为此接一条跨标签通道是给一个不存在的场景付代价 |
 | logo 带字标（几何拼字，或 SVG `<text>`、Google Fonts、转曲入库） | 界面只用符号，README 与 npm 页面本就是文字，字标唯一的读者是 README 头图——为它养几十行几何不值。用字体的几条各自也不成立：`<text>` 在 GitHub 的 `<img>` 沙箱里拿不到网页字体，各端各画各的；转曲要一份字体工具链，而仓库连 devDependencies 里都没有；Google Fonts 是外链。于是 `assets/mark.svg` 里一个字都没有；社交预览的 `<text>` 只在 Chrome 截成的 PNG 里定型，不受那条沙箱限制 |
 | README 头图用 `<picture>` 配亮暗两份 SVG | 同一组坐标要养两份文件，只为让 GitHub 的手动主题也能命中；单文件内嵌 `prefers-color-scheme` 已覆盖跟随系统的多数人，npm 包页面也照常认 |
