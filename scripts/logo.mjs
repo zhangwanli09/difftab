@@ -97,7 +97,7 @@ export function socialSvg() {
     `<rect width="1280" height="640" fill="${COLORS.darkBg}"/>` +
     `<g transform="translate(${x0 - markL * scale} ${y0}) scale(${scale})" color="${COLORS.dark}">${markShapes()}</g>` +
     `<text x="${x0 + markW + gap}" y="${y0 + 142}" fill="${COLORS.dark}" font-family="${FONT}" font-weight="700" font-size="132" letter-spacing="-4">difftab</text>` +
-    `<text x="640" y="470" text-anchor="middle" fill="${COLORS.darkMuted}" font-family="${FONT}" font-size="30">See what your AI coding agent changed — in one tab.</text>` +
+    `<text x="640" y="470" text-anchor="middle" fill="${COLORS.darkMuted}" font-family="${FONT}" font-size="30">See what your AI coding agent changed — in one browser tab.</text>` +
     '</svg>\n'
   );
 }
