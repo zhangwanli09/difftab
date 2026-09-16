@@ -3,84 +3,160 @@
   difftab
 </h1>
 
+<p align="center"><strong>See what your AI coding agent changed — in one browser tab.</strong></p>
+
 <p align="center">
   <a href="https://www.npmjs.com/package/difftab"><img src="https://img.shields.io/npm/v/difftab" alt="npm"></a>
   <a href="https://nodejs.org"><img src="https://img.shields.io/node/v/difftab" alt="node"></a>
-  <a href="#never-writes-to-your-repository"><img src="https://img.shields.io/badge/dependencies-0-brightgreen" alt="dependencies"></a>
+  <a href="#security"><img src="https://img.shields.io/badge/dependencies-0-brightgreen" alt="dependencies"></a>
   <a href="LICENSE"><img src="https://img.shields.io/npm/l/difftab" alt="license"></a>
 </p>
 
-**See what your AI coding agent changed — in one tab.**
+<p align="center">
+  <a href="#installation">Install</a> ·
+  <a href="#usage">Usage</a> ·
+  <a href="#why-difftab">Why</a> ·
+  <a href="#faq">FAQ</a> ·
+  <a href="README.zh-CN.md">中文文档</a>
+</p>
 
-Run one command in your repo. A local page opens with your working-tree diff and branch
-status — what `git status` and `git diff HEAD` would show — read-only, refreshing itself
-while the agent keeps writing. Close the tab and the process exits.
+A read-only, zero-dependency local viewer for your git working tree: the diff, the file
+tree and the branch status, refreshing itself while the agent keeps writing. Close the tab
+and it exits.
 
-[中文文档](README.zh-CN.md)
+## Why difftab
 
-## Quick start
+You run Claude Code, Codex, OpenCode or another agent from a terminal. It finishes a task,
+and you want to see what it actually did. The agent's own diff scrolls past in the
+terminal, which is not the place to read a 300-line patch — so you open VS Code, or
+whatever IDE you keep around for this, not to edit anything, just to read the diff, glance
+at the tree, check the branch, and close it again.
 
-```bash
-cd /path/to/your/repo
-npx difftab
-```
+difftab is that half of the editor without the editor. One command, one tab, and only the
+three things you actually looked at. It only reads git, so it works with any agent, any
+language and any repository — and if the agent is all you write code with now, it lets you
+uninstall the IDE.
 
-Or install it once — `npm i -g difftab` — and just run `difftab`.
+## Features
 
-Requires **Node.js 22 or newer** on macOS, Windows or Linux. Zero dependencies.
-
-- `--no-open` — print the URL instead of opening a browser
-- `-v`, `--version` — print the version and exit
-- `-h`, `--help` — print help and exit
-
-Running it again in the same repository reuses the running instance.
-
-## What you get
-
-- **Change list** — staged, unstaged, untracked and conflicting files in four groups, with
-  untracked directories expanded to files.
-- **Diffs, lazily** — click a file to load its patch, rendered by
+- **Working-tree diff, as an editor shows it** — staged, unstaged, untracked and
+  conflicting files in four groups; patches load per file, rendered by
   [diff2html](https://diff2html.xyz/) + highlight.js in a VS Code-like theme, side by side
   until the pane gets too narrow.
-- **File tree** — a second sidebar tab browses the whole repository rather than only what
-  changed: tracked, untracked and ignored files (the ignored ones dimmed), loaded one
-  directory at a time. Click any file to read it, highlighted by the same theme.
-- **Branch status** — branch name, ahead/behind counts, "no upstream", detached HEAD, and
-  an in-progress rebase / merge / cherry-pick / revert / bisect / `git am`.
-- **Auto-refresh** — a file watcher pushes changes over SSE, falling back to polling where
-  recursive watching would exhaust the inotify quota (and saying so in the UI).
-- **Exits on its own** — 45 seconds after the last tab closes.
-- **Cheap to run** — about 40 ms from launch to a listening server, well inside the 300 ms
-  budget CI enforces on every commit across nine Node × OS combinations; the JS bundle is
-  75 KB gzipped.
+- **The whole repository, not only what changed** — a file tree of tracked, untracked and
+  ignored (dimmed) files, loaded one directory at a time; click any file to read it.
+- **Branch status that tells the truth** — ahead/behind counts, "no upstream", detached
+  HEAD, and an in-progress rebase / merge / cherry-pick / revert / bisect / `git am`.
+- **Live while the agent writes** — a file watcher pushes changes over SSE; where recursive
+  watching would exhaust the inotify quota it falls back to polling and says so.
+- **Never writes to your repository** — only read-only git commands, enforced by two CI
+  gates rather than by promise. Details under [Security](#security).
+- **Nothing to keep running** — about 40 ms to a listening server, 75 KB of JS gzipped,
+  zero dependencies, and the process exits 45 seconds after the last tab closes.
 
 Empty repositories, interrupted rebases, linked worktrees, submodules, binary and >5 MB
 files, renames, and paths with spaces, quotes, CJK or emoji are handled explicitly.
 
-difftab is deliberately a viewer: no editing, history, blame or review workflow
-([out-of-scope list](CONTRIBUTING.md#the-read-only-promise-is-not-negotiable)).
+## Installation
 
-## Never writes to your repository
+Requires **Node.js 22 or newer** on macOS, Windows or Linux. No other dependencies.
 
-Not a best-effort claim: difftab only ever runs read-only git commands — no stage, commit,
-discard, pull, push, branch or stash. Two gates enforce it on every change: a `GIT_TRACE`
-allowlist over every git invocation, and a byte-for-byte comparison of `.git` before and
-after. And `dist/server/main.js` ships unminified, so you can audit it by hand.
+```bash
+npm i -g difftab
+```
 
-## Nothing leaves your machine
+Or try it without installing:
 
-The server binds `127.0.0.1` on a port the kernel picks, and the only HTTP request difftab
-makes is to localhost, to see whether an instance is already running for this repository.
-No telemetry, no account, no cloud.
+```bash
+npx difftab
+```
 
-Each session gets a random token, handed to the browser once through the URL and then kept
-in an `HttpOnly; SameSite=Strict` cookie while the URL is redirected clean. Every request
-is checked against the `Host` header — the actual defense against DNS rebinding, rather
-than the token alone — and against `Origin`, and the page runs under a `default-src 'none'`
-CSP that also blocks framing, `<base>` rewriting and form submission. There is no
-development escape hatch: no environment variable relaxes any of those checks.
+## Usage
 
-## Development
+Run it inside any git repository:
+
+```bash
+cd /path/to/your/repo
+difftab
+```
+
+A browser tab opens with the current diff. Keep it open next to the agent: the tab
+refreshes as files change, and when you close it the process exits on its own. Running
+`difftab` again in the same repository reuses the running instance instead of starting a
+second one.
+
+| Option | What it does |
+|---|---|
+| `--no-open` | Print the URL instead of opening a browser |
+| `-v`, `--version` | Print the version and exit |
+| `-h`, `--help` | Print help and exit |
+
+There is nothing to configure: no port to pick, no config file.
+
+## How it works
+
+1. `difftab` finds the repository root, runs the same read-only commands `git status` and
+   `git diff HEAD` would, and serves the result from a local HTTP server bound to
+   `127.0.0.1` on a port the kernel picks.
+2. The page renders the change list and loads each patch lazily when you click it.
+3. A file watcher (or polling, where watching is unavailable) pushes updates over
+   server-sent events.
+4. Forty-five seconds after the last tab disconnects, the process exits.
+
+## Security
+
+**It never writes to your repository.** difftab only ever runs read-only git commands — no
+stage, commit, discard, pull, push, branch or stash. Two gates enforce this on every
+change: a `GIT_TRACE` allowlist over every git invocation, and a byte-for-byte comparison
+of `.git` before and after. `dist/server/main.js` ships unminified, so you can audit it by
+hand.
+
+**Nothing leaves your machine.** The server binds `127.0.0.1`; the only HTTP request
+difftab makes is to localhost, to see whether an instance is already running for this
+repository. No telemetry, no account, no cloud.
+
+**The local page is locked down.** Each session gets a random token, handed to the browser
+once through the URL and then kept in an `HttpOnly; SameSite=Strict` cookie while the URL
+is redirected clean. Every request is checked against the `Host` header — the actual
+defense against DNS rebinding, rather than the token alone — and against `Origin`, and the
+page runs under a `default-src 'none'` CSP that also blocks framing, `<base>` rewriting and
+form submission. There is no development escape hatch: no environment variable relaxes any
+of those checks.
+
+## FAQ
+
+**Does it work with my agent?** — Yes, if the agent writes files into a git working tree.
+difftab never talks to the agent; it only reads git. Claude Code, Codex, OpenCode, Aider, a
+human with vim — all the same.
+
+**Can I stage, commit or discard from it?** — No, and it will never be added. That is the
+product's core promise; see [Non-goals](#non-goals).
+
+**Why not just `git diff` in the terminal?** — For a two-line change, do. difftab is for
+the 300-line patch across twelve files, with the tree and the branch next to it.
+
+**Why a browser tab and not a TUI?** — Side-by-side diffs with syntax highlighting, a
+resizable layout and a mouse are what the browser is good at, and every machine already
+has one.
+
+**Why Node 22?** — It is the runtime every coding agent already needs, so difftab adds no
+other, and Node 22 is the oldest line still supported. Auto-refresh is at its best on
+Node 24.14 or newer, where `fs.watch` can skip `node_modules` before registering it; on
+older Node, Linux polls the working tree instead.
+
+**The UI says "Polling" — is something wrong?** — No. Native file watching is not in use
+for this repository (older Node on Linux, a network drive, a Docker volume, or an exhausted
+inotify quota), so difftab checks `git status` every 1.5 seconds instead. Everything still
+refreshes; it may take a second or two.
+
+## Non-goals
+
+difftab is deliberately a viewer. Permanently out of scope: any repository write operation,
+code editing, accounts and cloud sync, and multi-user review workflows. Out of the current
+version: commit history, branch lists, blame. The full list, and the reasoning, is in
+[CONTRIBUTING.md](CONTRIBUTING.md#the-read-only-promise-is-not-negotiable).
+
+## Contributing
 
 ```bash
 pnpm install --frozen-lockfile
