@@ -48,6 +48,16 @@
 
 顺带闭掉一个缺口：已被删除的文件取不到工作区体积，按文件体积判时它只剩行数那道闸。`lstat` 因此从判据降为**只用于展示**（`DiffPayload.size`，取不到就给 0）。
 
+### 图片：二进制里被放行的那一支
+
+**判据是「二进制 ∧ 扩展名在表里」，两个条件缺一不可**，表在 `server/git/worktree.ts`（`imageMimeOf`，与分类链同住——它是分类链的一环，放进 `image.ts` 会让底座反向 import 一个 feature 模块；png / jpg / jpeg / gif / webp / bmp / ico / avif；**SVG 不在**——它是文本，走文本 diff 更有信息量）。二进制那一半照旧由上面那道闸给：已跟踪侧是 numstat 的 `-\t-`（含 `.gitattributes`），未跟踪侧是 NUL 探测；扩展名只在**已判定为二进制之后**查。单看扩展名的写法会把一个内容是文本的 `.png` 送去 `<img>` 里画成一张破图，而它本来有一份能看的文本 diff。
+
+- **旧侧读 diff 基准里的 blob：`git cat-file blob <base>:<path>`，存在性与体积另用 `cat-file -s`**；它的内容身份（`ImageSide.version`）是基准的 oid——那个 blob 只在基准换了之后才可能变，而 oid 是 `resolveDiffBase` 那次 `rev-parse` 顺手就有的（`DiffBase { ref; oid }`），不为它多起一次进程。新侧的身份是体积 + mtime（`worktreeVersion`），与 git 自己的 stat 缓存同一条判据，已知边界也一样：同体积、同一个 mtime 刻度内的改写认不出来。这是产品代码里唯一一处读对象库的调用，也是白名单第六条。**只允许这两种字面参数**：`--filters` / `--textconv` 会让 git 跑 smudge / textconv 驱动——LFS 的 smudge 会往 `.git/lfs` 里写东西，而白名单只看子命令，看不见参数；不用 `git show <rev>:<path>`：字节一样（实测两者默认都不套 textconv），但它是带整套 log / diff / pretty 参数面的 porcelain，「参数只能是这几个字面量」那条断言在它身上钉不住。
+- **`<rev>:<path>` 是 revision 语法，不是 pathspec**，`GIT_LITERAL_PATHSPECS=1` 管不到它。拼进去的 `path` 一律取 `resolveInRepo` 归一化后的那份（无 `.` 段、无前导 `./`、`/` 分隔），字面量那道边界校验因此仍然过了一遍；`cat-file -s` 非零退出即「这一侧不存在」（新增、或基准是空树），不是错误。
+- **重命名的旧侧在 `oldPath`**，payload 里 `old.path` 由后端填成它，前端拿着直接问 `/api/blob`。
+- **5MB 那道闸按侧卡**：任一侧超过 `MAX_BYTES` 整个 payload 回 `too-large`（`reason: 'size'`，`size` 取**两侧里大的那个**——固定报工作区那份时，HEAD 里 8MB 的图被换成 120KB 的，提示会说「file is 120 KB」而 Files 里同一个文件正常显示）——一张 8MB 的 PNG 说「太大」是真话。`/api/blob` 自己再卡一次（工作区侧看 `lstat`，blob 侧带 `maxStdoutBytes`）：payload 与取字节是两次请求，中间文件可以长大。
+- **`/api/blob` 只服务表里的扩展名**，非图片一律 400；取 `new` 侧**就是 `inspectFile` 那条链**（`image` 支与 `text` 一样带着 `buffer`），不另写一份「lstat → 体积 → 读」的副本——上一份副本连 NUL 那道都没有，一个内容是文本的 `.png` 在 payload 里是文本、在字节端点上却被当图发出去。
+
 ## 目录树的两条 `ls-files`
 
 文件浏览器的树**按目录懒加载**，与 diff 同一条取向：一次调用只回**一层**的直接子项，禁止一次性构造整棵树——`node_modules` 那种目录足以让一份「全量树」的 JSON 比整仓 diff 还大。
@@ -128,7 +138,7 @@ git ls-files -z --others --ignored --exclude-standard --directory --no-empty-dir
 
 - **仓库边界校验，两道**（见下）；
 - **`lstat` 而不是 `stat`**：符号链接给的是**链接目标字符串本身**，与 git 对 mode 120000 的处理一致；
-- **顺序**：符号链接 → 非普通文件 → 体积 → 二进制（NUL 探测）→ 行数。二进制排在行数之前，因为它比「太大」更具体；体积排在读进内存之前；
+- **顺序**：符号链接 → 非普通文件 → 体积 → 二进制（NUL 探测）→ 图片（扩展名表）→ 行数。二进制排在行数之前，因为它比「太大」更具体；体积排在读进内存之前；图片是二进制的子集，所以只在 NUL 命中之后才查扩展名（判据与 diff 那侧同一条，见上面「图片」一节）；
 - **5MB 与 50,000 行两道闸**，以及**行数怎么数**（空文件 0 行、末尾那个换行不另算一行，在 Buffer 上数而不是把整份切成 N 个字符串）。
 
 **复用阈值还不够，分类链本身也必须只有一份**：先前两边各写一遍「lstat → 符号链接 → 体积 → NUL → 行数」，只共用了两个常量，而两份的行数口径在第一次提交时就差了一——一个正好 50,000 行的文件在 diff 视图里能看、在文件视图里说「太大」。

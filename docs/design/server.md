@@ -54,7 +54,8 @@
 3. **token 落地方式**：URL 携带 token → 首次访问后置换为 `HttpOnly; SameSite=Strict` cookie 并 302 掉 query，避免 token 长期滞留在浏览器历史、地址栏和日志中。SSE 端点同样校验。**需知 cookie 的作用域是 host 而非 origin，不隔离端口**：同机另一个监听 `127.0.0.1:<其他端口>` 的服务同样会收到这个 cookie。这不影响第 1 条（攻击者页面的 host 是自己的域名，cookie 根本不会发出），但意味着 token 会暴露给本机其他 localhost 服务，因此服务端校验 token 时需**一并绑定校验本次会话的端口**。
 4. 所有端点（含 SSE）统一校验，无例外；响应带 `Cache-Control: no-store`、`X-Content-Type-Options: nosniff`。**这三道也必须排在其余一切判定之前**——包括「只接受 GET / HEAD」这类看着无害、且天然想往函数开头放的廉价同步判定。排在前面时，一个 POST 会在 Host 那道开口之前就拿到 `method-not-allowed`，而 rebinding 的攻击页面此刻与本服务同源、读得到这句话：数据仍拿不到（还有 token），漏的是**服务本身的存在性**，而第 1 条正是为挡住这类页面而设。
 5. **严格 CSP**：`default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`。后三个指令**不回退到 `default-src`**，不显式写就等于没设。这条是构建链路顺带解锁的——产物是独立的 `.js` / `.css` 文件、页面无内联脚本，才有条件不开 `'unsafe-inline'`。
-6. **静态资源按内存清单白名单式映射**，不得用 `path.join(root, req.url)` 之类的路径拼接读文件，避免路径穿越。构建产物文件名因此固定、不加 hash——服务端本就对所有响应发 `Cache-Control: no-store`。
+6. **`/api/blob` 只服务图片扩展名表里的路径，`Content-Type` 按表给精确 MIME**：`nosniff` 之下类型错一个字浏览器就不画；而不限扩展名的话它就是一个「下载工作区任意文件」的端点——`/api/file` 已经能读任意文本，但那是经过分类链、有 5MB 与行数闸的 JSON，字节端点没有理由更宽。CSP 那条 `img-src 'self'` 已够用：同源 `<img src="/api/blob?…">` 自动带 cookie 与合规 `Host`，**不需要也不开 `blob:`**（`createObjectURL` 那条路要放宽 CSP，换来的只是把同一份字节多走一遍 JS）。
+7. **静态资源按内存清单白名单式映射**，不得用 `path.join(root, req.url)` 之类的路径拼接读文件，避免路径穿越。构建产物文件名因此固定、不加 hash——服务端本就对所有响应发 `Cache-Control: no-store`。
 
 **开发期不得以放宽本节校验为代价换取便利。** Vite dev server 与后端不同源，会同时撞上 Host、Origin、token 三道门，解法一律放在 dev server 的代理层（改写 `Host` / `Origin`、注入 token cookie），**后端不得为此新增任何环境变量或分支**——那等于把正面防御做成一个可被误开的开关。
 
@@ -73,6 +74,7 @@
 | `GET /api/diff?path=&oldPath=` | `DiffPayload` | 按文件懒加载；`oldPath` 仅重命名条目传 |
 | `GET /api/tree?path=` | `TreePayload` | 文件浏览器的目录树，**按目录懒加载**，一次只回一层；`path` 缺省即仓库根 |
 | `GET /api/file?path=` | `FilePayload` | 单个文件的只读内容；`path` 必填 |
+| `GET /api/blob?path=&side=old\|new` | 图片字节，`Content-Type` 是精确的图片 MIME | **只服务图片扩展名表里的路径**；`old` 侧读 diff 基准里的 blob、`new` 侧读工作区；`path` / `side` 都必填 |
 | `GET /api/events` | SSE | 事件 `change` / `heartbeat`；空闲退出以本端点的连接数判定 |
 | `GET /api/instance` | `{ repoRoot, pid }` | 探活复用**唯一**的消费者（不是给前端的） |
 
@@ -81,17 +83,19 @@
 - `FileEntry { path; oldPath?; kind: 'tracked' | 'untracked'; staged; unstaged; renameScore?; conflicted? }`——`staged` / `unstaged` 承载 `porcelain=v2` 的双状态位，`oldPath` + `renameScore` 来自 `2 ` 记录。
   - **`conflicted` 是「这条来自 `u` 记录」这一事实本身**，不是从状态位推出来的：`DD` / `AA` 两位都不是 `U`，而「未合并」恰恰是那三个分组谓词唯一无法从 XY 读出来的东西。归属留给前端等于让它自己重写一遍 porcelain 的记录类型。
 - `BranchState { head; detached; upstream: null | { ahead; behind }; operation? }`——**`upstream: null` 即「无上游」**，把它编码进类型而非留作约定，前端就不可能漏掉这条分支。`operation` 缺省即「没有进行中的多步操作」。
-- `DiffPayload` 为判别联合：`{ kind: 'text', patch }` / `{ kind: 'binary' }` / `{ kind: 'too-large', size, reason: 'size' | 'lines' }` / `{ kind: 'untracked-text', patch }`。
+- `DiffPayload` 为判别联合：`{ kind: 'text', patch }` / `{ kind: 'binary' }` / `{ kind: 'image', old, new }` / `{ kind: 'too-large', size, reason: 'size' | 'lines' }` / `{ kind: 'untracked-text', patch }`。
   - **`too-large` 必须带 `reason`**：它有**两个**触发口（体积超 5MB 与行数超 50,000）。只带 `size` 时，行数那一路的文件可能只有几百 KB，前端手里唯一的数字既解释不了为什么不预览、按 MB 取整还会显示「文件过大（0 MB）」这种自相矛盾的话。判别原因属后端知识。
   - **`size` 只用于展示，不是判定依据**，且**可以是 0**——已被删除的文件在工作区没有体积可取。前端据此不显示体积，而不是把 0 四舍五入成「1 KB」：编一个数出来比不说更糟。
+  - **`image` 只带元数据，字节走 `/api/blob`**：`old` / `new` 各是 `ImageSide { path; size; version } | null`，`null` 即那一侧不存在（新增无旧、删除无新）。**`version` 是内容身份**（旧侧是基准的 oid，新侧是体积 + mtime），前端拿它当 `<img>` 的 `v=` 与 `key`，不变就不重取；前端不解读它。**`path` 是取字节时要交给 `/api/blob` 的那一份**——重命名条目的旧侧是 `oldPath`，由后端填好，前端不自己拼：让页面判「这个 tab 是不是重命名、旧路径是哪个」等于把 status 的 `2 ` 记录语义再抄一遍。判据是**「二进制 ∧ 扩展名在表里」**，扩展名单独不算（一个内容是文本的 `.png` 照常走文本 diff），表与 `/api/blob` 用同一份（`server/git/worktree.ts` 的 `imageMimeOf`，与分类链同住）。不内联 base64：两张 5MB 的图进一份 JSON 多 33%，且没法按侧懒加载。
 - `InstanceInfo { repoRoot; pid }`——**唯一一个正文里带绝对路径的响应**，与「错误消息不含绝对路径」不冲突：那条防的是把本机目录结构混进面向页面的输出，而这里路径**就是**被问的那件事。能读到它的前提是手里已有本会话 token，而拿着 token 本就能读遍整个仓库的 diff。前端不消费它。
 - `repoName: string`——工作区根目录的 **basename**，用作页面标题里的项目标识。**给的是目录名而不是路径**：basename 是回答「这个标签属于哪个项目」所需的最小的那一份。**不复用 `InstanceInfo.repoRoot`**：让页面去读它等于把上面那条边界作废。**空串的含义是「这个根目录没有 basename」**（`/`、Windows 的盘符根）——后端不为此编一个名字出来，「取不到时显示什么」是展示决定，归前端。
 - `TreeEntry { name; path; kind: 'directory' | 'file'; ignored }` 与 `TreePayload { path; entries }`——`path: ''` 即仓库根。
   - **`ignored` 由后端给，不由前端推**：它来自「这条是第二次 `ls-files` 出的」这一事实（见 [`git.md`](git.md)），前端手上没有 `.gitignore` 的语义，推不出来也不该推。
   - **一次只回一层**：整棵树的形状属于前端的展开状态，不属于协议。这与 diff 的按文件懒加载同源——`node_modules` 让一份全量树比整仓 diff 还大。
-- `FilePayload` 为判别联合：`{ kind: 'text', content }` / `{ kind: 'symlink', target }` / `{ kind: 'binary' }` / `{ kind: 'too-large', size, reason }`。
+- `FilePayload` 为判别联合：`{ kind: 'text', content }` / `{ kind: 'symlink', target }` / `{ kind: 'binary' }` / `{ kind: 'image', size, version }` / `{ kind: 'too-large', size, reason }`。
   - **`symlink` 单独成一支**，不并进 `text`：给的是链接目标字符串而不是目标内容，两者在页面上要说的话不同（「这是一个指向 X 的链接」对「这是 X 的内容」）。
   - `too-large` 的 `size` / `reason` 与 `DiffPayload` 同一条判据，两个触发口，`size` 单独解释不了拒绝的原因。
+  - `image` 的判据与 diff 那侧同一条（二进制 ∧ 扩展名），字节由 `/api/blob?side=new` 给。
 - `WatchState { mode: 'native' | 'polling'; tier: 'A' | 'B' | 'C' }`——降级既可能是 C 档的既定形态、也可能是 A/B 档运行中落到轮询兜底，**前端无从自己推断，必须由后端告知**。
 
 **错误约定**：`{ error: { code, message } }`，`message` **不含绝对路径**。

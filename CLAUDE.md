@@ -99,6 +99,7 @@
 - **进行中的操作在 porcelain 里一行都没有**：判据是 git 目录下的状态文件、按序取第一个命中，rebase 必须先于 merge 判
 - **状态文件一律按 `rev-parse --git-dir` 找，禁拼 `<root>/.git`**——linked worktree 与 submodule 下永远读不到，于是永远标不出操作
 - **冲突的判据是「这条来自 `u` 记录」而不是状态位**——`DD`/`AA` 里一个 `U` 都没有
+- **图片旧侧只许 `cat-file blob` / `cat-file -s` 两种字面参数**——`--filters` / `--textconv` 会跑 smudge / textconv 驱动（LFS 的写 `.git/lfs`）而白名单只看子命令、看不见参数；换成 `show` 则参数面大到钉不住
 
 ### 文件监听（`design/watch.md`）
 
@@ -132,6 +133,7 @@
 - **变更列表树视图的折叠态记 collapsed 集合、键带分组 id**——记 expanded 时 SSE 新冒出来的目录默认收起，不带分组时折 Staged 里的 `src` 连 Unstaged 里的一起没了
 - **切侧栏 tab / 切版式 / 全部折叠都不得改 `activeEditor`**——写成「切到 Files 就清空右侧」时页面看着正常，只是每瞄一眼目录树就丢掉正在读的 diff
 - **SSE 后的收编要过一遍栏里全部 diff tab，不只活动那一个**——只看活动 tab 时后台 tab 里被撤销的改动照样留着，切过去看到的是一份左栏已断言不存在的补丁，且它再也不会被刷新
+- **图片 `<img src>` 的 `v=` 与 `key` 必须是后端给的内容身份 `ImageSide.version`，禁用时间戳或 payload 身份**——URL 不变时浏览器不重取（停在旧图上），而按「取过一次」换戳则每次无关 SSE 都重下两张图，两种都不报错
 - **`Diff2HtmlUI` 的 `colorScheme` 必须传 `'light'`**——传 `'auto'` 会让深色一条都不生效，而页面只是「深色不太像 VS Code」
 - **界面文案一律英文**（`docs/`、代码注释、测试名仍中文）——冒烟里那条「前端产物 CJK 计数为 0」拦得住，但**后端那侧拦不到**（`sendError` 与各 `*Error` 的字面量）
 - **`@theme` 里没人引用的 token 会被 Tailwind 裁掉**，引用名写错则产物里留下无定义的 `var()`、属性静默变 unset（两者都由 `check:css` 拦）
@@ -196,4 +198,3 @@
 - **改 logo 只改 `src/web/brand/geometry.mjs` 再 `node scripts/logo.mjs`**——几何或 token 改了没重跑由 `logo.test.ts` 拦；社交预览 PNG 得重新手工上传到 GitHub Settings
 - **真要改 README 则两份一起改**：`README.zh-CN.md` **不是自动生成的**，只改英文那份不会有任何门禁变红
 - **贡献者规范在 `CONTRIBUTING.md` 与 `.github/`**，产品承诺（只读、Non-goals）在那里也写了一遍给外部读者——改第 6 节时要跟着改
-- **未完事项见 `docs/history.md`**（两件都等首个真实 Linux 桌面，都不阻塞发布）

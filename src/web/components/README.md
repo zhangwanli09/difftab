@@ -10,7 +10,7 @@
 
 `EditorTabs` 是右侧面板顶上那条标签栏，也是面板唯一的 chrome：`role="tablist"` 里一排 tab，每个 tab 是一个外壳 div 里并排的两枚 `<button>`——`role="tab"` 那枚装图标与名字，走 `IconButton` 的关闭按钮在它旁边、**不套在里面**。套在里面时 tab 不能是按钮，键盘、光标、「来自 × 的事件不落到 tab 上」三样都得手写；并排之后 × 的事件压根不经过 tab 按钮。`DiffView` / `FileView` 接 `path` prop、在渲染体里按它读缓存；`Panel` 只剩两个视图共用的那层滚动容器。
 
-两侧空着时画的那几块在 `EmptyState.tsx`：右侧一个 tab 都没有时 `App` 画 `PanelEmptyState`（图标 + 一句，说哪句、配哪枚按侧栏档位定，判据只在它里面写一次），左栏列表区的三句占位共用 `SidebarPlaceholder`；两块各按自己宿主的手段撑满后居中，不合成一个。文件级的提示（loading / error / binary / too-large / symlink）仍走 `Notice` 贴左上。
+两侧空着时画的那几块在 `EmptyState.tsx`：右侧一个 tab 都没有时 `App` 画 `PanelEmptyState`（图标 + 一句，说哪句、配哪枚按侧栏档位定，判据只在它里面写一次），左栏列表区的三句占位共用 `SidebarPlaceholder`；两块各按自己宿主的手段撑满后居中，不合成一个。文件级的提示（loading / error / binary / too-large / symlink）仍走 `Notice` 贴左上。`image` 那一支两个视图共用 `ImageView.tsx`：`<img src="/api/blob?…">` 直接吃同源端点，`v=` 戳随 payload 身份变（否则 SSE 后停在旧图上）。
 
 `FileView` 不走 diff2html，只用 hljs 高亮一次。**容器上不得加 `hljs` 类**：那条规则是 unlayered 的，会压过 `bg-editor-background`，症状只是「文件视图底色跟页面其余部分对不上」。
 

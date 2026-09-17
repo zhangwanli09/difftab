@@ -40,6 +40,10 @@
 | 仓库边界只做字面量判断（`resolve` + `relative`） | 挡得住 `../`，挡不住**中间某一段是符号链接**：`linkdir/secret.txt` 在字面上待在仓库内，而 `readFile` 顺着它走出去。`lstat` 只保护最后一段，救不了这条。三个端点实测全中，必须补一道 `realpath` |
 | 目录树那处兜底把 `readdir` 的错误一律咽成「空目录」 | 「读不了」会伪装成「里面是空的」。只对 `ENOENT` / `ENOTDIR` 回空（目录刚被删是 agent 跑动期间的常态），`EACCES` 一类照抛 |
 | 只读读文件走 `git show` / `git cat-file` | 树上点得到的路径包含未跟踪与被忽略的文件，它们在对象库里根本没有对应的对象；而已跟踪文件要看的也是**工作区**那一份，不是 index 或 HEAD 那一份 |
+| 图片旧侧用 `git show <base>:<path>` 取字节 | 字节上两者一样——实测（`*.bin diff=conv` + `diff.conv.textconv`）`show HEAD:x.bin` 与 `cat-file blob HEAD:x.bin` 都给原文、只有 `cat-file --textconv` 给转换结果，textconv 在两者上都是显式开关。差别在 `show` 是 porcelain：带整套 log / diff / pretty 参数面，冒烟里那条「子命令之后只能是 `blob` / `-s`」的字面量断言在它身上钉不住；`cat-file` 是专门读对象的 plumbing，参数面就那几个 |
+| `cat-file` 带 `--filters` / `--textconv`，或按 `.gitattributes` 走 smudge | 那会让 git 跑 clean / smudge / textconv 驱动，而 LFS 的 smudge 会往 `.git/lfs/objects` 写、缺对象时还会联网——**白名单只看子命令，看不见参数**，这是它唯一漏得过的形态，所以参数字面量在冒烟里单独钉一条 |
+| 单看扩展名判图片（不要求二进制） | 一个内容是文本的 `.png`（占位符、被 LFS 换成指针的图）会被送去 `<img>` 里画成一张破图，而它本来有一份能看的文本 diff；且已跟踪侧 git 的二进制判定含 `.gitattributes`，扩展名不含 |
+| 图片字节内联成 base64 放进 `DiffPayload` | 两张 5MB 的图进一份 JSON 多 33%，且两侧不能分别懒加载；CSP 的 `img-src 'self'` 让同源 `<img src>` 零成本可用，独立端点就是最短的路 |
 
 ## 文件监听
 
@@ -98,6 +102,9 @@
 - **`position: sticky` 的滑动余量来自包含块，不是滚动容器**（Chrome 实测）：文件视图的行号槽`sticky left-0` 长期不生效，因为它的包含块只有面板那么宽（960px），而横向滚动发生在外面那个`<section>` 上、内容实测宽 9446px——**余量为 0 时 sticky 与 static 在页面上完全一样**，没有任何东西会响。给那一层 `w-max` 之后包含块与内容齐宽，行号槽的 `left` 实测从 -266 回到 320（= 面板左缘）。同一次改动顺带修好标题栏：它的宽度同样来自那一层，从前只画到 960px，滚过去之后顶上是一条秃的（**标题栏这半条后来随「横杠排到滚动区域之外」一起消失**，它不再从这一层拿宽度，`min-w-full` 因此也去掉；行号槽那半条一字未变）。**代价是这个类只能给正文那一路**：`max-content` 下 `break-all` 不再起作用（它只降 min-content），一条 60 层的相对路径实测把提示行撑到 **1977px**、而面板 960px——去掉 `w-max` 后同一条回到 960px 正常折行。
 - **happy-dom 盖不到的两处**（20.11.2）：其一，`Attr.nodeName` 返回空字符串（同一属性上 `name` / `localName` 都正常），而 diff2html 的 `mergeStreams.open()` 恰好用它重新序列化属性，于是凡走过 `mergeStreams` 的行——带 `<del>` / `<ins>` 词级标记的增删行——**类名丢失**（真机实测 177 个 hljs span / 12 类，故只影响 DOM 测试环境），`test/unit/web/` 里「高亮出颜色」的断言只能压在**上下文行**上。其二，它的 `ResizeObserver` 三个方法体都只有一句 `// TODO: Not implemented`，也没有布局引擎，故「`ResizeObserver` → 宽度 signal」这一段归肉眼项，阈值映射与「格式进了 effect 依赖数组」则靠**直接写那个 signal** 断言。
 
+- **`<img src>` 字串不变时 Preact 不改属性、浏览器不重新请求**：SSE 刷新后 `loadDiff` 落进来的是新 payload 对象，两侧 `path` / `side` 一字不变——`v=` 不随内容变时右图停在旧的那张，控制台一条都不报。第一版把 `v=` 做成 `useMemo(() => Date.now(), [payload])`，图确实换了，代价是每一次无关文件的 SSE（`refresh()` 对活动 tab 无条件重取）都重挂两张图、重下最多 10MB 外加一次 `cat-file blob`，且依赖「`getJson` 永远给新对象、缓存永不去重」这条没写下来的契约。现在 `v=` 是后端给的内容身份（`ImageSide.version`）。
+- **图片视图的棋盘复用 `--color-diff-diagonal-fill`**：那个 token 本就是「叠在编辑器底色上、明暗两档都成立」的 6% 半透明，`repeating-conic-gradient` 两格交替即成棋盘，不为它新开颜色（`@theme` 里没人引用的 token 会被裁，多开一个就多一处要被 `check:css` 看着的地方）。
+
 - **界面图标统一到 Lucide，装包由构建期 tree-shake，不再手抄 path**：原先那 6 枚抄自两个上游、两种版式（Octicons 的 16 + `fill` 两枚，Heroicons v2 的 24 + `stroke` 四枚），同一个界面里两种质感并存，`stroke-width` 还在两处不一致（1.5 / 2）。统一时**连「复制 path 而不装包」一起翻掉**，是因为那条的理由在 Lucide 下不再成立：它的 `git-branch`（5 个子元素）、`sun`（4）、`monitor`（4）**不是单条 path**，手抄意味着把「一个常量字符串」升级成「一段 JSX 子树」，而那正是装包本该省掉的东西。**体积实测反而更省**：`lucide-preact@1.41.0`（ISC，零运行时依赖，`sideEffects: false`）在 barrel 入口下由 Rollup tree-shake，6 枚组件连同 `createLucideIcon` 运行时合计 **+1.4 KB 明文 / +0.5 KB gzip**（211.4 → 212.8 KB，门禁 350 KB），与原先六条 path 的 **1,335 B** 基本持平（343 + 326 + 25 + 268 + 193 + 180），CSS 一字未增——「装包会把体积顶上去」这半条顾虑实测不成立。换来的还有一处**静态可查的增强**：状态条与侧栏 `Changes` 那个 tab 共用同一枚分支图标，从前靠共用一条导出的 path 字符串（两份漂开时静默画成两个图形），现在是两处 import 同一个具名组件，拼错即编译错误。
 
 - **logo 的几版是画出来看过才定的，不是推出来的**（headless Chrome 渲 16 / 24 / 32 / 64 / 160 px，亮暗两档并列）：第一版照 Lucide 的圆头 + 3 单位圆角画一个拱形标签页、里面放 `±`，**读出来是墓碑**（拱形外框 + 顶上一个十字），宽扁一点像游戏手柄，换成方框加 `+` 又像急救箱；里面换成 `≠` 能把语义救回来，但圆头 + 圆角 + 正圆 bowl 三样叠起来整套仍软。改方头 + 直角之后 `+`/`−` 与两行横线都成立，`≠` 反倒多余。那一版定稿是「直角标签页 + 一短一长两行」——两行是 diff 最省的画法，语义靠标签页外形给。favicon 的两条 data URI 实测合计约 1 KB，进 `index.html` 不进任何体积门禁的匹配范围。**第二轮换成「三条 hunk」，同样是四个方向并排渲出来才定的**（实心负形方块 / 三条 hunk / 圆润并排视图 / 半空半实方框，各带 64 / 32 / 16 px 与标签页、顶栏的模拟）：去掉外框之后语义直接由红绿给，不再靠剪影解释「这是一个标签页」，而 16px 下三条色块比 2 单位描边稳得多。颜色试了六套：直接读 `--color-git-deleted` / `--color-git-added` 亮档偏泥、暗档偏粉——那两个 token 是给文件名文字调的，铺成色块饱和度不够；GitHub 那对红绿、橙青、低饱和、单色加一枚蓝各有取舍，定的是**一套固定色明暗不切**（`#e5484d` / `#30a46c`），省掉整层「两档描边色」的机制，只让上下文那条跟 `currentColor`。**字标一并退役**：界面里本来只用符号，README 与 npm 页面本就是文字，社交预览的名字由 Chrome 用系统字体渲进 PNG——那几十行几何字标唯一的读者是 README 头图。
@@ -150,6 +157,11 @@
 | 行内动作的键盘那半条用 `group-focus-within`（照编辑器 tab 上那枚 ×） | 鼠标点一下按钮，Chrome / Firefox 把焦点留在它身上，`:focus-within` 一直成立，鼠标移开后按钮钉在行上直到点别处。× 那里没这个问题只是因为活动 tab 本来就常亮着 ×。`:has(:focus-visible)` 只认键盘来的焦点，鼠标走了就收；点击后 `blur()` 也能收，但键盘用户按 Enter 之后焦点就没了 |
 | 行内动作的 `group` 挂在 `<li>` 上（文件行沿用、目录行不画按钮） | 目录行的 `<li>` 里套着子 `<ul>`，group 挂在它上面时悬停任一后代整棵子树的目录行都会亮出按钮、底色一起变；文件行与目录行各一种形状则两棵树的用例与文档各要说两遍。收到行按钮与外壳同住的内层 `<div>` 上，四种行一个形状，目录行也就能有 `Copy path` |
 | 行内动作静止淡一档做成 `IconButton` 的一个 `muted` 档，或在它上面开放 `class` | 「与旁边的状态字母同档」是 `TreeRow` 那个动作槽位的不变量——凡站进来的都得如此、站在别处的都不该如此；写成按钮的 prop 时第三枚动作忘传不报错，只是比邻居重一档，共享组件也从「构造上相等」退成「有一个开关」。画在外壳上按子选择器变体逐枚生效（`[&>*:hover]` 恢复的是悬停的那一枚），`IconButton` 一个字不改。另造一枚更淡的颜色 token 同样排除：一个固定的淡色要在静止 / 悬停 / 选中三种底上各自核对对比度、深浅再翻一倍，`opacity-75` 一个值三种底都跟着 |
+| `<img>` 的 `v=` 戳随 payload 身份变（`Date.now()` 挂在 `useMemo` 依赖上） | 见上一节那条事实：每次无关的 SSE 都重下两张图，且靠一条没写下来的「缓存永远给新对象」契约撑着。内容身份由后端顺手就有——旧侧的 oid 来自 `resolveDiffBase` 那次 `rev-parse`，新侧的体积 + mtime 来自本就要做的 `lstat`，前端零成本 |
+| 图片用 `fetch` 拿字节再 `URL.createObjectURL` 交给 `<img>` | CSP 的 `img-src` 要加 `blob:`，`security.ts` 与冒烟里那条 CSP 断言都得放宽，换来的只是把同一份字节多走一遍 JS；同源 `<img src="/api/blob?…">` 自动带 cookie、`img-src 'self'` 现成放行 |
+| 前端按扩展名自己判「这是图片」再决定画不画 `<img>` | 与后端那张表是两份事实来源，漂开时后端说是图、前端按二进制画一句提示；`payload.kind === 'image'` 已经把判断带过来了 |
+| 图片视图做缩放、滑块、洋葱皮、像素 diff | 首版只回答「改成了什么样」，新旧并排已够；那几样各要一段交互状态，而它们对「瞥一眼」没有增量 |
+| 图片 tab 做成第三种 `EditorKind` | tab 的身份是「视图种类 + 路径」，图片不是新的视图种类，只是 diff / 全文两种视图的正文换成了图；加一种要连累 `EditorTabs` 图标、`cacheOf`、`refresh`、空态四处 |
 | 监听 `storage` 事件做多标签页同步 | difftab 一个仓库只跑一个实例、正常只有一个标签页，为此接一条跨标签通道是给一个不存在的场景付代价 |
 | logo 带字标（几何拼字，或 SVG `<text>`、Google Fonts、转曲入库） | 界面只用符号，README 与 npm 页面本就是文字，字标唯一的读者是 README 头图——为它养几十行几何不值。用字体的几条各自也不成立：`<text>` 在 GitHub 的 `<img>` 沙箱里拿不到网页字体，各端各画各的；转曲要一份字体工具链，而仓库连 devDependencies 里都没有；Google Fonts 是外链。于是 `assets/mark.svg` 里一个字都没有；社交预览的 `<text>` 只在 Chrome 截成的 PNG 里定型，不受那条沙箱限制 |
 | README 头图用 `<picture>` 配亮暗两份 SVG | 同一组坐标要养两份文件，只为让 GitHub 的手动主题也能命中；单文件内嵌 `prefers-color-scheme` 已覆盖跟随系统的多数人，npm 包页面也照常认 |

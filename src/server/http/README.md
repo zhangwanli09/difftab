@@ -1,6 +1,6 @@
 # server/http
 
-`node:http` server、路由、三道校验（Host / Origin / token）、`dist/web` 静态托管。
+`node:http` server、路由、三道校验（Host / Origin / token）、`dist/web` 静态托管。`/api/blob` 是唯一一个正文不是 JSON 的 API 端点（图片字节，精确 MIME）——它与其余端点一样从 `handle` 前段继承三道校验，只服务图片扩展名表里的路径。
 
 **边界**：本目录不直接触碰 git 与文件监听，只调用 `git/` 与 `watch/` 导出的函数，以保证三道校验位于唯一入口、不被旁路绕开（架构边界不变式 3）。
 **后端零 dev 分支**：不得新增任何放宽 Host / Origin / token 校验的环境变量或分支。

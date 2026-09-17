@@ -1,6 +1,6 @@
 # server/git
 
-status / diff / numstat 的调用与解析，外加文件浏览器那两样：`tree.ts`（一层目录的两条 `ls-files`）与 `file.ts`（只读读一个文件）。
+status / diff / numstat 的调用与解析，外加文件浏览器那两样：`tree.ts`（一层目录的两条 `ls-files`）与 `file.ts`（只读读一个文件），以及 `image.ts`——`/api/blob` 两侧的图片字节（扩展名表本身在 `worktree.ts`，它是分类链的一环）：`new` 侧读工作区（过 `worktree.ts` 那把钥匙），`old` 侧是本目录**唯一一处读对象库**的调用 `cat-file blob <base>:<path>`（存在性与体积另用 `cat-file -s`）。参数只许这两种字面量——`--filters` / `--textconv` 会跑 smudge / textconv 驱动，而白名单只看子命令。
 
 `worktree.ts` 是三者共同的底座：仓库边界（两道）、只读读一个文件的分类链、以及 5MB / 50,000 行两道闸都归它，`diff.ts` / `file.ts` / `tree.ts` 平级 import。它**不起 git 子进程**——树上点得到的路径包含未跟踪与被忽略的文件，那些在对象库里根本没有对应的对象。它先前长在 `diff.ts` 里，于是两个新模块反向 import 一个 feature 模块，而「只读读磁盘」这个 concern 没有 owner，只有一个恰好先写出来的宿主。
 
