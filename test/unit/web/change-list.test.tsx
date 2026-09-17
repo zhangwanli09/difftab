@@ -174,6 +174,16 @@ describe('ChangeList 的行布局', () => {
     expect(rows).toHaveLength(2);
     for (const row of rows) expect(row.className).toContain(ROW_BASE);
   });
+
+  it('分组标题钉在顶上且压在行之上：行的 group div 是 positioned，标题不带 z-index 就会被盖住', () => {
+    render(<ChangeList files={[file({ path: 'src/a.ts', staged: 'M' })]} />, container);
+
+    const heading = container.querySelector('section h2');
+    // 两半绑在一起钉，任一半改了都得回来重看。钉字面 `z-10` 不钉「任意 `z-*`」：`z-0` 与 auto 同层，
+    // 换成它用例照绿而页面照旧被盖
+    expect(ROW_GROUP).toContain('relative');
+    for (const cls of ['sticky', 'z-10']) expect(heading?.classList.contains(cls)).toBe(true);
+  });
 });
 
 /**

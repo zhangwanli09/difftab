@@ -54,6 +54,7 @@
 
 - **版式只活在本次页面里，不进 `localStorage`**。判据不是「偏好不值得记」，而是**记了也存不住**：后端 `listen(0)` 每次启动端口随机，`localStorage` 按 origin（含端口）隔离，于是它只能活到同一实例的刷新，换一次 `difftab` 启动就归零——主题那份同样受限，见「主题开关」。为一份跨不了实例的偏好搭一套读写 try/catch 不划算。状态与 `activeTab` 同一形状：一个模块级 signal（`state/change-tree.ts`）。
 - **分组标题两种版式都留着**：Conflicted / Staged / Unstaged / Untracked 是 git 语义（XY 两位独立，同一个文件可同时在两组），树只是**组内**的排法。VS Code 同样在每个 group 内各建一棵树。
+- **分组标题 `sticky top-0` 钉在滚动容器顶上，且必须带 `z-10`**：每一行的 group div 是 `relative`（`tree-row.tsx` 的 `ROW_GROUP`，行内动作外壳的包含块），与 sticky 标题同为 positioned、同为 `z-index: auto` 时按 DOM 顺序绘制——行排在标题之后，滚到它底下时文字与底色都画在标题上面。症状只是「滚动后标题与文件行叠在一起」，标题本身仍钉在顶上，没有任何东西会报错。`change-list.test.tsx` 把两半绑在一起钉住（`ROW_GROUP` 含 `relative` ⇒ 标题含 `z-10`），故不进红线。
 - **树由 `buildChangeTree(files)` 从路径纯算出来**，每组一份、只在这一组的 `files` 换新时重建。**用 `useMemo` 不用 `useComputed`**：`files` 是 prop 不是 signal，computed 只跟踪 signal，换一份 `files` 它不会重算——页面上就是 SSE 刷新后树停在旧的那份，而列表版式照常在动。建树按 `/` 切路径，每层**目录在前、文件在后**（照 `Files` 那档后端的「目录在前」），各自沿用 git 给的顺序不再排序——多一份排序意见就多一处与 `git status` 不一致的可能。
 - **单子目录链紧凑合并**（VS Code 的 compact folders）：一个目录节点**只有一个子节点且它是目录**时合并成一个节点，名字连读成 `src/web/components`、`path` 取链尾。判据是 320px 侧栏里每一层缩进都是从文件名身上扣的，`src` → `web` → `components` 三层各占一行只为放一个文件，文件名反而被挤到最右。有文件的目录不合并——那几个文件就在这一层，合并会让它们看起来属于更深的那层。
 - **折叠态记的是 collapsed 集合，不是 expanded 集合**（`collapsedChangeDirs`）：默认全部展开，空集就是「全展开」，SSE 刷新新冒出来的目录不用登记就是展开的。记 expanded 时每个新目录都得在建树时补登记一次，漏了它就默认收起——页面上只是「刚改的那几个文件没显示出来」，而 agent 跑动期间新目录是常态。

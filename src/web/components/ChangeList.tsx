@@ -312,8 +312,11 @@ function Group({ group }: { group: ChangeGroup }) {
   return (
     <section>
       {/* 与文件行同高（24px）、不给纵向内边距。`/6` 不能省：`text-xs` 会把从 `<nav>` 继承来的
-          line-height 一并重设，漏了它这一行就缩成 16px */}
-      <h2 class="sticky top-0 bg-side-bar-section-header-background px-3 text-xs/6 font-medium text-description-foreground">
+          line-height 一并重设，漏了它这一行就缩成 16px。
+          `z-10` 不能省：每一行的 group div 是 `relative`（`ROW_GROUP`，行内动作外壳的包含块），
+          与这条 sticky 标题同为 positioned、同为 `z-index: auto` 时按 DOM 顺序绘制——行排在标题
+          之后，滚到它底下时文字与底色都画在标题上面。标题本身仍钉在顶上，只是被盖住 */}
+      <h2 class="sticky top-0 z-10 bg-side-bar-section-header-background px-3 text-xs/6 font-medium text-description-foreground">
         {group.title}
         <span class="ml-1">{group.files.length}</span>
       </h2>
