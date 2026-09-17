@@ -3,13 +3,14 @@
 // **这不是 diff**：每一行前面不挂 `+`、底色不是新增绿——「看项目整体面貌」正是要摆脱补丁
 // 视角。因此它不走 diff2html，只用 hljs 高亮一次，行号另起一栏。
 //
-// 四个 `kind` 全部在这里分支，提示行与 DiffView 共用同一个 `Notice`。
+// 五个 `kind` 全部在这里分支，提示行与 DiffView 共用同一个 `Notice`，图片与它共用 `ImageView`。
 
 import { useMemo } from 'preact/hooks';
 import type { FilePayload } from '../../server/shared/protocol';
 import { getHljs, languageOf } from '../diff/hljs';
 import { fileStates } from '../state/store';
 import { ErrorDetail, Notice, Panel, tooLargeNotice } from './DiffView';
+import { ImageFile } from './ImageView';
 
 /**
  * 正文 + 行号。
@@ -54,15 +55,17 @@ function Content({ path, content }: { path: string; content: string }) {
  * 这一路要不要一个「按内容撑宽」的盒子（`w-max`，理由见 `FileView`）。
  *
  * **写成按 kind 穷举的 `Record` 而不是 `payload.kind === 'text'` 一句**：那样写它就是第二处独立
- * 判定 kind 的地方，与紧挨着的 `Payload` 各写各的——将来加进第五个 kind 时只改 `Payload`、忘了
+ * 判定 kind 的地方，与紧挨着的 `Payload` 各写各的——将来加进第六个 kind 时只改 `Payload`、忘了
  * 这边，粘性会静默退回 static（余量为 0 时与 static 一模一样），页面上什么都不会响。`Record` 的
  * 键是穷举的，漏一个就是编译错误。
  */
 const NEEDS_WIDE_BOX: Record<FilePayload['kind'], boolean> = {
-  // 只有正文那一路会有长行；其余三路都是散文，撑不出横向溢出
+  // 只有正文那一路会有长行；提示那三路都是散文，撑不出横向溢出
   text: true,
   symlink: false,
   binary: false,
+  // 图自己 `max-w-full` 缩到面板宽；写 `true` 时宽图把滚动区撑到原始像素宽，缩放形同虚设
+  image: false,
   'too-large': false,
 };
 
@@ -79,6 +82,8 @@ function Payload({ path, payload }: { path: string; payload: FilePayload }) {
       );
     case 'binary':
       return <Notice>Binary file — contents are not shown.</Notice>;
+    case 'image':
+      return <ImageFile path={path} payload={payload} />;
     case 'too-large':
       return <Notice>{tooLargeNotice(payload, 'file')}</Notice>;
   }

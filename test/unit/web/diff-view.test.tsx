@@ -1,4 +1,4 @@
-// DiffView 的四个 payload 分支与容器所有权。
+// DiffView 的五个 payload 分支与容器所有权（图片那一支的正文在 image-view.test.tsx）。
 //
 // store 那份用例盯的是「取 diff 时状态怎么转」，本文件盯的是「同一份状态渲染成什么」——「同一个
 // 文件重新取时回退 loading」在 store 层已经钉住了，但**回退之外还有一条同样丢滚动位置的路**：换
@@ -124,8 +124,8 @@ describe('DiffView', () => {
   });
 
   it('binary 只提示，不画 diff', async () => {
-    ready('logo.png', { kind: 'binary' });
-    show('logo.png');
+    ready('logo.bin', { kind: 'binary' });
+    show('logo.bin');
     await waitFor(() => expect(container.textContent).toContain('Binary file'));
 
     expect(container.querySelector('.d2h-file-wrapper')).toBeNull();

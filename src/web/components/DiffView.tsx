@@ -6,8 +6,8 @@
 //   2. 那个容器在 vdom 里**永远没有子节点**，否则两边会对着同一棵子树各改各的，Preact 下一次
 //      diff 时会按自己记得的空子树去比对真实的一大棵 DOM。
 //
-// 四个 `kind` 全部在这里分支：前端不区分 binary / too-large 来自哪条路，它拿到的就是同一个
-// 判别联合。
+// 五个 `kind` 全部在这里分支：前端不区分 binary / too-large 来自哪条路，它拿到的就是同一个
+// 判别联合；图片那一支交给 `ImageView`。
 
 import type { ComponentChildren } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
@@ -15,6 +15,7 @@ import type { DiffPayload } from '../../server/shared/protocol';
 import { renderDiff } from '../diff/render';
 import { diffOutputFormat } from '../state/layout';
 import { diffStates, type RenameInfo } from '../state/store';
+import { ImageDiff } from './ImageView';
 
 /**
  * 提示行的统一外观——加载中、错误、二进制、超大文件共用。**导出给文件视图共用**：
@@ -67,12 +68,18 @@ function Patch({ path, patch }: { path: string; patch: string }) {
 
 /**
  * 体积的可读写法。**不能一律按 MB 取整**：`reason: 'lines'` 那一路的文件可能只有几百 KB，按
- * MB 取整会显示「0 MB」。**导出给文件视图共用**——两份拷贝在第一次提交时就已经漂开过一次
- * （那边漏掉了下面 `size > 0` 那道）。
+ * MB 取整会显示「0 MB」。**导出给文件视图与图片视图共用**——两份拷贝在第一次提交时就已经漂开
+ * 过一次（那边漏掉了 `size > 0` 那道）。
+ *
+ * `precise` 是两档的唯一开关：提示句里的体积是「大概多大」，整 KB / 一位小数的 MB 够用；图片
+ * caption 里的体积是元数据，两位小数。**粗略档下限 1 KB**：一个 200 字节的文件说「0 KB」像是在
+ * 说它是空的，而精确档的 `0.20 KB` 自己就说清了，不需要这道下限。
  */
-export function formatSize(bytes: number): string {
-  const mb = bytes / 1024 / 1024;
-  return mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+export function formatSize(bytes: number, precise = false): string {
+  const kb = bytes / 1024;
+  const mb = kb / 1024;
+  if (mb >= 1) return `${mb.toFixed(precise ? 2 : 1)} MB`;
+  return precise ? `${kb.toFixed(2)} KB` : `${Math.max(1, Math.round(kb))} KB`;
 }
 
 /**
@@ -142,6 +149,8 @@ function Payload({ path, payload }: { path: string; payload: DiffPayload }) {
       return <Patch path={path} patch={payload.patch} />;
     case 'binary':
       return <Notice>Binary file — contents are not compared.</Notice>;
+    case 'image':
+      return <ImageDiff payload={payload} />;
     case 'too-large':
       return <Notice>{tooLargeNotice(payload, 'diff')}</Notice>;
   }

@@ -1,4 +1,4 @@
-// FileView 的四个 payload 分支与那条层叠取舍。
+// FileView 的五个 payload 分支与那条层叠取舍（图片那一支的正文在 image-view.test.tsx）。
 //
 // 两条钉的都是「不报错、只是不对」：容器一旦挂上 `hljs` 类，那条 unlayered 的
 // `.hljs { background }` 会压过 `bg-editor-background`，页面上只是底色跟别处对不上；而
@@ -122,7 +122,7 @@ describe('FileView', () => {
   });
 
   it('二进制与两个 too-large 分支各说一句不同的话', async () => {
-    ready('logo.png', { kind: 'binary' });
+    ready('logo.bin', { kind: 'binary' });
     await waitFor(() => expect(container.textContent).toContain('Binary file'));
 
     ready('huge.bin', { kind: 'too-large', size: 6 * 1024 * 1024, reason: 'size' });
