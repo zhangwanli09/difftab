@@ -123,18 +123,6 @@ human with vim — all the same.
 **Can I stage, commit or discard from it?** — No, and it will never be added. That is the
 product's core promise; see [Non-goals](#non-goals).
 
-**Why not just `git diff` in the terminal?** — For a two-line change, do. difftab is for
-the 300-line patch across twelve files, with the tree and the branch next to it.
-
-**Why a browser tab and not a TUI?** — Side-by-side diffs with syntax highlighting, a
-resizable layout and a mouse are what the browser is good at, and every machine already
-has one.
-
-**Why Node 22?** — It is the runtime every coding agent already needs, so difftab adds no
-other, and Node 22 is the oldest line still supported. Auto-refresh is at its best on
-Node 24.14 or newer, where `fs.watch` can skip `node_modules` before registering it; on
-older Node, Linux polls the working tree instead.
-
 **The UI says "Polling" — is something wrong?** — No. Native file watching is not in use
 for this repository (older Node on Linux, a network drive, a Docker volume, or an exhausted
 inotify quota), so difftab checks `git status` every 1.5 seconds instead. Everything still
