@@ -17,6 +17,17 @@
 
 ## 发布日志
 
+### 0.5.0（2026-09-18）
+
+- **minor 号这次由「新端点」判据触发，是三条口径里第一次用到它**：图片 before/after 预览（#56）加了 `GET /api/blob` 与第六个只读子命令 `cat-file`，不必再纠结交互面变没变。仍先按提交 type 报了 0.5.0，再回头核 0.4.0 / 0.4.1 两条口径，结论一致。口径仍只在这里，`RELEASING.md` 没有。
+- **README 刚在 #58 / #59 重写过、未提图片预览，刻意不动**：按 CLAUDE.md「特性列表只收差异点」，图片预览不是卖点；发布前清单那条「README 描述的是这版真做的事」只要求不说假话，不要求穷举。
+- **`gh pr merge` 在 Claude Code 的 auto mode 下被分类器拦下（Merge Without Review）**，两次尝试同样结果，最后由维护者在提示框里用 `!` 前缀亲手跑；输出落回会话后后续步骤照常接上。发布流程里这是唯一需要人按的写动作（`pnpm publish` 的 OTP 本来就要）。
+- **registry 延迟第四次**：20 秒一轮，第五轮（约 80 秒）等到 0.5.0，`dist-tags.latest` 同步。四次都在两分钟内。
+- **`check:global` 第四次被上一版验收留下的全局 0.4.1 堵住**，先 `npm rm -g difftab`。
+- **macOS 上没有 `timeout` 命令**——发布后验收里想用它给 `npx difftab --no-open` 兜底，结果 `command not found`；`DIFFTAB_IDLE_MS=3000` 本身就够让它自退，不需要兜底。
+- **「先建分支再提交」第七次走通**，`--rebase` 合并、`gh` 顺手快进了本地 main，tag 打在远端那一份 5a8fa9f 上。合并提交的 CI 16 个 job 全绿后才打 tag。
+- **发布后四条验收一次过**：`npm view` 回 0.5.0 且 `dist.tarball` 在 npmjs 上、全局装完底下没有传递依赖、临时仓库里 `npx difftab@0.5.0 --no-open` 打印 URL 并自行退出、Release 建在 tag `v0.5.0` 上。
+
 ### 0.4.1（2026-09-16）
 
 - **定号先读 0.4.0 那条的口径，这次真的起了作用**：按提交 type 机械地报了 0.5.0（两条 `feat`），读到 history 里「新端点或交互模型变了才升 minor，纯加开关与纯样式归 patch」之后改成 0.4.1——`Copy path` 是给已有的行内动作槽加一枚按钮，不新增端点、不改既有用法；静止态淡化纯样式。口径仍只写在这里，`RELEASING.md` 的 Versioning 一节没有它，但两版连续照着走通，先不搬。
