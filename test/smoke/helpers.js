@@ -269,13 +269,16 @@ export function httpGet(port, path, headers = {}, method = 'GET') {
       (res) => {
         const chunks = [];
         res.on('data', (c) => chunks.push(c));
-        res.on('end', () =>
+        res.on('end', () => {
+          const bytes = Buffer.concat(chunks);
           resolvePromise({
             status: res.statusCode,
             headers: res.headers,
-            body: Buffer.concat(chunks).toString('utf8'),
-          }),
-        );
+            body: bytes.toString('utf8'),
+            // 图片那条路要逐字节比：utf8 解码对非法序列做的是替换，比完的是一份被改过的东西
+            bytes,
+          });
+        });
       },
     );
     req.on('error', rejectPromise);
@@ -320,10 +323,22 @@ export async function runFullFlow(cwd, { env } = {}) {
     const state = await authedGet(server.port, server.token, '/api/state');
     const files = JSON.parse(state.body).files ?? [];
     const diffs = [];
+    const blobs = [];
     for (const file of files) {
       const query = new URLSearchParams({ path: file.path });
       if (file.oldPath) query.set('oldPath', file.oldPath);
-      diffs.push(await authedGet(server.port, server.token, `/api/diff?${query}`));
+      const diff = await authedGet(server.port, server.token, `/api/diff?${query}`);
+      diffs.push(diff);
+      // 图片的字节是另一个端点、另一条 git 调用（`cat-file`）：payload 里有哪一侧就打哪一侧，
+      // 否则白名单里那条 `cat-file` 就是一条没人走过的路
+      const payload = diff.status === 200 ? JSON.parse(diff.body) : null;
+      if (payload?.kind === 'image') {
+        for (const side of ['old', 'new']) {
+          if (!payload[side]) continue;
+          const blobQuery = new URLSearchParams({ path: payload[side].path, side });
+          blobs.push(await authedGet(server.port, server.token, `/api/blob?${blobQuery}`));
+        }
+      }
     }
 
     /**
@@ -345,7 +360,7 @@ export async function runFullFlow(cwd, { env } = {}) {
       }
     }
 
-    return { cwd, state, files, diffs, trees, fileReads, stderr: server.stderr };
+    return { cwd, state, files, diffs, blobs, trees, fileReads, stderr: server.stderr };
   } finally {
     await server.stop();
   }

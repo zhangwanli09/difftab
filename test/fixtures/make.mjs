@@ -13,6 +13,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { deflateSync } from 'node:zlib';
 
 /**
  * 生成期的 git 环境。身份走环境变量而不是 `git config`，不必在每个仓库里重复写一遍；
@@ -75,6 +76,7 @@ export const ALL_REPOS = [
   'bare',
   'sha256Empty',
   'ignoredTree',
+  'images',
 ];
 
 /**
@@ -89,6 +91,51 @@ function binaryBytes(seed) {
     Buffer.from([0x00]),
   ]);
 }
+
+/** PNG 的 CRC-32（IEEE），逐位实现——零依赖，且 fixture 只算几十个字节。 */
+function crc32(buffer) {
+  let crc = 0xffffffff;
+  for (const byte of buffer) {
+    let c = (crc ^ byte) & 0xff;
+    for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    crc = (crc >>> 8) ^ c;
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function pngChunk(type, data) {
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(data.length);
+  const body = Buffer.concat([Buffer.from(type, 'latin1'), data]);
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32(body));
+  return Buffer.concat([length, body, crc]);
+}
+
+/**
+ * 一张**真能解码**的 1×1 PNG（8-bit RGB，约 70 字节）。图片那条路要的是浏览器画得出来的东西，
+ * 上面那个魔数 + NUL 的 `binaryBytes` 只够骗过 NUL 探测，`<img>` 对它只会 `onError`。像素色
+ * 不同 → 字节不同 → git 才认为改过。IHDR 里的宽高高位字节天然是 NUL，两条二进制判定都命中。
+ */
+export function tinyPng([r, g, b]) {
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(1, 0);
+  ihdr.writeUInt32BE(1, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 2; // colour type: truecolour
+  // 一行 = 过滤字节 + 一个像素
+  const scanline = Buffer.from([0, r, g, b]);
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    pngChunk('IHDR', ihdr),
+    pngChunk('IDAT', deflateSync(scanline)),
+    pngChunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
+export const PNG_RED = [255, 0, 0];
+export const PNG_GREEN = [0, 255, 0];
+export const PNG_BLUE = [0, 0, 255];
 
 /**
  * 两个阈值各自的超标量。**唯一事实来源是 `src/server/git/diff.ts`，这里只是「远超」**——断言压
@@ -526,8 +573,9 @@ export function makeFixtures(destDir, only) {
     // 不能当默认：无条件放宽的话这一片继承成「不灰显」，而没有任何东西会报错
     write(cwd, 'untracked/keep.ts', 'export const keep = 1;\n');
     write(cwd, 'untracked/ig/hidden.ts', 'export const hidden = 1;\n');
-    // 二进制与符号链接各一份：只读读文件那条路的两个分支，后者同样指向仓库外
-    writeFileSync(join(cwd, 'logo.png'), binaryBytes('logo'));
+    // 二进制与符号链接各一份：只读读文件那条路的两个分支，后者同样指向仓库外。**扩展名刻意不是
+    // 图片**：图片是二进制里被放行的那一支，这里钉的是没被放行的那一档
+    writeFileSync(join(cwd, 'logo.bin'), binaryBytes('logo'));
     if (!WINDOWS) {
       const outside = join(dest, 'outside-secret.txt');
       writeFileSync(outside, `${OUTSIDE_SECRET}\n`);
@@ -543,6 +591,29 @@ export function makeFixtures(destDir, only) {
       symlinkSync(outsideDir, join(cwd, 'linkdir'));
     }
     repos.ignoredTree = cwd;
+  }
+
+  // 10. 图片：二进制里被放行的那一支。**五种形态各钉一件事**：修改（两侧都有）、删除（只有旧）、
+  //     `git mv`（旧侧在 oldPath）、未跟踪（只有新、走 NUL 探测那条路）、外加两个对照面——非图片
+  //     扩展名的二进制（不放行）与内容是文本的 `.png`（判据是「二进制 ∧ 扩展名」，单看扩展名会
+  //     把它画成破图）
+  if (wanted('images')) {
+    const cwd = init('images');
+    write(cwd, 'README.md', '# images\n');
+    write(cwd, 'img/a.png', tinyPng(PNG_RED));
+    write(cwd, 'img/gone.png', tinyPng(PNG_GREEN));
+    write(cwd, 'img/old.png', tinyPng(PNG_BLUE));
+    write(cwd, 'blob.bin', binaryBytes('v1'));
+    write(cwd, 'fake.png', 'not really a png\n');
+    commit(cwd, 'add images');
+
+    write(cwd, 'img/a.png', tinyPng(PNG_BLUE));
+    rmSync(join(cwd, 'img/gone.png'));
+    git(cwd, 'mv', 'img/old.png', 'img/moved.png');
+    write(cwd, 'new.png', tinyPng(PNG_GREEN));
+    write(cwd, 'blob.bin', binaryBytes('v2 with different length'));
+    write(cwd, 'fake.png', 'still not a png\n');
+    repos.images = cwd;
   }
 
   // 没生成的仓库不能是 undefined：调用方会拿着它去 spawn,cwd 变成进程当前目录，

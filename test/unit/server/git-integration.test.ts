@@ -277,16 +277,21 @@ describe('空仓库', () => {
   });
 
   test('diff 基准降级为空树哈希，而不是 fatal 在 HEAD 上', async () => {
-    expect(await resolveDiffBase(repos.empty)).toBe('4b825dc642cb6eb9a060e54bf8d69288fbee4904');
-    // 有提交的仓库照旧用 HEAD
-    expect(await resolveDiffBase(repos.staged)).toBe('HEAD');
+    expect(await resolveDiffBase(repos.empty)).toEqual({
+      ref: '4b825dc642cb6eb9a060e54bf8d69288fbee4904',
+      oid: '4b825dc642cb6eb9a060e54bf8d69288fbee4904',
+    });
+    // 有提交的仓库照旧用 HEAD，oid 是它此刻指向的提交
+    const base = await resolveDiffBase(repos.staged);
+    expect(base.ref).toBe('HEAD');
+    expect(base.oid).toMatch(/^[0-9a-f]{40}$/);
   });
 
   test('SHA-256 仓库取的是另一个常量，而且它真的当得了基准', async () => {
     // 两个常量都只能实测取。**光比对常量不够**：写错一位时这条照样绿，
     // 而症状是空仓库下 diff 全部 fatal——所以下面那半必须真的拿它取一次补丁
     const base = await resolveDiffBase(repos.sha256Empty);
-    expect(base).toBe('6ef19b41225c5369f1c104d45d8d85efa9b057b53b14b4b9b939dd74decc5321');
+    expect(base.ref).toBe('6ef19b41225c5369f1c104d45d8d85efa9b057b53b14b4b9b939dd74decc5321');
 
     const payload = await readDiff(repos.sha256Empty, { path: 'staged-before-first-commit.txt' });
     expect(payload.kind).toBe('text');

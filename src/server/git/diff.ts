@@ -3,11 +3,21 @@
 // **禁止一次性获取或渲染全仓 diff**——agent 单次改 300+ 文件是常态，整仓 diff 会
 // 冻结浏览器主线程数秒到数十秒，同时拖垮冷启动指标。
 
+import type { Stats } from 'node:fs';
 import { lstat } from 'node:fs/promises';
 import type { DiffPayload } from '../shared/protocol.ts';
-import { resolveDiffBase } from './repo.ts';
+import { baseBlobSize } from './image.ts';
+import { type DiffBase, resolveDiffBase } from './repo.ts';
 import { GitError, runGit, runGitStrict } from './run.ts';
-import { inspectFile, MAX_BYTES, MAX_LINES, resolveInRepo, WorktreeError } from './worktree.ts';
+import {
+  imageMimeOf,
+  inspectFile,
+  MAX_BYTES,
+  MAX_LINES,
+  resolveInRepo,
+  WorktreeError,
+  worktreeVersion,
+} from './worktree.ts';
 
 /** `-z` 输出里是否原样出现这条路径。 */
 function lists(output: string, path: string): boolean {
@@ -109,14 +119,54 @@ async function readNumstat(
   };
 }
 
-/** 工作区里这个文件的字节数；文件不在（删除）就是 `null`。 */
-async function worktreeSize(abs: string): Promise<number | null> {
+/** 工作区里这个文件的 `lstat`；文件不在（删除）就是 `null`。 */
+async function worktreeStat(abs: string): Promise<Stats | null> {
   try {
     // lstat 而非 stat：与未跟踪那条路同理，跟随链接读到的是链接目标的体积
-    return (await lstat(abs)).size;
+    return await lstat(abs);
   } catch {
     return null;
   }
+}
+
+/** 上一条只取体积的形态——三条 `too-large` 分支只要这一个数。 */
+async function worktreeSize(abs: string): Promise<number | null> {
+  return (await worktreeStat(abs))?.size ?? null;
+}
+
+/**
+ * 已跟踪图片的两侧元数据。**判据的二进制那一半是调用方给的（numstat 的 `-\t-`）**，这里只管
+ * 扩展名命中之后的事：旧侧问基准（`cat-file -s`，不存在即 `null`——新增、或基准是空树），新侧
+ * `lstat` 工作区（不存在即 `null`——已删除）。重命名的旧侧在 `oldPath`，`old.path` 填成它，前端
+ * 拿着直接问 `/api/blob`，不自己拼。
+ *
+ * **`version` 是内容身份，前端拿它决定要不要重取**：旧侧是基准的 oid（`<base>:<path>` 那个 blob
+ * 只在基准换了之后才可能变，而 oid 是 `resolveDiffBase` 那次 `rev-parse` 顺手就有的），新侧是
+ * 体积 + mtime（`worktreeVersion`）。
+ *
+ * **5MB 按侧卡**：任一侧超过就整个回 `too-large`——一张 8MB 的 PNG 说「太大」是真话；`size`
+ * 取**两侧里大的那个**（取不到给 0）：固定报工作区那份时，HEAD 里 8MB 的图被换成 120KB 的，提示
+ * 会说「too large (file is 120 KB)」，而 Files 里同一个文件正常显示——自相矛盾。
+ */
+async function imageDiff(
+  root: string,
+  base: DiffBase,
+  path: string,
+  abs: string,
+  oldPath: string | undefined,
+): Promise<DiffPayload> {
+  const basePath = oldPath ?? path;
+  const [oldSize, info] = await Promise.all([
+    baseBlobSize(root, base.ref, basePath),
+    worktreeStat(abs),
+  ]);
+  const largest = Math.max(oldSize ?? 0, info?.size ?? 0);
+  if (largest > MAX_BYTES) return { kind: 'too-large', size: largest, reason: 'size' };
+  return {
+    kind: 'image',
+    old: oldSize === null ? null : { path: basePath, size: oldSize, version: base.oid },
+    new: info === null ? null : { path, size: info.size, version: worktreeVersion(info) },
+  };
 }
 
 /**
@@ -129,7 +179,12 @@ async function worktreeSize(abs: string): Promise<number | null> {
  *
  * 顺序：二进制(numstat)→ 行数(numstat)→ 取补丁并卡字节。二进制先答是因为它比「太大」
  * 更具体（一个 8MB 的 PNG 说「文件过大」等于把原因说错了）；行数排在取补丁之前，是因为它
- * 不用付出取补丁的代价就能拦下 5 万行以上的改动。
+ * 不用付出取补丁的代价就能拦下 5 万行以上的改动。二进制里扩展名在表里的那一支放行成
+ * `image`（`imageDiff`）——扩展名只在 git 已判定二进制之后才查，单看扩展名会把一个内容是
+ * 文本的 `.png` 画成破图。
+ *
+ * `path` / `oldPath` 是 `resolveInRepo` 归一化后的：图片那一路要把它拼进 `<base>:<path>`，
+ * 而那是 revision 语法、不受 `GIT_LITERAL_PATHSPECS` 保护。
  *
  * `size` 只用于**说话**、不再参与判定，所以**只在要拒绝的那两条分支上才去 `lstat`**：
  * 正常那条路一次系统调用都不欠。文件已被删除时取不到，给 0。
@@ -139,19 +194,25 @@ async function worktreeSize(abs: string): Promise<number | null> {
  */
 async function trackedDiff(
   root: string,
-  base: string,
+  base: DiffBase,
   path: string,
   abs: string,
   oldPath: string | undefined,
   stat: { binary: boolean; lines: number } | null,
 ): Promise<DiffPayload> {
-  if (stat?.binary) return { kind: 'binary' };
+  if (stat?.binary) {
+    return imageMimeOf(path) === null
+      ? { kind: 'binary' }
+      : imageDiff(root, base, path, abs, oldPath);
+  }
   if (stat && stat.lines > MAX_LINES) {
     // 行数这一路的 size 可能只有几百 KB，前端因此必须靠 reason 而不是 size 说话
     return { kind: 'too-large', size: (await worktreeSize(abs)) ?? 0, reason: 'lines' };
   }
 
-  const args = oldPath ? ['diff', base, '-M', '--', path, oldPath] : ['diff', base, '--', path];
+  const args = oldPath
+    ? ['diff', base.ref, '-M', '--', path, oldPath]
+    : ['diff', base.ref, '--', path];
   let result: Awaited<ReturnType<typeof runGit>>;
   try {
     result = await runGit(args, root, { maxStdoutBytes: MAX_BYTES });
@@ -203,6 +264,9 @@ export async function untrackedDiff(root: string, path: string): Promise<DiffPay
     case 'binary':
     case 'too-large':
       return file;
+    // 未跟踪的图片只有新侧；`path` 已归一化，前端拿它问 `/api/blob?side=new`
+    case 'image':
+      return { kind: 'image', old: null, new: { path, size: file.size, version: file.version } };
     case 'text':
       break;
   }
@@ -232,19 +296,21 @@ export interface DiffQuery {
 export async function readDiff(root: string, query: DiffQuery): Promise<DiffPayload> {
   // 先确认路径本身合法，再决定走哪条路。`follow: false` 与读文件那侧同一把钥匙——
   // 这里只用 `abs` 去 lstat 取展示用的体积，最后一段照样不跟随
-  const { abs } = await resolveInRepo(root, query.path, { follow: false });
-  if (query.oldPath) await resolveInRepo(root, query.oldPath, { follow: false });
+  const { abs, path } = await resolveInRepo(root, query.path, { follow: false });
+  const oldPath = query.oldPath
+    ? (await resolveInRepo(root, query.oldPath, { follow: false })).path
+    : undefined;
 
   // 基准与 index 查询彼此不依赖，并发跑：串行等于把两次进程启动开销直接叠加，而**每条
   // `/api/diff` 都要付**。基准在一次请求里只解析一次、两条分支共用，这不是缓存
-  const [base, listed] = await Promise.all([resolveDiffBase(root), inIndex(root, query.path)]);
+  const [base, listed] = await Promise.all([resolveDiffBase(root), inIndex(root, path)]);
 
   // 这一轮躲不掉：二进制与行数都必须在**取补丁之前**判完。未跟踪那条路两样
   // 都不用——它自己读磁盘时顺手就有，所以这里只为已跟踪那一侧付这次调用
-  const stat = await readNumstat(root, base, query.path, query.oldPath);
+  const stat = await readNumstat(root, base.ref, path, oldPath);
 
   if (listed || stat !== null) {
-    return trackedDiff(root, base, query.path, abs, query.oldPath, stat);
+    return trackedDiff(root, base, path, abs, oldPath, stat);
   }
-  return untrackedDiff(root, query.path);
+  return untrackedDiff(root, path);
 }

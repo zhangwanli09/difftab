@@ -224,7 +224,7 @@ describe('readFileContent', () => {
   });
 
   test('二进制走 NUL 字节探测，不返回正文', async () => {
-    expect(await readFileContent(root, 'logo.png')).toEqual({ kind: 'binary' });
+    expect(await readFileContent(root, 'logo.bin')).toEqual({ kind: 'binary' });
   });
 
   test.skipIf(WINDOWS)('符号链接给的是**目标字符串**，不是目标内容', async () => {

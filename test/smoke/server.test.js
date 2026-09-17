@@ -9,7 +9,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } 
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { test } from 'node:test';
-import { makeFixtures, OUTSIDE_SECRET } from '../fixtures/make.mjs';
+import { makeFixtures, OUTSIDE_SECRET, PNG_BLUE, PNG_RED, tinyPng } from '../fixtures/make.mjs';
 import {
   authedGet,
   BIN,
@@ -22,7 +22,7 @@ import {
 } from './helpers.js';
 
 /** 本文件用得到的 fixture。生成全部 16 个要 1.5s 上下，其中一半这里根本不打开。 */
-const NEEDED = ['unicodePaths', 'staged', 'empty', 'diffEdges', 'ignoredTree'];
+const NEEDED = ['unicodePaths', 'staged', 'empty', 'diffEdges', 'ignoredTree', 'images'];
 
 /**
  * 只读工具不接受的方法。**两个用例共用一份**：各写一份的话，哪天添一个
@@ -44,6 +44,7 @@ let workdir;
 let repos;
 let server;
 let ignored;
+let images;
 cleanupOnExit(() => workdir);
 
 /** 递归列出仓库里的所有文件（相对路径），用来证明工具没往里写东西。 */
@@ -65,10 +66,12 @@ function listFiles(dir, prefix = '') {
 const setup = once(async () => {
   workdir = mkdtempSync(join(tmpdir(), 'difftab-server-'));
   repos = makeFixtures(join(workdir, 'repos'), NEEDED);
-  // 两个实例并发起：目录树那三条要的是带 `.gitignore` 的仓库，别的都用第一个
-  [server, ignored] = await Promise.all([
+  // 三个实例并发起：目录树那三条要的是带 `.gitignore` 的仓库，图片那几条要的是 `images`，
+  // 别的都用第一个
+  [server, ignored, images] = await Promise.all([
     startDifftab({ cwd: repos.unicodePaths }),
     startDifftab({ cwd: repos.ignoredTree }),
+    startDifftab({ cwd: repos.images }),
   ]);
 });
 
@@ -157,6 +160,7 @@ test('第 3 道：没有 token 一律 403，静态资源与 SSE 端点无例外'
     '/app.css',
     '/api/state',
     '/api/diff?path=a',
+    '/api/blob?path=a.png&side=new',
     '/api/events',
   ]) {
     const res = await httpGet(server.port, path);
@@ -349,7 +353,7 @@ test('/api/file 只读回内容，各 kind 各回各的，且不跟随符号链�
   assert.deepEqual(await at('src/app.ts'), { kind: 'text', content: 'export const app = 1;\n' });
   // 被忽略的文件照样读得到——树上点得到，就得看得到
   assert.deepEqual(await at('.env'), { kind: 'text', content: 'SECRET=1\n' });
-  assert.deepEqual(await at('logo.png'), { kind: 'binary' });
+  assert.deepEqual(await at('logo.bin'), { kind: 'binary' });
 
   if (process.platform !== 'win32') {
     const link = await at('link-to-outside');
@@ -361,11 +365,17 @@ test('/api/file 只读回内容，各 kind 各回各的，且不跟随符号链�
 
 test('/api/file 与 /api/tree 上的路径同样是字面量，且走不出仓库', async () => {
   await setup();
-  // 走出仓库的一律拒掉，两个端点都是
+  // 走出仓库的一律拒掉，三个端点都是（blob 那条在扩展名之后、落盘之前也过同一道边界）
   for (const endpoint of ['/api/file', '/api/tree']) {
     for (const path of ['../..', '/etc/passwd']) {
       const res = await onIgnoredTree(`${endpoint}?${q(path)}`);
       assert.notEqual(res.status, 200, `${endpoint}?path=${path} 竟然回了 200`);
+    }
+  }
+  for (const path of ['../../x.png', '/etc/passwd.png']) {
+    for (const side of ['old', 'new']) {
+      const res = await onIgnoredTree(`/api/blob?${q(path)}&side=${side}`);
+      assert.notEqual(res.status, 200, `/api/blob?path=${path}&side=${side} 竟然回了 200`);
     }
   }
   // **中间那一段是符号链接**同样走不出去：`linkdir/secret.txt` 在字面上老实待在仓库内，
@@ -397,6 +407,63 @@ test('/api/file 与 /api/tree 上的路径同样是字面量，且走不出仓�
   // path 缺省时：树取根、文件是 400——「默认读哪个文件」不存在
   assert.equal((await onIgnoredTree('/api/tree')).status, 200);
   assert.equal((await onIgnoredTree('/api/file')).status, 400);
+});
+
+test('图片：payload 只带两侧元数据，字节由 /api/blob 以精确 MIME 逐字节给', async () => {
+  await setup();
+  const onImages = (path) => authedGet(images.port, images.token, path);
+
+  // 改写过的图：两侧都有，旧侧是 HEAD 那份、新侧是工作区那份
+  const diff = JSON.parse((await onImages(`/api/diff?${q('img/a.png')}`)).body);
+  assert.equal(diff.kind, 'image');
+  assert.deepEqual(
+    [diff.old.path, diff.old.size, diff.new.path, diff.new.size],
+    ['img/a.png', tinyPng(PNG_RED).length, 'img/a.png', tinyPng(PNG_BLUE).length],
+  );
+  // version 是内容身份，前端拿它当 v= 与 key；两侧各自非空即可，取值是后端的事
+  assert.ok(diff.old.version && diff.new.version);
+  const old = await onImages(`/api/blob?${q('img/a.png')}&side=old`);
+  assert.equal(old.status, 200);
+  assert.equal(old.headers['content-type'], 'image/png');
+  assert.equal(old.headers['x-content-type-options'], 'nosniff');
+  assert.ok(old.bytes.equals(tinyPng(PNG_RED)), 'old 侧的字节与 HEAD 里那份不一致');
+  const fresh = await onImages(`/api/blob?${q('img/a.png')}&side=new`);
+  assert.ok(fresh.bytes.equals(tinyPng(PNG_BLUE)), 'new 侧的字节与工作区那份不一致');
+
+  // `git mv` 过的：旧侧的 path 是 oldPath，前端拿它直接问
+  const moved = JSON.parse(
+    (await onImages(`/api/diff?${q('img/moved.png')}&oldPath=${encodeURIComponent('img/old.png')}`))
+      .body,
+  );
+  assert.equal(moved.old.path, 'img/old.png');
+  assert.equal((await onImages(`/api/blob?${q('img/old.png')}&side=old`)).status, 200);
+
+  // 文件视图看的是工作区那份
+  const file = JSON.parse((await onImages(`/api/file?${q('img/a.png')}`)).body);
+  assert.deepEqual([file.kind, file.size], ['image', tinyPng(PNG_BLUE).length]);
+  assert.ok(file.version);
+
+  // 对照面：非图片扩展名的二进制不放行；内容是文本的 .png 走文本
+  assert.deepEqual(JSON.parse((await onImages(`/api/diff?${q('blob.bin')}`)).body), {
+    kind: 'binary',
+  });
+  assert.equal(JSON.parse((await onImages(`/api/diff?${q('fake.png')}`)).body).kind, 'text');
+
+  // 端点自己的三道 400：side 非法 / 缺 side / 非图片扩展名——它不是「下载任意文件」的端点
+  for (const path of [
+    `/api/blob?${q('img/a.png')}&side=sideways`,
+    `/api/blob?${q('img/a.png')}`,
+    `/api/blob?${q('blob.bin')}&side=new`,
+    `/api/blob?${q('README.md')}&side=old`,
+    // 内容是文本的 .png：新侧走的是 inspectFile 那条链，与 payload 同一个答案
+    `/api/blob?${q('fake.png')}&side=new`,
+    '/api/blob?side=new',
+  ]) {
+    const res = await onImages(path);
+    assert.equal(res.status, 400, `${path} 回了 ${res.status}`);
+  }
+  // 那一侧不存在是 400 而不是 500：新增的图在 HEAD 里没有
+  assert.equal((await onImages(`/api/blob?${q('new.png')}&side=old`)).status, 400);
 });
 
 test('注册表落在 os.tmpdir()，权限 0600，仓库目录内无任何新增文件', async () => {
