@@ -39,23 +39,16 @@ uninstall the IDE.
 
 ## Features
 
-- **Working-tree diff, as an editor shows it** — staged, unstaged, untracked and
-  conflicting files in four groups; patches load per file, rendered by
-  [diff2html](https://diff2html.xyz/) + highlight.js in a VS Code-like theme, side by side
-  until the pane gets too narrow.
-- **The whole repository, not only what changed** — a file tree of tracked, untracked and
-  ignored (dimmed) files, loaded one directory at a time; click any file to read it.
-- **Branch status that tells the truth** — ahead/behind counts, "no upstream", detached
-  HEAD, and an in-progress rebase / merge / cherry-pick / revert / bisect / `git am`.
-- **Live while the agent writes** — a file watcher pushes changes over SSE; where recursive
-  watching would exhaust the inotify quota it falls back to polling and says so.
-- **Never writes to your repository** — only read-only git commands, enforced by two CI
-  gates rather than by promise. Details under [Security](#security).
-- **Nothing to keep running** — about 40 ms to a listening server, 75 KB of JS gzipped,
-  zero dependencies, and the process exits 45 seconds after the last tab closes.
-
-Empty repositories, interrupted rebases, linked worktrees, submodules, binary and >5 MB
-files, renames, and paths with spaces, quotes, CJK or emoji are handled explicitly.
+- **The diff, the way an editor shows it** — staged, unstaged, untracked and conflicting
+  changes, side by side with syntax highlighting.
+- **The whole repository, not only what changed** — browse the file tree and open any file.
+- **Branch status you can trust** — ahead/behind, no upstream, detached HEAD, a rebase or
+  merge still in progress.
+- **Live while the agent writes** — the tab refreshes on its own as files change.
+- **Never writes to your repository** — read-only git only, enforced by CI gates rather
+  than by promise. Details under [Security](#security).
+- **Nothing to keep running** — starts instantly, zero dependencies, exits when you close
+  the tab.
 
 ## Installation
 
@@ -95,15 +88,13 @@ There is nothing to configure: no port to pick, no config file.
 
 ## How it works
 
-1. `difftab` finds the repository root, runs the same read-only commands `git status` and
-   `git diff HEAD` would, and serves the result from a local HTTP server bound to
-   `127.0.0.1` on a port the kernel picks.
-2. The page renders the change list and loads each patch lazily when you click it.
-3. A file watcher (or polling, where watching is unavailable) pushes updates over
-   server-sent events.
-4. Forty-five seconds after the last tab disconnects, the process exits.
+`difftab` runs the same read-only git commands `git status` and `git diff HEAD` would, and
+serves the result from a local server on `127.0.0.1`. The page loads a patch when you click
+it and refreshes as files change; 45 seconds after the last tab closes, the process exits.
 
 ## Security
+
+Read-only, local-only, nothing to trust but your own machine.
 
 **It never writes to your repository.** difftab only ever runs read-only git commands — no
 stage, commit, discard, pull, push, branch or stash. Two gates enforce this on every
