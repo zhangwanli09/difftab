@@ -136,14 +136,34 @@ export interface RepoState {
 }
 
 /**
+ * 图片的一侧。**`path` 是取字节时要交给 `/api/blob` 的那一份**：重命名条目的旧侧是
+ * `oldPath`，由后端填好——让页面自己判「这个 tab 是不是重命名、旧路径是哪个」等于把 status
+ * 的 `2 ` 记录语义再抄一遍。`size` 只用于展示，与 `too-large` 那条同一口径（0 即取不到）。
+ *
+ * **`version` 是这份内容的身份**（旧侧是基准的 oid，新侧是体积 + mtime），前端拿它当 `<img>`
+ * 的 `v=` 与 `key`：不变就不重取、变了才重挂。前端不解读它，只比对——按「取过一次」换戳的写法
+ * 会让每一次无关文件的 SSE 都重下两张图。
+ */
+export interface ImageSide {
+  path: string;
+  size: number;
+  version: string;
+}
+
+/**
  * `GET /api/diff` 的响应体，判别联合。`text` 是已跟踪文件的 `git diff` 补丁正文；
  * `untracked-text` 是未跟踪文件手工构造的 unified diff（不走 `--no-index`）——两者分开是
  * 因为后者的补丁不来自 git，前端将来若要做「以 git 输出为准」的断言，得能区分。
+ *
+ * `image` 是二进制里被放行的那一支：判据是**「二进制 ∧ 扩展名在表里」**，两半都在后端
+ * （表在 `server/git/worktree.ts`），前端只认 `kind`、不自己看扩展名。它只带元数据，字节走
+ * `/api/blob?path=&side=old|new`；`old` / `new` 为 `null` 即那一侧不存在（新增无旧、删除无新）。
  */
 export type DiffPayload =
   | { kind: 'text'; patch: string }
   | { kind: 'untracked-text'; patch: string }
   | { kind: 'binary' }
+  | { kind: 'image'; old: ImageSide | null; new: ImageSide | null }
   | {
       kind: 'too-large';
       /** 文件字节数。**不足以解释拒绝的原因**，见 `reason`。 */
@@ -193,9 +213,13 @@ export interface TreePayload {
  *
  * `too-large` 的 `size` / `reason` 与 `DiffPayload` 同一条判据：两个触发口（5MB 与
  * 50,000 行），只给 `size` 时行数那一路解释不了拒绝的原因。
+ *
+ * `image` 与 `DiffPayload` 的同名分支同一条判据（二进制 ∧ 扩展名），字节由
+ * `/api/blob?side=new` 给——文件视图看的永远是工作区那一份。
  */
 export type FilePayload =
   | { kind: 'text'; content: string }
   | { kind: 'symlink'; target: string }
   | { kind: 'binary' }
+  | { kind: 'image'; size: number; version: string }
   | { kind: 'too-large'; size: number; reason: 'size' | 'lines' };

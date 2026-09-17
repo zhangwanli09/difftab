@@ -24,7 +24,7 @@
 | `pnpm typecheck` | 用到 Node 24+ 才有的内置 API 或超出 ES2023 的语法，而下限档要到 CI 跑完才发现 | build |
 | `pnpm test`（Vitest） | 解析器、三道校验、DOM 渲染路径的常规回归。`test-layout.test.ts` 另外钉住「用例目录放错就静默不跑」 | build |
 | `pnpm test:smoke`（`node --test`，跑 `dist/`） | 产物层面的行为回归。**先 `pnpm build`**——它跑 `dist/`，产物比源码旧一轮时红的样子像「三道校验全坏了」 | matrix（三平台 × Node 22.0.x/24/26） |
-| 只读**主门禁**（`readonly.test.js`） | 产品发出了白名单外的 git 子命令。**自带一条「确实记到了东西」的正面断言**——否则白名单会对着空数组通过。**覆盖面等于 `runFullFlow` 打过的端点**：新增一个端点却不把它加进那条流程，门禁不会红，只是那条路上的 git 调用一次都没被看过 | matrix |
+| 只读**主门禁**（`readonly.test.js`） | 产品发出了白名单外的 git 子命令。**自带一条「确实记到了东西」的正面断言**——否则白名单会对着空数组通过。**白名单只看子命令，看不见参数**，所以另有两条按参数钉的断言：`diff` 不带 `--no-index` / `--ext-diff` / `--output`，`cat-file` 之后只能是 `blob` / `-s`（`--filters` / `--textconv` 会跑 smudge，LFS 的那个写 `.git/lfs`）。**覆盖面等于 `runFullFlow` 打过的端点**：新增一个端点却不把它加进那条流程，门禁不会红，只是那条路上的 git 调用一次都没被看过 | matrix |
 | 只读**第二层**（`readonly-git-dir.test.js`） | `.git` 被写了。A 半锁死 `.git` 抓会报错的写，B 半逐字节比对抓**不报错**的那种（漏设 `GIT_OPTIONAL_LOCKS=0` 只有 B 半看得见）。两半各自带一条正面探针 | matrix |
 | 子进程单点断言 | git 子进程跑出了 `server/git`、或拉起浏览器跑出了 `server/cli`。**查的是相等而非「没有多余的」**——只查多出来的一半时，两处调用点双双改名会让白名单静默变成空表 | matrix |
 | `pnpm size` | 产物体积超预算。**不进 matrix**：同一份 `dist/` 再跑 9 遍不增加覆盖，反而因各 Node 自带 zlib 不同而引入方差 | build |
@@ -59,7 +59,8 @@
 | 300+ 文件变更 | 懒加载；一次性取全仓 diff 会在这里冻住主线程 |
 | **配不上对的重命名**（`git mv` 后重写成 6 万行、不 add） | numstat 取 `[0]` 而不按路径挑、按合计算 |
 | **名字里带 `*` 的文件 + 一个会被它匹配到的邻居** | 漏设 `GIT_LITERAL_PATHSPECS=1`。路径里没有通配字符时，设不设长得一样 |
-| 新增 / 二进制 / >5MB / 超多行 | `DiffPayload` 四个分支各自的填充与渲染 |
+| 新增 / 二进制 / >5MB / 超多行 | `DiffPayload` 五个分支各自的填充与渲染 |
+| **图片仓库**（已提交后改写的 PNG、删除的、`git mv` 过的、未跟踪的、外加一个非图片二进制）——**PNG 必须是真能解码的**，不是魔数 + NUL | 图片判据漏了「二进制 ∧ 扩展名」的任一半（非图片二进制被画成图 / 文本 `.png` 被画成破图）；旧侧 `cat-file` 那条路在白名单里有没有被覆盖到（`runFullFlow` 对每个 `image` 响应的两侧各打一次 `/api/blob`）；重命名旧侧 `old.path` 填的是不是 `oldPath` |
 | detached HEAD | 前端把 `(detached)` 当分支名画出去 |
 | merge 停在冲突 / rebase 停在冲突 | 操作标注判据表的**优先级**——把 rebase 排在 merge 之后 |
 | linked worktree / submodule（含**父仓库**那一侧） | 状态文件拼 `<root>/.git` 而不按 `rev-parse --git-dir` 找；父仓库那一侧另挡目录树把 gitlink 当成文件画（mode `160000` 在普通 `ls-files` 输出里与一个文件一模一样） |

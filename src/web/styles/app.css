@@ -75,6 +75,18 @@
   box-shadow: inset 0 -1px var(--color-panel-border);
 }
 
+/* 图片视图垫在图底下的棋盘。透明 PNG 直接压在编辑器底色上看不出透明区，而棋盘是所有图片工具的
+ * 惯例。格子色复用 `--color-diff-diagonal-fill`——它本就是「叠在编辑器底色上、明暗两档都成立」的
+ * 半透明 token，不为棋盘新开颜色（`@theme` 里没人引用的 token 会被裁，多开一个就多一处要看着的
+ * 地方）。`repeating-conic-gradient` 两格交替，一条声明画完。 */
+@utility checkerboard {
+  background-image: repeating-conic-gradient(
+    var(--color-diff-diagonal-fill) 0 25%,
+    transparent 0 50%
+  );
+  background-size: 16px 16px;
+}
+
 /* 设计 token。
  *
  * 命名照搬 VS Code 的颜色 token(`editor.background` → `--color-editor-background`)，取值

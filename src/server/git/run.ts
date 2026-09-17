@@ -51,8 +51,9 @@ export interface RunOptions {
   maxStdoutBytes?: number;
 }
 
-export interface GitResult {
-  stdout: string;
+/** `Out` 是 stdout 的形态：文本类调用是 `string`，`cat-file blob` 那一路是原始 `Buffer`。 */
+export interface GitResult<Out = string> {
+  stdout: Out;
   stderr: string;
   /** 退出码。`null` 表示被信号杀掉。 */
   code: number | null;
@@ -77,14 +78,17 @@ export class GitError extends Error {
 }
 
 /**
- * 跑一条 git 命令。**非零退出不抛异常**——若干只读探测（空仓库下的
+ * 跑一条 git 命令，stdout 以**字节**返回。**非零退出不抛异常**——若干只读探测（空仓库下的
  * `rev-parse --verify HEAD`、下限之下的 `--show-object-format`）正是靠非零退出给答案的。
+ *
+ * 绝大多数调用点要的是文本，走下面的 `runGit`；这一层单独暴露只为 `cat-file blob`——它吐的
+ * 是图片字节，而 `toString('utf8')` 对非法序列做的是替换不是保留，解码一次就再也拼不回原图。
  */
-export function runGit(
+export function runGitRaw(
   args: readonly string[],
   cwd: string,
   options: RunOptions = {},
-): Promise<GitResult> {
+): Promise<GitResult<Buffer>> {
   const limit = Math.min(options.maxStdoutBytes ?? MAX_STDOUT_BYTES, MAX_STDOUT_BYTES);
   return new Promise((resolvePromise, rejectPromise) => {
     const argv = [...GLOBAL_CONFIG, ...args];
@@ -152,9 +156,19 @@ export function runGit(
         rejectPromise(new GitError('overflow', argv, stderr, code));
         return;
       }
-      resolvePromise({ stdout: Buffer.concat(out).toString('utf8'), stderr, code });
+      resolvePromise({ stdout: Buffer.concat(out), stderr, code });
     });
   });
+}
+
+/** 同 `runGitRaw`，stdout 按 utf8 解码。文本类调用一律走这里。 */
+export async function runGit(
+  args: readonly string[],
+  cwd: string,
+  options: RunOptions = {},
+): Promise<GitResult> {
+  const result = await runGitRaw(args, cwd, options);
+  return { stdout: result.stdout.toString('utf8'), stderr: result.stderr, code: result.code };
 }
 
 /** 同上，但非零退出即抛。用于「失败没有第二种解释」的调用点。 */

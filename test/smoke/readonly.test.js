@@ -19,9 +19,10 @@ import { cleanupOnExit, once, parseTrace, REPO_ROOT, runFullFlow } from './helpe
 
 /**
  * 只读白名单。加一条就要问一次「它真的不写仓库吗」——这张表的价值全在它短。
- * `version` 是 `git --version` 在 trace 里的形态。
+ * `version` 是 `git --version` 在 trace 里的形态。`cat-file` 是图片旧侧读对象库那一条（`blob` /
+ * `-s` 两种参数，见下面那条参数断言——白名单只看子命令，`--filters` 那类会跑 smudge 的参数它看不见）。
  */
-const READ_ONLY = new Set(['version', 'rev-parse', 'status', 'diff', 'ls-files']);
+const READ_ONLY = new Set(['version', 'rev-parse', 'status', 'diff', 'ls-files', 'cat-file']);
 
 /** 本文件用得到的 fixture。生成全部 16 个要 1.5s 上下，其中一半这里根本不打开。 */
 const NEEDED = [
@@ -33,6 +34,8 @@ const NEEDED = [
   'rebaseInProgress',
   // 目录树那两条 `ls-files` 唯一能被证伪的形态——被忽略的整目录与被忽略的单文件
   'ignoredTree',
+  // `cat-file` 唯一的来处：图片旧侧。没有它白名单里那一条就是一条没人走过的路
+  'images',
 ];
 
 let workdir;
@@ -50,7 +53,7 @@ const trace = once(async () => {
   const repos = makeFixtures(join(workdir, 'repos'), NEEDED);
   tracePath = join(workdir, 'git-trace.log');
 
-  // 六个仓库覆盖的是**六段不同的代码**，不是六份同样的流程：已跟踪 / 未跟踪 diff、重命名的双路径
+  // 七个仓库覆盖的是**七段不同的代码**，不是七份同样的流程：已跟踪 / 未跟踪 diff、重命名的双路径
   // 调用、已暂存删除那条 `--numstat` 兜底、空仓库的空树基准，二进制 / 超大那两条**不取补丁就返
   // 回**的路径，以及「仓库停在半路」——一个正在 rebase 的仓库最容易诱使实现去问一句
   // `git rebase --show-current-patch` 之类，而那不在白名单里。每个仓库单独起一次进程
@@ -69,7 +72,7 @@ test('劫持真的生效——日志里确实记到了东西', async () => {
   assert.ok(commands.length >= 8, `只记到 ${commands.length} 条 git 调用，劫持多半没生效`);
 
   const seen = new Set(commands.map((c) => c.subcommand));
-  for (const expected of ['status', 'diff', 'rev-parse', 'ls-files']) {
+  for (const expected of ['status', 'diff', 'rev-parse', 'ls-files', 'cat-file']) {
     assert.ok(seen.has(expected), `完整流程里没看到 git ${expected}——流程没跑到位`);
   }
 });
@@ -96,6 +99,26 @@ test('diff 调用一律带上 -c core.quotePath=false 之外的只读形态，�
         `git diff 用了 ${forbidden}:${diff.argv.join(' ')}`,
       );
     }
+  }
+});
+
+test('cat-file 之后只能是 blob 或 -s——白名单看不见参数，smudge 那条路只有这里拦得住', async () => {
+  const commands = await trace();
+  const catFiles = commands.filter((c) => c.subcommand === 'cat-file');
+  // 正面断言：`images` 仓库里有已跟踪的图，旧侧必然走到这里；一条都没有就是这条路没被覆盖
+  assert.ok(catFiles.length > 0, '完整流程里没有任何 cat-file 调用——图片旧侧那条路没跑到');
+  for (const cmd of catFiles) {
+    // `--filters` / `--textconv` 会跑 clean / smudge / textconv 驱动，LFS 的 smudge 往 `.git/lfs` 写；
+    // `--batch*` 是长驻读；其余任何选项都不该出现。argv 形态固定为 [cat-file, blob|-s, <rev>:<path>]
+    assert.equal(cmd.argv.length, 3, `cat-file 的参数不是三段：${cmd.argv.join(' ')}`);
+    assert.ok(
+      cmd.argv[1] === 'blob' || cmd.argv[1] === '-s',
+      `cat-file 用了 blob / -s 之外的形态：${cmd.argv.join(' ')}`,
+    );
+    assert.ok(
+      cmd.argv[2].includes(':'),
+      `cat-file 的对象名不是 <rev>:<path>：${cmd.argv.join(' ')}`,
+    );
   }
 });
 

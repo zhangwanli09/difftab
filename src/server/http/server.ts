@@ -8,6 +8,7 @@ import type { Socket } from 'node:net';
 import { homedir } from 'node:os';
 import { readDiff } from '../git/diff.ts';
 import { readFileContent } from '../git/file.ts';
+import { readImageBytes } from '../git/image.ts';
 import { type RepoInfo, repoNameOf } from '../git/repo.ts';
 import { readStatus, readStatusRaw } from '../git/status.ts';
 import { readTree } from '../git/tree.ts';
@@ -301,6 +302,28 @@ export async function startServer(
           return;
         }
         sendJson(res, 200, await readFileContent(repo.root, path));
+        return;
+      }
+
+      /**
+       * 图片字节，**唯一一个正文不是 JSON 的 API 端点**。`path` / `side` 都必填：`old` 是
+       * diff 基准里的 blob、`new` 是工作区那份。只服务图片扩展名表里的路径、`Content-Type`
+       * 按表给精确 MIME（`nosniff` 之下类型错一个字浏览器就不画），非图片一律 400——判据与
+       * 5MB 那道闸都在 git 那侧，这里只把字节发出去。前端加的 `v=` 戳这里不看。
+       */
+      case '/api/blob': {
+        const path = url.searchParams.get('path');
+        const side = url.searchParams.get('side');
+        if (!path) {
+          sendError(res, 400, 'bad-request', 'path is required');
+          return;
+        }
+        if (side !== 'old' && side !== 'new') {
+          sendError(res, 400, 'bad-request', 'side must be old or new');
+          return;
+        }
+        const image = await readImageBytes(repo.root, path, side);
+        send(res, 200, image.buffer, image.mime);
         return;
       }
 

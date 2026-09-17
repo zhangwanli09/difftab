@@ -35,16 +35,30 @@
 - **切 tab 是卸载重挂，滚动位置不保留**：diff2html 的 DOM 每份都是 MB 级，N 个 tab 常驻挂载等于 N 份 DOM 常驻；且 `outputFormat` 一变每份都要重画。切回来重画一遍是刻意的代价。**「卸载重挂」要靠 `App` 给视图按 tab 键 `key`**：只换 `path` prop 时组件不卸载，`Panel` 那层滚动容器连同 `scrollTop` 一起留着——在 A 里滚到三千像素再切到同种的 B，B 从同一个偏移量打开；切到另一种视图却因为换了组件类型从顶部开始。两种切法必须一个样子。同一个 tab 内换补丁不换键，容器照旧留在原地。
 - **右侧空态只在栏里一个 tab 都没有时画**（`PanelEmptyState`，判据在它里面只写一次）：说哪句、配哪枚按**侧栏档位**定——`Changes` 档且工作区干净是 `Working tree clean` 配 ✓，其余是 `Select a file on the left`，`Changes` 档配 `FileDiff`、`Files` 档配 `FileCode`。「没得选」与「还没选」在页面上是两件事；`Files` 档下即使干净也走「还没选」那句，那一档列的是整棵目录树。判「干净」读的是 `repoState`：第一份 state 还没到时走「还没选」，左栏此时写的正是 `Loading…`。两个视图自己不再有空态分支：它们拿到的永远是一个存在的 tab。
   - **空态居中并配一枚图标**：面板空着时没有别的东西可对齐，一行贴在左上角的小字看着像漏画了什么。`flex-1` 撑满面板是居中成立的前提——宿主 `<section>` 是一列 flex，这一层不撑满时 `justify-center` 只在自己那点内容高度里居中，页面上仍然贴顶、不报错（`app.test.tsx` 钉类名）。图标只是装饰：走同一个 `Icon` 外壳（`aria-hidden`）、`stroke-1` 收细、`opacity-60` 与被忽略文件灰显同一档。
-  - **其余提示（loading / error / binary / too-large / symlink）仍是 `Notice` 贴左上**：它们在 `Panel` 里，说的是「这个文件怎么了」而不是「面板空着」，居中反而让它们看着像整个面板坏了。
+  - **其余提示（loading / error / binary / too-large / symlink）仍是 `Notice` 贴左上**（图片不是提示，它有正文，见下面「图片视图」）：它们在 `Panel` 里，说的是「这个文件怎么了」而不是「面板空着」，居中反而让它们看着像整个面板坏了。
 - **`Panel` 只剩滚动那一层，仍由两个视图共用**：这一层是 `<section>` 的直接子项，类名必须逐字相同——各写一份时漂开的症状是「其中一个面板底下那半屏不跟着滚」，不报错。
 
 ## 文件视图
 
-**右侧那一份是只读全文，不是 diff。** `FilePayload` 四个 `kind` 全部在 `FileView` 分支，提示行的外观与 `DiffView` 共用同一个 `Notice`。
+**右侧那一份是只读全文，不是 diff。** `FilePayload` 五个 `kind` 全部在 `FileView` 分支，提示行的外观与 `DiffView` 共用同一个 `Notice`，`image` 那一支与 `DiffView` 共用 `ImageView.tsx`。
 
 - **语言判定是「扩展名 → hljs 语言名」的一张小表，且必须先 `getLanguage()` 探一下**：`highlight()` 传未注册的语言名会抛，而这里没有 diff2html 兜底——抛出去炸的是整个文件视图。取不到一律退回 `plaintext`（它已在那 22 个模块里注册着，见 [`diff-render.md`](diff-render.md)）。
 - **容器上不得加 `hljs` 类**，理由在 [`style.md`](style.md) 的「文件视图与 `.hljs`」：那条规则是 unlayered 的，会压过 Tailwind 的背景工具类。15 条 token 规则（`.hljs-keyword` 之类）是独立选择器，不挂容器类照样生效。
 - **行号做成兄弟元素，不按行切高亮输出**：hljs 的 span 会跨行，切开要自己重开标签——那正是红线在 diff2html 上明令禁止的事，在这里同样不做。行号槽 `sticky left-0`，横向滚代码时它留在左边。
 - **`sticky left-0` 要成立，正文那一层必须是 `w-max`。** 长行把正文撑得比面板宽，而横向滚动发生在标签栏底下那层滚动容器上；这一层若是普通块盒，它只有面板那么宽，行号槽因此**一点滑动余量都没有**——粘不粘都是同一个位置，横向一滚整列行号跟着内容滑出视口，而「`sticky left-0`」这几个字还在原地，看上去像是已经处理过了。**从前与它并写的 `min-w-full` 已经去掉**：那半条挡的是「短文件下标题栏缩成半截」，而标题栏搬出滚动区之后宽度不再来自这一层，正文这一路自己没有任何要铺满面板的底色或边框。
-- **但这个类只能给正文那一路**，判据是 `NEEDS_WIDE_BOX` 那张按 `kind` 穷举的表（写成 `payload.kind === 'text'` 一句时它就是第二处独立判定 kind 的地方，与 `Payload` 的 switch 各写各的，加进第五个 kind 时漏改这边会让粘性静默退回 static；`Record` 的键是穷举的，漏一个是编译错误）。**理由**：`max-content` 下文本一律不折行，而提示行那几路是散文——整句排成一行横着跑出面板，要横向滚才看得全；symlink 那句里为长路径写的 `break-all` 也救不了，它只把 min-content 降到一个字符、max-content 仍是整句不断。实测读数见 [`../decisions.md` 的「前端渲染与体积」](../decisions.md#前端渲染与体积)。上面这几件事都有断言（`file-view.test.tsx` 直接钉类名——happy-dom 没有排版引擎，能断言的只有类名在不在），故不进红线。
+- **但这个类只能给正文那一路**，判据是 `NEEDS_WIDE_BOX` 那张按 `kind` 穷举的表（写成 `payload.kind === 'text'` 一句时它就是第二处独立判定 kind 的地方，与 `Payload` 的 switch 各写各的，加进第六个 kind 时漏改这边会让粘性静默退回 static；`Record` 的键是穷举的，漏一个是编译错误）。**理由**：`max-content` 下文本一律不折行，而提示行那几路是散文——整句排成一行横着跑出面板，要横向滚才看得全；symlink 那句里为长路径写的 `break-all` 也救不了，它只把 min-content 降到一个字符、max-content 仍是整句不断。实测读数见 [`../decisions.md` 的「前端渲染与体积」](../decisions.md#前端渲染与体积)。上面这几件事都有断言（`file-view.test.tsx` 直接钉类名——happy-dom 没有排版引擎，能断言的只有类名在不在），故不进红线。
 - **标签栏不参与横向滚动**：它排在滚动容器之外（见上面「标签栏与视图」），横向滚动只发生在底下那层，栏自己恒等于面板宽。
+
+## 图片视图
+
+**`DiffPayload` / `FilePayload` 的 `image` 支由 `ImageView.tsx` 承接，两个面板共用一个组件**：diff 那侧 `ImageDiff` 按 `old` / `new` 各画一张（`null` 的那侧不画——新增只有右、删除只有左），文件那侧 `ImageFile` 画一张。**说明文字（`Before` / `After` · 像素尺寸，体积另起一段、中间只隔 `gap-2` 不加点）挂在每张图的右下角**（figcaption 排在图之后、`self-end`）：排在图上方时 caption 宽度随文字变，两张并排的图顶边就不齐；文件视图那张没有侧别，只剩尺寸与体积。**像素尺寸从 `<img>` 的 `onLoad` 读 `naturalWidth × naturalHeight`**，不让后端解析图片头——浏览器反正要解码这张图，尺寸是解码的副产品；后端为八种格式各写一份头解析只是第二份事实来源。图到了才补进 caption，0 × 0 不画。tab 仍是 `diff` / `file` 两种，图片不是第三种 tab：它回答的仍是「这个文件的 diff / 全文是什么」，只是正文换成了图。
+
+- **前端不判「这是不是图片」，只认 `payload.kind === 'image'`**。判据（二进制 ∧ 扩展名）与扩展名表都在后端，页面上没有第二份——与 `languageOf` 必须只有一份是同一条取向：两份表漂开的症状是后端说这是图、前端按二进制画一句提示。
+- **字节走 `<img src="/api/blob?path=&side=&v=">`，同源、cookie 自动带、CSP 的 `img-src 'self'` 现成放行**；不 `fetch` 再 `createObjectURL`（要给 CSP 开 `blob:`），不内联 base64。`path` 直接用 payload 里 `ImageSide.path`——重命名的旧侧后端已填成 `oldPath`。
+- **`v=` 与 figure 的 `key` 都是后端给的内容身份 `ImageSide.version`（旧侧是基准的 oid，新侧是体积 + mtime），前端不解读、只比对**。它必须随内容变：URL 字串相同时 Preact 不改 `src` 属性、浏览器不重新请求，症状是「图改了、页面上还是旧的那张」，不报错。它也**只能**随内容变：`loadDiff` 在每个 SSE `change` 上都跑，按「取过一次」换戳（`Date.now()` 挂在 payload 对象身份上，曾经的写法）会让每一次无关文件的改动都重挂两张图、重下最多 10MB 外加一次 `cat-file blob`——文本 tab 同一事件只付两个子进程。后端对 `v` 视而不见。
+- **图底下垫棋盘（`checkerboard` 工具类，`app.css` 里的 `@utility`）**：透明 PNG 直接压在编辑器底色上看不出透明区，而棋盘正是所有图片工具的惯例。格子色复用 `--color-diff-diagonal-fill`——那本就是「叠在编辑器底色上、明暗两档都成立」的半透明 token，不为棋盘再开一个颜色。图外一圈 `border-panel-border`，让一张与底色同色的图有边界可辨。
+- **图 `max-w-full h-auto`，不做缩放、滑块、洋葱皮、像素 diff**。宽图缩到面板宽，两张图 `flex-wrap`——放不下并排时上下排，与 diff 的版式切换不联动（那道量的是文本两列够不够宽，对图没有意义）。
+- **`<img>` 的 `onError` 落成本侧一句 `Could not load the image.`**（`Notice`）：`/api/blob` 在 payload 之后才被问，中间文件可以被删、被改成非图片、长过 5MB；旧侧在 HEAD 里是 symlink / gitlink 时 `cat-file blob` 给的是目标字串，浏览器解不出来也是这一条。不为这些形态各写判定。**但失败态必须随内容变化归零**：figure 按 `version` 给 `key`，内容变了即重挂——不然 agent 非原子改写图片时某次刷新撞上半写的文件，`<img>` 一失败就不再渲染，之后没有东西去重新请求，那一侧永远停在提示上；写完的那份有新的 mtime，`version` 随之变。
+- **`NEEDS_WIDE_BOX.image = false`**：图自己会缩，不需要 `w-max`；写 `true` 时宽图把滚动区撑到原始像素宽，`max-w-full` 形同虚设。
+- **体积走 `formatSize` 的两位小数档（`formatSize(size, 2)`），0 不画**——与 `too-large` 那句同一个 helper、同一条「0 不画」的口径（已删除的文件工作区没有体积，后端给 0）。精度不同是因为说的话不同：提示句里的体积是「大概多大」，整 KB 够用；caption 里的是元数据，`1.59 KB` 与 `2 KB` 之间的差别正是它要回答的。**两档只靠一个参数分**，不另写一份 helper——两份在第一次提交时就漂开过。
+

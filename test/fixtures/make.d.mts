@@ -10,6 +10,12 @@ export declare const TRICKY_PATHS: readonly string[];
 /** 仓库外那个文件的内容——任何 diff 里出现它都意味着符号链接被跟随了。 */
 export declare const OUTSIDE_SECRET: string;
 
+/** 一张真能解码的 1×1 PNG（8-bit RGB）；像素色不同则字节不同。 */
+export declare function tinyPng(rgb: readonly [number, number, number]): Buffer;
+export declare const PNG_RED: readonly [number, number, number];
+export declare const PNG_GREEN: readonly [number, number, number];
+export declare const PNG_BLUE: readonly [number, number, number];
+
 export interface FixtureRepos {
   /** 路径含非 ASCII / 空格 / 引号，外加一个未跟踪文件。 */
   unicodePaths: string;
@@ -51,6 +57,11 @@ export interface FixtureRepos {
   sha256Empty: string;
   /** 带 `.gitignore`：被忽略的整目录 / 单文件、未跟踪文件、二进制与指向仓库外的符号链接。 */
   ignoredTree: string;
+  /**
+   * 图片：改写的 `img/a.png`、删除的 `img/gone.png`、`git mv` 到 `img/moved.png` 的、未跟踪的
+   * `new.png`；对照面是非图片扩展名的二进制 `blob.bin` 与内容是文本的 `fake.png`。
+   */
+  images: string;
 }
 
 export type FixtureName = keyof FixtureRepos;

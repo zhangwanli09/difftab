@@ -122,17 +122,29 @@ export function repoNameOf(repo: RepoInfo): string {
 }
 
 /**
- * diff 的基准。正常仓库是 `HEAD`；空仓库（尚无任何提交）下 HEAD 不存在、`git diff HEAD`
- * 会 fatal，降级为空树哈希。不做缓存：`git checkout --orphan` 之后 HEAD 会重新变回未出生
- * 状态，缓存的正结果会让 diff 从此全部 fatal。
+ * diff 的基准：`ref` 是交给 git 的那个名字，`oid` 是它此刻指向的对象。两个字段是同一次
+ * `rev-parse` 的两面——`oid` 只给图片旧侧当内容身份用（基准里那个 blob 只在基准换了之后才可能
+ * 变），不再为它多起一次进程。
  */
-export async function resolveDiffBase(root: string): Promise<string> {
+export interface DiffBase {
+  ref: string;
+  oid: string;
+}
+
+/**
+ * 正常仓库的基准是 `HEAD`；空仓库（尚无任何提交）下 HEAD 不存在、`git diff HEAD` 会 fatal，
+ * 降级为空树哈希（`ref` 与 `oid` 同为它）。不做缓存：`git checkout --orphan` 之后 HEAD 会重新
+ * 变回未出生状态，缓存的正结果会让 diff 从此全部 fatal。
+ */
+export async function resolveDiffBase(root: string): Promise<DiffBase> {
   const head = await runGit(['rev-parse', '--verify', '--quiet', 'HEAD'], root);
-  if (head.code === 0 && head.stdout.trim()) return 'HEAD';
+  const oid = head.stdout.trim();
+  if (head.code === 0 && oid) return { ref: 'HEAD', oid };
 
   const format = await runGit(['rev-parse', '--show-object-format'], root);
   // `--show-object-format` 随 SHA-256 支持（git 2.29 前后）才引入，高于下限 2.11。
   // **非零退出即按 SHA-1 处理**——那个区间的 git 根本造不出 SHA-256 仓库，降级无歧义
   const name = format.code === 0 ? format.stdout.trim() : 'sha1';
-  return name === 'sha256' ? EMPTY_TREE.sha256 : EMPTY_TREE.sha1;
+  const empty = name === 'sha256' ? EMPTY_TREE.sha256 : EMPTY_TREE.sha1;
+  return { ref: empty, oid: empty };
 }

@@ -20,6 +20,9 @@ export async function readFileContent(root: string, path: string): Promise<FileP
     case 'binary':
     case 'too-large':
       return file;
+    // 与 text 一样只把元数据带出去，字节由 /api/blob 再走一遍同一条链
+    case 'image':
+      return { kind: 'image', size: file.size, version: file.version };
     case 'text':
       return { kind: 'text', content: file.buffer.toString('utf8') };
   }
