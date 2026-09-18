@@ -14,15 +14,20 @@
   },
   "keywords": [
     "git",
-    "diff",
     "git-diff",
+    "diff",
     "diff-viewer",
-    "working-tree",
+    "code-review",
     "cli",
     "read-only",
     "ai-agent",
     "coding-agent",
-    "code-review"
+    "claude-code",
+    "codex",
+    "developer-tools",
+    "nodejs",
+    "typescript",
+    "zero-dependency"
   ],
   "type": "module",
   "bin": {
