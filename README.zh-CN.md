@@ -86,11 +86,11 @@ difftab
 
 ## 常见问题
 
-**能配我用的 agent 吗？**——能，只要它往 git 工作区里写文件。difftab 从不与 agent 打交道，它只读 git。Claude Code、Codex、OpenCode、Aider、拿着 vim 的人，都一样。
+**能配我用的 agent 吗？**——能。difftab 从不与 agent 打交道，它只读 git，所以凡是往 git 工作区里写文件的东西在它眼里都一样：Claude Code、Codex、OpenCode、Aider、拿着 vim 的人。
 
-**能在里面 stage、commit 或 discard 吗？**——不能，将来也不会加。这是产品的核心承诺，见[明确不做](#明确不做)。
+**能在里面 stage、commit 或 discard 吗？**——不能，将来也不会。只读是产品的核心承诺，不是还没做的功能；见[明确不做](#明确不做)。
 
-**界面上写着「Polling」，是出问题了吗？**——没有。这个仓库没在用原生文件监听（Linux 上较旧的 Node、网络盘、Docker 卷，或 inotify 配额耗尽），所以 difftab 改成每 1.5 秒查一次 `git status`。一切照常刷新，只是可能慢一两秒。
+**界面上写着「Polling」，是出问题了吗？**——没有。它表示 difftab 在这里用不了原生文件监听：Linux 上低于 24.14 的 Node、放在网络盘或 Docker 卷上的仓库、或 inotify 配额耗尽。于是改成每 1.5 秒跑一次 `git status`，一切照常刷新，只是可能晚一两秒。
 
 ## 明确不做
 
