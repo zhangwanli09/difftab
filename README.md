@@ -116,17 +116,17 @@ of those checks.
 
 ## FAQ
 
-**Does it work with my agent?** — Yes, if the agent writes files into a git working tree.
-difftab never talks to the agent; it only reads git. Claude Code, Codex, OpenCode, Aider, a
-human with vim — all the same.
+**Does it work with my agent?** — Yes. difftab never talks to the agent — it only reads
+git — so anything that writes files into a git working tree looks the same to it: Claude
+Code, Codex, OpenCode, Aider, a human with vim.
 
-**Can I stage, commit or discard from it?** — No, and it will never be added. That is the
-product's core promise; see [Non-goals](#non-goals).
+**Can I stage, commit or discard from it?** — No, and it never will be. Read-only is the
+product's core promise, not a missing feature; see [Non-goals](#non-goals).
 
-**The UI says "Polling" — is something wrong?** — No. Native file watching is not in use
-for this repository (older Node on Linux, a network drive, a Docker volume, or an exhausted
-inotify quota), so difftab checks `git status` every 1.5 seconds instead. Everything still
-refreshes; it may take a second or two.
+**The UI says "Polling" — is something wrong?** — No. It means difftab could not use native
+file watching here: Node older than 24.14 on Linux, a repository on a network drive or a
+Docker volume, or an exhausted inotify quota. It runs `git status` every 1.5 seconds
+instead, so everything still refreshes; it may just land a second or two later.
 
 ## Non-goals
 
