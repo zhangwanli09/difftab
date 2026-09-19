@@ -100,7 +100,13 @@ test('stdout 的读端先走了(`| head -1`)，空闲退出仍是干净的 0', a
   const started = Date.now();
   server.child.stdout.destroy(); // 读端关掉，等同于 head 已经退了
 
-  assert.equal(await waitForExit(server), 0, '写不出提示就该当没这回事，而不是崩掉');
+  // stderr 进断言消息：这条在 CI 的 macOS 上红过一次，而没有它日志里只剩一个 `1 !== 0`，
+  // 看不出打死进程的是哪个错误码（那次是 libuv 翻译出来的 ECONNRESET，不是 EPIPE）
+  assert.equal(
+    await waitForExit(server),
+    0,
+    `写不出提示就该当没这回事，而不是崩掉。stderr：\n${server.stderr}`,
+  );
   assert.ok(
     Date.now() - started > idleMs / 2,
     '进程在宽限期之前就没了——它是被某一次写打死的，不是自己走的',

@@ -164,7 +164,7 @@
 - **空闲计时从启动那一刻就起**，不等第一个客户端——否则浏览器没拉起来就留常驻进程
 - **重新武装接在 SSE 通道的 `onChange` 上而非端点**——端点各记一次时漏掉断连那侧不报错，只是关完标签也不退
 - **退出前的报错一律 `writeSync(2, …)`，禁 `process.stderr.write` + `process.exit`**——后者写管道时在 Windows 上是异步的，整条消息会被丢掉
-- **读端可能先走**（`| head -1`）：`writeSync` 裹 try/catch，入口再给 stdout / stderr 各挂一个只咽 EPIPE 的 `'error'` 监听器
+- **读端可能先走**（`| head -1`）：`writeSync` 裹 try/catch，入口再给 stdout / stderr 各挂一个只咽 EPIPE **与 ECONNRESET** 的 `'error'` 监听器——macOS 上对端刚关闭的 unix socket 偶尔回 EPROTOTYPE、libuv 翻译成 ECONNRESET，只咽 EPIPE 时 `| head -1` 在 CI 的 macOS runner 上偶发以 1 退出
 - **探活这类拿到响应头之后的 `req.destroy()` 也要自己 `resolve`**——那之后错误只落在 `res` 上而 `IncomingMessage` 会把它吞掉，启动整个吊死
 - 只读性验证**禁用「前后 `git status` 比对」**，主门禁的记录手段是 `GIT_TRACE=<绝对路径>`（禁在 PATH 上放 fake git wrapper）
 - 门禁里必须有**「确实记到了东西」的正面断言**，否则白名单会对着空数组通过；第二层的 A / B 两半同理各需一条正面探针

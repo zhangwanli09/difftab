@@ -29,7 +29,7 @@
 - **判据是 SSE 连接数，但任何请求都重置计时。** 连接数是正面判据（`GET /api/events` 的连接集合大小，不另设保活端点）；而「刚被探活复用、浏览器还在启动」与「页面活着但 SSE 被中间层悄悄回收了」这两种情形下连接数都是 0，只有请求活动能证明另一头还有人。两者取并集，退出条件因此严格弱于「连接数为 0 持续 45s」。
 - **重新武装接在 SSE 通道的 `onChange` 上而非端点**——端点各记一次时，漏掉断连那侧不报错，只是关完标签也不退。
 - **宽限期须能由内部环境变量 `DIFFTAB_IDLE_MS` 覆盖，取值不合法即启动失败，不得退回默认的 45 秒**。没有它，生命周期的每一次自动化验证都要真等 45 秒，而那种用例没人会跑第二次。它**不放宽任何一道安全校验**，因此不属于下面禁止的「dev 分支」；同样不是给用户的开关，不进 `--help` 与 README。
-- **退出前的那句提示走 `writeSync(2, …)`，而且要容许它失败**（读端已走时它抛 EPIPE）。`process.stdout.write` / `process.stderr.write` 写到管道时在 Windows 上是异步的，紧跟着 `process.exit()` 会把整条消息丢掉，症状是 stderr 全空——而这句提示正是自动化验证「它是自己走的，不是被 kill 的」的判据。**读端可能先走**（`| head -1`）：入口再给 stdout / stderr 各挂一个只咽 EPIPE 的 `'error'` 监听器，漏了这条连普通的 `process.stdout.write` 都能带裸栈打死进程。
+- **退出前的那句提示走 `writeSync(2, …)`，而且要容许它失败**（读端已走时它抛 EPIPE）。`process.stdout.write` / `process.stderr.write` 写到管道时在 Windows 上是异步的，紧跟着 `process.exit()` 会把整条消息丢掉，症状是 stderr 全空——而这句提示正是自动化验证「它是自己走的，不是被 kill 的」的判据。**读端可能先走**（`| head -1`）：入口再给 stdout / stderr 各挂一个只咽 EPIPE **与 ECONNRESET** 的 `'error'` 监听器，漏了这条连普通的 `process.stdout.write` 都能带裸栈打死进程。ECONNRESET 是 macOS 上同一件事的第二种拼法：stdio 管道在那里是 unix socket，对端刚关闭时内核偶尔回 EPROTOTYPE，libuv 翻译成 ECONNRESET。
 - **已知边界**：HTTP/1.1 下浏览器对同源有 6 条并发连接上限，一条常驻 SSE 会占用其中一条，因此超过 6 个标签页时新标签会挂起。对实际使用场景（1–2 个标签）无影响，不为此调整架构。
 
 ## 同仓库单实例
