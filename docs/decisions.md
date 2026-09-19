@@ -132,6 +132,10 @@
 | 目录树同一层「已经在取就直接不取」 | 一次 `change` 引出的刷新会在上一次还没回来时被整个丢掉；若它正是 agent 那一串写入的最后一个事件，这一层就一直停在旧内容上，直到用户手动收起再展开。改用按目录的请求序号决胜负，与 `loadState` / `loadDiff` 同一套判据 |
 | 目录树某一层出错就画那句话（不看手上有没有缓存） | 刷新途中失败是常态（后端重启、dev 代理抖一下），而 `loadDir` 失败只写 `treeErrors`、不动 `treeCache`。先看错误的写法会让一个已经画出来的目录连同它底下展开的一切被一行红字换掉——陈旧的内容比消失的内容有用得多，且下一拍就会被换新 |
 | 两栏的高亮各认自己那一种 tab（变更列表只认 diff、目录树只认全文） | 曾是既定做法，理由是「那一行说的是这份补丁，而此刻在读的是全文」。加上行内 `Open file` 之后它的症状露出来：用户刚从那一行出发、右侧正显示着这个文件，那一行却熄了。VS Code 的列表选中态不随编辑器种类变。现在两栏同按 `activeEditorPath`（活动 tab 的路径）判——它仍从 `activeEditor` 派生，不新增状态，也不必记「这次是从哪点进来的」 |
+| 目录树的「滚进视野」写成 `Row` 里的 `useEffect([selected])` | 要在组件体里读选中态，等于这一行订阅了 `activeEditorPath`——换一次活动 tab 整棵展开的树重渲染，正是 `rowClass` 包成 computed 刻意避开的事。改成每行一份 signal effect：只做一次相等比较，不引起渲染 |
+| 树上的「滚进视野」另设一个「待滚动」信号，由 `revealPath` 登记、行滚完清掉 | 一份只为一个组件存在的状态层信号、一条「消费后必须清」的不变量、一个「没人消费就留到下次覆盖」的边角，外加每个用例的 `beforeEach` 多一行重置。换来的只有「收起再展开含选中文件的目录时不再滚一次」，而 `nearest` 让那一下在已经看得见时是零像素。行直接按 `activeEditorPath` 判，与编辑器 tab 同一条 |
+| `revealPath` 内部对 `expandedDirs` 用 `peek()`，以免调用它的 effect 订阅展开态 | 被调的函数得知道调用方是个 effect，此后从那个 effect 可达的每个函数都得记得 `peek()`，且它读展开态的写法与 `toggleDir` / `collapseAll` / `refreshTree` 不一致。依赖集该在 effect 那里声明：`untracked(() => revealPath(path))` |
+| 树跟随活动 tab 的 effect 写成 `main.tsx` 里的全局 `effect()`、自己判 `activeTab === 'files'` | `activeTab` 在 `store.ts`，`tree.ts` 得反向 import 它（既有方向是 `store → tree`）；而树本来只在 `Files` 档挂载，effect 挂在 `FileTree` 组件上，「树可见才 reveal、切过来补一次」两条都是白得的 |
 | 编辑器标签页全部常驻挂载、切 tab 只切显示 | diff2html 的 DOM 每份都是 MB 级，N 个 tab 常驻等于 N 份 DOM 常驻；`outputFormat` 一变每份都要重画一遍。切回来卸载重挂、滚动位置丢，是刻意的代价 |
 | 每次 SSE 重取栏里全部打开的 tab | agent 跑动期间事件密集，挂着 10 个 diff tab 时每个事件就是 10 趟 `git diff`。只重取活动那个，其余切过去时再取——缓存的正文照常显示、新的回来再换掉 |
 | 后台 tab 用一个 stale 标记记「SSE 后没重取」，激活时按标记决定取不取 | 多一份要在收编、改名、关闭各处维护的状态，而它省下的只是「切过去时内容没变也发一趟」那一次请求。`activateEditor` 每次都真的去取，与目录树的 `loadDir` 同一取向 |

@@ -49,11 +49,17 @@ export const file = (partial: Partial<FileEntry> & { path: string }): FileEntry 
  * JSON.stringify(…))` 抄第五遍的时候，改一处请求头或错误形状就得记得另外四处也在。
  */
 export function stubJson(payload: unknown, status = 200): string[] {
+  return stubJsonBy(() => ({ payload, status }));
+}
+
+/** 同上，但正文按 URL 定——按目录回不同一层、或只让其中一条路径 404 的用例用这个。 */
+export function stubJsonBy(respond: (url: URL) => { payload: unknown; status?: number }): string[] {
   const calls: string[] = [];
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string) => {
       calls.push(url);
+      const { payload, status = 200 } = respond(new URL(url, 'http://localhost'));
       return new Response(JSON.stringify(payload), { status });
     }),
   );

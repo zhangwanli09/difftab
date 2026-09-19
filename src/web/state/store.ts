@@ -31,7 +31,7 @@ import {
 } from './editors';
 import { getJson, latestWins, type Tickets, toMessage } from './http';
 import { removeFrom, setIn } from './immutable';
-import { refreshTree } from './tree';
+import { ancestorDirs, refreshTree } from './tree';
 
 /** `GET /api/state` 的结果。null 表示还没拿到第一份。 */
 export const repoState = signal<RepoState | null>(null);
@@ -154,13 +154,7 @@ export const codeByPath = computed(() => {
     const code = codeOf(file);
     if (code === null) continue;
     claim(file.path, code);
-    for (
-      let slash = file.path.indexOf('/');
-      slash !== -1;
-      slash = file.path.indexOf('/', slash + 1)
-    ) {
-      claim(file.path.slice(0, slash), code);
-    }
+    for (const dir of ancestorDirs(file.path)) claim(dir, code);
   }
   return codes;
 });

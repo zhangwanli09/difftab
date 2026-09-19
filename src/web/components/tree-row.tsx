@@ -11,7 +11,7 @@
 
 import { useSignal } from '@preact/signals';
 import { Check, ChevronRight, Copy } from 'lucide-preact';
-import { type ComponentChildren, type JSX, toChildArray } from 'preact';
+import { type ComponentChildren, type JSX, type Ref, toChildArray } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
 import { Icon } from './Icon';
 import { IconButton } from './IconButton';
@@ -129,11 +129,14 @@ export function TreeRow({
   actions,
   badge,
   sublevel,
+  buttonRef = null,
   children,
   ...button
 }: {
   /** 行内动作那几枚 `IconButton`，`false` / `null` 会被剔掉，剩下几枚占位就几枚宽。 */
   actions: ComponentChildren;
+  /** 行按钮的 ref。显式命名：Preact 会把 `ref` 从 props 里剥掉，靠 `...button` 透传不到。 */
+  buttonRef?: Ref<HTMLButtonElement>;
   /** 行尾的状态记号，排在占位之后、靠右。 */
   badge?: ComponentChildren;
   /** 展开的子层 `<ul>`，画在 group div 之外。 */
@@ -144,7 +147,7 @@ export function TreeRow({
   return (
     <li>
       <div class={ROW_GROUP}>
-        <button type="button" {...button}>
+        <button type="button" ref={buttonRef} {...button}>
           {children}
           {list.length > 0 && <span class={`${REVEAL} shrink-0 ${SPACER_WIDTH[list.length]}`} />}
           {badge}

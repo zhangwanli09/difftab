@@ -10,11 +10,13 @@ import type { FileEntry, TreeEntry } from '../../../src/server/shared/protocol';
 import { FileTree } from '../../../src/web/components/FileTree';
 import { REVEAL, ROW_BASE, ROW_GROUP } from '../../../src/web/components/tree-row';
 import { activeEditorKey, editors } from '../../../src/web/state/editors';
+import { setIn } from '../../../src/web/state/immutable';
 import { repoState } from '../../../src/web/state/store';
 import {
   collapseAll,
   expandedDirs,
   ROOT,
+  toggleDir,
   treeCache,
   treeErrors,
 } from '../../../src/web/state/tree';
@@ -26,6 +28,7 @@ import {
   resetEditors,
   spacerIn,
   stubClipboard,
+  stubJsonBy,
   waitFor,
 } from './helpers';
 
@@ -423,5 +426,107 @@ describe('collapseAll()', () => {
     collapseAll();
     await waitFor(() => expect(container.textContent).not.toContain('App.tsx'));
     expect(activeEditorKey.value).toBe('file:src/web/App.tsx');
+  });
+});
+
+// 树跟着右侧活动 tab 展开并定位（照 VS Code 的 `explorer.autoReveal`）。钉的都是「不报错、只是
+// 不对」：切 tab 之后高亮行躺在没展开的层里（等于没跟随）、已展开的祖先被白取一趟、用户手动收起的
+// 目录被 effect 顶回去（展开那一步没 `untracked`）、以及自动展开失败留下一个看不见的展开态。
+describe('跟随活动 tab', () => {
+  /**
+   * 把 fetch 换成一份按目录回内容的树，回的是各请求的 `path`：没给的目录回空层，给 `null` 的回
+   * 404（整个目录被删）。**要真的回来**：外面那个 `vi.fn()` 回的是 `undefined`，`loadDir` 会把它记成
+   * 错误，而自动展开失败是要退回展开态的。
+   */
+  const stubTree = (levels: Record<string, TreeEntry[] | null> = {}) => {
+    const paths: string[] = [];
+    stubJsonBy((url) => {
+      const path = url.searchParams.get('path') ?? '';
+      paths.push(path);
+      return levels[path] === null
+        ? { payload: { error: 'not-found', message: 'not found' }, status: 404 }
+        : { payload: { path, entries: levels[path] ?? [] } };
+    });
+    return paths;
+  };
+
+  it('活动 tab 一变就把每一级祖先展开，各取一层；换到别的路径只补新的祖先', async () => {
+    const paths = stubTree();
+    openPinned('diff', 'src/web/a.ts');
+    await waitFor(() => expect(expandedDirs.value).toEqual(new Set(['src', 'src/web'])));
+    // 根不因此多取（它由 App 切到 Files 那一刻取）
+    expect(paths).toEqual(['src', 'src/web']);
+
+    // 旧的照旧展开着：跟随只加不减
+    openPinned('file', 'lib/x.ts');
+    await waitFor(() => expect(expandedDirs.value).toEqual(new Set(['src', 'src/web', 'lib'])));
+    expect(paths).toEqual(['src', 'src/web', 'lib']);
+  });
+
+  it('已经展开的祖先不重取——它本就在刷新范围里', async () => {
+    const paths = stubTree();
+    expandedDirs.value = new Set(['src']);
+    openPinned('diff', 'src/web/a.ts');
+    await waitFor(() => expect(expandedDirs.value.has('src/web')).toBe(true));
+    expect(paths).toEqual(['src/web']);
+  });
+
+  it('根目录下的文件不引出请求', async () => {
+    const paths = stubTree();
+    openPinned('diff', 'README.md');
+    // 给 effect 一拍的机会
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(expandedDirs.value.size).toBe(0);
+    expect(paths).toEqual([]);
+  });
+
+  it('祖先目录已经不存在（整个目录被删）时展开态退回去，不留一个看不见的展开态', async () => {
+    // `src` 还在、`src/old` 整个没了
+    stubTree({ 'src/old': null });
+    openPinned('diff', 'src/old/gone.ts');
+    // 那一趟回来是 404：目录回来时那一行不该带着一句陈旧的错误直接展开，之后 reveal 它底下的
+    // 文件也该再取一次。取到了的那一级照旧展开着
+    await waitFor(() => expect(expandedDirs.value).toEqual(new Set(['src'])));
+    expect(treeErrors.value.has('src/old')).toBe(false);
+  });
+
+  it('用户手动收起与全部折叠都不会被顶回去——effect 只订阅活动 tab，不订阅展开态', async () => {
+    stubTree();
+    openPinned('diff', 'src/web/a.ts');
+    await waitFor(() => expect(expandedDirs.value.has('src/web')).toBe(true));
+
+    toggleDir('src/web');
+    // 再等一拍：让展开态进依赖集的写法会在这里把它重新展开
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(expandedDirs.value.has('src/web')).toBe(false);
+
+    collapseAll();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(expandedDirs.value.size).toBe(0);
+  });
+
+  it('那一行挂上后滚进视野；刷新不重滚', async () => {
+    const scrolled = vi.spyOn(HTMLElement.prototype, 'scrollIntoView');
+    const paths = stubTree({
+      src: [entry({ name: 'web', kind: 'directory', path: 'src/web' })],
+      'src/web': [entry({ name: 'a.ts', path: 'src/web/a.ts' })],
+    });
+    openPinned('diff', 'src/web/a.ts');
+    await waitFor(() => expect(paths).toEqual(['src', 'src/web']));
+    // 根还没到：行没挂上，一次都没滚
+    expect(scrolled).not.toHaveBeenCalled();
+
+    treeCache.value = setIn(treeCache.value, ROOT, [entry({ name: 'src', kind: 'directory' })]);
+    await waitFor(() => expect(scrolled).toHaveBeenCalledTimes(1));
+    expect(scrolled.mock.instances[0]).toBe(rowOf('a.ts'));
+    // 已经在视野里就一个像素都不动
+    expect(scrolled.mock.calls[0]?.[0]).toMatchObject({ block: 'nearest' });
+
+    // SSE 换一份同样的目录：行按路径 keyed、不重挂，不再滚
+    treeCache.value = setIn(treeCache.value, 'src/web', [
+      entry({ name: 'a.ts', path: 'src/web/a.ts' }),
+    ]);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(scrolled).toHaveBeenCalledTimes(1);
   });
 });
