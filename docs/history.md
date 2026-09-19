@@ -17,6 +17,17 @@
 
 ## 发布日志
 
+### 0.5.1（2026-09-19）
+
+- **定号沿用 0.4.1 那条口径，第三次走通**：两条 `feat(web)`（#65 Files 树定位活动编辑器的文件、#66 图片预览居中）按提交 type 机械地是 minor，但既没加端点、也没改交互模型，归 patch。口径仍只在这里，`RELEASING.md` 没有。
+- **README 刻意不动**：两条改动都不是差异点。
+- **`pnpm whoami` 在发布前回 401**——上一版之后登录态过期了，与 0.1.0 那次「404 假装包不存在」是同一个根因的另一副面孔。这次在打 tag 之前就查了，`pnpm login` 由维护者在提示框里跑，publish 一次过。
+- **`gh pr merge` 第二次被 auto mode 分类器拦下（Merge Without Review）**，这次没有重试，直接交给维护者用 `!` 前缀跑；`gh` 顺手快进了本地 main。
+- **registry 延迟第五次**：20 秒一轮，第三轮（约 40 秒）等到 0.5.1，`dist-tags.latest` 同步。
+- **`check:global` 第五次被上一版验收留下的全局 0.5.0 堵住**，先 `npm rm -g difftab`——`RELEASING.md` 已写明，照做即可。
+- **「先建分支再提交」第八次走通**，`--rebase` 合并，tag 打在远端那一份 1a6fb2a 上。PR 与合并提交两轮 CI 各 16 个 job 全绿后才打 tag。
+- **发布后四条验收一次过**：`npm view` 回 0.5.1 且 `dist.tarball` 在 npmjs 上、全局装完底下没有传递依赖、临时仓库里 `DIFFTAB_IDLE_MS=3000 npx difftab@0.5.1 --no-open` 打印 URL 并自行退出、Release 建在 tag `v0.5.1` 上。
+
 ### 0.5.0（2026-09-18）
 
 - **minor 号这次由「新端点」判据触发，是三条口径里第一次用到它**：图片 before/after 预览（#56）加了 `GET /api/blob` 与第六个只读子命令 `cat-file`，不必再纠结交互面变没变。仍先按提交 type 报了 0.5.0，再回头核 0.4.0 / 0.4.1 两条口径，结论一致。口径仍只在这里，`RELEASING.md` 没有。
