@@ -3,6 +3,7 @@
 // 文件名不以 `.test.js` 结尾：`test/smoke/*.test.js` 展开不到它，于是既不会被
 // node --test 当成用例，也不进 CI 里那条按文件名点名的检查。
 
+import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { rmSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
@@ -403,4 +404,14 @@ export function waitForExit(server, timeoutMs = 30_000) {
       resolvePromise(code);
     });
   });
+}
+
+/**
+ * 断言被测进程自己以 0 退出，stderr 一并进断言消息。
+ *
+ * 退出码断言通常排在检查 stderr 的那条之前，所以它一挂日志里就只剩 `1 !== 0`——打死进程的
+ * 是哪个错误码、栈在哪一行，一个字都看不到；CI 上真这么红过一次。
+ */
+export async function assertCleanExit(server, message = '应当是正常退出，不是异常码') {
+  assert.equal(await waitForExit(server), 0, `${message}。stderr：\n${server.stderr}`);
 }

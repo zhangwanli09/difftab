@@ -44,10 +44,8 @@ function fail(message: string): never {
  * EPIPE 失败，而**在 Windows 上管道写是异步的**（POSIX 上同步），失败因此以一个 `'error'`
  * 事件到达——零监听器的流收到 `'error'` 就是整个进程带着裸栈以 1 退出。
  *
- * **macOS 上同一件事还有第二个码**：Node 的 stdio 管道在那里是 unix socket，对端刚关闭时
- * 内核有个竞态会回 EPROTOTYPE，libuv 把它翻译成 ECONNRESET（`uv__try_write` 里 `__APPLE__`
- * 那段）。它与 EPIPE 是同一个事实的两种拼法，漏掉这一种的症状是 `| head -1` 偶尔以 1 退出、
- * stderr 一屏栈——CI 的 macOS runner 上撞到过，本机新内核上几百次都复现不了。
+ * **macOS 上同一件事还有第二个码**：stdio 管道在那里是 unix socket，对端刚关闭时内核偶尔回
+ * EPROTOTYPE，libuv 把它翻译成 ECONNRESET——与 EPIPE 是同一个事实的两种拼法。
  *
  * 服务本身没坏（浏览器照常用得上），所以这里只是把这两个码咽掉。**别的错误照旧抛**：
  * 那是真出事了，不该借这条路一起被吞掉。

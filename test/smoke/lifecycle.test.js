@@ -16,6 +16,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { makeFixtures } from '../fixtures/make.mjs';
 import {
+  assertCleanExit,
   authedGet,
   BIN,
   cleanupOnExit,
@@ -76,7 +77,7 @@ test('没有任何客户端时，宽限期一到就自己退——不留后台�
   // xdg-open、`--no-open` 之后改了主意)这一整类情形留下的就是一个永久常驻的后台进程
   const server = await startDifftab({ cwd: repos.staged, env: { [IDLE_ENV]: '1500' } });
 
-  assert.equal(await waitForExit(server), 0, '空闲退出应当是正常退出，不是异常码');
+  await assertCleanExit(server, '空闲退出应当是正常退出，不是异常码');
   // 这句提示同时是「它是自己走的、不是被谁 kill 的」的判据。走 writeSync 是必需的：
   // process.stdout.write 写到管道时在 Windows 上是异步的，紧跟着的 process.exit() 会把它整条丢掉
   assert.match(server.stdout, /no tabs left/);
@@ -88,7 +89,7 @@ test('stdout 的读端先走了(`| head -1`)，空闲退出仍是干净的 0', a
    * `| head -1` 是这个形态最日常的来源：用户只想要那行 URL。读端一走，此后每一次写都以 EPIPE 失
    * 败，而这条路上有**两处**写：紧跟 URL 的那句「read-only view…」（普通的
    * `process.stdout.write`——**在 Windows 上管道写是异步的**，失败以 `'error'` 事件到达，零监
-   * 听器的流收到它就是整个进程带裸栈以 1 退出，而 macOS / Linux 上同一条路一声不响），以及宽限
+   * 听器的流收到它就是整个进程带裸栈以 1 退出），以及宽限
    * 期走满时那句告别(`writeSync`，**同步抛** EPIPE；抛在定时器回调里时退出闩已经合上，
    * `server.close()` 不再执行)。
    *
@@ -100,13 +101,7 @@ test('stdout 的读端先走了(`| head -1`)，空闲退出仍是干净的 0', a
   const started = Date.now();
   server.child.stdout.destroy(); // 读端关掉，等同于 head 已经退了
 
-  // stderr 进断言消息：这条在 CI 的 macOS 上红过一次，而没有它日志里只剩一个 `1 !== 0`，
-  // 看不出打死进程的是哪个错误码（那次是 libuv 翻译出来的 ECONNRESET，不是 EPIPE）
-  assert.equal(
-    await waitForExit(server),
-    0,
-    `写不出提示就该当没这回事，而不是崩掉。stderr：\n${server.stderr}`,
-  );
+  await assertCleanExit(server, '写不出提示就该当没这回事，而不是崩掉');
   assert.ok(
     Date.now() - started > idleMs / 2,
     '进程在宽限期之前就没了——它是被某一次写打死的，不是自己走的',
@@ -131,7 +126,7 @@ test('有一条 SSE 连着就不退，断开之后才开始数宽限期', async 
   assert.equal(state.status, 200);
 
   events.close();
-  assert.equal(await waitForExit(server), 0);
+  await assertCleanExit(server);
 });
 
 test('多标签：关掉其中一个不退出，全部关掉后才在宽限期内退出', async () => {
@@ -147,7 +142,7 @@ test('多标签：关掉其中一个不退出，全部关掉后才在宽限期�
   assert.equal(server.child.exitCode, null, '还有一个标签开着，不该退');
 
   second.close();
-  assert.equal(await waitForExit(server), 0);
+  await assertCleanExit(server);
 });
 
 test('注册表条目写在 os.tmpdir()，退出时被清掉', async () => {
@@ -162,7 +157,7 @@ test('注册表条目写在 os.tmpdir()，退出时被清掉', async () => {
   // 仓库目录内无任何新增文件——注册表写进 .git/ 或工作区既污染 git status，也违背零写操作承诺
   assert.equal(statusSnapshot(repos.staged), before);
 
-  assert.equal(await waitForExit(server), 0);
+  await assertCleanExit(server);
   assert.deepEqual(registryEntriesFor(server.port), [], '退出后条目还在');
 });
 
