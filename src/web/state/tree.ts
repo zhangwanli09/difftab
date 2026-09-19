@@ -6,13 +6,22 @@
 // **按目录缓存、按目录取**：后端一次只回一层（见 `server/git/tree.ts`），前端这边的一棵树
 // 就是「已经取回来的那几层」的并集，展开态单独记一份。
 
-import { signal } from '@preact/signals';
+import { batch, signal } from '@preact/signals';
 import type { TreeEntry, TreePayload } from '../../server/shared/protocol';
 import { getJson, latestWins, toMessage } from './http';
 import { removeFrom, setIn } from './immutable';
 
 /** 仓库根那一层的键。空串就是后端的口径，不另造一个 `'/'`。 */
 export const ROOT = '';
+
+/** 一条路径的各级祖先目录，由浅到深（`src/web/a.ts` → `src`、`src/web`），不含它自己、不含根。 */
+export function ancestorDirs(path: string): string[] {
+  const dirs: string[] = [];
+  for (let slash = path.indexOf('/'); slash !== -1; slash = path.indexOf('/', slash + 1)) {
+    dirs.push(path.slice(0, slash));
+  }
+  return dirs;
+}
 
 /** 目录路径 → 它的直接子项。没有这个键即「还没取过」。 */
 export const treeCache = signal<ReadonlyMap<string, TreeEntry[]>>(new Map());
@@ -94,6 +103,43 @@ export function toggleDir(path: string): void {
  */
 export function collapseAll(): void {
   expandedDirs.value = new Set();
+}
+
+/**
+ * 沿路径把每一级祖先目录展开（照 VS Code 的 `explorer.autoReveal`）；滚进视野那一半由树上那一行自
+ * 己做，这里不管。
+ *
+ * 没展开的祖先加进集合并取一层，与 `toggleDir` 展开那半同一取向（展开一律取一份新的）；已展开的
+ * 不动也不重取——它们本就在 `refreshTree` 的范围里。根不进集合（既有约定），根那一层由 `App` 切到
+ * `Files` 时取。**不 await 任何请求**：父层还没回来时行还没挂上，数据到了行一挂上自己就滚。
+ *
+ * 调用方是一个 signal effect，要自己 `untracked` 起来——这里读展开态与 `tree.ts` 其余函数一样走
+ * `.value`，被订阅了会怎样写在那个 effect 上。
+ */
+export function revealPath(path: string): void {
+  const missing = ancestorDirs(path).filter((dir) => !expandedDirs.value.has(dir));
+  if (missing.length === 0) return;
+  for (const dir of missing) {
+    void loadDir(dir).then(() => {
+      if (treeErrors.value.has(dir)) backOut(dir);
+    });
+  }
+  expandedDirs.value = new Set([...expandedDirs.value, ...missing]);
+}
+
+/**
+ * 自动展开的那一趟取失败了就把展开态退回去（手动展开失败不退：那一行还在，错误就画在它底下）。
+ * 判据是 diff tab 指向一个**整个目录都被删掉**的文件：父层里没有这一行，错误没处画，而集合里留着
+ * 一个看不见的展开态——目录回来时那一行会带着一句陈旧的错误直接展开（`refreshTree` 只重取取到过
+ * 的层，不会去修它），且此后 reveal 它底下任何文件都因「已经展开」而不再取。
+ */
+function backOut(dir: string): void {
+  batch(() => {
+    treeErrors.value = removeFrom(treeErrors.value, dir);
+    const next = new Set(expandedDirs.value);
+    next.delete(dir);
+    expandedDirs.value = next;
+  });
 }
 
 /**

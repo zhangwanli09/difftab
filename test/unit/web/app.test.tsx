@@ -205,6 +205,20 @@ describe('侧栏那两个 tab', () => {
     ).toHaveLength(1);
   });
 
+  it('切到 Files 那一刻按活动 tab 的路径把祖先展开——树不可见时不跟随，切过来补上', async () => {
+    render(<App />, container);
+    openPinned('diff', 'src/web/a.ts');
+    // 还在 Changes 档：树没挂载，一趟 ls-files 都不发、侧栏也不自己切档
+    expect(expandedDirs.value.size).toBe(0);
+    expect(vi.mocked(fetch)).not.toHaveBeenCalled();
+    expect(tabOf('Changes').getAttribute('aria-selected')).toBe('true');
+
+    // 切过来才展开；各取一趟的账在 file-tree.test.tsx 里算——这里的 fetch 永不回来，前面几个
+    // 用例留下的在途票会把同一条路径的请求吞掉，按请求数断言会随用例顺序变
+    tabOf('Files').click();
+    await waitFor(() => expect(expandedDirs.value).toEqual(new Set(['src', 'src/web'])));
+  });
+
   it('状态条在两个 tab 下都留着——它说的是仓库怎么样，与左栏列什么无关', async () => {
     repoState.value = stateWith('demo');
     render(<App />, container);

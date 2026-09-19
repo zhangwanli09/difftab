@@ -4,11 +4,12 @@
 // 是「已经取回来的那几层」的并集，因此这里是一个按 `expandedDirs` 递归下去的组件，而不是
 // 一份先拍平再画的清单。
 
-import { useComputed } from '@preact/signals';
+import { untracked, useComputed, useSignalEffect } from '@preact/signals';
+import { useRef } from 'preact/hooks';
 import type { TreeEntry } from '../../server/shared/protocol';
 import { activeEditorPath, editorKey, pinEditor } from '../state/editors';
 import { type ChangeCode, codeByPath, openFile } from '../state/store';
-import { expandedDirs, ROOT, toggleDir, treeCache, treeErrors } from '../state/tree';
+import { expandedDirs, ROOT, revealPath, toggleDir, treeCache, treeErrors } from '../state/tree';
 import { CODE_COLORS, STATUS_SLOT, StatusBadge } from './ChangeList';
 // 行的骨架与行首三样都与变更列表的树视图共用一份：各写一份不报错，只是切一次 tab 行高或缩进跳一
 // 截、或者一棵树里文件名比同层的目录名往左挪一截
@@ -78,8 +79,22 @@ function Row({ entry, depth }: { entry: TreeEntry; depth: number }) {
   // 别处展开时它产出的是同一个布尔，这一行不会跟着重画
   const isExpanded = isDir && expanded.value;
 
+  /**
+   * 活动 tab 是自己时滚进视野（与编辑器 tab 自己滚进标签栏同一条），判据直接用 `activeEditorPath`，
+   * 不另设一个「待滚动」的信号。**是 signal effect 而不是 `useEffect([selected])`**：后者要在组件体
+   * 里读选中态，正是上面 `rowClass` 刻意避开的整树重渲染；这里每行一份，只做一次相等比较、不引起渲
+   * 染。effect 首次跑在挂载时——父层还在 `Loading…` 时这一行还没挂上，数据回来挂上那一跑才滚，
+   * 展开那侧因此不必等请求；代价是收起再展开含这一行的目录时它会再滚一次，而 `nearest` 让已经看得
+   * 见的一个像素都不动。
+   */
+  const button = useRef<HTMLButtonElement>(null);
+  useSignalEffect(() => {
+    if (activeEditorPath.value === entry.path) button.current?.scrollIntoView({ block: 'nearest' });
+  });
+
   return (
     <TreeRow
+      buttonRef={button}
       onClick={() => (isDir ? toggleDir(entry.path) : openFile(entry.path))}
       // 单击预览、双击固定（目录行没有 tab 可固定）：双击到来时前两个 click 已经把 tab 开好
       // 并各取过一趟，这一下只幂等地置 pinned、不再取第三趟
@@ -147,7 +162,21 @@ function Level({ path, depth }: { path: string; depth: number }) {
   );
 }
 
-/** 根那一层。取根不在这里发起——见 `App` 里那个 effect（切到这一档才取，冷启动预算上因此看不见它）。 */
+/**
+ * 根那一层。取根不在这里发起——见 `App` 里那个 effect（切到这一档才取，冷启动预算上因此看不见它）。
+ *
+ * **树跟着活动 tab 展开并定位**（照 VS Code 的 `explorer.autoReveal`），effect 挂在这里而不是
+ * `main.tsx` 那种全局的：树只在 `Files` 档挂载，「只在树可见时 reveal、切到这一档那一刻补一次」两条
+ * 于是不必另判 `activeTab`，`tree.ts` 也不必反向 import `store.ts`。
+ *
+ * **只订阅 `activeEditorPath`，展开那一步包在 `untracked` 里**：`revealPath` 读的是 `expandedDirs`，
+ * 让它进依赖集等于用户每手动收起一个目录 effect 就重跑一次、把刚收起的又展开回去——不报错，只是
+ * 「收不起来」。依赖集在 effect 这里声明，被调的函数不必各自记得 `peek()`。
+ */
 export function FileTree() {
+  useSignalEffect(() => {
+    const path = activeEditorPath.value;
+    if (path !== null) untracked(() => revealPath(path));
+  });
   return <Level path={ROOT} depth={0} />;
 }
