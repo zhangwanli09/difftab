@@ -5,7 +5,7 @@ things that are easy to get wrong here and hard to catch in review.
 
 > Requirements and design live in [`docs/`](docs/README.md) and are currently written in
 > Chinese. They are the single source of truth: **a requirement change lands in `docs/`
-> before it lands in code.** [`CLAUDE.md`](CLAUDE.md) is the short version — a summary,
+> before it lands in code.** [`AGENTS.md`](AGENTS.md) is the short version — a summary,
 > a routing table, and the list of "violating this doesn't error, it just silently
 > misbehaves" rules.
 
@@ -13,7 +13,7 @@ things that are easy to get wrong here and hard to catch in review.
 
 - **Read the Non-goals in [`docs/spec.md`](docs/spec.md) first if you are adding a feature.**
   Some things are permanently out of scope, not merely unbuilt — see below.
-- **Check the routing table in [`CLAUDE.md`](CLAUDE.md) §4** for which file under
+- **Check the routing table in [`AGENTS.md`](AGENTS.md) §4** for which file under
   [`docs/design/`](docs/design/) covers the area you are touching, and read that one.
   Most of it exists because something silently broke once.
 - Open an issue first for anything beyond a bug fix. It saves you writing code against a
@@ -87,7 +87,7 @@ like three separate gates broke at once. Build first.
 
 ## Things that fail silently
 
-The full list is [`CLAUDE.md`](CLAUDE.md) §5, with the evidence behind each one in
+The full list is [`AGENTS.md`](AGENTS.md) §5, with the evidence behind each one in
 [`docs/decisions.md`](docs/decisions.md). The four that bite most often:
 
 - **Architecture boundaries.** git subprocesses may only appear in `server/git`; launching

@@ -97,7 +97,7 @@ if (nonEmptyDeps.length > 0) {
   for (const [field, names] of nonEmptyDeps) {
     console.error(`\nFAIL  ${field} 非空：${names.join(', ')}`);
   }
-  console.error('后端只用标准库、dependencies 保持为空（CLAUDE.md 红线）');
+  console.error('后端只用标准库、dependencies 保持为空（AGENTS.md 红线）');
   failed = true;
 } else {
   console.log(`PASS  ${MUST_BE_EMPTY.join(' / ')} 均为空`);

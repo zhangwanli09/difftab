@@ -71,7 +71,7 @@ test('后端产物只 import 标准库——dependencies 为空这条在产物�
   assert.deepEqual(
     external,
     [],
-    `dist/server/main.js 引用了非标准库模块：${external.join(', ')}。后端只用标准库（CLAUDE.md 红线）`,
+    `dist/server/main.js 引用了非标准库模块：${external.join(', ')}。后端只用标准库（AGENTS.md 红线）`,
   );
 });
 
