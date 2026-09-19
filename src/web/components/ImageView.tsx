@@ -7,6 +7,7 @@
 // 字节走同源 `<img src="/api/blob?…">`：cookie 自动带、CSP 的 `img-src 'self'` 现成放行。不
 // `fetch` 再 `createObjectURL`（要给 CSP 开 `blob:`），不内联 base64。
 
+import type { ComponentChildren } from 'preact';
 import { useState } from 'preact/hooks';
 import type { DiffPayload, FilePayload, ImageSide } from '../../server/shared/protocol';
 import { formatSize, Notice } from './DiffView';
@@ -94,33 +95,43 @@ function ImageFigure({
 }
 
 /**
- * diff 那侧：`Before` / `After` 各一张，`null` 的那侧不画——新增只有右、删除只有左。两张
+ * 放图的那一行，**两个视图共用，一张图也走它**。图在面板里水平居中、从顶部起排：只做水平——
+ * 垂直居中要把容器撑到面板高，`FileView` 的 wrapper 与 `RenameNotice` 都得跟着改。两张
  * `flex-wrap`，放不下并排时上下排；与 diff 的版式切换不联动（那道量的是文本两列够不够宽，对图
- * 没有意义）。`key` 是内容身份：内容没变的那一侧不重挂、不重取。
+ * 没有意义）。**单张那侧不能退成普通块盒**：块盒下 figure 铺满面板宽，caption 的 `self-end` 贴
+ * 的是面板右边而不是图的右下角。
+ */
+function ImageRow({ children }: { children: ComponentChildren }) {
+  return <div class="flex flex-wrap items-start justify-center gap-4 p-4">{children}</div>;
+}
+
+/**
+ * diff 那侧：`Before` / `After` 各一张，`null` 的那侧不画——新增只有右、删除只有左。`key` 是
+ * 内容身份：内容没变的那一侧不重挂、不重取。
  */
 export function ImageDiff({ payload }: { payload: ImageDiffPayload }) {
   return (
-    <div class="flex flex-wrap items-start gap-4 p-4">
+    <ImageRow>
       {payload.old && (
         <ImageFigure key={payload.old.version} side={payload.old} which="old" label="Before" />
       )}
       {payload.new && (
         <ImageFigure key={payload.new.version} side={payload.new} which="new" label="After" />
       )}
-    </div>
+    </ImageRow>
   );
 }
 
 /** 文件视图那侧：工作区那一张，不带标题。 */
 export function ImageFile({ path, payload }: { path: string; payload: ImageFilePayload }) {
   return (
-    <div class="p-4">
+    <ImageRow>
       <ImageFigure
         key={payload.version}
         side={{ path, size: payload.size, version: payload.version }}
         which="new"
         label={null}
       />
-    </div>
+    </ImageRow>
   );
 }

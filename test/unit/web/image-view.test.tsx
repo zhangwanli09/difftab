@@ -63,6 +63,9 @@ describe('ImageDiff', () => {
     expect(container.textContent).toContain('2.00 KB');
     // 不是 diff2html 的事
     expect(container.querySelector('.d2h-file-wrapper')).toBeNull();
+    // 两张一组在面板里水平居中
+    const row = images()[0]?.closest('figure')?.parentElement;
+    expect(row?.className.split(' ')).toContain('justify-center');
   });
 
   it('删除只有 Before、新增只有 After；重命名的旧侧 path 原样用 payload 给的', async () => {
@@ -215,5 +218,9 @@ describe('ImageFile', () => {
     // `NEEDS_WIDE_BOX.image` 必须是 false：写 true 时 max-w-full 形同虚设
     const box = container.querySelector('.overflow-auto')?.firstElementChild;
     expect(box?.className).not.toContain('w-max');
+    // 单张也走同一条居中的 flex 行：退成普通块盒时 figure 铺满面板宽，caption 贴的是面板右边不是图
+    const root = images()[0]?.closest('figure')?.parentElement?.className.split(' ');
+    expect(root).toContain('flex');
+    expect(root).toContain('justify-center');
   });
 });
