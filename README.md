@@ -34,8 +34,8 @@ at the tree, check the branch, and close it again.
 
 difftab is that half of the editor without the editor. One command, one tab, and only the
 three things you actually looked at. It only reads git, so it works with any agent, any
-language and any repository — and if the agent is all you write code with now, it lets you
-uninstall the IDE.
+language and any repository. And if an agent now writes all your code, you can uninstall
+the IDE.
 
 ## Features
 
