@@ -166,6 +166,21 @@ describe('FileTree', () => {
     expect(badgeOf('c.ts')).toBeNull();
   });
 
+  /** 字母照 VS Code：未跟踪 `U`、冲突 `!`，与变更列表同一张映射——各写一份时两档字母不一样。 */
+  it('未跟踪印 U、冲突印 !', async () => {
+    treeCache.value = new Map([[ROOT, [entry({ name: 'new.ts' }), entry({ name: 'both.ts' })]]]);
+    withFiles([
+      file({ path: 'new.ts', kind: 'untracked', unstaged: '?' }),
+      file({ path: 'both.ts', staged: 'U', unstaged: 'U', conflicted: true }),
+    ]);
+    await waitFor(() => expect(badgeOf('new.ts')).not.toBeNull());
+
+    expect(badgeOf('new.ts')?.textContent).toBe('U');
+    expect(badgeOf('new.ts')?.title).toBe('Untracked');
+    expect(badgeOf('both.ts')?.textContent).toBe('!');
+    expect(badgeOf('both.ts')?.title).toBe('Conflict');
+  });
+
   /**
    * 目录行：底下有改动就染色 + 行尾一枚圆点，**不印字母**——一个目录底下可以同时躺着改过的和没
    * 改过的文件，挑一个字母就是替用户下结论。颜色按后代归并、冲突最先；干净的目录什么都不画。

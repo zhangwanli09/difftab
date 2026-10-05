@@ -159,7 +159,7 @@ export const codeByPath = computed(() => {
   return codes;
 });
 
-export type ChangeGroupId = 'conflicted' | 'staged' | 'unstaged' | 'untracked';
+export type ChangeGroupId = 'conflicted' | 'staged' | 'unstaged';
 
 export interface ChangeGroup {
   id: ChangeGroupId;
@@ -168,24 +168,53 @@ export interface ChangeGroup {
 }
 
 /**
- * 四个分组：已暂存、未暂存、未跟踪，外加冲突一组。
+ * 两份各自已按路径排好序的列表归并成一份。**不是整体重排**：每一侧内部仍是后端给的顺序，
+ * 只在两侧之间按路径决定谁先——多一份排序意见就多一处与 `git status` 不一致的可能。比较用
+ * `<`（UTF-16 码元序），与 git 的字节序只在 BMP 之外的字符上有出入，那只影响两侧交错的位置。
+ */
+function mergeByPath(a: readonly FileEntry[], b: readonly FileEntry[]): FileEntry[] {
+  const merged: FileEntry[] = [];
+  let i = 0;
+  let j = 0;
+  for (;;) {
+    const left = a[i];
+    const right = b[j];
+    if (left === undefined || right === undefined) break;
+    if (right.path < left.path) {
+      merged.push(right);
+      j++;
+    } else {
+      merged.push(left);
+      i++;
+    }
+  }
+  return merged.concat(a.slice(i), b.slice(j));
+}
+
+/**
+ * 三个分组，照 VS Code Source Control 的默认：冲突、已暂存、工作区改动（含未跟踪）。
  *
- * **同一个文件可以同时出现在「已暂存」和「未暂存」里**，这不是 bug:porcelain 的 XY 是两位
+ * **同一个文件可以同时出现在「已暂存」和「Changes」里**，这不是 bug:porcelain 的 XY 是两位
  * 独立状态位，`git add` 之后再改一次就是 `X=M Y=M`。强行归一到一个桶，等于在前端替用户丢掉
  * 一半信息。
  *
  * **冲突是唯一的例外，而且排在最前面**：它两侧状态位都不是 `.`，不单独成组就会同时落进上面
  * 两组，而它哪一组都不属于；排最前是因为 rebase / merge 停在半路时，它就是用户此刻唯一要
- * 处理的东西。组内顺序沿用后端给的（git 自己按路径排好的），不在前端再排一次——多一份排序
- * 意见就多一处与 `git status` 不一致的可能。
+ * 处理的东西。
+ *
+ * **未跟踪混在 `Changes` 里**（VS Code `git.untrackedChanges` 的默认值 `mixed`）。porcelain v2
+ * 先吐全部已跟踪记录、再吐 `?` 记录，直接拼接时未跟踪全堆在组尾，所以两侧按路径归并一次。
  */
 export function groupFiles(files: readonly FileEntry[]): ChangeGroup[] {
   return [
-    { id: 'conflicted', title: 'Conflicted', files: files.filter(isConflicted) },
-    { id: 'staged', title: 'Staged', files: files.filter(hasStagedChange) },
-    { id: 'unstaged', title: 'Unstaged', files: files.filter(hasUnstagedChange) },
-    // -uall 保证这里是文件粒度，不会是折叠后的 `dir/`
-    { id: 'untracked', title: 'Untracked', files: files.filter(isUntracked) },
+    { id: 'conflicted', title: 'Merge Changes', files: files.filter(isConflicted) },
+    { id: 'staged', title: 'Staged Changes', files: files.filter(hasStagedChange) },
+    {
+      id: 'unstaged',
+      title: 'Changes',
+      // -uall 保证未跟踪那侧是文件粒度，不会是折叠后的 `dir/`
+      files: mergeByPath(files.filter(hasUnstagedChange), files.filter(isUntracked)),
+    },
   ];
 }
 

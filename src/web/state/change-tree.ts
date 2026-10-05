@@ -29,8 +29,8 @@ export function toggleChangeView(): void {
  * 冒出来的目录不用登记就是展开的。记 expanded 时每个新目录都得在建树时补登记一次，漏了它就默
  * 认收起——页面上只是「刚改的那几个文件没显示出来」，而 agent 跑动期间新目录是常态。
  *
- * 键由 `collapseKey` 给：**带分组 id**，同一个目录可以同时出现在 Staged 与 Unstaged 两组（XY
- * 两位独立），两处是两棵子树，折其中一处不该连带折另一处。陈旧的键不清理：目录消失又出现时仍
+ * 键由 `collapseKey` 给：**带分组 id**，同一个目录可以同时出现在 Staged Changes 与 Changes 两组
+ *（XY 两位独立），两处是两棵子树，折其中一处不该连带折另一处。陈旧的键不清理：目录消失又出现时仍
  * 是收起的，清理要在每次 `files` 换新时扫一遍集合，而它换来的只是一个不常见场景下的默认档。
  */
 export const collapsedChangeDirs = signal<ReadonlySet<string>>(new Set());

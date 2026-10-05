@@ -42,8 +42,8 @@ import {
 } from './tree-row';
 
 /**
- * 状态位的**展示文案**，与解析无关——徽章上印的是 git 自己的字母，这张表只作为 tooltip 把
- * 字母翻译一次。含义的唯一事实来源是 `StatusCode` 的类型注释。
+ * 状态位的**展示文案**，与解析无关——这张表只作为 tooltip 把字母翻译一次。含义的唯一事实来源
+ * 是 `StatusCode` 的类型注释。
  */
 const CODE_LABELS: Record<StatusCode, string> = {
   '.': 'Unmodified',
@@ -53,9 +53,17 @@ const CODE_LABELS: Record<StatusCode, string> = {
   D: 'Deleted',
   R: 'Renamed',
   C: 'Copied',
-  U: 'Unmerged',
+  U: 'Conflict',
   '?': 'Untracked',
 };
+
+/**
+ * 徽章上**印**的字母，照 VS Code Source Control：未跟踪 `U`、冲突 `!`，其余与 git 同字，故表里只
+ * 列这两个例外。协议里的 `StatusCode` 仍是 git 的字母——换字只在这一张表里，两档徽章都经
+ * `badgeLetter` 取它，各写一份时同一个文件在列表与文件树上会是两个字母。
+ */
+const BADGE_LETTERS: Partial<Record<StatusCode, string>> = { U: '!', '?': 'U' };
+const badgeLetter = (code: StatusCode) => BADGE_LETTERS[code] ?? code;
 
 /**
  * 路径拆成目录与文件名两段展示。分隔符恒为 `/`（由后端保证），因此这里不需要也不应该考虑平台
@@ -112,24 +120,28 @@ const LETTER_CLASS = `${STATUS_SLOT} text-center font-mono text-xs`;
 export function StatusBadge({ code }: { code: StatusCode }) {
   return (
     <span title={CODE_LABELS[code]} class={`${LETTER_CLASS} ${CODE_COLORS[code]}`}>
-      {code}
+      {badgeLetter(code)}
     </span>
   );
 }
 
 /**
- * 冲突条目的徽章：**XY 两位一起印**。一位不够：`DD`（双方都删）与 `UU`（双方都改）只印一位时
- * 长得一模一样，而它们是用户要采取的两种完全不同的动作。这里刻意**不**把七种组合各翻一句话
- *——那是 porcelain 的记录语义，前端一旦写下来就成了第二份 git 知识。
+ * 冲突条目的徽章：照 VS Code 印一枚 `!`，**XY 两位放进 tooltip**。只印 `!` 时 `DD`（双方都删）
+ * 与 `UU`（双方都改）长得一模一样，而它们是用户要采取的两种完全不同的动作——悬停时还得分得开。
+ * 这里刻意**不**把七种组合各翻一句话（VS Code 的 `Both Deleted` 那些）——那是 porcelain 的记录
+ * 语义，前端一旦写下来就成了第二份 git 知识。VS Code 把 `DU` / `UD` 印成 `D`，这里也不跟：文件树
+ * 只拿得到归并后的 `U`，跟了的话同一个文件在两档字母不一样。
  *
- * 颜色取 `CODE_COLORS.U` 而不是再写一遍那个 token：两处各写一份时，调冲突色只改一处的话，同
- * 一个页面上冲突组与别处的 `U` 会是两个颜色。
+ * 字母与颜色都取 `U` 那一格而不是再写一遍：两处各写一份时，调冲突色或换字只改一处的话，同一个
+ * 页面上冲突组与文件树上的冲突会是两个样子。
  */
 function ConflictBadge({ staged, unstaged }: Pick<FileEntry, 'staged' | 'unstaged'>) {
   return (
-    <span title="Unmerged (conflicted)" class={`${LETTER_CLASS} ${CODE_COLORS.U}`}>
-      {staged}
-      {unstaged}
+    <span
+      title={`${CODE_LABELS.U} (${staged}${unstaged})`}
+      class={`${LETTER_CLASS} ${CODE_COLORS.U}`}
+    >
+      {badgeLetter('U')}
     </span>
   );
 }
@@ -191,8 +203,9 @@ function FileRow({
       style={indent(treeDepth ?? 0)}
       // 状态位靠右（`ml-auto`）：前面两个 `min-w-0 truncate` 收缩时它 `shrink-0` 不动。每个分组只
       // 展示它自己那一侧的状态位——「已暂存」看 X，其余看 Y；冲突条目两侧都不是 `.`，挑哪一位都会
-      // 丢掉另一半。**「印两位」的判据是条目自己的 `conflicted`，不是它落在哪一组**：按分组判的话，
-      // 这一行画得对不对就取决于 `groupFiles` 与这里是否一致，而那个一致性没有任何东西在管
+      // 丢掉另一半，于是另画一枚。**「画冲突徽章」的判据是条目自己的 `conflicted`，不是它落在
+      // 哪一组**：按分组判的话，这一行画得对不对就取决于 `groupFiles` 与这里是否一致，而那个
+      // 一致性没有任何东西在管
       badge={
         file.conflicted ? (
           <ConflictBadge staged={file.staged} unstaged={file.unstaged} />
@@ -336,7 +349,7 @@ function Group({ group }: { group: ChangeGroup }) {
 }
 
 export function ChangeList({ files }: { files: readonly FileEntry[] }) {
-  // 分组只在 `files` 换新时重算：`groupFiles` 每次都回四份新数组，直接在渲染体里调的话
+  // 分组只在 `files` 换新时重算：`groupFiles` 每次都回三份新数组，直接在渲染体里调的话
   // `GroupTree` 那个按 `group.files` 记忆的树在每次切 tab / 换 pane 时都白建一遍
   const groups = useMemo(() => groupFiles(files), [files]);
   if (files.length === 0) {
