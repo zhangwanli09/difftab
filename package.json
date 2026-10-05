@@ -13,21 +13,13 @@
     "url": "https://github.com/zhangwanli09/difftab/issues"
   },
   "keywords": [
-    "git",
     "git-diff",
-    "diff",
     "diff-viewer",
     "code-review",
     "cli",
-    "read-only",
-    "ai-agent",
     "coding-agent",
     "claude-code",
-    "codex",
-    "developer-tools",
-    "nodejs",
-    "typescript",
-    "zero-dependency"
+    "codex"
   ],
   "type": "module",
   "bin": {
