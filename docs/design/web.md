@@ -6,7 +6,8 @@
 
 **界面文案一律英文，`<html lang>` 为 `en`。** 判据是**产品表面与文档分属两个读者**：`docs/` 与代码注释写给维护者，中文；而分发形态是 npm 全局包，CLI 的 `--help`、退出提示、版本守卫报错本来就是英文，界面是同一个表面上唯一说中文的部分。中文读者由 `README.zh-CN.md` 承接。首版不做语言切换。
 
-- 术语跟 git 自己的用词走（`Staged` / `Unstaged` / `Untracked` / `Conflicted` / `Detached HEAD` / `Rebasing`），不自造同义词——用户是拿它对照 `git status` 看的。
+- 分支与进行中操作的术语跟 git 自己的用词走（`Detached HEAD` / `Rebasing`），不自造同义词——那一栏用户是拿它对照 `git status` 看的。
+- **变更列表的组标题与状态字母照 VS Code Source Control 的默认**：组是 `Merge Changes` / `Staged Changes` / `Changes`，未跟踪文件混在 `Changes` 里（`git.untrackedChanges` 的默认值 `mixed`），字母未跟踪印 `U`、冲突印 `!`。判据是这一块的读者每天在编辑器里看的就是那一套，两边各说一种话时同一个 `U` 在两处意思相反。协议层不跟着改：`StatusCode` 仍是 git 的字母，换字只发生在徽章那一张展示映射里（`ChangeList.tsx` 的 `BADGE_LETTERS`）。
 - **判据是「`dist/web/` 三个产物里的 CJK 字符数为 0」**，不是逐个文件翻源码：漏网的最可能形态是**不长在 JSX 上的那几条**（`state/store.ts` 的错误文案就这么漏过一次），而按文件翻依赖「想不想得起来」。前端产物里本来就不该有中文——注释在构建期已去掉，diff2html / hljs 也不带。
 - **后端产物用不了这个判据**：`dist/server/main.js` 不压缩不混淆，中文注释原样留着正是为了可审计。那一侧的用户可见文案是 `sendError` 与各 `*Error` 的字面量，归 `test/unit/server/`。
 - 改文案要同步改 `test/unit/web/` 里的可见文本断言。这一条**会报错**，不进红线。
@@ -53,12 +54,14 @@
 **tab 行右端那枚开关在平铺列表与目录树之间切换，默认列表。** 位置对应 VS Code Source Control 面板的 View as Tree / View as List：agent 单次改 300+ 文件时目录段满屏重复，按目录扫不出「改动集中在哪」，而树把同一目录下的文件收在一起。**开关的图标与文案表达的是目标视图**（列表下画 `ListTree` + `View as tree`，树下画 `List` + `View as list`），照 VS Code 的惯例——它是一个动作按钮，不是显示当前档的状态灯（顶栏那个三档主题开关显示的是当前档，两者不同类）。只在 `Changes` 档画，与 `Files` 档那枚 `Collapse all` 互斥出现。
 
 - **版式只活在本次页面里，不进 `localStorage`**。判据不是「偏好不值得记」，而是**记了也存不住**：后端 `listen(0)` 每次启动端口随机，`localStorage` 按 origin（含端口）隔离，于是它只能活到同一实例的刷新，换一次 `difftab` 启动就归零——主题那份同样受限，见「主题开关」。为一份跨不了实例的偏好搭一套读写 try/catch 不划算。状态与 `activeTab` 同一形状：一个模块级 signal（`state/change-tree.ts`）。
-- **分组标题两种版式都留着**：Conflicted / Staged / Unstaged / Untracked 是 git 语义（XY 两位独立，同一个文件可同时在两组），树只是**组内**的排法。VS Code 同样在每个 group 内各建一棵树。
+- **分组标题两种版式都留着**：Merge Changes / Staged Changes / Changes 是 git 语义（XY 两位独立，同一个文件可同时在两组），树只是**组内**的排法。VS Code 同样在每个 group 内各建一棵树。
+- **`Changes` 组内是两份有序列表的归并，不是整体重排**：porcelain v2 先吐全部已跟踪记录、再吐 `?` 记录，直接拼接时未跟踪文件全堆在组尾，而 VS Code 那边是按路径插在中间的。两侧各自已按 git 排好序，按路径归并一次即可，每一侧内部仍是后端给的顺序（`store.ts` 的 `mergeByPath`）。
+- **冲突一律印 `!`，悬停给出原始 XY**（`Conflict (UD)`）。VS Code 把 `DU` / `UD` 印成 `D`，这里刻意不跟：`Files` 那档只拿得到归并后的 `ChangeCode`，跟了的话同一个文件在两档字母不一样；而 `DD` 与 `UU` 的区分仍留在 tooltip 里，前端不必自己翻译七种组合。
 - **分组标题 `sticky top-0` 钉在滚动容器顶上，且必须带 `z-10`**：每一行的 group div 是 `relative`（`tree-row.tsx` 的 `ROW_GROUP`，行内动作外壳的包含块），与 sticky 标题同为 positioned、同为 `z-index: auto` 时按 DOM 顺序绘制——行排在标题之后，滚到它底下时文字与底色都画在标题上面。症状只是「滚动后标题与文件行叠在一起」，标题本身仍钉在顶上，没有任何东西会报错。`change-list.test.tsx` 把两半绑在一起钉住（`ROW_GROUP` 含 `relative` ⇒ 标题含 `z-10`），故不进红线。
 - **树由 `buildChangeTree(files)` 从路径纯算出来**，每组一份、只在这一组的 `files` 换新时重建。**用 `useMemo` 不用 `useComputed`**：`files` 是 prop 不是 signal，computed 只跟踪 signal，换一份 `files` 它不会重算——页面上就是 SSE 刷新后树停在旧的那份，而列表版式照常在动。建树按 `/` 切路径，每层**目录在前、文件在后**（照 `Files` 那档后端的「目录在前」），各自沿用 git 给的顺序不再排序——多一份排序意见就多一处与 `git status` 不一致的可能。
 - **单子目录链紧凑合并**（VS Code 的 compact folders）：一个目录节点**只有一个子节点且它是目录**时合并成一个节点，名字连读成 `src/web/components`、`path` 取链尾。判据是 320px 侧栏里每一层缩进都是从文件名身上扣的，`src` → `web` → `components` 三层各占一行只为放一个文件，文件名反而被挤到最右。有文件的目录不合并——那几个文件就在这一层，合并会让它们看起来属于更深的那层。
 - **折叠态记的是 collapsed 集合，不是 expanded 集合**（`collapsedChangeDirs`）：默认全部展开，空集就是「全展开」，SSE 刷新新冒出来的目录不用登记就是展开的。记 expanded 时每个新目录都得在建树时补登记一次，漏了它就默认收起——页面上只是「刚改的那几个文件没显示出来」，而 agent 跑动期间新目录是常态。
-- **折叠键带分组 id**（`${groupId}:${path}`）：同一个目录可以同时出现在 Staged 与 Unstaged 两组，两处是两棵子树，折其中一处不该连带折另一处；不带分组时页面看着正常，只是折 Staged 里的 `src` 时 Unstaged 里的也一起没了。合并节点的键取 `path`（链尾）：链被新文件拆开时 `components` 那截保持原状态，新出现的父级默认展开。**陈旧的键不清理**：目录消失又出现时仍是收起的，与 `Files` 那档「收起不丢缓存」同一取向，且清理要在每次 `files` 换新时扫一遍集合。
+- **折叠键带分组 id**（`${groupId}:${path}`）：同一个目录可以同时出现在 Staged Changes 与 Changes 两组，两处是两棵子树，折其中一处不该连带折另一处；不带分组时页面看着正常，只是折 Staged Changes 里的 `src` 时 Changes 里的也一起没了。合并节点的键取 `path`（链尾）：链被新文件拆开时 `components` 那截保持原状态，新出现的父级默认展开。**陈旧的键不清理**：目录消失又出现时仍是收起的，与 `Files` 那档「收起不丢缓存」同一取向，且清理要在每次 `files` 换新时扫一遍集合。
 - **不复用 `state/tree.ts` 的 `expandedDirs`**：那份默认收起、键是仓库路径、且 `refreshTree` 按它发请求——混进去每折一个变更目录就多一趟 `ls-files`，而两棵树本就是两份数据（一份来自 status、一份来自 `ls-files`）。
 - **一行的形状与 `Files` 那档同款**：目录行是缩进 + 12px 的 `ChevronRight`（展开 `rotate-90`）+ 名字，带 `aria-expanded`；文件行是缩进 + 等宽占位 + 文件名 + 状态位（靠右），**不再画目录段**（祖先节点已经说了），重命名标注照旧。**行首三样（缩进量、展开三角、与它等宽的占位）与 `Files` 那档共用 `tree-row.tsx` 那一份**：三角按 12 画与占位 `w-3` 是同一个不变量，各写一份时改其中一处不报错，只是另一棵树里文件名比同层的目录名往左挪一截；缩进量各写一个常量同样不报错，只是切一次 tab 缩进跳一截。`FileTree` 已经 import `ChangeList` 的 `CODE_COLORS`，反向 import 会成环，所以这三样独立成文件。状态位与平铺版式同样在行尾靠右——树里每一层的文件行都贴着侧栏右端，缩进只从文件名身上扣。
 - **选中态一行不改**：仍是 `activeEditorPath` 按 `path` 比，两种版式下点同一个文件走同一个 `selectFile`（单击预览、双击固定，见 [`editors.md`](editors.md)），切版式不动右侧。

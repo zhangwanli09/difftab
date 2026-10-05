@@ -75,7 +75,7 @@ function stubSlowThenFast(slow: unknown, fast: unknown): void {
 }
 
 describe('groupFiles', () => {
-  test('三类文件各就各位', () => {
+  test('三类文件各就各位，未跟踪混在 Changes 里', () => {
     expect(
       byId([
         file({ path: 'a.txt', staged: 'M' }),
@@ -85,9 +85,28 @@ describe('groupFiles', () => {
     ).toEqual({
       conflicted: [],
       staged: ['a.txt'],
-      unstaged: ['b.txt'],
-      untracked: ['new.txt'],
+      unstaged: ['b.txt', 'new.txt'],
     });
+  });
+
+  test('三组标题照 VS Code Source Control', () => {
+    expect(groupFiles([]).map((g) => g.title)).toEqual([
+      'Merge Changes',
+      'Staged Changes',
+      'Changes',
+    ]);
+  });
+
+  test('Changes 里未跟踪按路径插进已跟踪之间，而不是堆在组尾', () => {
+    // porcelain v2 先吐全部已跟踪、再吐 `?`：直接拼接时 a.ts 会排在 c.ts 后面
+    expect(
+      byId([
+        file({ path: 'b.ts', unstaged: 'M' }),
+        file({ path: 'd.ts', unstaged: 'M' }),
+        file({ path: 'a.ts', kind: 'untracked', unstaged: '?' }),
+        file({ path: 'c.ts', kind: 'untracked', unstaged: '?' }),
+      ]).unstaged,
+    ).toEqual(['a.ts', 'b.ts', 'c.ts', 'd.ts']);
   });
 
   test('X=M Y=M 的文件同时出现在已暂存与未暂存里', () => {
@@ -97,13 +116,12 @@ describe('groupFiles', () => {
     expect(groups.unstaged).toEqual(['c.txt']);
   });
 
-  test('未跟踪文件不会漏进「未暂存」——判据是 kind 而不是状态位', () => {
-    // 协议把未跟踪编码成 unstaged: '?'；按「unstaged !== '.'」分组会让它在未暂存组里再出现一次
+  test('未跟踪文件在 Changes 里只出现一次——判据是 kind 而不是状态位', () => {
+    // 协议把未跟踪编码成 unstaged: '?'；按「unstaged !== '.'」认已跟踪会让它在组里出现两次
     expect(byId([file({ path: 'new.txt', kind: 'untracked', unstaged: '?' })])).toEqual({
       conflicted: [],
       staged: [],
-      unstaged: [],
-      untracked: ['new.txt'],
+      unstaged: ['new.txt'],
     });
   });
 
@@ -120,7 +138,6 @@ describe('groupFiles', () => {
       conflicted: ['both-modified.txt', 'both-deleted.txt'],
       staged: [],
       unstaged: [],
-      untracked: [],
     });
   });
 
@@ -148,13 +165,8 @@ describe('groupFiles', () => {
     expect(byId(paths.map((path) => file({ path, unstaged: 'M' }))).unstaged).toEqual(paths);
   });
 
-  test('工作区干净时四组都是空的，而不是缺组', () => {
-    expect(groupFiles([]).map((g) => g.id)).toEqual([
-      'conflicted',
-      'staged',
-      'unstaged',
-      'untracked',
-    ]);
+  test('工作区干净时三组都是空的，而不是缺组', () => {
+    expect(groupFiles([]).map((g) => g.id)).toEqual(['conflicted', 'staged', 'unstaged']);
   });
 });
 

@@ -2,7 +2,7 @@
 //
 // 钉的是三条「不报错、只是不对」：单子目录链要合并成一个节点（不合并时 320px 里三层缩进只为放
 // 一个文件）、有文件的目录不能合并（合并后那几个文件看起来属于更深的那层）、折叠键带分组 id
-// （不带时折 Staged 里的 `src` 连 Unstaged 里的一起没了）。
+// （不带时折 Staged Changes 里的 `src` 连 Changes 里的一起没了）。
 
 import { afterEach, describe, expect, it } from 'vitest';
 import type { FileEntry } from '../../../src/server/shared/protocol';
@@ -77,7 +77,7 @@ describe('折叠态', () => {
     expect(collapsedChangeDirs.value.size).toBe(0);
   });
 
-  it('键带分组 id——同一目录在 Staged 与 Unstaged 里是两棵子树', () => {
+  it('键带分组 id——同一目录在 Staged Changes 与 Changes 里是两棵子树', () => {
     toggleChangeDir('staged', 'src');
     expect(isChangeDirCollapsed('staged', 'src')).toBe(true);
     expect(isChangeDirCollapsed('unstaged', 'src')).toBe(false);

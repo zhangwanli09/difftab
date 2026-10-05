@@ -1,8 +1,8 @@
 // 变更列表里冲突那一组的展示。
 //
 // 分组本身由 store.test.ts 的 `groupFiles` 钉住，这里钉的是**画出来的那一行**：
-// 冲突条目要把 XY 两位一起印，而其余分组各印自己那一侧。少了这条，把冲突组的徽章
-// 顺手换回单个 `StatusBadge` 不会让任何用例变红——页面上 `DD`（双方都删）与
+// 冲突条目照 VS Code 印一枚 `!`、XY 两位进 tooltip，而其余分组各印自己那一侧。少了这条，把
+// 冲突组的徽章顺手换回单个 `StatusBadge` 不会让任何用例变红——悬停时 `DD`（双方都删）与
 // `UU`（双方都改）从此长得一模一样，而它们要采取的动作完全不同。
 
 import { render } from 'preact';
@@ -42,8 +42,8 @@ afterEach(() => {
 
 /**
  * 某个分组标题下那一段的可见文本（空白归一）。匹配用 `startsWith` 而不是 `includes`：标题是
- * 「Staged」「Unstaged」这样的英文，而前者是后者的子串——用 `includes` 时
- * `sectionTextOf('Staged')` 会挑到哪一段取决于 DOM 顺序。h2 的文本是「标题 + 计数」，从头比即可。
+ * 「Staged Changes」「Changes」这样的英文，而后者是前者的子串——用 `includes` 时
+ * `sectionTextOf('Changes')` 会挑到哪一段取决于 DOM 顺序。h2 的文本是「标题 + 计数」，从头比即可。
  */
 function normalize(node: Element | null | undefined): string {
   return (node?.textContent ?? '').replace(/\s+/g, ' ').trim();
@@ -68,7 +68,7 @@ const rowButtons = () => [...container.querySelectorAll<HTMLButtonElement>(ROW_S
 const rowByTitle = (title: string) => rowButtons().find((row) => row.title === title);
 
 describe('ChangeList 的冲突组', () => {
-  it('冲突行印出 XY 两位，而不是只挑一位', () => {
+  it('冲突行印 `!`，XY 两位进 tooltip 而不是只挑一位', () => {
     render(
       <ChangeList
         files={[
@@ -78,12 +78,14 @@ describe('ChangeList 的冲突组', () => {
       />,
       container,
     );
-    const text = sectionTextOf('Conflicted');
+    const text = sectionTextOf('Merge Changes');
+    const badgeOf = (path: string) => rowByTitle(path)?.querySelector('span[title^="Conflict"]');
 
-    expect(text).toContain('UU');
-    expect(text).toContain('DD');
     expect(text).toContain('both-modified.txt');
     expect(text).toContain('both-deleted.txt');
+    expect(badgeOf('both-modified.txt')?.textContent).toBe('!');
+    expect(badgeOf('both-modified.txt')?.getAttribute('title')).toBe('Conflict (UU)');
+    expect(badgeOf('both-deleted.txt')?.getAttribute('title')).toBe('Conflict (DD)');
   });
 
   it('冲突文件不出现在已暂存 / 未暂存两组里', () => {
@@ -98,9 +100,29 @@ describe('ChangeList 的冲突组', () => {
       container,
     );
 
-    expect(sectionTextOf('Staged')).not.toContain('conflict.txt');
-    expect(sectionTextOf('Staged')).toContain('normal.txt');
-    expect(sectionTextOf('Unstaged')).toBe('');
+    expect(sectionTextOf('Staged Changes')).not.toContain('conflict.txt');
+    expect(sectionTextOf('Staged Changes')).toContain('normal.txt');
+    expect(sectionTextOf('Changes')).toBe('');
+  });
+});
+
+describe('ChangeList 的未跟踪文件', () => {
+  it('混在 Changes 里按路径排、印 U，不另成一组', () => {
+    render(
+      <ChangeList
+        files={[
+          file({ path: 'b.ts', unstaged: 'M' }),
+          file({ path: 'a.ts', kind: 'untracked', unstaged: '?' }),
+        ]}
+      />,
+      container,
+    );
+
+    expect(container.querySelectorAll('section')).toHaveLength(1);
+    expect(sectionTextOf('Changes')).toMatch(/a\.ts.*b\.ts/);
+    const badge = rowByTitle('a.ts')?.querySelector('span[title="Untracked"]');
+    expect(badge?.textContent).toBe('U');
+    expect(badge?.className).toContain('text-git-untracked');
   });
 });
 
@@ -188,7 +210,7 @@ describe('ChangeList 的行布局', () => {
 
 /**
  * 树视图。钉的都是「不报错、只是不对」：文件行在树里仍画目录段（同一段路径在祖先节点与文件
- * 行上各说一遍）、文件行与同层目录行缩进不齐、折 Staged 里的目录连带折掉 Unstaged 里的、
+ * 行上各说一遍）、文件行与同层目录行缩进不齐、折 Staged Changes 里的目录连带折掉 Changes 里的、
  * 切到树之后组头没了（分组是 git 语义，不是列表版式的附属）。
  */
 describe('ChangeList 的树视图', () => {
@@ -242,7 +264,7 @@ describe('ChangeList 的树视图', () => {
     await waitFor(() => expect(rowByTitle('src/a.ts')).toBeDefined());
   });
 
-  it('同一目录在 Staged 与 Unstaged 里各折各的', async () => {
+  it('同一目录在 Staged Changes 与 Changes 里各折各的', async () => {
     changeView.value = 'tree';
     // X=M Y=M：同一个文件同时落在两组
     render(
@@ -265,8 +287,8 @@ describe('ChangeList 的树视图', () => {
       />,
       container,
     );
-    expect(sectionTextOf('Staged')).toContain('a.ts');
-    expect(sectionTextOf('Unstaged')).toContain('b.ts');
+    expect(sectionTextOf('Staged Changes')).toContain('a.ts');
+    expect(sectionTextOf('Changes')).toContain('b.ts');
   });
 
   it('列表版式下没有目录行', () => {
