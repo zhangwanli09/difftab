@@ -47,21 +47,21 @@ jobs:
       #   1. 直接问 pnpm 自己忽略了谁——漏列白名单时**安装本身是成功的**，
       #      只是构建脚本被静默跳过，所以不能以「安装没报错」为准；
       #   2. 钩子文件实际存在——证的是脚本不仅跑了，还真干了活。
-      - name: pnpm 没有忽略任何构建脚本
+      - name: pnpm ignored no build scripts
         run: |
           out=$(pnpm ignored-builds)
           echo "$out"
-          echo "$out" | grep -q 'None' || { echo 'FAIL 有依赖的构建脚本被忽略——检查 pnpm-workspace.yaml 的 allowBuilds'; exit 1; }
+          echo "$out" | grep -q 'None' || { echo 'FAIL a dependency build script was ignored; check allowBuilds in pnpm-workspace.yaml'; exit 1; }
 
-      - name: lefthook hooks 已写入 .git/hooks
+      - name: lefthook hooks written to .git/hooks
         run: test -f .git/hooks/pre-commit && test -f .git/hooks/pre-push
 
       # pnpm 设置写在正确的文件里：pnpm 11 对写错位置的设置是静默忽略
-      - name: pnpm 设置不在 package.json / .npmrc 里
+      - name: no pnpm settings in package.json / .npmrc
         run: |
-          node -e "if ('pnpm' in require('./package.json')) { console.error('package.json 里出现了 pnpm 字段——pnpm 11 不再读取它'); process.exit(1) }"
+          node -e "if ('pnpm' in require('./package.json')) { console.error('package.json has a pnpm field; pnpm 11 no longer reads it'); process.exit(1) }"
           if [ -f .npmrc ]; then
-            grep -vE '^\s*(#|$)' .npmrc | grep -vE '^(registry|@[^:]+:registry|//)' && { echo '.npmrc 里出现了非 registry/auth 设置'; exit 1; } || true
+            grep -vE '^\s*(#|$)' .npmrc | grep -vE '^(registry|@[^:]+:registry|//)' && { echo '.npmrc contains settings other than registry/auth'; exit 1; } || true
           fi
 
       - run: pnpm exec biome ci
@@ -76,13 +76,13 @@ jobs:
       # 再跑 9 遍不增加任何覆盖，却引入一个本不存在的方差面：gzip 的输出长度取决于
       # 各 Node 大版本自带的 zlib，贴着预算的行会只在某一个 Node 上红，看起来像平台
       # 问题而其实不是。matrix 档该跑的是真有平台维度的东西（冒烟、冷启动）。
-      - name: 产物体积门禁
+      - name: bundle size gate
         run: pnpm run size
 
-      - name: 样式层叠方案生效
+      - name: CSS cascade layering holds
         run: pnpm run check:css
 
-      - name: 发布产物内容干净
+      - name: published package contents clean
         run: pnpm run check:pack
 
       - uses: actions/upload-artifact@v7
@@ -152,12 +152,12 @@ jobs:
       # **`shell: bash` 是这次新加的**：本步骤原先没有 shell 键，Windows 上走的是
       # pwsh。改用 bash 是为了三端拿到同一套 glob 与数组语义，代价是 Windows 这一
       # 档从此也在 `-eo pipefail` 下跑。
-      - name: 冒烟测试（跑 dist/ 产物）
+      - name: smoke tests (against dist/)
         shell: bash
         run: |
           files=(test/smoke/*.test.js)
           if [ ! -e "${files[0]}" ]; then
-            echo 'FAIL glob 一个冒烟文件都没展开出来——test/smoke/*.test.js 不匹配任何文件'
+            echo 'FAIL glob expanded to no smoke files; test/smoke/*.test.js matches nothing'
             exit 1
           fi
           for required in readonly.test.js readonly-git-dir.test.js; do
@@ -165,11 +165,11 @@ jobs:
             for f in "${files[@]}"; do
               [ "$f" = "test/smoke/$required" ] && found=1
             done
-            [ "$found" = 1 ] || { echo "FAIL 只读性门禁 test/smoke/$required 没有出现在展开结果里"; exit 1; }
+            [ "$found" = 1 ] || { echo "FAIL read-only gate test/smoke/$required missing from the expanded list"; exit 1; }
           done
           node --test "${files[@]}"
 
-      - name: 冷启动测量(≤300ms)
+      - name: cold start benchmark (≤300ms)
         run: node scripts/bench-startup.mjs
 
   # 压低 inotify 配额验降级（那条 Linux 验收项）。
@@ -181,7 +181,7 @@ jobs:
   # Node 24 一档：配额耗尽这件事只对**建递归 watch 的档位**(A)有意义，Node 22 在
   # Linux 上判到 C 档、一个递归 watch 都不建。
   inotify-quota:
-    name: inotify 配额耗尽时降级为轮询
+    name: inotify quota exhausted → polling fallback
     needs: build
     runs-on: ubuntu-latest
     steps:
@@ -248,7 +248,7 @@ jobs:
   # 本档不需要 dist/：守卫在 import 主模块**之前**就退出了(冒烟里另有一条断言
   # stdout 为空，证的就是这个顺序)。
   old-node-guard:
-    name: 版本守卫 · Node 20 · ${{ matrix.os }}
+    name: version guard · Node 20 · ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -261,7 +261,7 @@ jobs:
         with:
           node-version: 20
 
-      - name: 低于下限时给友好提示，而不是 SyntaxError
+      - name: friendly message below minimum Node, not SyntaxError
         shell: bash
         run: |
           set +e
@@ -279,8 +279,8 @@ jobs:
           status=$?
           out=$(cat out.txt)
           echo "exit=$status"; echo "stdout=[$out]"; echo "stderr=$err"
-          [ "$status" -eq 1 ]                        || { echo 'FAIL 期望以 1 退出'; exit 1; }
-          [ -z "$out" ]                              || { echo 'FAIL 主模块被加载了——守卫没有先于 import 执行'; exit 1; }
-          case "$err" in *SyntaxError*) echo 'FAIL 解析期就炸了，守卫根本没来得及跑'; exit 1;; esac
-          case "$err" in *'requires Node.js'*) ;; *) echo 'FAIL 没有打印友好提示'; exit 1;; esac
-          echo 'PASS 版本守卫在真实的低版本 Node 上按预期工作'
+          [ "$status" -eq 1 ]                        || { echo 'FAIL expected exit code 1'; exit 1; }
+          [ -z "$out" ]                              || { echo 'FAIL main module was loaded; the guard did not run before import'; exit 1; }
+          case "$err" in *SyntaxError*) echo 'FAIL crashed at parse time; the guard never got to run'; exit 1;; esac
+          case "$err" in *'requires Node.js'*) ;; *) echo 'FAIL no friendly message printed'; exit 1;; esac
+          echo 'PASS version guard works as expected on a real old Node'
