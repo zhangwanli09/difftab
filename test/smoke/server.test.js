@@ -161,6 +161,7 @@ test('第 3 道：没有 token 一律 403，静态资源与 SSE 端点无例外'
     '/api/state',
     '/api/diff?path=a',
     '/api/blob?path=a.png&side=new',
+    '/api/commits',
     '/api/events',
   ]) {
     const res = await httpGet(server.port, path);
@@ -464,6 +465,37 @@ test('图片：payload 只带两侧元数据，字节由 /api/blob 以精确 MIM
   }
   // 那一侧不存在是 400 而不是 500：新增的图在 HEAD 里没有
   assert.equal((await onImages(`/api/blob?${q('new.png')}&side=old`)).status, 400);
+});
+
+test('提交历史：只认完整对象名，坏参数一律 400 而不是 500', async () => {
+  await setup();
+  const get = (path) => authedGet(server.port, server.token, path);
+  const page = await get('/api/commits');
+  assert.equal(page.status, 200);
+  const { head, commits } = JSON.parse(page.body);
+  assert.match(head, /^[0-9a-f]{40}$/);
+  assert.ok(commits.length > 0);
+
+  const missing = 'f'.repeat(40);
+  for (const path of [
+    '/api/commits?skip=-1',
+    '/api/commits?skip=abc',
+    // revision 表达式与选项形态都不认——它们会被拼进 argv 的 revision 位置
+    '/api/commits?head=HEAD',
+    `/api/commits?head=${encodeURIComponent('--output=x')}`,
+    `/api/commits?head=${missing}`,
+    '/api/commit',
+    '/api/commit?sha=HEAD',
+    `/api/commit?sha=${missing}`,
+    `/api/commit-diff?sha=${head}`,
+    `/api/commit-diff?sha=HEAD&path=a`,
+    `/api/blob?${q('a.png')}&side=new&commit=HEAD`,
+  ]) {
+    const res = await get(path);
+    assert.equal(res.status, 400, `${path} 回了 ${res.status}：${res.body}`);
+  }
+  // 不存在的提交是 not-found，不是 invalid-path——前端据此说「找不到」而不是「坏请求」
+  assert.equal(JSON.parse((await get(`/api/commit?sha=${missing}`)).body).error.code, 'not-found');
 });
 
 test('注册表落在 os.tmpdir()，权限 0600，仓库目录内无任何新增文件', async () => {

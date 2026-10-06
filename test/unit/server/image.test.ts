@@ -10,7 +10,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { readDiff } from '../../../src/server/git/diff.ts';
 import { readFileContent } from '../../../src/server/git/file.ts';
 import { baseBlobSize, readImageBytes } from '../../../src/server/git/image.ts';
-import { resolveDiffBase } from '../../../src/server/git/repo.ts';
+import { locateRepo, type RepoInfo, resolveDiffBase } from '../../../src/server/git/repo.ts';
 import { imageMimeOf, WorktreeError } from '../../../src/server/git/worktree.ts';
 import {
   type FixtureRepos,
@@ -24,12 +24,17 @@ import {
 let dest: string;
 let repos: FixtureRepos;
 let root: string;
+let repo: RepoInfo;
 
 beforeAll(() => {
   dest = mkdtempSync(join(tmpdir(), 'difftab-images-'));
   repos = makeFixtures(dest, ['images', 'empty']);
   root = repos.images;
 }, 30_000);
+
+beforeAll(async () => {
+  repo = await locateRepo(root);
+});
 
 afterAll(() => {
   rmSync(dest, { recursive: true, force: true });
@@ -148,41 +153,41 @@ describe('readFileContent 的 image 分支', () => {
 
 describe('readImageBytes——/api/blob 两侧', () => {
   test('new 侧是工作区的字节，old 侧是基准里的 blob，MIME 按表', async () => {
-    const fresh = await readImageBytes(root, 'img/a.png', 'new');
+    const fresh = await readImageBytes(repo, 'img/a.png', 'new');
     expect(fresh.mime).toBe('image/png');
     expect(fresh.buffer.equals(tinyPng(PNG_BLUE))).toBe(true);
 
-    const base = await readImageBytes(root, 'img/a.png', 'old');
+    const base = await readImageBytes(repo, 'img/a.png', 'old');
     expect(base.mime).toBe('image/png');
     // 逐字节相等——`toString('utf8')` 一次就再也拼不回原图，这条钉的正是 runGitRaw 那层
     expect(base.buffer.equals(tinyPng(PNG_RED))).toBe(true);
   });
 
   test('删除的图 old 侧读得到、new 侧 not-found；新增的反过来', async () => {
-    expect((await readImageBytes(root, 'img/gone.png', 'old')).buffer.length).toBeGreaterThan(0);
-    expect(await codeOf(readImageBytes(root, 'img/gone.png', 'new'))).toBe('not-found');
-    expect((await readImageBytes(root, 'new.png', 'new')).buffer.length).toBeGreaterThan(0);
-    expect(await codeOf(readImageBytes(root, 'new.png', 'old'))).toBe('not-found');
+    expect((await readImageBytes(repo, 'img/gone.png', 'old')).buffer.length).toBeGreaterThan(0);
+    expect(await codeOf(readImageBytes(repo, 'img/gone.png', 'new'))).toBe('not-found');
+    expect((await readImageBytes(repo, 'new.png', 'new')).buffer.length).toBeGreaterThan(0);
+    expect(await codeOf(readImageBytes(repo, 'new.png', 'old'))).toBe('not-found');
   });
 
   test('非图片扩展名一律 invalid-path——它不是「下载任意文件」的端点', async () => {
-    expect(await codeOf(readImageBytes(root, 'blob.bin', 'new'))).toBe('invalid-path');
-    expect(await codeOf(readImageBytes(root, 'README.md', 'old'))).toBe('invalid-path');
+    expect(await codeOf(readImageBytes(repo, 'blob.bin', 'new'))).toBe('invalid-path');
+    expect(await codeOf(readImageBytes(repo, 'README.md', 'old'))).toBe('invalid-path');
   });
 
   test('new 侧走的是 inspectFile 那条链：内容是文本的 .png 与 payload 一样不算图', async () => {
     // 只查扩展名的副本会把它当 image/png 发出去，而 /api/diff 与 /api/file 都说它是文本
-    expect(await codeOf(readImageBytes(root, 'fake.png', 'new'))).toBe('invalid-path');
+    expect(await codeOf(readImageBytes(repo, 'fake.png', 'new'))).toBe('invalid-path');
   });
 
   test('穿越路径在扩展名之后、落盘之前被拒', async () => {
-    expect(await codeOf(readImageBytes(root, '../outside.png', 'new'))).toBe('invalid-path');
-    expect(await codeOf(readImageBytes(root, '../outside.png', 'old'))).toBe('invalid-path');
+    expect(await codeOf(readImageBytes(repo, '../outside.png', 'new'))).toBe('invalid-path');
+    expect(await codeOf(readImageBytes(repo, '../outside.png', 'old'))).toBe('invalid-path');
   });
 
   test('new 侧超过 5MB 以 too-large 收尾，不读进内存', async () => {
     writeFileSync(join(root, 'big.png'), Buffer.alloc(5 * 1024 * 1024 + 1));
-    expect(await codeOf(readImageBytes(root, 'big.png', 'new'))).toBe('too-large');
+    expect(await codeOf(readImageBytes(repo, 'big.png', 'new'))).toBe('too-large');
     // payload 那一步同样按侧卡：整个回 too-large，size 是超限那一侧的
     expect(await readDiff(root, { path: 'big.png' })).toEqual({
       kind: 'too-large',

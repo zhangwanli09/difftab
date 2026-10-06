@@ -11,10 +11,11 @@
 // 两块**不合成一个带可选 `icon` 的组件**：那又是一个不填也不报错的开关，且合成之后它得同时
 // 带两种撑满手段，看不出自己在哪种宿主里。
 
-import { CircleCheck, FileCode, FileDiff, type LucideIcon } from 'lucide-preact';
+import { CircleCheck, type LucideIcon } from 'lucide-preact';
 import type { ComponentChildren } from 'preact';
+import type { EditorKind } from '../state/editors';
 import { activeTab, repoState } from '../state/store';
-import { Icon } from './Icon';
+import { Icon, KIND_ICON } from './Icon';
 
 /**
  * 左栏列表区的占位：`Loading…`、「取不到列表」与「工作区干净」三句共用。**三句一起居中而不是只
@@ -31,6 +32,13 @@ export function SidebarPlaceholder({ children }: { children: ComponentChildren }
     </p>
   );
 }
+
+/** 空着时右侧按侧栏档位查「接下来会开出哪种 tab」，图标取那一种的。 */
+const TAB_KIND: Record<typeof activeTab.value, EditorKind> = {
+  changes: 'diff',
+  files: 'file',
+  history: 'commit',
+};
 
 function EmptyState({ icon, children }: { icon: LucideIcon; children: ComponentChildren }) {
   return (
@@ -59,7 +67,8 @@ function EmptyState({ icon, children }: { icon: LucideIcon; children: ComponentC
  * - 其余一律 `Select a file on the left`：**`Files` 档下即使干净也走这句**，那一档列的是整棵
  *   目录树，「Working tree clean」对着一列能点的文件答非所问。图标跟着档走：`Changes` 是一份
  *   diff（`FileDiff`），`Files` 是一份全文（`FileCode`）——两档打开同一个文件看到的是两样东
- *   西，图标在空着时就把这一点说出来。
+ *   西，图标在空着时就把这一点说出来。`History` 档是一次提交里的一份 diff（`GitCommitHorizontal`，
+ *   与 commit tab 上那枚同源）。
  * - 第一份 state 还没到（`repoState` 为 null）时走「还没选」那句——左栏此时写的正是
  *   `Loading…`，两栏说的是同一件事。
  */
@@ -68,7 +77,5 @@ export function PanelEmptyState() {
   if (tab === 'changes' && repoState.value?.files.length === 0) {
     return <EmptyState icon={CircleCheck}>Working tree clean</EmptyState>;
   }
-  return (
-    <EmptyState icon={tab === 'files' ? FileCode : FileDiff}>Select a file on the left</EmptyState>
-  );
+  return <EmptyState icon={KIND_ICON[TAB_KIND[tab]]}>Select a file on the left</EmptyState>;
 }

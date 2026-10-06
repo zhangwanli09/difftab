@@ -9,13 +9,15 @@
   - `-uall`：否则 git 把未跟踪目录折叠成一行 `dir/`。
   - `-z`：否则含非 ASCII、空格、引号的路径会被做 C 风格转义并加引号。加 `-z` 后改为 NUL 分隔、路径原样输出。**所有取路径的列表类调用**（`ls-files`、`diff --numstat` 等）一律加 `-z`，按 NUL 切分而非换行。
 
-## 封装层统一注入的三件事
+## 封装层统一注入的五件事
 
-这三条都写在 `server/git` 的封装层，不留给各调用点自己记得加。
+这五条都写在 `server/git` 的封装层（`run.ts`），不留给各调用点自己记得加。后两条挡的是同一类东西：**读一下就写库**——命令本身只读、不失败、不改输出，只有 `.git` 逐字节比对看得见。
 
 - **`-c core.quotePath=false`**（所有 `git diff` 调用）。`-z` 只作用于列表输出，**管不到补丁正文**——正文里的 `diff --git` / `--- ` / `+++ ` / `rename from|to` 头部行仍会 C 风格转义，而 diff2html 恰恰从这些行解析文件名，不处理就会在界面上直接显示 `\351\234\200` 转义串。两者互补，不可相互替代。
 - **`GIT_OPTIONAL_LOCKS=0`**。`git status` 默认会把刷新过的 stat 缓存写回 `.git/index`——它**不改变 status 输出**，所以只读白名单与「前后 `git status` 比对」都看不见。只读 `.git` 下它也只是静默跳过、exit 0、stderr 全空。看得见它的只有两处：`.git` 逐字节快照比对，以及「读一次 `/api/state` 不引出刷新事件」那条（写 `.git` → 推 `change` → 前端再读一次，是个自激循环）。
 - **`GIT_LITERAL_PATHSPECS=1`**。`--` 后面的路径默认按 wildmatch 解释，而我们的路径来自 URL query：`path=*` 会让 `git diff HEAD -- '*'` 回一份**整仓 diff**，一个真实存在、名字里带 `*` 的文件也会匹配到邻居身上，页面在 A 的标题下显示 B 的补丁。本项目的路径无一例外来自 git 自己的输出，不需要任何通配语义。
+- **`GIT_NO_LAZY_FETCH=1`**。partial clone（`--filter=blob:none`）里缺的对象，git 默认会当场从 promisor remote 取回来并写进 `.git/objects`——`diff` / `cat-file` 只要碰到一个不在本地的 blob 就会触发，而提交历史读的恰恰是那些从没检出过的旧 blob。关掉之后缺对象就是一次非零退出（实测 128：`could not fetch … from promisor remote`），不联网、不写库，封装层按 stderr 把它分类成 `GitError` 的 `missing-object`——**分类只在 `run.ts` 做一次**，不抛的 `runGit` 也照样以它失败，HTTP 层统一译成 `unsupported`（「内容不在本地」）；交给各调用点 catch 时，漏 catch 的那条路会把它说成「路径不存在」或一条 500。**这个变量 git 2.44 才有**：更老的 git 不认它，所以提交历史在「git < 2.44 ∧ partial clone」时整个拒绝（`history.ts` 的 `guardLazyFetch`）。判 partial clone 读共享 git 目录下的 `config`，两种记号都认——老 git 写 `extensions.partialClone`，新一些的只写 `remote.<名>.promisor = true`（实测 2.54 只有后者）；`promisor` 是 git 的布尔值，只写键名、`true` / `yes` / `on` / `1` 都算开，漏认一种就是在老 git 上往对象库里写。版本与共享 git 目录都是启动时 `locateRepo` 那两次调用顺手拿到的（`RepoInfo.gitVersion` / `commonDir`：`--git-common-dir` 并进原有那次 `rev-parse`，零额外进程；它的相对路径是**相对 cwd** 的，实测在子目录里给 `../.git`），新 git 上一个文件都不读，老 git 上每次读一个小文件、不另设缓存。工作区 diff 不在此列：它只碰 HEAD 里已检出的那一份。
+- **每一条 `git diff` 紧跟子命令带 `--no-ext-diff --no-textconv`**——由 `runGitRaw` 按子命令注入，调用点不写，也就没有「新加一条 `diff` 忘了带」这回事。`.gitattributes` 里 `diff=<驱动>` + `diff.<驱动>.textconv` 会让补丁形态对两侧各起一次外部程序，配了 `cachetextconv` 时还把结果写进 `refs/notes/textconv/<驱动>`——实测补丁形态（工作区 diff 与提交 diff 都是）会写，`--numstat` / `--name-status` 不写，加上之后一条都不写。numstat 那几条也带：二进制与行数的判定得与补丁看的是同一份内容。`diff.external` 同理是一个外部程序。**代价**：配了 textconv 的文件（`.docx`、加密文件）按原始字节比，二进制就说二进制。
 
 ## `-z` 解析的三个陷阱
 
@@ -52,11 +54,27 @@
 
 **判据是「二进制 ∧ 扩展名在表里」，两个条件缺一不可**，表在 `server/git/worktree.ts`（`imageMimeOf`，与分类链同住——它是分类链的一环，放进 `image.ts` 会让底座反向 import 一个 feature 模块；png / jpg / jpeg / gif / webp / bmp / ico / avif；**SVG 不在**——它是文本，走文本 diff 更有信息量）。二进制那一半照旧由上面那道闸给：已跟踪侧是 numstat 的 `-\t-`（含 `.gitattributes`），未跟踪侧是 NUL 探测；扩展名只在**已判定为二进制之后**查。单看扩展名的写法会把一个内容是文本的 `.png` 送去 `<img>` 里画成一张破图，而它本来有一份能看的文本 diff。
 
-- **旧侧读 diff 基准里的 blob：`git cat-file blob <base>:<path>`，存在性与体积另用 `cat-file -s`**；它的内容身份（`ImageSide.version`）是基准的 oid——那个 blob 只在基准换了之后才可能变，而 oid 是 `resolveDiffBase` 那次 `rev-parse` 顺手就有的（`DiffBase { ref; oid }`），不为它多起一次进程。新侧的身份是体积 + mtime（`worktreeVersion`），与 git 自己的 stat 缓存同一条判据，已知边界也一样：同体积、同一个 mtime 刻度内的改写认不出来。这是产品代码里唯一一处读对象库的调用，也是白名单第六条。**只允许这两种字面参数**：`--filters` / `--textconv` 会让 git 跑 smudge / textconv 驱动——LFS 的 smudge 会往 `.git/lfs` 里写东西，而白名单只看子命令，看不见参数；不用 `git show <rev>:<path>`：字节一样（实测两者默认都不套 textconv），但它是带整套 log / diff / pretty 参数面的 porcelain，「参数只能是这几个字面量」那条断言在它身上钉不住。
+- **旧侧读 diff 基准里的 blob：`git cat-file blob <base>:<path>`，存在性与体积另用 `cat-file -s`**；它的内容身份（`ImageSide.version`）是基准的 oid——那个 blob 只在基准换了之后才可能变，而 oid 是 `resolveDiffBase` 那次 `rev-parse` 顺手就有的（`DiffBase { ref; oid }`），不为它多起一次进程。新侧的身份是体积 + mtime（`worktreeVersion`），与 git 自己的 stat 缓存同一条判据，已知边界也一样：同体积、同一个 mtime 刻度内的改写认不出来。工作区 diff 里这是唯一一处读对象库的调用，也是白名单第六条（提交历史那一侧两边都走它，见下面「提交历史」）。**只允许这两种字面参数**：`--filters` / `--textconv` 会让 git 跑 smudge / textconv 驱动——LFS 的 smudge 会往 `.git/lfs` 里写东西，而白名单只看子命令，看不见参数；不用 `git show <rev>:<path>`：字节一样（实测两者默认都不套 textconv），但它是带整套 log / diff / pretty 参数面的 porcelain，「参数只能是这几个字面量」那条断言在它身上钉不住。
 - **`<rev>:<path>` 是 revision 语法，不是 pathspec**，`GIT_LITERAL_PATHSPECS=1` 管不到它。拼进去的 `path` 一律取 `resolveInRepo` 归一化后的那份（无 `.` 段、无前导 `./`、`/` 分隔），字面量那道边界校验因此仍然过了一遍；`cat-file -s` 非零退出即「这一侧不存在」（新增、或基准是空树），不是错误。
 - **重命名的旧侧在 `oldPath`**，payload 里 `old.path` 由后端填成它，前端拿着直接问 `/api/blob`。
 - **5MB 那道闸按侧卡**：任一侧超过 `MAX_BYTES` 整个 payload 回 `too-large`（`reason: 'size'`，`size` 取**两侧里大的那个**——固定报工作区那份时，HEAD 里 8MB 的图被换成 120KB 的，提示会说「file is 120 KB」而 Files 里同一个文件正常显示）——一张 8MB 的 PNG 说「太大」是真话。`/api/blob` 自己再卡一次（工作区侧看 `lstat`，blob 侧带 `maxStdoutBytes`）：payload 与取字节是两次请求，中间文件可以长大。
 - **`/api/blob` 只服务表里的扩展名**，非图片一律 400；取 `new` 侧**就是 `inspectFile` 那条链**（`image` 支与 `text` 一样带着 `buffer`），不另写一份「lstat → 体积 → 读」的副本——上一份副本连 NUL 那道都没有，一个内容是文本的 `.png` 在 payload 里是文本、在字节端点上却被当图发出去。
+
+## 提交历史
+
+History tab 的三样东西——提交列表、一次提交改了哪些文件、其中一个文件的补丁——**只往只读白名单里加了 `log` 一条**，其余全部落在已有条目上：提交的 diff 就是 `diff <parent> <sha>`，图片两侧都是 `cat-file`，校验是 `rev-parse`。代码在 `server/git/history.ts`（列表、元数据、文件清单）与 `diff.ts`（单个文件的补丁，与工作区 diff 共用三道闸）。
+
+- **`log` 的 argv 整条是字面量**，只有两种形态：列表是 `log --no-show-signature --no-color -z --format=%H%x00%P%x00%an%x00%at%x00%s --max-count=<n> --skip=<n> <起点> --`（起点是第一页的字面量 `HEAD`、或请求带来的完整对象名），单条提交是同一串去掉 `--skip`、`--max-count=1`。冒烟逐段钉着它（数值那两段只钉形状），理由与 `cat-file` 那条一样——白名单只看子命令，而 `log` 的参数面里有会拉起外部程序的开关：
+  - **`--no-show-signature`**：用户配了 `log.showSignature` 时 `log` 会对每条提交起一次 gpg，挡它要显式关掉。git 下限 2.11 已有这个开关。
+  - **不带 `-p` / `--stat` / 任何 diff 选项**：`log` 一旦开始算 diff，`diff.external` 与 textconv 驱动就都在射程内。列表只要元数据。
+  - **`-z` + 固定五段**：`-z` 让记录之间以 NUL 分隔，`%x00` 让字段之间也是 NUL，于是每条提交恰好五段，按 5 一组切。主题行（`%s`）不含 NUL 与换行，作者名可以有空格——两者都不是分隔符；根提交的 `%P` 是空段，不是缺段。
+- **范围参数只能是完整对象名，`--` 收尾**：请求里的 `sha` / `head` 必须匹配 `^[0-9a-f]{40}([0-9a-f]{24})?$`，不认缩写、不认 `HEAD~3` 一类 revision 表达式，更不认 `-` 开头的值。它们会被原样拼进 argv 的 revision 位置，而那个位置 `GIT_LITERAL_PATHSPECS` 管不到——`--output=<路径>` 在那里就是一次写文件。末尾那个 `--` 让 git 不再把之后的任何东西当选项。
+- **对象名合法不等于是本仓库里的一个提交**。单条提交那三条路（详情、补丁、图片）共用一个 `resolveCommit`：一次 `log -1` 同时校验与取元数据，**判据是回来的那条正好就是问的这个 sha**——`log` 对不存在的对象以 128 退出，对树与 blob 却以 0 退出、输出为空，对附注标签则剥到它指向的提交（实测），只看退出码三种都漏一种。失败一律 `not-found`。**对比端也只在 `resolveCommit` 里定一次**：三条路各自去找父提交时，将来改一处漏一处，文件清单、补丁与图片就是对着三个不同的父在比，而不报错。
+- **分页是「锚点 + skip」，不是「从 HEAD 往下数」**：第一页不带 `head` 参数，后端直接从 `HEAD` 起 `log`，回来的第一条就是 HEAD 此刻的 oid、写进响应的 `head`（失败时再问一次 `rev-parse --verify --quiet HEAD`——`repo.ts` 的 `headOid`，「未出生」的判据只此一份，diff 基准退回空树用的也是它——分开两种：未出生退 1，是「没有提交」；指着一个读不出来的提交（中断的 fetch、坏掉的 shallow 文件）却退 0 并照样印出 oid，那是一个真实的故障，如实报错——`log` 对两者都退 128，只看它就会把故障说成 `No commits yet`）；锚点那一路 `log` 非零退出即锚点不存在；之后每一页都以这个 oid 为起点再 `--skip`（前端怎么把新提交接在顶上而锚点不动，见 [`web.md`](web.md)）。按 HEAD 数的写法在 agent 中途提交时会让第二页重复第一页的最后一条，而这正是这个工具最常见的使用时刻。一页 50 条，取 51 条来判 `hasMore`，不另起一次计数。空仓库（HEAD 未出生）回 `{ head: null, commits: [], hasMore: false }`，不是错误。
+- **一次提交改了哪些文件：`diff --no-ext-diff --no-textconv <parent> <sha> --name-status -z -M`**。重命名记录占**三段**——`R<score>` `<旧路径>` `<新路径>`，与 numstat 同为旧在前、与 porcelain 相反——平铺切分会把旧路径当成下一条记录的状态字段。状态字母只认 `A` / `M` / `D` / `R` / `T`（`C` 不会出现：没开 `-C`）。
+- **父提交是第一父**：`resolveCommit` 那次 `log` 顺手带回 `%P`，取第一个；**合并提交因此展示的是「这次合并相对主线带进来了什么」**，与 GitHub 的提交页、VS Code 的 Timeline 同一口径。组合 diff（`-c` / `--cc`）不做：它的补丁格式 diff2html 解析不了。**根提交没有父**，对比端用空树哈希（`repo.ts` 那份，与空仓库同一个常量），按 sha 的长度定格式（64 位即 SHA-256），不为它多起一次进程。**浅克隆的边界不是根提交**：它的 `%P` 同样为空，只是父提交没被取下来——拿空树去比会把整个仓库报成「全部新增」。`%P` 为空时读共享 git 目录下的 `shallow` 文件（逐行列着边界提交，实测 `--depth 1` 之后正好是 HEAD），命中就不比：文件清单为空并标 `shallow`，补丁与图片回 `unsupported`。不缓存——`fetch --deepen` 会改这个文件。
+- **单个文件的补丁与工作区 diff 共用一套三道闸**：`diff --no-ext-diff --no-textconv <parent> <sha> --numstat -z [-M] -- <path> [<旧路径>]` 先判二进制与行数（按路径挑、按合计算，与工作区那条完全一样），再带 `maxStdoutBytes` 取补丁。两侧都在对象库里，没有未跟踪那条路、也不读磁盘；拒绝时的 `size` 用 `cat-file -s` 取新侧那个 blob（删除则取旧侧）——同一个文件在工作区 diff 里说「file is 6 MB」，这里也得说同一个数；只在要拒绝的那两条分支上才问。
+- **图片两侧都读对象库**：旧侧 `<parent>:<旧路径或路径>`、新侧 `<sha>:<路径>`，存在性与体积用 `cat-file -s`、字节用 `cat-file blob`，与工作区 diff 的旧侧同两条字面量。`version` 分别是 parent 与 sha 的对象名——提交不可变，这两个身份永远不会换内容。`/api/blob` 带 `commit=<sha>` 即走这一路。
 
 ## 目录树的两条 `ls-files`
 

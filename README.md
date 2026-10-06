@@ -132,7 +132,7 @@ instead, so everything still refreshes; it may just land a second or two later.
 
 difftab is deliberately a viewer. Permanently out of scope: any repository write operation,
 code editing, accounts and cloud sync, and multi-user review workflows. Out of the current
-version: commit history, branch lists, blame. The full list, and the reasoning, is in
+version: branch lists, blame. The full list, and the reasoning, is in
 [CONTRIBUTING.md](CONTRIBUTING.md#the-read-only-promise-is-not-negotiable).
 
 ## Contributing

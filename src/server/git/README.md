@@ -2,6 +2,8 @@
 
 status / diff / numstat 的调用与解析，外加文件浏览器那两样：`tree.ts`（一层目录的两条 `ls-files`）与 `file.ts`（只读读一个文件），以及 `image.ts`——`/api/blob` 两侧的图片字节（扩展名表本身在 `worktree.ts`，它是分类链的一环）：`new` 侧读工作区（过 `worktree.ts` 那把钥匙），`old` 侧是本目录**唯一一处读对象库**的调用 `cat-file blob <base>:<path>`（存在性与体积另用 `cat-file -s`）。参数只许这两种字面量——`--filters` / `--textconv` 会跑 smudge / textconv 驱动，而白名单只看子命令。
 
+`history.ts` 是提交历史：列表、一次提交的元数据与文件清单，**为它只加了 `log` 一条白名单**，argv 整条是字面量；提交里单个文件的补丁在 `diff.ts`（与工作区 diff 共用三道闸），图片两侧在 `image.ts`（带 `commit` 时两侧都是 `cat-file`）。
+
 `worktree.ts` 是三者共同的底座：仓库边界（两道）、只读读一个文件的分类链、以及 5MB / 50,000 行两道闸都归它，`diff.ts` / `file.ts` / `tree.ts` 平级 import。它**不起 git 子进程**——树上点得到的路径包含未跟踪与被忽略的文件，那些在对象库里根本没有对应的对象。它先前长在 `diff.ts` 里，于是两个新模块反向 import 一个 feature 模块，而「只读读磁盘」这个 concern 没有 owner，只有一个恰好先写出来的宿主。
 
 另一个例外是 `operation.ts`：进行中的多步操作（rebase / merge / …）在 porcelain 输出里一行都没有，只能读 git 目录下的状态文件，所以它是本目录里**不起子进程**的那一个。为它多起一次 git 既落在每次 `/api/state` 上，又要往只读白名单里添条目。

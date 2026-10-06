@@ -74,3 +74,31 @@ export function latestWins(): Tickets {
     },
   };
 }
+
+/**
+ * 「后发的说了算」的另一种取舍：**不作废，搭车 + 回来后补跑一次**。`latestWins` 每发一次就作废上一次
+ * ——端点比事件间隔慢时（agent 跑动期间的 SSE 每 150ms 一个，`git log` 在大仓库上要几百毫秒），每份
+ * 结果回来时都已经不是最新的那张票，于是一份都落不了地。这里在途时不另发：调用方拿到的是在途那一次的
+ * promise——它在所有补跑结束后才落定；在途期间又被叫过的话，它回来之后**再跑一次**——那一次叫的人想要的是「叫的那一刻之后」的
+ * 状态，而在途那一次是在那之前发出去的，搭车不等于拿到了答案。补跑最多一次，不随叫的次数累加。
+ */
+export function singleFlight(run: () => Promise<void>): () => Promise<void> {
+  let inflight: Promise<void> | null = null;
+  let again = false;
+  const loop = async () => {
+    do {
+      again = false;
+      await run();
+    } while (again);
+  };
+  return () => {
+    if (inflight !== null) {
+      again = true;
+      return inflight;
+    }
+    inflight = loop().finally(() => {
+      inflight = null;
+    });
+    return inflight;
+  };
+}

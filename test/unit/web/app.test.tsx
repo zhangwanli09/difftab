@@ -121,13 +121,17 @@ const tabOf = (label: string): HTMLButtonElement => {
   return found as HTMLButtonElement;
 };
 
-describe('侧栏那两个 tab', () => {
-  it('只画图标，名字由 aria-label 给——掉了它这两个就是无名控件，而页面上看不出来', () => {
+describe('侧栏那三个 tab', () => {
+  it('只画图标，名字由 aria-label 给——掉了它这几个就是无名控件，而页面上看不出来', () => {
     render(<App />, container);
     const tabs = [...container.querySelectorAll('[role="tab"]')];
-    expect(tabs.map((tab) => tab.getAttribute('aria-label'))).toEqual(['Changes', 'Files']);
+    expect(tabs.map((tab) => tab.getAttribute('aria-label'))).toEqual([
+      'Changes',
+      'Files',
+      'History',
+    ]);
     // 名字不在文本里、图标真的画出来了：两条一起才说明「换成图标」这件事成立
-    expect(tabs.map((tab) => tab.textContent)).toEqual(['', '']);
+    expect(tabs.map((tab) => tab.textContent)).toEqual(['', '', '']);
     expect(tabs.every((tab) => tab.querySelector('svg') !== null)).toBe(true);
   });
 

@@ -2,15 +2,23 @@
 //
 // **这是本目录唯一一处读对象库的调用。** 判「这是不是图片」不在这里——那是分类链的一环，
 // 归 `worktree.ts`：新侧的字节就是 `inspectFile` 那条链本身（`image` 支带着 `buffer`），本文件
-// 只负责旧侧，以及把两侧的结果翻译成「字节 + MIME」或一个 400。
+// 只负责旧侧——以及提交历史里两侧都在对象库的那一路——并把结果翻译成「字节 + MIME」或一个 400。
 //
 // 参数只许 `cat-file blob` 与 `cat-file -s` 两种字面量：`--filters` / `--textconv` 会让 git
 // 跑 smudge / textconv 驱动（LFS 的 smudge 往 `.git/lfs/objects` 写、缺对象时还会联网），而只读
 // 白名单只看子命令、看不见参数——这是它唯一漏得过的形态，冒烟里因此单独钉了一条参数断言。
 
-import { resolveDiffBase } from './repo.ts';
+import { requireParent, resolveCommit } from './history.ts';
+import { type RepoInfo, resolveDiffBase } from './repo.ts';
 import { GitError, type GitResult, runGit, runGitRaw } from './run.ts';
-import { imageMimeOf, inspectFile, MAX_BYTES, resolveInRepo, WorktreeError } from './worktree.ts';
+import {
+  imageMimeOf,
+  inspectFile,
+  literalRepoPath,
+  MAX_BYTES,
+  resolveInRepo,
+  WorktreeError,
+} from './worktree.ts';
 
 export type ImageSideName = 'old' | 'new';
 
@@ -52,12 +60,22 @@ export interface ImageBytes {
  * `maxStdoutBytes` 去撞，超限即就地掐断 git。
  */
 export async function readImageBytes(
-  root: string,
+  repo: RepoInfo,
   path: string,
   side: ImageSideName,
+  commit?: string,
 ): Promise<ImageBytes> {
+  const { root } = repo;
   const mime = imageMimeOf(path);
   if (mime === null) throw new WorktreeError('invalid-path', 'not an image');
+
+  // 提交历史那一侧两边都在对象库里：旧侧是第一父、新侧是提交本身。路径只过字面量那道——
+  // 文件在工作区里可能早已不在，而这里不落磁盘
+  if (commit !== undefined) {
+    const resolved = await resolveCommit(repo, commit);
+    const rev = side === 'new' ? resolved.commit.sha : requireParent(resolved);
+    return { buffer: await readBlob(root, rev, literalRepoPath(root, path).path), mime };
+  }
 
   if (side === 'new') {
     const file = await inspectFile(root, path);
@@ -71,9 +89,14 @@ export async function readImageBytes(
     resolveDiffBase(root),
     resolveInRepo(root, path, { follow: false }),
   ]);
+  return { buffer: await readBlob(root, base.ref, normalized), mime };
+}
+
+/** `cat-file blob <rev>:<path>`，带 `maxStdoutBytes` 去撞 5MB。 */
+async function readBlob(root: string, rev: string, normalizedPath: string): Promise<Buffer> {
   let result: GitResult<Buffer>;
   try {
-    result = await runGitRaw(['cat-file', 'blob', blobRef(base.ref, normalized)], root, {
+    result = await runGitRaw(['cat-file', 'blob', blobRef(rev, normalizedPath)], root, {
       maxStdoutBytes: MAX_BYTES,
     });
   } catch (cause) {
@@ -82,7 +105,7 @@ export async function readImageBytes(
     }
     throw cause;
   }
-  // 非零退出在这里只有一种解释：基准里没有这条路径（新增的文件、或基准是空树）
+  // 非零退出在这里只有一种解释：那一端里没有这条路径（新增的文件、或基准是空树）
   if (result.code !== 0) throw new WorktreeError('not-found', 'no such file in the diff base');
-  return { buffer: result.stdout, mime };
+  return result.stdout;
 }

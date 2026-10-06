@@ -74,7 +74,10 @@
 | `GET /api/diff?path=&oldPath=` | `DiffPayload` | 按文件懒加载；`oldPath` 仅重命名条目传 |
 | `GET /api/tree?path=` | `TreePayload` | 文件浏览器的目录树，**按目录懒加载**，一次只回一层；`path` 缺省即仓库根 |
 | `GET /api/file?path=` | `FilePayload` | 单个文件的只读内容；`path` 必填 |
-| `GET /api/blob?path=&side=old\|new` | 图片字节，`Content-Type` 是精确的图片 MIME | **只服务图片扩展名表里的路径**；`old` 侧读 diff 基准里的 blob、`new` 侧读工作区；`path` / `side` 都必填 |
+| `GET /api/blob?path=&side=old\|new&commit=` | 图片字节，`Content-Type` 是精确的图片 MIME | **只服务图片扩展名表里的路径**；`old` 侧读 diff 基准里的 blob、`new` 侧读工作区；`path` / `side` 都必填。**带 `commit` 时两侧都读对象库**：`old` 是该提交第一父里的 blob、`new` 是该提交里的 |
+| `GET /api/commits?head=&skip=` | `CommitPage` | 提交列表，一页 50 条；`head` 缺省即「从 HEAD 起、并把 HEAD 的 oid 作为锚点回传」，之后的页都带着它 |
+| `GET /api/commit?sha=` | `CommitDetail` | 一次提交的元数据 + 改了哪些文件；`sha` 必填 |
+| `GET /api/commit-diff?sha=&path=&oldPath=` | `DiffPayload` | 一次提交里单个文件的补丁（相对第一父），三道闸与 `/api/diff` 同一套；`sha` / `path` 必填 |
 | `GET /api/events` | SSE | 事件 `change` / `heartbeat`；空闲退出以本端点的连接数判定 |
 | `GET /api/instance` | `{ repoRoot, pid }` | 探活复用**唯一**的消费者（不是给前端的） |
 
@@ -82,7 +85,7 @@
 
 - `FileEntry { path; oldPath?; kind: 'tracked' | 'untracked'; staged; unstaged; renameScore?; conflicted? }`——`staged` / `unstaged` 承载 `porcelain=v2` 的双状态位，`oldPath` + `renameScore` 来自 `2 ` 记录。
   - **`conflicted` 是「这条来自 `u` 记录」这一事实本身**，不是从状态位推出来的：`DD` / `AA` 两位都不是 `U`，而「未合并」恰恰是那三个分组谓词唯一无法从 XY 读出来的东西。归属留给前端等于让它自己重写一遍 porcelain 的记录类型。
-- `BranchState { head; detached; upstream: null | { ahead; behind }; operation? }`——**`upstream: null` 即「无上游」**，把它编码进类型而非留作约定，前端就不可能漏掉这条分支。`operation` 缺省即「没有进行中的多步操作」。
+- `BranchState { head; detached; upstream: null | { ahead; behind }; oid?; operation? }`——**`oid` 是 HEAD 此刻指向的提交**（`# branch.oid`，缺省即 HEAD 未出生），前端拿它判提交列表要不要重取：能让提交列表变的只有 HEAD 挪动，而它本来就在那一次 status 输出里。**`upstream: null` 即「无上游」**，把它编码进类型而非留作约定，前端就不可能漏掉这条分支。`operation` 缺省即「没有进行中的多步操作」。
 - `DiffPayload` 为判别联合：`{ kind: 'text', patch }` / `{ kind: 'binary' }` / `{ kind: 'image', old, new }` / `{ kind: 'too-large', size, reason: 'size' | 'lines' }` / `{ kind: 'untracked-text', patch }`。
   - **`too-large` 必须带 `reason`**：它有**两个**触发口（体积超 5MB 与行数超 50,000）。只带 `size` 时，行数那一路的文件可能只有几百 KB，前端手里唯一的数字既解释不了为什么不预览、按 MB 取整还会显示「文件过大（0 MB）」这种自相矛盾的话。判别原因属后端知识。
   - **`size` 只用于展示，不是判定依据**，且**可以是 0**——已被删除的文件在工作区没有体积可取。前端据此不显示体积，而不是把 0 四舍五入成「1 KB」：编一个数出来比不说更糟。
@@ -96,6 +99,13 @@
   - **`symlink` 单独成一支**，不并进 `text`：给的是链接目标字符串而不是目标内容，两者在页面上要说的话不同（「这是一个指向 X 的链接」对「这是 X 的内容」）。
   - `too-large` 的 `size` / `reason` 与 `DiffPayload` 同一条判据，两个触发口，`size` 单独解释不了拒绝的原因。
   - `image` 的判据与 diff 那侧同一条（二进制 ∧ 扩展名），字节由 `/api/blob?side=new` 给。
+- `CommitSummary { sha; parents; author; time; subject }`、`CommitPage { head; commits; hasMore }`、`CommitDetail { …CommitSummary; files }`、`CommitFileEntry { path; oldPath?; status: 'A' | 'M' | 'D' | 'R' | 'T' }`——提交历史那三个端点（git 判据见 [`git.md`](git.md) 的「提交历史」）。
+  - **`sha` 与 `head` 都是完整对象名**，前端原样回传、不缩写不拼接：短哈希只是展示，截断归前端。
+  - **`CommitDetail.shallow`** 即浅克隆的边界：父提交不在本地，`files` 因此为空——不是「这次提交没改东西」。
+  - **`head: null` 即空仓库**，与 `upstream: null` 同一个取向：把「没有」编码进类型，而不是给一个空串让前端去猜。
+  - **`time` 是作者时间的 Unix 秒**，「3 hours ago」怎么说归前端。只带作者不带提交者：rebase 过的提交两者不同，而这一栏回答的是「谁写的、什么时候写的」。
+  - **`CommitFileEntry` 不复用 `FileEntry`**：后者的 `staged` / `unstaged` / `kind` 是工作区的双状态位，一次提交只有一个状态字母，硬塞进去等于让前端分组逻辑面对一份永远不该出现的组合。
+  - **非法 `sha`（不是完整对象名）与不存在的提交都回 400**，`code` 分别是 `invalid-path` / `not-found`，与其余端点的 `WorktreeError` 同一张映射，不另设 404 分支。partial clone 里内容不在本地的提交是 `unsupported`——如实说取不到，不替用户去远端取。
 - `WatchState { mode: 'native' | 'polling'; tier: 'A' | 'B' | 'C' }`——降级既可能是 C 档的既定形态、也可能是 A/B 档运行中落到轮询兜底，**前端无从自己推断，必须由后端告知**。
 
 **错误约定**：`{ error: { code, message } }`，`message` **不含绝对路径**。

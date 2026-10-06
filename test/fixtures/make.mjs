@@ -77,6 +77,8 @@ export const ALL_REPOS = [
   'sha256Empty',
   'ignoredTree',
   'images',
+  'history',
+  'driverTraps',
 ];
 
 /**
@@ -614,6 +616,105 @@ export function makeFixtures(destDir, only) {
     write(cwd, 'blob.bin', binaryBytes('v2 with different length'));
     write(cwd, 'fake.png', 'still not a png\n');
     repos.images = cwd;
+  }
+
+  // 11. 提交历史：根提交、修改、`git mv` 重命名、改写一张 PNG、一次 `--no-ff` 合并，再补足到过
+  //     50 条——**每一样钉一件事**：根提交没有父（对比端是空树）、`--name-status -z` 的重命名
+  //     记录占三段、图片两侧都从对象库读、合并提交只对第一父求 diff、第二页存在且不与第一页重叠。
+  //     时间逐条递增：所有提交同一秒时 `log` 的顺序只剩拓扑序，断言「第一条是最新的」就没了依据
+  if (wanted('history')) {
+    const cwd = init('history');
+    let tick = 0;
+    /** 下一秒的时间戳下跑一条 git 命令（commit / merge 都要它）。 */
+    const atNextTick = (...args) => {
+      tick += 1;
+      const date = new Date(Date.UTC(2026, 0, 1, 0, 0, tick)).toISOString();
+      execFileSync('git', args, {
+        cwd,
+        env: { ...env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    };
+    const commitAt = (message) => {
+      git(cwd, 'add', '-A');
+      atNextTick('commit', '--quiet', '--allow-empty', '-m', message);
+    };
+    write(cwd, 'README.md', '# history\n');
+    write(
+      cwd,
+      'src/a.txt',
+      lines(10, (i) => `line ${i}`),
+    );
+    write(cwd, 'img/p.png', tinyPng(PNG_RED));
+    commitAt('root commit');
+
+    write(
+      cwd,
+      'src/a.txt',
+      lines(10, (i) => (i === 3 ? 'changed' : `line ${i}`)),
+    );
+    commitAt('edit a');
+
+    git(cwd, 'mv', 'src/a.txt', 'src/b.txt');
+    commitAt('rename a to b');
+
+    write(cwd, 'img/p.png', tinyPng(PNG_BLUE));
+    commitAt('recolor png');
+
+    git(cwd, 'checkout', '--quiet', '-b', 'side');
+    write(cwd, 'side.txt', 'from side\n');
+    commitAt('side work');
+    git(cwd, 'checkout', '--quiet', 'main');
+    write(cwd, 'main.txt', 'from main\n');
+    commitAt('main work');
+    atNextTick('merge', '--quiet', '--no-ff', '-m', 'merge side', 'side');
+
+    // 第一条补足提交顺带放一个超行数闸的文件：提交 diff 被拒时报不报体积，只有它证伪得了
+    write(
+      cwd,
+      'wide.txt',
+      lines(OVER_LINE_COUNT, (i) => `wide ${i}`),
+    );
+    commitAt('step 0');
+    // 其余补足到过 50 条只为翻页：空提交即可，省掉每条一次 `add`
+    for (let i = 1; i < 52; i += 1) {
+      atNextTick('commit', '--quiet', '--allow-empty', '-m', `step ${i}`);
+    }
+    repos.history = cwd;
+  }
+
+  // 12. 两个「读一下就写库」的陷阱同住一个仓库：**`blob:none` 的 partial clone**（旧提交的 blob
+  //     不在本地，git 默认当场从 promisor remote 取回来写进 `.git/objects`）+ **配了
+  //     `cachetextconv` 的 textconv 驱动**（补丁形态的 `git diff` 把转换结果写进
+  //     `refs/notes/textconv/<驱动>`）。工作区再改一下，让工作区 diff 那条路也踩一次。两者都不让任
+  //     何命令失败、不改 status 输出，只有 `.git` 逐字节比对看得见。textconv 用 `cat`：它只需要
+  //     「真的跑了一个外部程序」，Windows 档的 Git for Windows 也带着它
+  if (wanted('driverTraps')) {
+    const origin = init('driverTraps-origin');
+    git(origin, 'config', 'uploadpack.allowFilter', 'true');
+    write(origin, '.gitattributes', '*.x diff=up\n');
+    write(origin, 'f.x', 'one\n');
+    commit(origin, 'first');
+    write(origin, 'f.x', 'two\n');
+    commit(origin, 'second');
+    write(origin, 'f.x', 'three\n');
+    commit(origin, 'third');
+
+    const cwd = join(dest, 'driverTraps');
+    git(
+      dest,
+      'clone',
+      '--quiet',
+      '--no-local',
+      '--filter=blob:none',
+      pathToFileURL(origin).href,
+      cwd,
+    );
+    git(cwd, 'config', 'core.autocrlf', 'false');
+    git(cwd, 'config', 'diff.up.textconv', 'cat');
+    git(cwd, 'config', 'diff.up.cachetextconv', 'true');
+    write(cwd, 'f.x', 'dirty\n');
+    repos.driverTraps = cwd;
   }
 
   // 没生成的仓库不能是 undefined：调用方会拿着它去 spawn,cwd 变成进程当前目录，

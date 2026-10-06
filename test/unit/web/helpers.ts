@@ -3,8 +3,9 @@
 // 收进来的判据是「第二份出现时就得记得另一份也在」：重置标签栏那四行贴在九个文件里，给
 // `editors.ts` 加一个 signal 就是九处 `afterEach` 要补，漏一处不报错、只是状态漏进下一个用例。
 
-import { vi } from 'vitest';
+import { expect, vi } from 'vitest';
 import type { FileEntry } from '../../../src/server/shared/protocol';
+import { STATUS_WIDTH } from '../../../src/web/components/tree-row';
 import {
   activeEditorKey,
   type EditorKind,
@@ -13,18 +14,37 @@ import {
   openEditor,
   pinEditor,
 } from '../../../src/web/state/editors';
-import { diffStates, fileStates } from '../../../src/web/state/store';
+import {
+  commitDetails,
+  expandedCommits,
+  historyError,
+  historyList,
+  loadingMore,
+  moreError,
+} from '../../../src/web/state/history';
+import { commitDiffStates, diffStates, fileStates } from '../../../src/web/state/store';
 
-/** 清空标签栏与两张缓存。用到右侧状态的用例都从这里起。 */
+/** 清空标签栏与三张缓存。用到右侧状态的用例都从这里起。 */
 export function resetEditors(): void {
   editors.value = [];
   activeEditorKey.value = null;
   diffStates.value = new Map();
   fileStates.value = new Map();
+  commitDiffStates.value = new Map();
+}
+
+/** 清空 `History` 那一档：列表、详情缓存、展开集合。 */
+export function resetHistory(): void {
+  historyList.value = null;
+  historyError.value = null;
+  loadingMore.value = false;
+  moreError.value = null;
+  commitDetails.value = new Map();
+  expandedCommits.value = new Set();
 }
 
 /** 开一个固定 tab——产品里开出来的一律是预览，固定是双击那一下另做的，用例里合成一步。 */
-export function openPinned(kind: EditorKind, path: string): void {
+export function openPinned(kind: Exclude<EditorKind, 'commit'>, path: string): void {
   openEditor(kind, path);
   pinEditor(editorKey(kind, path));
 }
@@ -91,8 +111,20 @@ export const groupOf = (node: Element | null | undefined) => node?.closest('.gro
 export const actionOf = (row: Element | null | undefined, label: string) =>
   groupOf(row)?.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`) ?? null;
 
-/** 行按钮里行内动作的占位：没有内容、带显隐变体的那个空 span。 */
-export const spacerIn = (row: Element | null | undefined) =>
-  [...(row?.querySelectorAll('span') ?? [])].find(
+/**
+ * 行按钮里只在悬停时进流的空 span：先是行内动作的占位，没有状态记号的行再跟一个状态位宽的空槽。
+ */
+export const revealSlotsIn = (row: Element | null | undefined) =>
+  [...(row?.querySelectorAll('span') ?? [])].filter(
     (node) => node.classList.contains('hidden') && node.textContent === '',
   );
+
+/** 行按钮里行内动作的占位：空 span 里的第一个。 */
+export const spacerIn = (row: Element | null | undefined) => revealSlotsIn(row)[0];
+
+/** 断言这一行悬停时补了状态位宽的空槽：占位之后紧跟一个 `STATUS_WIDTH`。 */
+export function expectStatusGap(row: Element | null | undefined) {
+  const slots = revealSlotsIn(row);
+  expect(slots).toHaveLength(2);
+  expect(slots[1]?.classList.contains(STATUS_WIDTH)).toBe(true);
+}

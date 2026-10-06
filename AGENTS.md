@@ -50,9 +50,9 @@
 
 | 改这块 | 动手前读 |
 |---|---|
-| git 封装层、status/diff 解析、二进制与体积闸、git 异常状态、目录树的 `ls-files`、只读读文件 | `docs/design/git.md` |
+| git 封装层、status/diff 解析、二进制与体积闸、git 异常状态、目录树的 `ls-files`、只读读文件、提交历史的 `log` 与提交 diff | `docs/design/git.md` |
 | 文件监听、三档策略、自动刷新、轮询兜底 | `docs/design/watch.md` |
-| 前端组件与 signals、界面文案、页面骨架、变更列表、侧栏 tab、文件树、标签页标题、logo / favicon / 品牌资产 | `docs/design/web.md`；右侧面板、编辑器标签页（预览 / 固定 / 关闭 / SSE 收编）、文件视图读 `docs/design/editors.md` |
+| 前端组件与 signals、界面文案、页面骨架、变更列表、侧栏 tab、文件树、History tab、标签页标题、logo / favicon / 品牌资产 | `docs/design/web.md`；右侧面板、编辑器标签页（预览 / 固定 / 关闭 / SSE 收编 / commit tab）、文件视图读 `docs/design/editors.md` |
 | diff2html 渲染、hljs 清单、版式切换、产物体积 | `docs/design/diff-render.md` |
 | Tailwind token、样式层叠与主题、`--d2h-*` 覆写 | `docs/design/style.md` |
 | CLI 入口与 Node 下限、进程生命周期与单实例、HTTP/SSE 协议、token 与 CSP | `docs/design/server.md` |
@@ -81,6 +81,8 @@
 - 封装层统一注入 `-c core.quotePath=false`——`-z` 管不到补丁正文，漏了界面上直接显示 `\351\234\200`
 - 封装层统一设 `GIT_OPTIONAL_LOCKS=0`——否则 `git status` 写回 `.git/index`，只有逐字节比对与「读 `/api/state` 不引出刷新事件」两处看得见
 - 封装层统一设 `GIT_LITERAL_PATHSPECS=1`——pathspec 默认是通配模式，`path=*` 会回一份整仓 diff
+- 封装层统一设 `GIT_NO_LAZY_FETCH=1`——partial clone 里读一个不在本地的 blob 就会从远端取回来写进 `.git/objects`；git < 2.44 不认这个变量，提交历史在那一档 partial clone 下整个拒绝
+- **每一条 `git diff` 紧跟子命令带 `--no-ext-diff --no-textconv`**（`run.ts` 按子命令注入，调用点不写）——补丁形态会跑 textconv 驱动，配了 `cachetextconv` 时写 `refs/notes/textconv/*`；两条都只有 `.git` 逐字节比对看得见
 - `porcelain=v2 -z` 的重命名记录占**两个** NUL 段；无上游时不输出 `# branch.ab` 行
 - `diff --numstat -z` 的重命名记录占**三**段（空路径 + 旧 + 新，顺序与 porcelain 相反）——平铺切分会把路径当成记录
 - 重命名取 diff 必须传新旧两个路径（`-M -- <新> <旧>`），否则退化成全新增
@@ -99,6 +101,9 @@
 - **进行中的操作在 porcelain 里一行都没有**：判据是 git 目录下的状态文件、按序取第一个命中，rebase 必须先于 merge 判
 - **状态文件一律按 `rev-parse --git-dir` 找，禁拼 `<root>/.git`**——linked worktree 与 submodule 下永远读不到，于是永远标不出操作
 - **冲突的判据是「这条来自 `u` 记录」而不是状态位**——`DD`/`AA` 里一个 `U` 都没有
+- **`log` 的 argv 整条是字面量、只许两种形态**（`--no-show-signature` + `-z` + 固定 `--format`，不带任何 diff 选项）——`log.showSignature` 会起 gpg、`-p` 会走外部 diff / textconv，而白名单只看子命令
+- **提交历史的 `sha` / `head` 只认完整十六进制对象名**——它们拼在 revision 位置，`GIT_LITERAL_PATHSPECS` 管不到，`--output=…` 在那里就是一次写文件
+- **提交历史只加了 `log` 一条白名单**：提交 diff 走 `diff <parent> <sha>`、父提交取 `%P`，禁引入 `show` / `diff-tree` / `rev-list`
 - **图片旧侧只许 `cat-file blob` / `cat-file -s` 两种字面参数**——`--filters` / `--textconv` 会跑 smudge / textconv 驱动（LFS 的写 `.git/lfs`）而白名单只看子命令、看不见参数；换成 `show` 则参数面大到钉不住
 
 ### 文件监听（`design/watch.md`）
@@ -185,7 +190,7 @@
 **长期不做**是架构性承诺，破例等于变成另一个产品；**首版不做**是本版范围收窄。**两类在开发期同为硬约束——「首版不做」不等于「可以先做」。**
 
 - 长期：**任何仓库写操作**（不 stage/unstage、不 commit、不 discard、不 pull/push/sync、不建/切分支、不 stash；作用域见第 1 节）、代码编辑功能、账号体系与云同步、多用户协作交互
-- 首版：提交历史查看、分支列表展示（只展示当前分支）、逐行 blame 等 GitLens 类深度追溯、界面语言切换
+- 首版：分支列表展示（只展示当前分支）、逐行 blame 等 GitLens 类深度追溯、界面语言切换
 
 ## 7. 发布与维护约定
 

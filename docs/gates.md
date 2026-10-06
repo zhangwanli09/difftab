@@ -24,7 +24,7 @@
 | `pnpm typecheck` | 用到 Node 24+ 才有的内置 API 或超出 ES2023 的语法，而下限档要到 CI 跑完才发现 | build |
 | `pnpm test`（Vitest） | 解析器、三道校验、DOM 渲染路径的常规回归。`test-layout.test.ts` 另外钉住「用例目录放错就静默不跑」 | build |
 | `pnpm test:smoke`（`node --test`，跑 `dist/`） | 产物层面的行为回归。**先 `pnpm build`**——它跑 `dist/`，产物比源码旧一轮时红的样子像「三道校验全坏了」 | matrix（三平台 × Node 22.0.x/24/26） |
-| 只读**主门禁**（`readonly.test.js`） | 产品发出了白名单外的 git 子命令。**自带一条「确实记到了东西」的正面断言**——否则白名单会对着空数组通过。**白名单只看子命令，看不见参数**，所以另有两条按参数钉的断言：`diff` 不带 `--no-index` / `--ext-diff` / `--output`，`cat-file` 之后只能是 `blob` / `-s`（`--filters` / `--textconv` 会跑 smudge，LFS 的那个写 `.git/lfs`）。**覆盖面等于 `runFullFlow` 打过的端点**：新增一个端点却不把它加进那条流程，门禁不会红，只是那条路上的 git 调用一次都没被看过 | matrix |
+| 只读**主门禁**（`readonly.test.js`） | 产品发出了白名单外的 git 子命令。**自带一条「确实记到了东西」的正面断言**——否则白名单会对着空数组通过。**白名单只看子命令，看不见参数**，所以另有两条按参数钉的断言：`diff` 不带 `--no-index` / `--ext-diff` / `--output` 且紧跟着 `--no-ext-diff --no-textconv`，`cat-file` 之后只能是 `blob` / `-s`（`--filters` / `--textconv` 会跑 smudge，LFS 的那个写 `.git/lfs`），`log` 的 argv 逐段等于那两种字面量形态（`--no-show-signature` 挡 gpg，不带任何 diff 选项挡外部 diff 驱动）。**覆盖面等于 `runFullFlow` 打过的端点**：新增一个端点却不把它加进那条流程，门禁不会红，只是那条路上的 git 调用一次都没被看过 | matrix |
 | 只读**第二层**（`readonly-git-dir.test.js`） | `.git` 被写了。A 半锁死 `.git` 抓会报错的写，B 半逐字节比对抓**不报错**的那种（漏设 `GIT_OPTIONAL_LOCKS=0` 只有 B 半看得见）。两半各自带一条正面探针 | matrix |
 | 子进程单点断言 | git 子进程跑出了 `server/git`、或拉起浏览器跑出了 `server/cli`。**查的是相等而非「没有多余的」**——只查多出来的一半时，两处调用点双双改名会让白名单静默变成空表 | matrix |
 | `pnpm size` | 产物体积超预算。**不进 matrix**：同一份 `dist/` 再跑 9 遍不增加覆盖，反而因各 Node 自带 zlib 不同而引入方差 | build |
@@ -61,6 +61,8 @@
 | **名字里带 `*` 的文件 + 一个会被它匹配到的邻居** | 漏设 `GIT_LITERAL_PATHSPECS=1`。路径里没有通配字符时，设不设长得一样 |
 | 新增 / 二进制 / >5MB / 超多行 | `DiffPayload` 五个分支各自的填充与渲染 |
 | **图片仓库**（已提交后改写的 PNG、删除的、`git mv` 过的、未跟踪的、外加一个非图片二进制）——**PNG 必须是真能解码的**，不是魔数 + NUL | 图片判据漏了「二进制 ∧ 扩展名」的任一半（非图片二进制被画成图 / 文本 `.png` 被画成破图）；旧侧 `cat-file` 那条路在白名单里有没有被覆盖到（`runFullFlow` 对每个 `image` 响应的两侧各打一次 `/api/blob`）；重命名旧侧 `old.path` 填的是不是 `oldPath` |
+| **提交历史仓库**（根提交、修改、`git mv` 重命名、改写一张 PNG、一次合并，总数过 50 条） | `log` 那条路在白名单里有没有被覆盖到、argv 是否逐段等于字面量（`runFullFlow` 翻两页、展开每条提交、取每个文件的提交 diff 与图片两侧）；`--name-status -z` 的三段重命名记录被平铺切分；根提交没有父、合并提交取第一父；锚点分页的第二页与第一页不重叠 |
+| **partial clone + `cachetextconv`**（`blob:none` 克隆、只有 HEAD 的 blob 在本地；`*.x diff=up` 配了缓存的 textconv 驱动；工作区里改过 `f.x`）——进第二层只读门禁的 B 半，带一条「默认环境下的同一条 `git diff` 确实改了 `.git`」的正面对照 | 封装层漏了 `GIT_NO_LAZY_FETCH`（翻提交历史时缺的 blob 被取回来写进 `.git/objects`）、或 `diff` 漏了 `--no-textconv`（补丁形态写 `refs/notes/textconv/*`）——两者都不让任何命令失败、不改任何输出 |
 | detached HEAD | 前端把 `(detached)` 当分支名画出去 |
 | merge 停在冲突 / rebase 停在冲突 | 操作标注判据表的**优先级**——把 rebase 排在 merge 之后 |
 | linked worktree / submodule（含**父仓库**那一侧） | 状态文件拼 `<root>/.git` 而不按 `rev-parse --git-dir` 找；父仓库那一侧另挡目录树把 gitlink 当成文件画（mode `160000` 在普通 `ls-files` 输出里与一个文件一模一样） |

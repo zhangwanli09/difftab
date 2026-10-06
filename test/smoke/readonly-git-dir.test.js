@@ -43,7 +43,7 @@ const WINDOWS = process.platform === 'win32';
 const EVERYONE = '*S-1-1-0';
 
 /** 本文件用得到的 fixture。生成全部 16 个要 1.5s 上下，其中一半这里根本不打开。 */
-const NEEDED = ['unicodePaths', 'empty', 'staged'];
+const NEEDED = ['unicodePaths', 'empty', 'staged', 'driverTraps'];
 
 /** 已经锁过的 `.git`，退出前必须逐个解锁，否则临时目录删不掉。 */
 const locked = new Set();
@@ -210,6 +210,34 @@ const snapshotRun = once(async () => {
 });
 
 /**
+ * B 半的第二份：**两个「读一下就写库」的陷阱**——partial clone 的 lazy fetch（缺的 blob 当场取回来
+ * 写进 `.git/objects`）与 textconv 的 `cachetextconv`（补丁形态的 diff 写 `refs/notes/textconv/*`）。
+ * 完整流程会把提交历史整个翻一遍（每条提交、每个文件），工作区那份 `f.x` 也取一次 diff。
+ *
+ * 正面对照是同一个仓库上**不带我们那两样**的一条 `git diff`（默认环境、不加 `--no-textconv`）：它必须
+ * 把 `.git` 改掉，否则这个 fixture 两个陷阱一个都没布成，上面那条就是空话。
+ */
+const trapsRun = once(async () => {
+  const repos = await fixtures();
+  const cwd = repos.driverTraps;
+  const gitDir = join(cwd, '.git');
+  const before = snapshotGitDir(gitDir);
+  const result = await runFullFlow(cwd);
+  const afterProduct = snapshotGitDir(gitDir);
+
+  const env = { ...process.env };
+  delete env.GIT_NO_LAZY_FETCH;
+  spawnSync('git', ['diff', 'HEAD~2', 'HEAD~1', '--', 'f.x'], { cwd, encoding: 'utf8', env });
+  const afterControl = snapshotGitDir(gitDir);
+
+  return {
+    result,
+    byProduct: changedEntries(before, afterProduct),
+    byControl: changedEntries(afterProduct, afterControl),
+  };
+});
+
+/**
  * A 半锁不上时怎么办：Windows 允许**显式**跳过（跳过会印在 node --test 的输出里），
  * 其余平台一律红——那说明这一半什么都没覆盖到。
  */
@@ -226,7 +254,11 @@ test('A · 只读 .git 下，变更列表与每个文件的 diff 都照常返回
   const { skip, results } = await lockedRun();
   if (!ensureCovered(t, skip)) return;
 
-  for (const { cwd, state, diffs } of results) {
+  for (const { cwd, state, diffs, commitPages, commitDiffs } of results) {
+    // 提交历史那三个端点同样只读：`log` 与提交 diff 在锁死的 `.git` 下也得照常返回
+    for (const res of [...commitPages, ...commitDiffs]) {
+      assert.equal(res.status, 200, `只读 .git 下提交历史返回了 ${res.status}:${res.body}`);
+    }
     assert.equal(state.status, 200, `${cwd} 的 /api/state 返回了 ${state.status}:${state.body}`);
     assert.ok(JSON.parse(state.body).files.length > 0, `${cwd} 的变更列表是空的——流程没跑到位`);
     assert.ok(diffs.length > 0, `${cwd}：一个 diff 都没取，流程没跑到位`);
@@ -268,6 +300,32 @@ test('B · 完整流程跑完，.git 逐字节未变', async () => {
     [],
     '产品跑完之后 .git 变了——检查 server/git/run.ts 的 GIT_OPTIONAL_LOCKS=0。' +
       '这类写入不会让任何 git 命令失败，也不改变 status 输出，只有逐字节比对看得见',
+  );
+});
+
+test('B · partial clone + cachetextconv：翻完整个提交历史，.git 逐字节未变', async () => {
+  const { result, byProduct } = await trapsRun();
+  // 正面断言：提交历史那条路确实走到了——每个文件的提交 diff 要么取到、要么被明确拒绝（缺对象），
+  // 不能是 500，更不能一条都没取
+  assert.ok(result.commitDiffs.length > 0, '一个提交 diff 都没取，流程没跑到位');
+  for (const res of result.commitDiffs) {
+    const ok = res.status === 200 || JSON.parse(res.body).error?.code === 'unsupported';
+    assert.ok(ok, `提交 diff 回了 ${res.status}：${res.body}`);
+  }
+  assert.ok(result.diffs.length > 0, '工作区那份 diff 没取，textconv 那条路没踩到');
+  assert.deepEqual(
+    byProduct,
+    [],
+    '产品跑完之后 .git 变了——检查 run.ts 的 GIT_NO_LAZY_FETCH 与 DIFF_GUARDS（--no-textconv）',
+  );
+});
+
+test('B · 正面对照：默认环境下同一个仓库里的一条 git diff 确实改了 .git', async () => {
+  const { byControl } = await trapsRun();
+  assert.notDeepEqual(
+    byControl,
+    [],
+    '对照组也没改动 .git——partial clone 与 cachetextconv 一个都没布成，上一条断言因此是空的',
   );
 });
 

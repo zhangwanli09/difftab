@@ -38,6 +38,8 @@ import {
   ExpandChevron,
   indent,
   ROW_BASE,
+  SELECTED,
+  STATUS_WIDTH,
   TreeRow,
 } from './tree-row';
 
@@ -110,7 +112,7 @@ export const CODE_COLORS: Record<StatusCode, string> = {
  * 时记号看着比编辑器里重。**是 `opacity` 不是 token 的 `/75` 修饰符**：双值 token 经 `color-mix()`
  * 会让整条声明作废。圆点是 `bg-current`，跟着外壳一起淡，不必各写。
  */
-export const STATUS_SLOT = 'ml-auto w-5 shrink-0 opacity-75';
+export const STATUS_SLOT = `ml-auto ${STATUS_WIDTH} shrink-0 opacity-75`;
 const LETTER_CLASS = `${STATUS_SLOT} text-center font-mono text-xs`;
 
 /**
@@ -181,12 +183,7 @@ function FileRow({
    * 基础类只写一次，只在选中时追加**差量**（悬停底色不在这里——它画在 `TreeRow` 的 group div 上）。
    */
   const rowClass = useComputed(
-    () =>
-      `${ROW_CLASS} ${
-        activeEditorPath.value === file.path
-          ? 'bg-list-active-selection-background text-list-active-selection-foreground'
-          : ''
-      }`,
+    () => `${ROW_CLASS} ${activeEditorPath.value === file.path ? SELECTED : ''}`,
   );
   return (
     <TreeRow

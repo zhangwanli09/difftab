@@ -9,14 +9,30 @@
 
 import { batch, computed, signal } from '@preact/signals';
 
-export type EditorKind = 'diff' | 'file';
-
-export interface Editor {
-  readonly kind: EditorKind;
+interface EditorBase {
   readonly path: string;
   /** false 即预览 tab：标题斜体，会被下一次单击顶掉。 */
   readonly pinned: boolean;
 }
+
+/**
+ * 按 `kind` 判别的联合：`commit` 才有、且一定有 `sha`。写成「`sha?` 挂在所有种类上」时类型允许
+ * 没有 sha 的 commit tab 与带 sha 的 diff tab，每个消费者只好自己挑一个判别字段去守，挑法还不一致。
+ */
+export type Editor =
+  | (EditorBase & { readonly kind: 'diff' | 'file' })
+  | (EditorBase & {
+      readonly kind: 'commit';
+      /**
+       * 这个文件是哪次提交里的那一版。**单独一个字段而不是拼进 `path`**——`path` 的消费者（两栏
+       * 高亮、tab 上的名字与目录、`title`）照旧读文件路径，不必学会拆一个复合字符串。
+       */
+      readonly sha: string;
+      /** 重命名的旧路径。取补丁要带上它（只传新路径会退化成全新增），所以跟着 tab 走。 */
+      readonly oldPath?: string | undefined;
+    });
+
+export type EditorKind = Editor['kind'];
 
 /**
  * tab 的身份是「视图种类 + 路径」：同一路径从 `Changes` 点开的 diff 与从 `Files` 点开的全文是
@@ -25,8 +41,21 @@ export interface Editor {
  */
 export type EditorKey = `${EditorKind}:${string}`;
 
-export const editorKey = (kind: EditorKind, path: string): EditorKey => `${kind}:${path}`;
-export const keyOf = (editor: Editor): EditorKey => editorKey(editor.kind, editor.path);
+/**
+ * `commit` 的键是 `commit:<sha>:<path>`：同一个文件在两次提交里是两个 tab。sha 是固定长度的
+ * 十六进制、不含 `:`，夹在中间也不产生歧义。
+ */
+export function editorKey(kind: 'diff' | 'file', path: string): EditorKey;
+export function editorKey(kind: 'commit', path: string, sha: string): EditorKey;
+// 重载把「commit 必须带 sha、另两种不许带」钉在类型上：漏传 sha 的 `editorKey('commit', path)`
+// 编得过时，得到的是一个谁都不匹配的键，高亮与关闭静默失效
+export function editorKey(kind: EditorKind, path: string, sha?: string): EditorKey {
+  return sha === undefined ? `${kind}:${path}` : `${kind}:${sha}:${path}`;
+}
+export const keyOf = (editor: Editor): EditorKey =>
+  editor.kind === 'commit'
+    ? editorKey(editor.kind, editor.path, editor.sha)
+    : editorKey(editor.kind, editor.path);
 
 /** 换掉第 `index` 项，回一份新数组。`Array.prototype.with` 是 ES2023，前端 lib 停在 ES2022。 */
 const replaceAt = (list: readonly Editor[], index: number, editor: Editor): Editor[] =>
@@ -53,7 +82,12 @@ export const activeEditor = computed<Editor | null>(() => {
  * 文件，左栏却说「你没在看它」。高亮回答的是「右侧此刻是哪个文件」，两栏各拿自己的路径去比
  * 同一个值；VS Code 的列表选中态同样不随编辑器种类变。
  */
-export const activeEditorPath = computed<string | null>(() => activeEditor.value?.path ?? null);
+export const activeEditorPath = computed<string | null>(() => {
+  const editor = activeEditor.value;
+  // **commit tab 是唯一的例外**：两栏里同名的那一行说的是工作区那一份，而右侧是历史上的某一
+  // 版——照亮它是在说一件不成立的事。判据是「左栏那一行与右侧是不是同一份内容」，不是种类
+  return editor === null || editor.kind === 'commit' ? null : editor.path;
+});
 
 /**
  * 打开（或切到）一个 tab。缺省开出来的是预览 tab，固定归双击那一路的 `pinEditor`。返回**被顶掉的
@@ -70,13 +104,27 @@ export const activeEditorPath = computed<string | null>(() => activeEditor.value
  * - 键不存在：**追加一个固定 tab，不碰现有的预览 tab**——「先开预览再 pin」会先顶掉一个无辜的
  *   预览 tab、再把顶掉它的那个固定住，两步都在这里判才不会那样
  */
-export function openEditor(kind: EditorKind, path: string, pinned = false): Editor | null {
-  const key = editorKey(kind, path);
+export function openEditor(kind: 'diff' | 'file', path: string, pinned = false): Editor | null {
+  return open({ kind, path, pinned });
+}
+
+/** 同 `openEditor`，开的是一次提交里的一个文件。 */
+export function openCommitEditor(
+  sha: string,
+  path: string,
+  oldPath?: string,
+  pinned = false,
+): Editor | null {
+  return open({ kind: 'commit', path, pinned, sha, oldPath });
+}
+
+function open(next: Editor): Editor | null {
+  const key = keyOf(next);
+  const { pinned } = next;
   const list = editors.value;
   let replaced: Editor | null = null;
   batch(() => {
     if (indexOfKey(list, key) === -1) {
-      const next: Editor = { kind, path, pinned };
       const previewIndex = pinned ? -1 : list.findIndex((editor) => !editor.pinned);
       const preview = list[previewIndex];
       if (preview === undefined) {
@@ -137,7 +185,7 @@ export function removeEditor(key: EditorKey): Editor | null {
  * 原地改路径（重命名跟着走）：`pinned` 不变，活动键跟着走。**新路径上已经开着一个 tab 时并入
  * 它**：幸存者保位置，`pinned` 取或，活动键移过去——两个同键的 tab 并排在栏里没有意义。
  */
-export function renameEditor(kind: EditorKind, from: string, to: string): void {
+export function renameEditor(kind: 'diff' | 'file', from: string, to: string): void {
   const fromKey = editorKey(kind, from);
   const toKey = editorKey(kind, to);
   const list = editors.value;

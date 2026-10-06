@@ -361,7 +361,65 @@ export async function runFullFlow(cwd, { env } = {}) {
       }
     }
 
-    return { cwd, state, files, diffs, blobs, trees, fileReads, stderr: server.stderr };
+    /**
+     * 提交历史那三个端点：前两页、每条提交的文件清单、每个文件的提交 diff，以及图片两侧。
+     * 第二页只在第一页说 `hasMore` 时才翻——带着第一页回的锚点，与前端同一个走法。
+     */
+    const commitPages = [await authedGet(server.port, server.token, '/api/commits')];
+    const firstPage = commitPages[0].status === 200 ? JSON.parse(commitPages[0].body) : null;
+    const commitList = [...(firstPage?.commits ?? [])];
+    if (firstPage?.hasMore) {
+      const query = new URLSearchParams({ head: firstPage.head, skip: String(commitList.length) });
+      const second = await authedGet(server.port, server.token, `/api/commits?${query}`);
+      commitPages.push(second);
+      if (second.status === 200) commitList.push(...JSON.parse(second.body).commits);
+    }
+    const commits = [];
+    const commitDiffs = [];
+    // 只展开前 10 条与最后 10 条：根提交、合并、重命名、图片都在尾巴上，中间那几十条 `step N`
+    // 走的是同一条路，全展开只是把冒烟拖慢
+    const sample =
+      commitList.length > 20 ? [...commitList.slice(0, 10), ...commitList.slice(-10)] : commitList;
+    for (const summary of sample) {
+      const detail = await authedGet(
+        server.port,
+        server.token,
+        `/api/commit?${new URLSearchParams({ sha: summary.sha })}`,
+      );
+      commits.push(detail);
+      if (detail.status !== 200) continue;
+      for (const file of JSON.parse(detail.body).files) {
+        const query = new URLSearchParams({ sha: summary.sha, path: file.path });
+        if (file.oldPath) query.set('oldPath', file.oldPath);
+        const diff = await authedGet(server.port, server.token, `/api/commit-diff?${query}`);
+        commitDiffs.push(diff);
+        const payload = diff.status === 200 ? JSON.parse(diff.body) : null;
+        if (payload?.kind !== 'image') continue;
+        for (const side of ['old', 'new']) {
+          if (!payload[side]) continue;
+          const blobQuery = new URLSearchParams({
+            path: payload[side].path,
+            side,
+            commit: summary.sha,
+          });
+          blobs.push(await authedGet(server.port, server.token, `/api/blob?${blobQuery}`));
+        }
+      }
+    }
+
+    return {
+      cwd,
+      state,
+      files,
+      diffs,
+      blobs,
+      trees,
+      fileReads,
+      commitPages,
+      commits,
+      commitDiffs,
+      stderr: server.stderr,
+    };
   } finally {
     await server.stop();
   }

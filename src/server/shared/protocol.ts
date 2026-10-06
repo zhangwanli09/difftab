@@ -93,6 +93,13 @@ export interface BranchState {
    */
   upstream: null | { ahead: number; behind: number };
   /**
+   * HEAD 此刻指向的提交（`# branch.oid`）；缺省即 HEAD 尚未出生（`(initial)`）。**前端拿它判
+   * 「提交列表要不要重取」**：agent 改工作区时每个文件事件都会推一次 SSE，而能让提交列表变的只有
+   * HEAD 挪动——比对这一个字段，`History` 就不必在每个事件上起一次 `git log`。它本来就在那一次
+   * status 输出里，不多付一个进程。
+   */
+  oid?: string;
+  /**
    * 仓库正处于的多步操作；缺省即「没有」。它**不来自 status 输出**——porcelain 里一行都
    * 没有，判据是 git 目录下的状态文件。`am` 与 `rebase` 分开列是因为两者共用同一个
    * `rebase-apply/` 目录，合并成一个标注等于对用户说假话。
@@ -223,3 +230,49 @@ export type FilePayload =
   | { kind: 'binary' }
   | { kind: 'image'; size: number; version: string }
   | { kind: 'too-large'; size: number; reason: 'size' | 'lines' };
+
+/**
+ * 提交列表里的一条。**`sha` 是完整对象名**，前端原样回传、不缩写不拼接——短哈希只是展示，截断
+ * 归前端。`parents` 是全部父提交（根提交为空，合并提交不止一个）；`time` 是**作者时间**的 Unix
+ * 秒，「3 hours ago」怎么说归前端。只带作者不带提交者：rebase 过的提交两者不同，而这一栏回答的
+ * 是「谁写的、什么时候写的」。
+ */
+export interface CommitSummary {
+  sha: string;
+  parents: string[];
+  author: string;
+  time: number;
+  subject: string;
+}
+
+/**
+ * `GET /api/commits` 的响应体。**`head` 是这一串分页的锚点**：第一页不带 `head` 参数时后端把 HEAD
+ * 此刻的 oid 回传，之后每一页都以它为起点——按 HEAD 往下数的写法在两次翻页之间有新提交时会让
+ * 第二页重复第一页的最后一条。`head: null` 即空仓库（HEAD 未出生），与 `upstream: null` 同一个
+ * 取向：把「没有」编码进类型。
+ */
+export interface CommitPage {
+  head: string | null;
+  commits: CommitSummary[];
+  hasMore: boolean;
+}
+
+/**
+ * 一次提交里改动的一个文件（相对第一父）。**不复用 `FileEntry`**：后者的 `staged` /
+ * `unstaged` / `kind` 是工作区的双状态位，一次提交只有一个状态字母。`oldPath` 只有 `R` 有。
+ */
+export interface CommitFileEntry {
+  path: string;
+  oldPath?: string;
+  status: 'A' | 'M' | 'D' | 'R' | 'T';
+}
+
+/** `GET /api/commit` 的响应体：元数据 + 改了哪些文件。 */
+export interface CommitDetail extends CommitSummary {
+  files: CommitFileEntry[];
+  /**
+   * 浅克隆的边界：父提交没被取下来，`files` 因此为空——不是「这次提交没改东西」。缺省即不是。根提交
+   * 的 `%P` 也是空的，可那一条有空树可比；边界上拿空树去比会把整个仓库报成全部新增。
+   */
+  shallow?: true;
+}

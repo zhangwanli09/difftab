@@ -8,6 +8,7 @@
 
 import { batch, computed, type Signal, signal } from '@preact/signals';
 import {
+  type CommitFileEntry,
   type DiffPayload,
   type FileEntry,
   type FilePayload,
@@ -25,10 +26,12 @@ import {
   editors,
   focusEditor,
   keyOf,
+  openCommitEditor,
   openEditor,
   removeEditor,
   renameEditor,
 } from './editors';
+import { ensureHistory } from './history';
 import { getJson, latestWins, type Tickets, toMessage } from './http';
 import { removeFrom, setIn } from './immutable';
 import { ancestorDirs, refreshTree } from './tree';
@@ -251,9 +254,16 @@ export async function loadState(): Promise<boolean> {
 
 /** 一个 tab 归哪份缓存，按 `kind` 分派——这是 `kind` 在本文件里唯一要分支的地方。 */
 const cacheOf = (editor: Editor): PathCache<DiffRequestState> | PathCache<FileRequestState> =>
-  editor.kind === 'diff' ? diffCache : fileCache;
+  editor.kind === 'diff' ? diffCache : editor.kind === 'file' ? fileCache : commitDiffCache;
 
-const forget = (editor: Editor): void => cacheOf(editor).forget(editor.path);
+/**
+ * 缓存里的键：diff / file 按路径，commit 直接用 tab 的键——同一个文件在两次提交里是两份，而 tab 的
+ * 身份本来就把 sha 编进去了，不另编一套。
+ */
+const cacheKeyOf = (editor: Editor): string =>
+  editor.kind === 'commit' ? keyOf(editor) : editor.path;
+
+const forget = (editor: Editor): void => cacheOf(editor).forget(cacheKeyOf(editor));
 
 /**
  * 取**一个**文件的 diff（按文件懒加载）。两处不能省的细节：
@@ -337,6 +347,9 @@ export async function refresh(): Promise<void> {
   if (before?.kind === 'file') void loadFile(before.path);
 
   if (!(await loadState())) return;
+  // 提交列表要等新列表：判据是新 state 里的 HEAD oid——HEAD 没挪就一条请求都不发。看不见时不判，
+  // 切过来时 `App` 那个 tab effect 拿当时的 state 再判一次
+  const history = activeTab.value === 'history' ? ensureHistory(repoState.value) : null;
   const files = repoState.value?.files ?? [];
   /**
    * 对着**收编之前那份列表**走一遍（`editors.value` 在循环开始时就取定了，改名并入掉的 tab 不会
@@ -367,8 +380,9 @@ export async function refresh(): Promise<void> {
   // 活动的 file tab 上面已经取过：收编只动 diff tab，活动的 file tab 前后是同一个。其余（活动的
   // diff tab；活动的 diff tab 被关、file tab 顶上）都要取一次
   const after = activeEditor.value;
-  if (after === null || (after.kind === 'file' && before?.kind === 'file')) return;
-  await refetch(after);
+  const editor =
+    after === null || (after.kind === 'file' && before?.kind === 'file') ? null : refetch(after);
+  await Promise.all([history, editor]);
 }
 
 /**
@@ -382,8 +396,19 @@ export function activateEditor(key: EditorKey): void {
   if (editor !== null) void refetch(editor);
 }
 
-/** 重取一个 tab。diff 那一路条目取不到时什么都不发，回一个已完成的 promise。 */
+/**
+ * 重取一个 tab。diff 那一路条目取不到时什么都不发，回一个已完成的 promise。**commit tab 只在
+ * 没取到时重取**：一次提交不可变，`ready` 的那份就是它的全部；而上次失败了（网络抖一下、后端
+ * 重启）的话，切过来就是重试的时机——不然唯一的重试路径是回 `History` 重新展开再点一次。
+ */
 function refetch(editor: Editor): Promise<void> {
+  if (editor.kind === 'commit') {
+    // 取到了就不再取；**在途也不再取**——每次 SSE 都重发一次时，新票作废旧票，一份几百毫秒才回来的
+    // 补丁在 agent 跑动期间永远轮不到落地，tab 就一直停在 `Loading…`。状态是 `loading` 即有一次在
+    // 途：作废一次请求的唯一途径是 `forget`，而它连状态一起删了
+    const status = commitDiffStates.value.get(keyOf(editor))?.status;
+    return status === 'ready' || status === 'loading' ? Promise.resolve() : loadCommitDiff(editor);
+  }
   if (editor.kind === 'file') return loadFile(editor.path);
   const entry = repoState.value?.files.find((file) => file.path === editor.path);
   return entry === undefined ? Promise.resolve() : loadDiff(entry);
@@ -408,7 +433,7 @@ export function closeEditor(key: EditorKey): void {
  * 能做到的第二件事。**不进 `localStorage`**：跨会话保持的偏好目前只有主题一份，加第二份之前
  * 先想清楚它是不是也该有那一节（见 `theme.ts`）。
  */
-export const activeTab = signal<'changes' | 'files'>('changes');
+export const activeTab = signal<'changes' | 'files' | 'history'>('changes');
 
 /**
  * 只读文件内容的请求状态。形状与 `DiffRequestState` 同构，理由也一样：三态显式建模而不是
@@ -460,4 +485,43 @@ export function openFile(path: string, { pinned = false } = {}): void {
   const replaced = openEditor('file', path, pinned);
   if (replaced !== null) forget(replaced);
   void loadFile(path);
+}
+
+const commitDiffCache = pathCache<DiffRequestState>();
+
+/** 栏里每个 commit tab 的请求状态，按 tab 的键存。 */
+export const commitDiffStates = commitDiffCache.states;
+
+/**
+ * 取一次提交里一个文件的补丁。重命名同样要把 `oldPath` 带上（只传新路径时退化成全新增）；相似
+ * 度那一档没有——`--name-status` 的 `R<score>` 不进协议，标注只说「从哪改名来的」。
+ */
+async function loadCommitDiff(editor: Extract<Editor, { kind: 'commit' }>): Promise<void> {
+  const { sha, path, oldPath } = editor;
+  const key = keyOf(editor);
+  const ticket = commitDiffCache.tickets.claim(key);
+  const rename = oldPath === undefined ? null : { oldPath, score: null };
+  commitDiffCache.set(key, { status: 'loading', rename });
+  try {
+    const query = new URLSearchParams({ sha, path });
+    if (oldPath) query.set('oldPath', oldPath);
+    const payload = await getJson<DiffPayload>(`/api/commit-diff?${query}`);
+    if (!commitDiffCache.tickets.isCurrent(ticket, key)) return;
+    commitDiffCache.set(key, { status: 'ready', rename, payload });
+  } catch (cause) {
+    if (!commitDiffCache.tickets.isCurrent(ticket, key)) return;
+    commitDiffCache.set(key, { status: 'error', rename, message: toMessage(cause) });
+  }
+}
+
+/**
+ * 在 `History` 里点一次提交的一个文件：开（或切到）它的 commit tab 并按需取补丁。「要不要取」只在
+ * `refetch` 判一次——取到过（`ready`）就不再取，与 diff / file 两种 tab「点一次取一次」刻意不同：
+ * 那两种的内容随工作区变，这一种不会。
+ */
+export function selectCommitFile(sha: string, entry: CommitFileEntry): void {
+  const replaced = openCommitEditor(sha, entry.path, entry.oldPath);
+  if (replaced !== null) forget(replaced);
+  const opened = activeEditor.value;
+  if (opened !== null) void refetch(opened);
 }
