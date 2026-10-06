@@ -12,8 +12,7 @@ import { activeEditorKey, type Editor, editors, keyOf, pinEditor } from '../stat
 import { shortSha } from '../state/history';
 import { activateEditor, closeEditor } from '../state/store';
 import { splitForDisplay } from './ChangeList';
-import { KIND_ICON } from './EmptyState';
-import { Icon } from './Icon';
+import { Icon, KIND_ICON } from './Icon';
 import { IconButton } from './IconButton';
 
 // 外壳：下划线是自己的 `border-b`（选中 `border-editor-foreground`、未选中透明），盖在栏那条

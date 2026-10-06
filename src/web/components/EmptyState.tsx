@@ -11,17 +11,11 @@
 // 两块**不合成一个带可选 `icon` 的组件**：那又是一个不填也不报错的开关，且合成之后它得同时
 // 带两种撑满手段，看不出自己在哪种宿主里。
 
-import {
-  CircleCheck,
-  FileCode,
-  FileDiff,
-  GitCommitHorizontal,
-  type LucideIcon,
-} from 'lucide-preact';
+import { CircleCheck, type LucideIcon } from 'lucide-preact';
 import type { ComponentChildren } from 'preact';
 import type { EditorKind } from '../state/editors';
 import { activeTab, repoState } from '../state/store';
-import { Icon } from './Icon';
+import { Icon, KIND_ICON } from './Icon';
 
 /**
  * 左栏列表区的占位：`Loading…`、「取不到列表」与「工作区干净」三句共用。**三句一起居中而不是只
@@ -39,15 +33,7 @@ export function SidebarPlaceholder({ children }: { children: ComponentChildren }
   );
 }
 
-/**
- * 三种 tab 的种类图标——编辑器 tab 上那枚与空着时右侧那枚**同一张表**：空着时右侧没有「此刻是哪种
- * 视图」可言，按侧栏档位查它接下来会开出哪种 tab。写成 `Record` 是让加第四种时少填一格成为编译错误。
- */
-export const KIND_ICON: Record<EditorKind, LucideIcon> = {
-  diff: FileDiff,
-  file: FileCode,
-  commit: GitCommitHorizontal,
-};
+/** 空着时右侧按侧栏档位查「接下来会开出哪种 tab」，图标取那一种的。 */
 const TAB_KIND: Record<typeof activeTab.value, EditorKind> = {
   changes: 'diff',
   files: 'file',

@@ -45,8 +45,13 @@ export type EditorKey = `${EditorKind}:${string}`;
  * `commit` 的键是 `commit:<sha>:<path>`：同一个文件在两次提交里是两个 tab。sha 是固定长度的
  * 十六进制、不含 `:`，夹在中间也不产生歧义。
  */
-export const editorKey = (kind: EditorKind, path: string, sha?: string): EditorKey =>
-  sha === undefined ? `${kind}:${path}` : `${kind}:${sha}:${path}`;
+export function editorKey(kind: 'diff' | 'file', path: string): EditorKey;
+export function editorKey(kind: 'commit', path: string, sha: string): EditorKey;
+// 重载把「commit 必须带 sha、另两种不许带」钉在类型上：漏传 sha 的 `editorKey('commit', path)`
+// 编得过时，得到的是一个谁都不匹配的键，高亮与关闭静默失效
+export function editorKey(kind: EditorKind, path: string, sha?: string): EditorKey {
+  return sha === undefined ? `${kind}:${path}` : `${kind}:${sha}:${path}`;
+}
 export const keyOf = (editor: Editor): EditorKey =>
   editor.kind === 'commit'
     ? editorKey(editor.kind, editor.path, editor.sha)
@@ -180,7 +185,7 @@ export function removeEditor(key: EditorKey): Editor | null {
  * 原地改路径（重命名跟着走）：`pinned` 不变，活动键跟着走。**新路径上已经开着一个 tab 时并入
  * 它**：幸存者保位置，`pinned` 取或，活动键移过去——两个同键的 tab 并排在栏里没有意义。
  */
-export function renameEditor(kind: EditorKind, from: string, to: string): void {
+export function renameEditor(kind: 'diff' | 'file', from: string, to: string): void {
   const fromKey = editorKey(kind, from);
   const toKey = editorKey(kind, to);
   const list = editors.value;

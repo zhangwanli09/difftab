@@ -11,7 +11,7 @@ import type {
   CommitSummary,
   RepoState,
 } from '../../server/shared/protocol';
-import { getJson, latestWins, toMessage } from './http';
+import { getJson, toMessage } from './http';
 import { setIn } from './immutable';
 
 export interface LoadedHistory {
@@ -38,8 +38,6 @@ export const historyError = signal<string | null>(null);
 export const loadingMore = signal(false);
 export const moreError = signal<string | null>(null);
 
-const pageTickets = latestWins();
-
 const fresh = (page: CommitPage): LoadedHistory => ({ ...page, anchor: page.head, offset: 0 });
 
 /**
@@ -63,19 +61,30 @@ export function mergeFirstPage(list: LoadedHistory | null, page: CommitPage): Lo
   };
 }
 
-/** 重取第一页，并与已加载的那一串合起来（见 `mergeFirstPage`）。 */
-export async function refreshHistory(): Promise<void> {
-  const ticket = pageTickets.claim();
+let inflight: Promise<void> | null = null;
+
+/**
+ * 重取第一页，并与已加载的那一串合起来（见 `mergeFirstPage`）。**同一时刻只有一次在途**：第一页回来
+ * 之前列表顶上仍是旧 HEAD，每个 SSE 都会判「对不上」——每次都新发一次、后发的作废先发的，在 agent
+ * 跑动期间就是一串永远轮不到落地的 `git log`。在途时直接搭上那一次；它回来之后若 HEAD 又挪了，
+ * 下一个 SSE 自然会再判出来。
+ */
+export function refreshHistory(): Promise<void> {
+  inflight ??= fetchFirstPage().finally(() => {
+    inflight = null;
+  });
+  return inflight;
+}
+
+async function fetchFirstPage(): Promise<void> {
   try {
     const page = await getJson<CommitPage>('/api/commits');
-    if (!pageTickets.isCurrent(ticket)) return;
     historyError.value = null;
     const merged = mergeFirstPage(historyList.value, page);
     if (merged === historyList.value) return;
     if (merged.anchor !== historyList.value?.anchor) moreError.value = null;
     historyList.value = merged;
   } catch (cause) {
-    if (!pageTickets.isCurrent(ticket)) return;
     historyError.value = toMessage(cause);
   }
 }

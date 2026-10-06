@@ -13,7 +13,8 @@
 // import 同一个具名标识符，拼错是编译错误；而上一套共用的是一条导出的 path 字符串，两份漂开
 // 时同一个概念在页面上长成两个图形，没有任何东西会响。
 
-import type { LucideIcon } from 'lucide-preact';
+import { FileCode, FileDiff, GitCommitHorizontal, type LucideIcon } from 'lucide-preact';
+import type { EditorKind } from '../state/editors';
 
 export function Icon({
   icon: Glyph,
@@ -33,3 +34,13 @@ export function Icon({
   // 颜色不在这里写：lucide 的 stroke 默认就是 `currentColor`，于是图标跟着所在处的文字色翻深浅
   return <Glyph size={size} aria-hidden="true" class={className} />;
 }
+
+/**
+ * 三种 tab 的种类图标——编辑器 tab 上那枚与空着时右侧那枚**同一张表**，住在图标外壳旁边而不是
+ * 某一个消费者里。写成 `Record` 是让加第四种 tab 时少填一格成为编译错误。
+ */
+export const KIND_ICON: Record<EditorKind, LucideIcon> = {
+  diff: FileDiff,
+  file: FileCode,
+  commit: GitCommitHorizontal,
+};

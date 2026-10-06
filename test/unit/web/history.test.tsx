@@ -195,6 +195,14 @@ describe('HistoryList 组件', () => {
     expect(container.textContent).toContain('Load more');
   });
 
+  test('浅克隆的边界：不画文件清单，说清楚父提交不在本地', async () => {
+    historyList.value = mergeFirstPage(null, page(100, 100, 1, false));
+    stubJsonBy(() => ({ payload: { ...commit(100), parents: [], files: [], shallow: true } }));
+    render(<HistoryList />, container);
+    (container.querySelector('[aria-expanded]') as HTMLElement).click();
+    await waitFor(() => expect(container.textContent).toContain('Shallow clone'));
+  });
+
   test('单击展开才取详情；文件行单击开预览 commit tab、双击固定', async () => {
     historyList.value = mergeFirstPage(null, page(100, 100, 1, false));
     const detail: CommitDetail = {
@@ -232,6 +240,44 @@ describe('HistoryList 组件', () => {
 
     fileRow.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     expect(activeEditor.value?.pinned).toBe(true);
+  });
+});
+
+describe('同一时刻只有一次在途', () => {
+  test('第一页还没回来时再刷新：搭上那一次，不另发', async () => {
+    const calls = stubJsonBy(() => ({ payload: page(1, 1, 1, false) }));
+    const first = refreshHistory();
+    const second = refreshHistory();
+    expect(second).toBe(first);
+    await first;
+    expect(calls.filter((url) => url.startsWith('/api/commits'))).toHaveLength(1);
+    // 回来之后再刷新照常发
+    await refreshHistory();
+    expect(calls.filter((url) => url.startsWith('/api/commits'))).toHaveLength(2);
+  });
+
+  test('commit tab 的补丁在途时切回去：不另发——新票会作废旧票，慢补丁永远落不了地', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const calls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        calls.push(url);
+        await gate;
+        return new Response(JSON.stringify({ kind: 'text', patch: 'p\n' }), { status: 200 });
+      }),
+    );
+    selectCommitFile(sha(1), { path: 'a.ts', status: 'M' });
+    openEditor('diff', 'other.ts', true);
+    activateEditor(editorKey('commit', 'a.ts', sha(1)));
+    release();
+    await waitFor(() =>
+      expect(commitDiffStates.value.get(editorKey('commit', 'a.ts', sha(1)))?.status).toBe('ready'),
+    );
+    expect(calls.filter((url) => url.startsWith('/api/commit-diff'))).toHaveLength(1);
   });
 });
 
