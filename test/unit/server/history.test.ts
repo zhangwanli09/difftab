@@ -3,13 +3,15 @@
 // 只有真仓库能证伪。
 
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { readCommitDiff, readDiff } from '../../../src/server/git/diff.ts';
 import {
   assertOid,
+  isPartialCloneConfig,
   listCommits,
   PAGE_SIZE,
   parseLog,
@@ -259,5 +261,67 @@ describe('读一下就写库的两个陷阱（driverTraps：partial clone + cach
     const payload = await readDiff(cwd, { path: 'f.x' });
     expect(payload.kind).toBe('text');
     expect(notes(cwd)).toBe('');
+  });
+});
+
+test('isPartialCloneConfig：promisor 的每一种真值写法都认，假值不认', () => {
+  for (const config of [
+    '[extensions]\n\tpartialClone = origin\n',
+    '[remote "origin"]\n\tpromisor = true\n',
+    '[remote "origin"]\n\tpromisor = Yes\n',
+    '[remote "origin"]\n\tpromisor = on\n',
+    '[remote "origin"]\n\tpromisor = 1\n',
+    '[remote "origin"]\n\tpromisor\n',
+  ]) {
+    expect(isPartialCloneConfig(config), config).toBe(true);
+  }
+  for (const config of ['[remote "origin"]\n\tpromisor = false\n', '[core]\n\tbare = false\n']) {
+    expect(isPartialCloneConfig(config), config).toBe(false);
+  }
+});
+
+describe('不是根提交的「没有父」', () => {
+  test('浅克隆的边界：不拿空树去比——文件清单为空并标 shallow，补丁明确拒绝', async () => {
+    const clone = join(dest, 'history-shallow');
+    execFileSync('git', ['clone', '--quiet', '--depth', '1', pathToFileURL(root).href, clone]);
+    const head = execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: clone,
+      encoding: 'utf8',
+    }).trim();
+    const detail = await readCommit(clone, head);
+    expect(detail).toMatchObject({ files: [], shallow: true });
+    await expect(readCommitDiff(clone, head, { path: 'README.md' })).rejects.toMatchObject({
+      code: 'unsupported',
+    });
+  });
+
+  test('HEAD 指着一个读不出来的提交：是错误，不是「没有提交」', async () => {
+    const broken = join(dest, 'history-broken');
+    execFileSync('git', ['clone', '--quiet', root, broken]);
+    // `update-ref` 不肯指向不存在的对象，直接写 HEAD 文件——与中断的 fetch 留下的形态一样
+    writeFileSync(join(broken, '.git', 'HEAD'), `${'f'.repeat(40)}\n`);
+    await expect(listCommits(broken, { skip: 0 })).rejects.toThrow(/cannot be read/);
+  });
+});
+
+test('提交 diff 被行数闸拒绝时照样报体积——与工作区那份同一个文件说同一个数', async () => {
+  const repo = join(dest, 'history-wide');
+  execFileSync('git', ['init', '--quiet', repo]);
+  const env = {
+    ...process.env,
+    GIT_AUTHOR_NAME: 'x',
+    GIT_AUTHOR_EMAIL: 'x@x',
+    GIT_COMMITTER_NAME: 'x',
+    GIT_COMMITTER_EMAIL: 'x@x',
+  };
+  const body = `${Array.from({ length: 60_000 }, (_, i) => `l${i}`).join('\n')}\n`;
+  writeFileSync(join(repo, 'wide.txt'), body);
+  execFileSync('git', ['add', '-A'], { cwd: repo });
+  execFileSync('git', ['commit', '--quiet', '-m', 'wide'], { cwd: repo, env });
+  const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+  expect(await readCommitDiff(repo, sha, { path: 'wide.txt' })).toEqual({
+    kind: 'too-large',
+    size: Buffer.byteLength(body),
+    reason: 'lines',
   });
 });

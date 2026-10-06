@@ -6,7 +6,7 @@
 import type { Stats } from 'node:fs';
 import { lstat } from 'node:fs/promises';
 import type { DiffPayload, ImageSide } from '../shared/protocol.ts';
-import { resolveCommit } from './history.ts';
+import { requireParent, resolveCommit } from './history.ts';
 import { baseBlobSize } from './image.ts';
 import { type DiffBase, resolveDiffBase } from './repo.ts';
 import { GitError, runGit, runGitStrict } from './run.ts';
@@ -362,7 +362,9 @@ export async function readCommitDiff(
 ): Promise<DiffPayload> {
   const path = literalRepoPath(root, query.path).path;
   const oldPath = query.oldPath ? literalRepoPath(root, query.oldPath).path : undefined;
-  const { commit, parent } = await resolveCommit(root, sha);
+  const resolved = await resolveCommit(root, sha);
+  const { commit } = resolved;
+  const parent = requireParent(resolved);
   const range = [parent, commit.sha];
 
   const stat = await readNumstat(root, range, path, oldPath);
@@ -373,7 +375,12 @@ export async function readCommitDiff(
     oldPath,
     stat,
     image: () => commitImageDiff(root, parent, commit.sha, path, oldPath),
-    size: async () => 0,
+    // 拒绝时报的体积取新侧那个 blob（删除则取旧侧）——同一个文件在工作区 diff 里会说「file is
+    // 6 MB」，这里给 0 两个视图就对不上了。`cat-file -s` 只在要拒绝的那两条分支上才问
+    size: async () =>
+      (await baseBlobSize(root, commit.sha, path)) ??
+      (await baseBlobSize(root, parent, oldPath ?? path)) ??
+      0,
   });
 }
 

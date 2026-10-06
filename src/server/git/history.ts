@@ -97,9 +97,14 @@ export async function listCommits(
   const rev = query.head === undefined ? 'HEAD' : assertOid(query.head);
   const result = await runGit(logArgs(rev, PAGE_SIZE + 1, query.skip), root);
   if (result.code !== 0) {
-    // 从 HEAD 起却失败只有一种解释：HEAD 未出生（空仓库，实测 128）。带着锚点失败则是锚点不存在
-    if (query.head === undefined) return { head: null, commits: [], hasMore: false };
-    throw new WorktreeError('not-found', 'no such commit');
+    if (query.head !== undefined) throw new WorktreeError('not-found', 'no such commit');
+    // 从 HEAD 起失败有两种：HEAD 未出生（空仓库）与 HEAD 指着一个读不出来的提交（中断的 fetch、
+    // 坏掉的 shallow 文件）。`log` 对两者都以 128 退出；`rev-parse --verify` 只在前一种上失败
+    // （实测：未出生退 1，指向缺失对象却退 0 并照样印出 oid）。只有前一种是「没有提交」——把后一种
+    // 也说成 `No commits yet` 等于把一个真实的故障藏起来
+    const head = await runGit(['rev-parse', '--verify', '--quiet', 'HEAD'], root);
+    if (head.code !== 0) return { head: null, commits: [], hasMore: false };
+    throw new Error('HEAD points to a commit that cannot be read');
   }
   const commits = parseLog(result.stdout);
   const head = query.head ?? commits[0]?.sha ?? null;
@@ -113,8 +118,11 @@ interface CommitRange {
    * **第一父**。合并提交因此展示「这次合并相对主线带进来了什么」，与 GitHub 提交页、VS Code
    * Timeline 同一口径（组合 diff 的多列前缀 diff2html 解析不了）。根提交没有父，对比端是空树
    * ——与空仓库的 diff 基准同一个常量，按对象名长度取，不为它多起一次进程。
+   *
+   * **`null` 是浅克隆的边界**：那条提交的 `%P` 同样是空的，可它不是根提交，只是父提交没被取下来。
+   * 拿空树去比会把整个仓库报成「全部新增」——一份看着完全正常、却在说假话的文件清单。
    */
-  parent: string;
+  parent: string | null;
 }
 
 /**
@@ -132,7 +140,53 @@ export async function resolveCommit(root: string, sha: string): Promise<CommitRa
   const result = await runGit(logArgs(sha, 1), root);
   const [commit] = result.code === 0 ? parseLog(result.stdout) : [];
   if (commit?.sha !== sha) throw new WorktreeError('not-found', 'no such commit');
-  return { commit, parent: commit.parents[0] ?? emptyTreeOf(sha) };
+  const [first] = commit.parents;
+  if (first !== undefined) return { commit, parent: first };
+  return { commit, parent: (await isShallowBoundary(root, sha)) ? null : emptyTreeOf(sha) };
+}
+
+/** 浅克隆边界上的提交没有父可比。补丁与图片两条路据此拒绝，而不是拿空树去比。 */
+export function requireParent(range: CommitRange): string {
+  if (range.parent === null) {
+    throw new WorktreeError(
+      'unsupported',
+      'shallow clone: this commit has no parent to compare with',
+    );
+  }
+  return range.parent;
+}
+
+/**
+ * 这条提交是不是浅克隆的边界：共享 git 目录下的 `shallow` 文件逐行列着它们（实测 `--depth 1` 之后
+ * 正好是 HEAD 那一条）。只在 `%P` 为空时才读——根提交与边界只有这一处分得开。**不缓存**：
+ * `fetch --deepen` 会改这个文件，而这条路只在根提交上走。
+ */
+async function isShallowBoundary(root: string, sha: string): Promise<boolean> {
+  try {
+    const shallow = await readFile(join(await commonDir(root), 'shallow'), 'utf8');
+    return shallow.split('\n').some((line) => line.trim() === sha);
+  } catch {
+    return false;
+  }
+}
+
+const commonDirs = new Map<string, Promise<string>>();
+
+/**
+ * 共享 git 目录（linked worktree 下是主仓库那一份，`shallow` 与 `config` 都在那里）。一次会话里
+ * 不会变，按仓库缓存。`resolve` 而非手拼：`--git-common-dir` 在仓库根下给相对路径、在子目录或
+ * worktree 里给绝对路径。
+ */
+function commonDir(root: string): Promise<string> {
+  let dir = commonDirs.get(root);
+  if (dir === undefined) {
+    dir = runGitStrict(['rev-parse', '--git-common-dir'], root).then((out) =>
+      resolve(root, out.trim()),
+    );
+    commonDirs.set(root, dir);
+    dir.catch(() => commonDirs.delete(root));
+  }
+  return dir;
 }
 
 /** `GIT_NO_LAZY_FETCH` 的版本下限（git 2.44）。 */
@@ -147,16 +201,20 @@ const lazyFetchGuards = new Map<string, Promise<void>>();
  *
  * 判据是 git 版本 + 共享 git 目录下 `config` 里有没有 partial clone 的记号：老 git 写的是
  * `extensions.partialClone`，新一些的只写 `remote.<名>.promisor = true`（实测 2.54 只有后者），两种
- * 都认、不区分大小写——与进行中的操作同一个取向：读状态文件，不为它往白名单里添 `config`。两样在一次
- * 会话里都不会变，按仓库缓存。
+ * 都认、不区分大小写——与进行中的操作同一个取向：读状态文件，不为它往白名单里添 `config`。`promisor`
+ * 是 git 的布尔值：只写一个键名、或 `true` / `yes` / `on` / `1` 都算开，漏认一种就是在老 git 上往对象
+ * 库里写。两样在一次会话里都不会变，按仓库缓存——**「不支持」这个结论也缓存**，否则老 git 上每点一个
+ * 文件都要重判一遍、多起两个进程，只为得出同一个 400。
  */
 function guardLazyFetch(root: string): Promise<void> {
   let guard = lazyFetchGuards.get(root);
   if (guard === undefined) {
     guard = checkLazyFetch(root);
     lazyFetchGuards.set(root, guard);
-    // 失败不缓存：拒绝本身也可能是一次读失败，下一次请求再判
-    guard.catch(() => lazyFetchGuards.delete(root));
+    // 只有读失败（git 起不来、config 读不了）不缓存，下一次请求再判
+    guard.catch((cause: unknown) => {
+      if (!(cause instanceof WorktreeError)) lazyFetchGuards.delete(root);
+    });
   }
   return guard;
 }
@@ -164,20 +222,26 @@ function guardLazyFetch(root: string): Promise<void> {
 async function checkLazyFetch(root: string): Promise<void> {
   const version = parseGitVersion((await runGit(['--version'], root)).stdout);
   if (version === null || atLeast(version, LAZY_FETCH_SWITCH)) return;
-  const common = (await runGitStrict(['rev-parse', '--git-common-dir'], root)).trim();
   let config = '';
   try {
-    // `resolve` 而非手拼：`--git-common-dir` 在仓库根下给相对路径、在子目录或 worktree 里给绝对路径
-    config = await readFile(join(resolve(root, common), 'config'), 'utf8');
+    config = await readFile(join(await commonDir(root), 'config'), 'utf8');
   } catch {
     return;
   }
-  if (/^\s*(?:partialclone\s*=|promisor\s*=\s*true\b)/im.test(config)) {
+  if (isPartialCloneConfig(config)) {
     throw new WorktreeError(
       'unsupported',
       'commit history in a partial clone needs git 2.44 or newer',
     );
   }
+}
+
+/**
+ * 一份 git `config` 正文里有没有 partial clone 的记号：`extensions.partialClone = <名>`，或
+ * `remote.<名>.promisor` 为真——git 的布尔值只写键名、`true` / `yes` / `on` / `1` 都算，不区分大小写。
+ */
+export function isPartialCloneConfig(config: string): boolean {
+  return /^\s*(?:partialclone\s*=|promisor\s*(?:$|=\s*"?(?:true|yes|on|1)\b))/im.test(config);
 }
 
 /**
@@ -211,6 +275,8 @@ export function parseNameStatus(output: string): CommitFileEntry[] {
 /** 一次提交的元数据 + 改了哪些文件（相对第一父）。 */
 export async function readCommit(root: string, sha: string): Promise<CommitDetail> {
   const { commit, parent } = await resolveCommit(root, sha);
+  // 浅克隆边界：没有父可比，就不列文件——拿空树比出来的「全部新增」是一句假话
+  if (parent === null) return { ...commit, files: [], shallow: true };
   const output = await runGitStrict(
     ['diff', parent, commit.sha, '--name-status', '-z', '-M', '--'],
     root,

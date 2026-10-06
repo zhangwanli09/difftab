@@ -101,6 +101,7 @@
   - `image` 的判据与 diff 那侧同一条（二进制 ∧ 扩展名），字节由 `/api/blob?side=new` 给。
 - `CommitSummary { sha; parents; author; time; subject }`、`CommitPage { head; commits; hasMore }`、`CommitDetail { …CommitSummary; files }`、`CommitFileEntry { path; oldPath?; status: 'A' | 'M' | 'D' | 'R' | 'T' }`——提交历史那三个端点（git 判据见 [`git.md`](git.md) 的「提交历史」）。
   - **`sha` 与 `head` 都是完整对象名**，前端原样回传、不缩写不拼接：短哈希只是展示，截断归前端。
+  - **`CommitDetail.shallow`** 即浅克隆的边界：父提交不在本地，`files` 因此为空——不是「这次提交没改东西」。
   - **`head: null` 即空仓库**，与 `upstream: null` 同一个取向：把「没有」编码进类型，而不是给一个空串让前端去猜。
   - **`time` 是作者时间的 Unix 秒**，「3 hours ago」怎么说归前端。只带作者不带提交者：rebase 过的提交两者不同，而这一栏回答的是「谁写的、什么时候写的」。
   - **`CommitFileEntry` 不复用 `FileEntry`**：后者的 `staged` / `unstaged` / `kind` 是工作区的双状态位，一次提交只有一个状态字母，硬塞进去等于让前端分组逻辑面对一份永远不该出现的组合。

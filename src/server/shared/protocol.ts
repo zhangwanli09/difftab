@@ -270,4 +270,9 @@ export interface CommitFileEntry {
 /** `GET /api/commit` 的响应体：元数据 + 改了哪些文件。 */
 export interface CommitDetail extends CommitSummary {
   files: CommitFileEntry[];
+  /**
+   * 浅克隆的边界：父提交没被取下来，`files` 因此为空——不是「这次提交没改东西」。缺省即不是。根提交
+   * 的 `%P` 也是空的，可那一条有空树可比；边界上拿空树去比会把整个仓库报成全部新增。
+   */
+  shallow?: true;
 }
