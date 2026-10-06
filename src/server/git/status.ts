@@ -3,6 +3,7 @@
 import type { BranchState, FileEntry, StatusCode } from '../shared/protocol.ts';
 import { readOperation } from './operation.ts';
 import type { RepoInfo } from './repo.ts';
+import { isOid } from './repo.ts';
 import { runGitStrict } from './run.ts';
 
 /**
@@ -74,7 +75,7 @@ export function parseStatus(raw: string): StatusResult {
         const value = sp === -1 ? '' : rec.slice(sp + 1);
         if (key === 'branch.oid') {
           // 空仓库下是字面量 `(initial)`，那时 HEAD 没有提交可指
-          if (/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(value)) oid = value;
+          if (isOid(value)) oid = value;
         } else if (key === 'branch.head') {
           head = value;
           // git 在 detached HEAD 下把这一行的值写成字面量 `(detached)`

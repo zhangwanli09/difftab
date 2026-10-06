@@ -14,7 +14,7 @@ import type {
 import { getJson, latestWins, toMessage } from './http';
 import { setIn } from './immutable';
 
-export interface HistoryList {
+export interface LoadedHistory {
   /** 列表顶上那条是哪个 HEAD 时取的。null 即空仓库。 */
   head: string | null;
   commits: readonly CommitSummary[];
@@ -29,7 +29,7 @@ export interface HistoryList {
 }
 
 /** 已加载的那一串提交。null 即还没取过第一页。 */
-export const historyList = signal<HistoryList | null>(null);
+export const historyList = signal<LoadedHistory | null>(null);
 
 /** 第一页取不到时的那句话。翻页失败另记在 `moreError`，不让已加载的列表整个变成错误。 */
 export const historyError = signal<string | null>(null);
@@ -40,7 +40,7 @@ export const moreError = signal<string | null>(null);
 
 const pageTickets = latestWins();
 
-const fresh = (page: CommitPage): HistoryList => ({ ...page, anchor: page.head, offset: 0 });
+const fresh = (page: CommitPage): LoadedHistory => ({ ...page, anchor: page.head, offset: 0 });
 
 /**
  * 新的第一页与已加载的列表合起来。**新 HEAD 只是在旧 HEAD 之上又长了几条**（agent 最常见的那种
@@ -48,7 +48,7 @@ const fresh = (page: CommitPage): HistoryList => ({ ...page, anchor: page.head, 
  * 第一页里、且它往下那一截与已加载的逐条相同。其余（amend、reset、rebase、一次长出 50 条以上、
  * 合并把旧提交排进了中间）一律以新的第一页整体替换——拼一份对不上的列表比少几页更糟。
  */
-export function mergeFirstPage(list: HistoryList | null, page: CommitPage): HistoryList {
+export function mergeFirstPage(list: LoadedHistory | null, page: CommitPage): LoadedHistory {
   if (list === null || list.head === null || page.head === null) return fresh(page);
   if (list.head === page.head) return list;
   const at = page.commits.findIndex((commit) => commit.sha === list.head);
@@ -85,7 +85,7 @@ export async function refreshHistory(): Promise<void> {
  * agent 改工作区时每个文件事件都会推一次 SSE，而能让提交列表变的只有 HEAD 挪动——按事件重取等于
  * 每个事件一次 `rev-parse` + `log`。上一次取失败了（`historyError` 还在）也算对不上，切过来即重试。
  */
-export function historyIsCurrent(state: RepoState | null): boolean {
+function historyIsCurrent(state: RepoState | null): boolean {
   const list = historyList.value;
   if (list === null || historyError.value !== null || state === null) return false;
   return list.head === (state.branch.oid ?? null);

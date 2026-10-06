@@ -43,7 +43,7 @@ const GIT_ENV = {
 } as const;
 
 /**
- * **每一条 `git diff` 都紧跟在子命令之后带上这两个开关**，不留给调用点挑：
+ * **每一条 `git diff` 都紧跟在子命令之后带上这两个开关**，由 `runGitRaw` 注入，不留给调用点挑：
  * - `--no-textconv`：`.gitattributes` 里 `diff=<驱动>` + `diff.<驱动>.textconv` 会让补丁那一形态
  *   对两侧各起一次外部程序，配了 `cachetextconv` 时还把结果写进 `refs/notes/textconv/<驱动>`
  *   ——实测补丁形态（工作区 diff 与提交 diff 都是）会写，`--numstat` / `--name-status` 不写，加上
@@ -53,7 +53,22 @@ const GIT_ENV = {
  * 代价是配了 textconv 的文件（`.docx`、加密文件）按原始字节比——二进制就说二进制。冒烟逐条
  * 断言 `diff` 的 argv 里两者都在。
  */
-export const DIFF_GUARDS = ['--no-ext-diff', '--no-textconv'] as const;
+const DIFF_GUARDS = ['--no-ext-diff', '--no-textconv'] as const;
+
+/** `-c` 全局选项排在子命令之前，`diff` 的两道外部程序开关紧跟在子命令之后。 */
+function argvOf(args: readonly string[]): string[] {
+  const [subcommand, ...rest] = args;
+  return subcommand === 'diff'
+    ? [...GLOBAL_CONFIG, subcommand, ...DIFF_GUARDS, ...rest]
+    : [...GLOBAL_CONFIG, ...args];
+}
+
+/**
+ * 缺对象的那几种报法（`GIT_NO_LAZY_FETCH` 之下的 partial clone）：实测 `could not fetch … from
+ * promisor remote`，前面还有一行 `lazy fetching disabled`。**在这里分类一次**，而不是让每个调用点
+ * 各自记得 catch——漏 catch 的那条路会把「内容不在本地」说成「路径不存在」或一条 500。
+ */
+const MISSING_OBJECT = /promisor remote|lazy fetching disabled/;
 
 /**
  * stdout 的**兜底**上限：没有它，一个几百 MB 的文件的 diff 会被整个读进内存，而这条路径
@@ -79,7 +94,11 @@ export interface GitResult<Out = string> {
   code: number | null;
 }
 
-export type GitFailureKind = 'missing' | 'exit' | 'overflow';
+/**
+ * `missing` 是 git 不在 PATH；`missing-object` 是 partial clone 里要读的对象不在本地（而我们不去
+ * 取）——**它不是一次普通的非零退出**，`runGit` 这类不抛的调用也照样以它失败。
+ */
+export type GitFailureKind = 'missing' | 'exit' | 'overflow' | 'missing-object';
 
 export class GitError extends Error {
   readonly kind: GitFailureKind;
@@ -111,7 +130,7 @@ export function runGitRaw(
 ): Promise<GitResult<Buffer>> {
   const limit = Math.min(options.maxStdoutBytes ?? MAX_STDOUT_BYTES, MAX_STDOUT_BYTES);
   return new Promise((resolvePromise, rejectPromise) => {
-    const argv = [...GLOBAL_CONFIG, ...args];
+    const argv = argvOf(args);
     const child = spawn('git', argv, {
       cwd,
       env: { ...process.env, ...GIT_ENV },
@@ -174,6 +193,10 @@ export function runGitRaw(
       const stderr = Buffer.concat(err).toString('utf8');
       if (overflowed) {
         rejectPromise(new GitError('overflow', argv, stderr, code));
+        return;
+      }
+      if (code !== 0 && MISSING_OBJECT.test(stderr)) {
+        rejectPromise(new GitError('missing-object', argv, stderr, code));
         return;
       }
       resolvePromise({ stdout: Buffer.concat(out), stderr, code });

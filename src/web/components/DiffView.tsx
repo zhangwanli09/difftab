@@ -13,10 +13,10 @@ import type { ComponentChildren } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
 import type { DiffPayload } from '../../server/shared/protocol';
 import { renderDiff } from '../diff/render';
+import { editorKey } from '../state/editors';
 import { commitDetails, shortSha } from '../state/history';
 import { diffOutputFormat } from '../state/layout';
 import {
-  commitDiffKey,
   commitDiffStates,
   type DiffRequestState,
   diffStates,
@@ -152,11 +152,11 @@ export function Panel({ children }: { children: ComponentChildren }) {
 function Payload({
   path,
   payload,
-  commit,
+  sha,
 }: {
   path: string;
   payload: DiffPayload;
-  commit?: string | undefined;
+  sha?: string | undefined;
 }) {
   switch (payload.kind) {
     case 'text':
@@ -165,7 +165,7 @@ function Payload({
     case 'binary':
       return <Notice>Binary file — contents are not compared.</Notice>;
     case 'image':
-      return <ImageDiff payload={payload} commit={commit} />;
+      return <ImageDiff payload={payload} sha={sha} />;
     case 'too-large':
       return <Notice>{tooLargeNotice(payload, 'diff')}</Notice>;
   }
@@ -189,11 +189,11 @@ export function DiffView({ path }: { path: string }) {
  * **合并提交在这里说明对比端**：补丁是相对第一父算的，而这件事只在看补丁时才需要知道。
  */
 export function CommitDiffView({ sha, path }: { sha: string; path: string }) {
-  const state = commitDiffStates.value.get(commitDiffKey(sha, path)) ?? LOADING;
+  const state = commitDiffStates.value.get(editorKey('commit', path, sha)) ?? LOADING;
   const detail = commitDetails.value.get(sha);
   const commit = detail?.status === 'ready' ? detail.detail : null;
   return (
-    <DiffBody path={path} state={state} commit={sha}>
+    <DiffBody path={path} state={state} sha={sha}>
       {commit && (
         <p class="truncate border-b border-panel-border px-4 py-1 text-xs text-description-foreground">
           <span class="font-mono">{shortSha(sha)}</span> {commit.subject}
@@ -209,12 +209,12 @@ const LOADING: DiffRequestState = { status: 'loading', rename: null };
 function DiffBody({
   path,
   state,
-  commit,
+  sha,
   children,
 }: {
   path: string;
   state: DiffRequestState;
-  commit?: string;
+  sha?: string;
   children?: ComponentChildren;
 }) {
   return (
@@ -232,7 +232,7 @@ function DiffBody({
       )}
       {/* 换文件走的是卸载重挂——`App` 按 tab 键给本组件 `key`，本组件挂着期间 `path` 不会变，
           两次 draw() 因此不可能落在同一个元素上 */}
-      {state.status === 'ready' && <Payload path={path} payload={state.payload} commit={commit} />}
+      {state.status === 'ready' && <Payload path={path} payload={state.payload} sha={sha} />}
     </Panel>
   );
 }

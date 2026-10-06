@@ -27,6 +27,7 @@ import {
   ExpandChevron,
   indent,
   ROW_BASE,
+  SELECTED,
   TreeRow,
 } from './tree-row';
 
@@ -64,12 +65,7 @@ function CommitFileRow({ sha, file }: { sha: string; file: CommitFileEntry }) {
   // 选中态包成 computed 作为 prop 传下去，理由与变更列表那一行一字不差：在组件体里读等于每换一次
   // 选中，展开着的每一行都重画
   const rowClass = useComputed(
-    () =>
-      `${FILE_ROW_CLASS} ${
-        activeEditorKey.value === key
-          ? 'bg-list-active-selection-background text-list-active-selection-foreground'
-          : ''
-      }`,
+    () => `${FILE_ROW_CLASS} ${activeEditorKey.value === key ? SELECTED : ''}`,
   );
   return (
     <TreeRow
@@ -97,7 +93,9 @@ function CommitFileRow({ sha, file }: { sha: string; file: CommitFileEntry }) {
 
 /** 展开之后那一层：加载中 / 错误 / 文件列表。 */
 function CommitFiles({ sha }: { sha: string }) {
-  const state = commitDetails.value.get(sha);
+  // 只订阅自己这一条：在组件体里读整张 map 时，任何一条提交的详情落地都会把每个展开着的文件列表
+  // 整个重画一遍
+  const state = useComputed(() => commitDetails.value.get(sha)).value;
   const placeholder = (text: string) => (
     <li class="truncate pr-3 text-description-foreground" style={indent(1)}>
       {text}

@@ -625,15 +625,19 @@ export function makeFixtures(destDir, only) {
   if (wanted('history')) {
     const cwd = init('history');
     let tick = 0;
-    const commitAt = (message) => {
+    /** 下一秒的时间戳下跑一条 git 命令（commit / merge 都要它）。 */
+    const atNextTick = (...args) => {
       tick += 1;
       const date = new Date(Date.UTC(2026, 0, 1, 0, 0, tick)).toISOString();
-      git(cwd, 'add', '-A');
-      execFileSync('git', ['commit', '--quiet', '--allow-empty', '-m', message], {
+      execFileSync('git', args, {
         cwd,
         env: { ...env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date },
         stdio: ['ignore', 'pipe', 'pipe'],
       });
+    };
+    const commitAt = (message) => {
+      git(cwd, 'add', '-A');
+      atNextTick('commit', '--quiet', '--allow-empty', '-m', message);
     };
     write(cwd, 'README.md', '# history\n');
     write(
@@ -663,21 +667,11 @@ export function makeFixtures(destDir, only) {
     git(cwd, 'checkout', '--quiet', 'main');
     write(cwd, 'main.txt', 'from main\n');
     commitAt('main work');
-    tick += 1;
-    const mergeDate = new Date(Date.UTC(2026, 0, 1, 0, 0, tick)).toISOString();
-    execFileSync('git', ['merge', '--quiet', '--no-ff', '-m', 'merge side', 'side'], {
-      cwd,
-      env: { ...env, GIT_AUTHOR_DATE: mergeDate, GIT_COMMITTER_DATE: mergeDate },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    atNextTick('merge', '--quiet', '--no-ff', '-m', 'merge side', 'side');
 
+    // 补足到过 50 条只为翻页：空提交即可，省掉每条一次 `add`
     for (let i = 0; i < 52; i += 1) {
-      write(
-        cwd,
-        'log.txt',
-        lines(i + 1, (n) => `step ${n}`),
-      );
-      commitAt(`step ${i}`);
+      atNextTick('commit', '--quiet', '--allow-empty', '-m', `step ${i}`);
     }
     repos.history = cwd;
   }

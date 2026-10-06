@@ -6,19 +6,13 @@
 // 之后 × 的事件压根不经过 tab 按钮，那三样跟着消失。「在看哪个文件」由活动 tab 回答，完整路径
 // 挂在 `title` 上；栏下不再留一行路径横杠——每个文件的名字会在栏里与栏下各写一遍。
 
-import { FileCode, FileDiff, GitCommitHorizontal, X } from 'lucide-preact';
+import { X } from 'lucide-preact';
 import { useEffect, useRef } from 'preact/hooks';
-import {
-  activeEditorKey,
-  type Editor,
-  type EditorKind,
-  editors,
-  keyOf,
-  pinEditor,
-} from '../state/editors';
+import { activeEditorKey, type Editor, editors, keyOf, pinEditor } from '../state/editors';
 import { shortSha } from '../state/history';
 import { activateEditor, closeEditor } from '../state/store';
 import { splitForDisplay } from './ChangeList';
+import { KIND_ICON } from './EmptyState';
 import { Icon } from './Icon';
 import { IconButton } from './IconButton';
 
@@ -32,13 +26,6 @@ import { IconButton } from './IconButton';
 // 扁。`group`：关闭按钮的显隐跟着整个 tab 的悬停走。手型光标不在这里写：两枚都是 `<button>`，
 // `app.css` 那条 `@layer base` 规则收了它们。
 const TAB_CLASS = 'group flex shrink-0 items-center border-b text-sm';
-
-/** 种类图标是同一路径几个 tab 之间唯一的视觉差别，与空态那几枚同源。 */
-const KIND_ICON = {
-  diff: FileDiff,
-  file: FileCode,
-  commit: GitCommitHorizontal,
-} as const satisfies Record<EditorKind, unknown>;
 
 function Tab({ editor, active }: { editor: Editor; active: boolean }) {
   const key = keyOf(editor);
@@ -64,7 +51,7 @@ function Tab({ editor, active }: { editor: Editor; active: boolean }) {
         type="button"
         role="tab"
         aria-selected={active}
-        title={editor.sha === undefined ? editor.path : `${editor.path} @ ${editor.sha}`}
+        title={editor.kind === 'commit' ? `${editor.path} @ ${editor.sha}` : editor.path}
         onClick={() => activateEditor(key)}
         // 幂等的固定：一次双击是 click、click、dblclick 三个事件，前两个已经把 tab 开好并激活
         onDblClick={() => pinEditor(key)}
@@ -76,13 +63,14 @@ function Tab({ editor, active }: { editor: Editor; active: boolean }) {
         // 就是上下各一条点不到的死区
         class="flex items-center gap-1.5 self-stretch pl-3 focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus-border"
       >
+        {/* 种类图标是同一路径几个 tab 之间唯一的视觉差别，与空态那几枚同一张表 */}
         <Icon icon={KIND_ICON[editor.kind]} class="shrink-0" />
         {/* 文件名与目录同住一个 truncate span（名在前、目录作它的行内子元素），理由与变更列表
             那一行一字不差：省略号在右端天然先吃掉目录。预览 tab 斜体，固定之后转正 */}
         <span class={`max-w-64 min-w-0 truncate${editor.pinned ? '' : ' italic'}`}>
           {name}
           {/* commit tab 在名后跟一个短哈希：同一个文件在两次提交里是两个 tab，没有它两个长得一样 */}
-          {editor.sha !== undefined && (
+          {editor.kind === 'commit' && (
             <span class="ml-1.5 font-mono text-xs text-description-foreground">
               {shortSha(editor.sha)}
             </span>

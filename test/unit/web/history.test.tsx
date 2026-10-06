@@ -16,6 +16,7 @@ import {
   editorKey,
   editors,
   keyOf,
+  openCommitEditor,
   openEditor,
 } from '../../../src/web/state/editors';
 import {
@@ -30,7 +31,6 @@ import {
 import {
   activateEditor,
   activeTab,
-  commitDiffKey,
   commitDiffStates,
   refresh,
   repoState,
@@ -214,7 +214,9 @@ describe('HistoryList 组件', () => {
     const fileRow = container.querySelector('[title="src/b.ts"]') as HTMLElement;
     fileRow.click();
     await waitFor(() =>
-      expect(commitDiffStates.value.get(commitDiffKey(sha(100), 'src/b.ts'))?.status).toBe('ready'),
+      expect(commitDiffStates.value.get(editorKey('commit', 'src/b.ts', sha(100)))?.status).toBe(
+        'ready',
+      ),
     );
     const diffCall = query(calls.find((url) => url.startsWith('/api/commit-diff')) as string);
     expect([diffCall.get('sha'), diffCall.get('path'), diffCall.get('oldPath')]).toEqual([
@@ -231,8 +233,8 @@ describe('HistoryList 组件', () => {
 
 describe('commit tab', () => {
   test('键带 sha：同一个文件在两次提交里是两个 tab', () => {
-    openEditor('commit', 'a.ts', true, sha(1));
-    openEditor('commit', 'a.ts', true, sha(2));
+    openCommitEditor(sha(1), 'a.ts', undefined, true);
+    openCommitEditor(sha(2), 'a.ts', undefined, true);
     expect(editors.value.map(keyOf)).toEqual([
       editorKey('commit', 'a.ts', sha(1)),
       editorKey('commit', 'a.ts', sha(2)),
@@ -241,7 +243,7 @@ describe('commit tab', () => {
   });
 
   test('活动时两栏不高亮——同名那一行说的是工作区那一份', () => {
-    openEditor('commit', 'a.ts', false, sha(1));
+    openCommitEditor(sha(1), 'a.ts', undefined, false);
     expect(activeEditorPath.value).toBeNull();
     openEditor('diff', 'a.ts');
     expect(activeEditorPath.value).toBe('a.ts');
@@ -251,7 +253,7 @@ describe('commit tab', () => {
     const calls = stubJsonBy(() => ({ payload: { kind: 'text', patch: 'p\n' } }));
     selectCommitFile(sha(1), { path: 'a.ts', status: 'M' });
     await waitFor(() =>
-      expect(commitDiffStates.value.get(commitDiffKey(sha(1), 'a.ts'))?.status).toBe('ready'),
+      expect(commitDiffStates.value.get(editorKey('commit', 'a.ts', sha(1)))?.status).toBe('ready'),
     );
     selectCommitFile(sha(1), { path: 'a.ts', status: 'M' });
     expect(calls.filter((url) => url.startsWith('/api/commit-diff'))).toHaveLength(1);
@@ -265,7 +267,7 @@ describe('commit tab', () => {
         : { payload: { kind: 'text', patch: 'p\n' } },
     );
     selectCommitFile(sha(1), { path: 'b.ts', oldPath: 'a.ts', status: 'R' });
-    const key = commitDiffKey(sha(1), 'b.ts');
+    const key = editorKey('commit', 'b.ts', sha(1));
     await waitFor(() => expect(commitDiffStates.value.get(key)?.status).toBe('error'));
     openEditor('diff', 'other.ts', true);
     fail = false;
@@ -284,10 +286,10 @@ describe('refresh 对 History 那一半', () => {
   };
 
   test('commit tab 不收编、不重取——工作区变了与它无关', async () => {
-    openEditor('commit', 'a.ts', true, sha(1));
+    openCommitEditor(sha(1), 'a.ts', undefined, true);
     commitDiffStates.value = new Map([
       [
-        commitDiffKey(sha(1), 'a.ts'),
+        editorKey('commit', 'a.ts', sha(1)),
         { status: 'ready', rename: null, payload: { kind: 'binary' } },
       ],
     ]);

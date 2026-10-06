@@ -19,6 +19,7 @@ import {
   ExpandChevron,
   indent,
   ROW_BASE,
+  SELECTED,
   TreeRow,
 } from './tree-row';
 
@@ -57,7 +58,7 @@ function Row({ entry, depth }: { entry: TreeEntry; depth: number }) {
     // 被忽略的灰显（次要色 + 降透明度），与 VS Code 一致。选中时不灰——那一行此刻是主角。
     // 悬停底色不在这里，它画在 `TreeRow` 的 group div 上
     const tone = selected
-      ? 'bg-list-active-selection-background text-list-active-selection-foreground'
+      ? SELECTED
       : entry.ignored
         ? 'text-description-foreground opacity-60'
         : '';

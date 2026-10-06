@@ -5,11 +5,11 @@
 
 import type { Stats } from 'node:fs';
 import { lstat } from 'node:fs/promises';
-import type { DiffPayload } from '../shared/protocol.ts';
-import { missingObjects, resolveCommit } from './history.ts';
+import type { DiffPayload, ImageSide } from '../shared/protocol.ts';
+import { resolveCommit } from './history.ts';
 import { baseBlobSize } from './image.ts';
 import { type DiffBase, resolveDiffBase } from './repo.ts';
-import { DIFF_GUARDS, GitError, runGit, runGitStrict } from './run.ts';
+import { GitError, runGit, runGitStrict } from './run.ts';
 import {
   imageMimeOf,
   inspectFile,
@@ -96,8 +96,8 @@ async function readNumstat(
   oldPath: string | undefined,
 ): Promise<{ binary: boolean; lines: number } | null> {
   const args = oldPath
-    ? ['diff', ...DIFF_GUARDS, ...range, '--numstat', '-z', '-M', '--', path, oldPath]
-    : ['diff', ...DIFF_GUARDS, ...range, '--numstat', '-z', '--', path];
+    ? ['diff', ...range, '--numstat', '-z', '-M', '--', path, oldPath]
+    : ['diff', ...range, '--numstat', '-z', '--', path];
   const records = parseNumstat(await runGitStrict(args, root));
 
   /**
@@ -162,13 +162,21 @@ async function imageDiff(
     baseBlobSize(root, base.ref, basePath),
     worktreeStat(abs),
   ]);
-  const largest = Math.max(oldSize ?? 0, info?.size ?? 0);
+  return imagePayload(
+    oldSize === null ? null : { path: basePath, size: oldSize, version: base.oid },
+    info === null ? null : { path, size: info.size, version: worktreeVersion(info) },
+  );
+}
+
+/**
+ * 两侧元数据 → payload，工作区与提交两条路共用。**5MB 按侧卡**：任一侧超过就整个回 `too-large`；
+ * `size` 取两侧里大的那个（取不到给 0）。两份各写时阈值或取哪一侧的体积漂开，同一张图在两个视图
+ * 里一个说太大、一个照常画。
+ */
+function imagePayload(old: ImageSide | null, fresh: ImageSide | null): DiffPayload {
+  const largest = Math.max(old?.size ?? 0, fresh?.size ?? 0);
   if (largest > MAX_BYTES) return { kind: 'too-large', size: largest, reason: 'size' };
-  return {
-    kind: 'image',
-    old: oldSize === null ? null : { path: basePath, size: oldSize, version: base.oid },
-    new: info === null ? null : { path, size: info.size, version: worktreeVersion(info) },
-  };
+  return { kind: 'image', old, new: fresh };
 }
 
 /**
@@ -237,8 +245,8 @@ async function gatedPatch(root: string, source: PatchSource): Promise<DiffPayloa
   }
 
   const args = oldPath
-    ? ['diff', ...DIFF_GUARDS, ...range, '-M', '--', path, oldPath]
-    : ['diff', ...DIFF_GUARDS, ...range, '--', path];
+    ? ['diff', ...range, '-M', '--', path, oldPath]
+    : ['diff', ...range, '--', path];
   let result: Awaited<ReturnType<typeof runGit>>;
   try {
     result = await runGit(args, root, { maxStdoutBytes: MAX_BYTES });
@@ -357,7 +365,7 @@ export async function readCommitDiff(
   const { commit, parent } = await resolveCommit(root, sha);
   const range = [parent, commit.sha];
 
-  const stat = await readNumstat(root, range, path, oldPath).catch(missingObjects);
+  const stat = await readNumstat(root, range, path, oldPath);
   if (stat === null) throw new WorktreeError('not-found', 'file not changed in this commit');
   return gatedPatch(root, {
     range,
@@ -372,7 +380,7 @@ export async function readCommitDiff(
 /**
  * 提交里图片的两侧，**都读对象库**：旧侧 `<parent>:<旧路径或路径>`、新侧 `<sha>:<路径>`，与
  * 工作区 diff 的旧侧同一条 `cat-file -s`。`version` 是两端的对象名——提交不可变，这两个身份
- * 永远不会换内容。5MB 按侧卡、`size` 取大的那个，与 `imageDiff` 同一条口径。
+ * 永远不会换内容。
  */
 async function commitImageDiff(
   root: string,
@@ -386,11 +394,8 @@ async function commitImageDiff(
     baseBlobSize(root, parent, basePath),
     baseBlobSize(root, sha, path),
   ]);
-  const largest = Math.max(oldSize ?? 0, newSize ?? 0);
-  if (largest > MAX_BYTES) return { kind: 'too-large', size: largest, reason: 'size' };
-  return {
-    kind: 'image',
-    old: oldSize === null ? null : { path: basePath, size: oldSize, version: parent },
-    new: newSize === null ? null : { path, size: newSize, version: sha },
-  };
+  return imagePayload(
+    oldSize === null ? null : { path: basePath, size: oldSize, version: parent },
+    newSize === null ? null : { path, size: newSize, version: sha },
+  );
 }

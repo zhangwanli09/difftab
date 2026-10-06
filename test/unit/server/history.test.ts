@@ -48,16 +48,6 @@ function shaOf(subject: string): string {
   return line.slice(0, 40);
 }
 
-async function codeOf(promise: Promise<unknown>): Promise<string> {
-  try {
-    await promise;
-  } catch (cause) {
-    if (cause instanceof WorktreeError) return cause.code;
-    throw cause;
-  }
-  throw new Error('期望抛 WorktreeError，却正常返回了');
-}
-
 describe('解析器', () => {
   test('parseLog 按五段一组切，根提交的空 %P 是空段不是缺段', () => {
     const a = 'a'.repeat(40);
@@ -150,8 +140,12 @@ describe('listCommits——锚点分页', () => {
   });
 
   test('head 不是完整对象名 → invalid-path；不存在的提交 → not-found', async () => {
-    expect(await codeOf(listCommits(root, { head: 'HEAD', skip: 0 }))).toBe('invalid-path');
-    expect(await codeOf(listCommits(root, { head: 'f'.repeat(40), skip: 0 }))).toBe('not-found');
+    await expect(listCommits(root, { head: 'HEAD', skip: 0 })).rejects.toMatchObject({
+      code: 'invalid-path',
+    });
+    await expect(listCommits(root, { head: 'f'.repeat(40), skip: 0 })).rejects.toMatchObject({
+      code: 'not-found',
+    });
   });
 });
 
@@ -187,12 +181,12 @@ describe('readCommit——元数据与文件清单', () => {
       },
     );
     const tag = execFileSync('git', ['rev-parse', 'v1'], { cwd: root, encoding: 'utf8' }).trim();
-    expect(await codeOf(readCommit(root, tag))).toBe('not-found');
+    await expect(readCommit(root, tag)).rejects.toMatchObject({ code: 'not-found' });
   });
 
   test('树对象、标签以外的对象名 → not-found', async () => {
     const tree = execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { cwd: root, encoding: 'utf8' });
-    expect(await codeOf(readCommit(root, tree.trim()))).toBe('not-found');
+    await expect(readCommit(root, tree.trim())).rejects.toMatchObject({ code: 'not-found' });
   });
 });
 
@@ -217,12 +211,12 @@ describe('readCommitDiff——提交里单个文件的补丁', () => {
   });
 
   test('这次提交没动的文件 → not-found；路径走出仓库 → invalid-path', async () => {
-    expect(await codeOf(readCommitDiff(root, shaOf('edit a'), { path: 'README.md' }))).toBe(
-      'not-found',
-    );
-    expect(await codeOf(readCommitDiff(root, shaOf('edit a'), { path: '../x' }))).toBe(
-      'invalid-path',
-    );
+    await expect(
+      readCommitDiff(root, shaOf('edit a'), { path: 'README.md' }),
+    ).rejects.toMatchObject({ code: 'not-found' });
+    await expect(readCommitDiff(root, shaOf('edit a'), { path: '../x' })).rejects.toMatchObject({
+      code: 'invalid-path',
+    });
   });
 
   test('图片：两侧都来自对象库，version 是两端的对象名', async () => {
@@ -250,11 +244,13 @@ describe('读一下就写库的两个陷阱（driverTraps：partial clone + cach
   const notes = (cwd: string) =>
     execFileSync('git', ['for-each-ref', 'refs/notes'], { cwd, encoding: 'utf8' });
 
-  test('旧提交的 blob 不在本地：明确拒绝（unsupported），不去 promisor remote 取', async () => {
+  test('旧提交的 blob 不在本地：以 missing-object 失败（HTTP 层译成 unsupported），不去 promisor remote 取', async () => {
     const cwd = repos.driverTraps;
     const before = objects(cwd);
     const sha = execFileSync('git', ['rev-parse', 'HEAD~1'], { cwd, encoding: 'utf8' }).trim();
-    expect(await codeOf(readCommitDiff(cwd, sha, { path: 'f.x' }))).toBe('unsupported');
+    await expect(readCommitDiff(cwd, sha, { path: 'f.x' })).rejects.toMatchObject({
+      kind: 'missing-object',
+    });
     expect(objects(cwd)).toBe(before);
   });
 

@@ -64,7 +64,7 @@ export interface FixtureRepos {
   images: string;
   /**
    * 59 条提交：根提交、修改、`git mv` 重命名、改写 PNG、`--no-ff` 合并（第一父是 main 那侧），
-   * 外加 52 条 `step N`。时间逐条递增，最新的是 `step 51`。
+   * 外加 52 条空提交 `step N`。时间逐条递增，最新的是 `step 51`。
    */
   history: string;
   /**

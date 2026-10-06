@@ -9,20 +9,30 @@
 
 import { batch, computed, signal } from '@preact/signals';
 
-export type EditorKind = 'diff' | 'file' | 'commit';
-
-export interface Editor {
-  readonly kind: EditorKind;
+interface EditorBase {
   readonly path: string;
-  /**
-   * 只有 `commit` 有：这个文件是哪次提交里的那一版。**单独一个字段而不是拼进 `path`**——
-   * `path` 的消费者（两栏高亮、tab 上的名字与目录、`title`）照旧读文件路径，不必学会拆一个
-   * 复合字符串。
-   */
-  readonly sha?: string;
   /** false 即预览 tab：标题斜体，会被下一次单击顶掉。 */
   readonly pinned: boolean;
 }
+
+/**
+ * 按 `kind` 判别的联合：`commit` 才有、且一定有 `sha`。写成「`sha?` 挂在所有种类上」时类型允许
+ * 没有 sha 的 commit tab 与带 sha 的 diff tab，每个消费者只好自己挑一个判别字段去守，挑法还不一致。
+ */
+export type Editor =
+  | (EditorBase & { readonly kind: 'diff' | 'file' })
+  | (EditorBase & {
+      readonly kind: 'commit';
+      /**
+       * 这个文件是哪次提交里的那一版。**单独一个字段而不是拼进 `path`**——`path` 的消费者（两栏
+       * 高亮、tab 上的名字与目录、`title`）照旧读文件路径，不必学会拆一个复合字符串。
+       */
+      readonly sha: string;
+      /** 重命名的旧路径。取补丁要带上它（只传新路径会退化成全新增），所以跟着 tab 走。 */
+      readonly oldPath?: string | undefined;
+    });
+
+export type EditorKind = Editor['kind'];
 
 /**
  * tab 的身份是「视图种类 + 路径」：同一路径从 `Changes` 点开的 diff 与从 `Files` 点开的全文是
@@ -37,7 +47,10 @@ export type EditorKey = `${EditorKind}:${string}`;
  */
 export const editorKey = (kind: EditorKind, path: string, sha?: string): EditorKey =>
   sha === undefined ? `${kind}:${path}` : `${kind}:${sha}:${path}`;
-export const keyOf = (editor: Editor): EditorKey => editorKey(editor.kind, editor.path, editor.sha);
+export const keyOf = (editor: Editor): EditorKey =>
+  editor.kind === 'commit'
+    ? editorKey(editor.kind, editor.path, editor.sha)
+    : editorKey(editor.kind, editor.path);
 
 /** 换掉第 `index` 项，回一份新数组。`Array.prototype.with` 是 ES2023，前端 lib 停在 ES2022。 */
 const replaceAt = (list: readonly Editor[], index: number, editor: Editor): Editor[] =>
@@ -86,18 +99,27 @@ export const activeEditorPath = computed<string | null>(() => {
  * - 键不存在：**追加一个固定 tab，不碰现有的预览 tab**——「先开预览再 pin」会先顶掉一个无辜的
  *   预览 tab、再把顶掉它的那个固定住，两步都在这里判才不会那样
  */
-export function openEditor(
-  kind: EditorKind,
+export function openEditor(kind: 'diff' | 'file', path: string, pinned = false): Editor | null {
+  return open({ kind, path, pinned });
+}
+
+/** 同 `openEditor`，开的是一次提交里的一个文件。 */
+export function openCommitEditor(
+  sha: string,
   path: string,
+  oldPath?: string,
   pinned = false,
-  sha?: string,
 ): Editor | null {
-  const key = editorKey(kind, path, sha);
+  return open({ kind: 'commit', path, pinned, sha, oldPath });
+}
+
+function open(next: Editor): Editor | null {
+  const key = keyOf(next);
+  const { pinned } = next;
   const list = editors.value;
   let replaced: Editor | null = null;
   batch(() => {
     if (indexOfKey(list, key) === -1) {
-      const next: Editor = sha === undefined ? { kind, path, pinned } : { kind, path, pinned, sha };
       const previewIndex = pinned ? -1 : list.findIndex((editor) => !editor.pinned);
       const preview = list[previewIndex];
       if (preview === undefined) {

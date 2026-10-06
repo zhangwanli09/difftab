@@ -30,6 +30,12 @@ import { IconButton } from './IconButton';
  * 是一枚 SVG 加一段文字，替换元素的基线是它的底边，按基线排三角会整个浮在文字上方，得
  * `items-center`——两种行各补自己那一个。左内边距一律由 `indent()` 给（见上）。
  */
+/**
+ * 选中行的差量类，三栏（变更列表、目录树、提交历史）共用：同一个「右侧此刻是它」在三处得是同一种
+ * 颜色，各抄一份时改一处不报错，只是切一次 tab 那一行换了个色。
+ */
+export const SELECTED = 'bg-list-active-selection-background text-list-active-selection-foreground';
+
 export const ROW_BASE =
   'flex w-full gap-1.5 pr-3 text-left focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus-border';
 

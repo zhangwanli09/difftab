@@ -168,7 +168,11 @@ test('log 的参数逐段等于两种字面量形态——gpg 与外部 diff 驱
     const rest = argv.slice(6);
     if (rest.length === 3) assert.match(rest.shift(), /^--skip=\d+$/, `log 的第七段：${shown}`);
     assert.equal(rest.length, 2, `log 的参数段数不对：${shown}`);
-    assert.match(rest[0], OID, `log 的起点不是完整对象名：${shown}`);
+    // 起点只有两种：第一页的字面量 `HEAD`，或请求带来、已过完整对象名校验的锚点 / 提交
+    assert.ok(
+      rest[0] === 'HEAD' || OID.test(rest[0]),
+      `log 的起点不是 HEAD 或完整对象名：${shown}`,
+    );
     assert.equal(rest[1], '--', `log 没以 -- 收尾：${shown}`);
   }
 });

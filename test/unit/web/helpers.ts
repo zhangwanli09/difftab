@@ -43,7 +43,7 @@ export function resetHistory(): void {
 }
 
 /** 开一个固定 tab——产品里开出来的一律是预览，固定是双击那一下另做的，用例里合成一步。 */
-export function openPinned(kind: EditorKind, path: string): void {
+export function openPinned(kind: Exclude<EditorKind, 'commit'>, path: string): void {
   openEditor(kind, path);
   pinEditor(editorKey(kind, path));
 }

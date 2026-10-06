@@ -38,6 +38,7 @@ import {
   ExpandChevron,
   indent,
   ROW_BASE,
+  SELECTED,
   TreeRow,
 } from './tree-row';
 
@@ -181,12 +182,7 @@ function FileRow({
    * 基础类只写一次，只在选中时追加**差量**（悬停底色不在这里——它画在 `TreeRow` 的 group div 上）。
    */
   const rowClass = useComputed(
-    () =>
-      `${ROW_CLASS} ${
-        activeEditorPath.value === file.path
-          ? 'bg-list-active-selection-background text-list-active-selection-foreground'
-          : ''
-      }`,
+    () => `${ROW_CLASS} ${activeEditorPath.value === file.path ? SELECTED : ''}`,
   );
   return (
     <TreeRow

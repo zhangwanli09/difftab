@@ -272,7 +272,7 @@ export function App() {
             <EditorTabs />
             {active.kind === 'file' ? (
               <FileView key={keyOf(active)} path={active.path} />
-            ) : active.sha !== undefined ? (
+            ) : active.kind === 'commit' ? (
               <CommitDiffView key={keyOf(active)} sha={active.sha} path={active.path} />
             ) : (
               <DiffView key={keyOf(active)} path={active.path} />

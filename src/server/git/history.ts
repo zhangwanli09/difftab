@@ -2,19 +2,19 @@
 // 共用三道闸，分开写就是两份阈值。
 //
 // **只读白名单为这里只加了 `log` 一条**，其余全部落在已有条目上：提交的 diff 是
-// `diff <parent> <sha>`，父提交取 `log` 的 `%P`，校验是 `rev-parse`。不用 `show`（参数面太大、
+// `diff <parent> <sha>`，父提交取 `log` 的 `%P`，校验也是那一次 `log`。不用 `show`（参数面太大、
 // 钉不住）、`diff-tree`（又一条白名单，合并提交默认还什么都不输出）、`rev-list`（同上）。
 
 import { readFile } from 'node:fs/promises';
-import { isAbsolute, join } from 'node:path';
+import { join, resolve } from 'node:path';
 import type {
   CommitDetail,
   CommitFileEntry,
   CommitPage,
   CommitSummary,
 } from '../shared/protocol.ts';
-import { emptyTreeOf, parseGitVersion } from './repo.ts';
-import { DIFF_GUARDS, GitError, runGit, runGitStrict } from './run.ts';
+import { atLeast, emptyTreeOf, isOid, parseGitVersion } from './repo.ts';
+import { runGit, runGitStrict } from './run.ts';
 import { WorktreeError } from './worktree.ts';
 
 /** 一页多少条。取 `PAGE_SIZE + 1` 条来判 `hasMore`，不另起一次计数。 */
@@ -51,25 +51,14 @@ function logArgs(rev: string, count: number, skip?: number): string[] {
   ];
 }
 
-const OID = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
-
 /**
  * 请求里的提交只认**完整的十六进制对象名**（SHA-1 40 位 / SHA-256 64 位）：不认缩写、不认
  * `HEAD~3` 一类 revision 表达式，更不认 `-` 开头的值。前端手里的 sha 全部来自后端自己的输出，
  * 用不着任何 revision 语法。
  */
 export function assertOid(value: string): string {
-  if (!OID.test(value)) throw new WorktreeError('invalid-path', 'not a full commit hash');
+  if (!isOid(value)) throw new WorktreeError('invalid-path', 'not a full commit hash');
   return value;
-}
-
-/** 对象名合法不等于是本仓库里的一个提交；不是即 `not-found`。 */
-async function verifyCommit(root: string, sha: string): Promise<void> {
-  const result = await runGit(
-    ['rev-parse', '--verify', '--quiet', `${assertOid(sha)}^{commit}`],
-    root,
-  );
-  if (result.code !== 0) throw new WorktreeError('not-found', 'no such commit');
 }
 
 /** `log -z` + `LOG_FORMAT` 的解析：按五段一组切。 */
@@ -83,7 +72,7 @@ export function parseLog(output: string): CommitSummary[] {
     );
     // 换行只可能出现在记录之间（老版本 git 在 `-z` 下仍可能补一个），不属于任何字段
     const id = sha.replace(/^\n/, '');
-    if (!OID.test(id)) continue;
+    if (!isOid(id)) continue;
     commits.push({
       sha: id,
       parents: parents === '' ? [] : parents.split(' '),
@@ -104,23 +93,21 @@ export async function listCommits(
   root: string,
   query: { head?: string | undefined; skip: number },
 ): Promise<CommitPage> {
-  let head: string;
-  if (query.head === undefined) {
-    const resolved = await runGit(['rev-parse', '--verify', '--quiet', 'HEAD'], root);
-    const oid = resolved.stdout.trim();
-    if (resolved.code !== 0 || !OID.test(oid)) return { head: null, commits: [], hasMore: false };
-    head = oid;
-  } else {
-    head = assertOid(query.head);
-    await verifyCommit(root, head);
+  // 第一页直接从 `HEAD` 起：回来的第一条就是 HEAD 此刻的 oid，不为锚点另起一次 `rev-parse`
+  const rev = query.head === undefined ? 'HEAD' : assertOid(query.head);
+  const result = await runGit(logArgs(rev, PAGE_SIZE + 1, query.skip), root);
+  if (result.code !== 0) {
+    // 从 HEAD 起却失败只有一种解释：HEAD 未出生（空仓库，实测 128）。带着锚点失败则是锚点不存在
+    if (query.head === undefined) return { head: null, commits: [], hasMore: false };
+    throw new WorktreeError('not-found', 'no such commit');
   }
-
-  const commits = parseLog(await runGitStrict(logArgs(head, PAGE_SIZE + 1, query.skip), root));
+  const commits = parseLog(result.stdout);
+  const head = query.head ?? commits[0]?.sha ?? null;
   return { head, commits: commits.slice(0, PAGE_SIZE), hasMore: commits.length > PAGE_SIZE };
 }
 
 /** 一次提交与它的对比端。提交详情、单个文件的补丁、图片两侧三条路都从这一份出发。 */
-export interface CommitRange {
+interface CommitRange {
   commit: CommitSummary;
   /**
    * **第一父**。合并提交因此展示「这次合并相对主线带进来了什么」，与 GitHub 提交页、VS Code
@@ -176,20 +163,12 @@ function guardLazyFetch(root: string): Promise<void> {
 
 async function checkLazyFetch(root: string): Promise<void> {
   const version = parseGitVersion((await runGit(['--version'], root)).stdout);
-  if (
-    version === null ||
-    version.major > LAZY_FETCH_SWITCH.major ||
-    (version.major === LAZY_FETCH_SWITCH.major && version.minor >= LAZY_FETCH_SWITCH.minor)
-  ) {
-    return;
-  }
+  if (version === null || atLeast(version, LAZY_FETCH_SWITCH)) return;
   const common = (await runGitStrict(['rev-parse', '--git-common-dir'], root)).trim();
   let config = '';
   try {
-    config = await readFile(
-      join(isAbsolute(common) ? common : join(root, common), 'config'),
-      'utf8',
-    );
+    // `resolve` 而非手拼：`--git-common-dir` 在仓库根下给相对路径、在子目录或 worktree 里给绝对路径
+    config = await readFile(join(resolve(root, common), 'config'), 'utf8');
   } catch {
     return;
   }
@@ -199,20 +178,6 @@ async function checkLazyFetch(root: string): Promise<void> {
       'commit history in a partial clone needs git 2.44 or newer',
     );
   }
-}
-
-/**
- * 缺对象（partial clone，`GIT_NO_LAZY_FETCH` 之下）翻译成一句能看懂的拒绝，而不是一条 500。
- * 其余失败原样抛。
- */
-export function missingObjects(cause: unknown): never {
-  if (cause instanceof GitError && /promisor remote|lazy fetching disabled/.test(cause.stderr)) {
-    throw new WorktreeError(
-      'unsupported',
-      'this commit is not available locally (partial clone) — difftab does not fetch',
-    );
-  }
-  throw cause;
 }
 
 /**
@@ -247,8 +212,8 @@ export function parseNameStatus(output: string): CommitFileEntry[] {
 export async function readCommit(root: string, sha: string): Promise<CommitDetail> {
   const { commit, parent } = await resolveCommit(root, sha);
   const output = await runGitStrict(
-    ['diff', ...DIFF_GUARDS, parent, commit.sha, '--name-status', '-z', '-M', '--'],
+    ['diff', parent, commit.sha, '--name-status', '-z', '-M', '--'],
     root,
-  ).catch(missingObjects);
+  );
   return { ...commit, files: parseNameStatus(output) };
 }

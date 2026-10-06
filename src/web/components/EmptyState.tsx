@@ -19,6 +19,7 @@ import {
   type LucideIcon,
 } from 'lucide-preact';
 import type { ComponentChildren } from 'preact';
+import type { EditorKind } from '../state/editors';
 import { activeTab, repoState } from '../state/store';
 import { Icon } from './Icon';
 
@@ -37,6 +38,21 @@ export function SidebarPlaceholder({ children }: { children: ComponentChildren }
     </p>
   );
 }
+
+/**
+ * 三种 tab 的种类图标——编辑器 tab 上那枚与空着时右侧那枚**同一张表**：空着时右侧没有「此刻是哪种
+ * 视图」可言，按侧栏档位查它接下来会开出哪种 tab。写成 `Record` 是让加第四种时少填一格成为编译错误。
+ */
+export const KIND_ICON: Record<EditorKind, LucideIcon> = {
+  diff: FileDiff,
+  file: FileCode,
+  commit: GitCommitHorizontal,
+};
+const TAB_KIND: Record<typeof activeTab.value, EditorKind> = {
+  changes: 'diff',
+  files: 'file',
+  history: 'commit',
+};
 
 function EmptyState({ icon, children }: { icon: LucideIcon; children: ComponentChildren }) {
   return (
@@ -75,6 +91,5 @@ export function PanelEmptyState() {
   if (tab === 'changes' && repoState.value?.files.length === 0) {
     return <EmptyState icon={CircleCheck}>Working tree clean</EmptyState>;
   }
-  const icon = tab === 'files' ? FileCode : tab === 'history' ? GitCommitHorizontal : FileDiff;
-  return <EmptyState icon={icon}>Select a file on the left</EmptyState>;
+  return <EmptyState icon={KIND_ICON[TAB_KIND[tab]]}>Select a file on the left</EmptyState>;
 }

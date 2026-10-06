@@ -11,6 +11,7 @@ import { readFileContent } from '../git/file.ts';
 import { listCommits, readCommit } from '../git/history.ts';
 import { readImageBytes } from '../git/image.ts';
 import { type RepoInfo, repoNameOf } from '../git/repo.ts';
+import { GitError } from '../git/run.ts';
 import { readStatus, readStatusRaw } from '../git/status.ts';
 import { readTree } from '../git/tree.ts';
 import { WorktreeError } from '../git/worktree.ts';
@@ -431,6 +432,16 @@ export async function startServer(
       }
       if (cause instanceof WorktreeError) {
         sendError(res, 400, cause.code, cause.message);
+        return;
+      }
+      // partial clone 里要读的对象不在本地：如实说取不到，不替用户去远端取——那会往对象库里写
+      if (cause instanceof GitError && cause.kind === 'missing-object') {
+        sendError(
+          res,
+          400,
+          'unsupported',
+          'not available locally (partial clone); difftab does not fetch',
+        );
         return;
       }
       const detail = cause instanceof Error ? cause.message : String(cause);

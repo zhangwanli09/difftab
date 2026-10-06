@@ -38,14 +38,29 @@ export interface RepoInfo {
 }
 
 /** `git version 2.50.1 (Apple Git-155)` → `{ major: 2, minor: 50 }`。 */
-export function parseGitVersion(output: string): { major: number; minor: number } | null {
+export function parseGitVersion(output: string): GitVersion | null {
   const m = /\bversion\s+(\d+)\.(\d+)/.exec(output);
   if (!m) return null;
   return { major: Number(m[1]), minor: Number(m[2]) };
 }
 
-function tooOld(v: { major: number; minor: number }): boolean {
-  return v.major < MIN_GIT.major || (v.major === MIN_GIT.major && v.minor < MIN_GIT.minor);
+export interface GitVersion {
+  major: number;
+  minor: number;
+}
+
+/** `v` 不低于 `min`。版本比较只此一份——启动下限与 `GIT_NO_LAZY_FETCH` 那道下限共用。 */
+export function atLeast(v: GitVersion, min: GitVersion): boolean {
+  return v.major > min.major || (v.major === min.major && v.minor >= min.minor);
+}
+
+/**
+ * 完整对象名：SHA-1 40 位 / SHA-256 64 位小写十六进制。**判据只此一份**——status 解析
+ * `# branch.oid` 与提交历史校验请求里的 sha 用的是同一条，两份漂开时前端拿 `BranchState.oid` 去比
+ * 的东西与后端认的对象名就不是一回事了。
+ */
+export function isOid(value: string): boolean {
+  return /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(value);
 }
 
 /**
@@ -71,7 +86,7 @@ export async function locateRepo(cwd: string): Promise<RepoInfo> {
   const parsed = version.code === 0 ? parseGitVersion(version.stdout) : null;
   // 解析不出版本号不当作失败：那多半是某个包装过的 git，而真正的判据是下面
   // rev-parse 能不能跑通。只有**确知**版本低于下限时才拒绝。
-  if (parsed && tooOld(parsed)) {
+  if (parsed && !atLeast(parsed, MIN_GIT)) {
     throw new PreflightError(
       'git-too-old',
       `difftab needs git ${MIN_GIT.major}.${MIN_GIT.minor} or newer ` +
@@ -155,7 +170,7 @@ export function emptyTreeOf(oid: string): string {
 /**
  * 本仓库对象格式下的空树哈希——空仓库的 diff 基准。手上还没有任何对象名，只能问 git。
  */
-export async function emptyTree(root: string): Promise<string> {
+async function emptyTree(root: string): Promise<string> {
   const format = await runGit(['rev-parse', '--show-object-format'], root);
   // `--show-object-format` 随 SHA-256 支持（git 2.29 前后）才引入，高于下限 2.11。
   // **非零退出即按 SHA-1 处理**——那个区间的 git 根本造不出 SHA-256 仓库，降级无歧义

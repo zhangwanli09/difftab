@@ -26,6 +26,7 @@ import {
   editors,
   focusEditor,
   keyOf,
+  openCommitEditor,
   openEditor,
   removeEditor,
   renameEditor,
@@ -255,10 +256,12 @@ export async function loadState(): Promise<boolean> {
 const cacheOf = (editor: Editor): PathCache<DiffRequestState> | PathCache<FileRequestState> =>
   editor.kind === 'diff' ? diffCache : editor.kind === 'file' ? fileCache : commitDiffCache;
 
-/** 缓存里的键：diff / file 按路径，commit 按「sha + 路径」——同一个文件在两次提交里是两份。 */
-export const commitDiffKey = (sha: string, path: string): string => `${sha}:${path}`;
+/**
+ * 缓存里的键：diff / file 按路径，commit 直接用 tab 的键——同一个文件在两次提交里是两份，而 tab 的
+ * 身份本来就把 sha 编进去了，不另编一套。
+ */
 const cacheKeyOf = (editor: Editor): string =>
-  editor.sha === undefined ? editor.path : commitDiffKey(editor.sha, editor.path);
+  editor.kind === 'commit' ? keyOf(editor) : editor.path;
 
 const forget = (editor: Editor): void => cacheOf(editor).forget(cacheKeyOf(editor));
 
@@ -400,12 +403,9 @@ export function activateEditor(key: EditorKey): void {
  */
 function refetch(editor: Editor): Promise<void> {
   if (editor.kind === 'commit') {
-    const sha = editor.sha;
-    if (sha === undefined) return Promise.resolve();
-    const state = commitDiffStates.value.get(commitDiffKey(sha, editor.path));
-    if (state?.status === 'ready') return Promise.resolve();
-    // 旧路径从上次那份状态里拿：它跟着请求走，打开时就记下了
-    return loadCommitDiff(sha, editor.path, state?.rename?.oldPath);
+    return commitDiffStates.value.get(keyOf(editor))?.status === 'ready'
+      ? Promise.resolve()
+      : loadCommitDiff(editor);
   }
   if (editor.kind === 'file') return loadFile(editor.path);
   const entry = repoState.value?.files.find((file) => file.path === editor.path);
@@ -487,19 +487,16 @@ export function openFile(path: string, { pinned = false } = {}): void {
 
 const commitDiffCache = pathCache<DiffRequestState>();
 
-/** 栏里每个 commit tab 的请求状态，按 `commitDiffKey(sha, path)` 存。 */
+/** 栏里每个 commit tab 的请求状态，按 tab 的键存。 */
 export const commitDiffStates = commitDiffCache.states;
 
 /**
  * 取一次提交里一个文件的补丁。重命名同样要把 `oldPath` 带上（只传新路径时退化成全新增）；相似
  * 度那一档没有——`--name-status` 的 `R<score>` 不进协议，标注只说「从哪改名来的」。
  */
-async function loadCommitDiff(
-  sha: string,
-  path: string,
-  oldPath: string | undefined,
-): Promise<void> {
-  const key = commitDiffKey(sha, path);
+async function loadCommitDiff(editor: Extract<Editor, { kind: 'commit' }>): Promise<void> {
+  const { sha, path, oldPath } = editor;
+  const key = keyOf(editor);
   const ticket = commitDiffCache.tickets.claim(key);
   const rename = oldPath === undefined ? null : { oldPath, score: null };
   commitDiffCache.set(key, { status: 'loading', rename });
@@ -516,13 +513,13 @@ async function loadCommitDiff(
 }
 
 /**
- * 在 `History` 里点一次提交的一个文件：开（或切到）它的 commit tab。**已经取到过就不再取**——
- * 与 diff / file 两种 tab「点一次取一次」刻意不同：那两种的内容随工作区变，这一种不会。
+ * 在 `History` 里点一次提交的一个文件：开（或切到）它的 commit tab 并按需取补丁。「要不要取」只在
+ * `refetch` 判一次——取到过（`ready`）就不再取，与 diff / file 两种 tab「点一次取一次」刻意不同：
+ * 那两种的内容随工作区变，这一种不会。
  */
 export function selectCommitFile(sha: string, entry: CommitFileEntry): void {
-  const replaced = openEditor('commit', entry.path, false, sha);
+  const replaced = openCommitEditor(sha, entry.path, entry.oldPath);
   if (replaced !== null) forget(replaced);
-  if (commitDiffStates.value.get(commitDiffKey(sha, entry.path))?.status !== 'ready') {
-    void loadCommitDiff(sha, entry.path, entry.oldPath);
-  }
+  const opened = activeEditor.value;
+  if (opened !== null) void refetch(opened);
 }
