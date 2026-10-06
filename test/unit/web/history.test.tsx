@@ -264,8 +264,9 @@ describe('HistoryList 组件', () => {
       expect(query(calls[0] as string).get('head')).toBe(sha(100));
       expect(query(calls[0] as string).get('skip')).toBe('50');
       // 旧观察者已断开，新换上的那个报一次初始状态
-      await mounted();
-      expect(observers).toHaveLength(2);
+      // 等的是「第二个出现」：只等「活着的恰好一个」时，旧的那个在新 effect 跑之前就满足它
+      await waitFor(() => expect(observers).toHaveLength(2));
+      expect(live()).toHaveLength(1);
       intersect();
       await waitFor(() => expect(historyList.value?.commits).toHaveLength(54));
       expect(query(calls[1] as string).get('skip')).toBe('52');
