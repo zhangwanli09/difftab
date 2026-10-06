@@ -9,11 +9,17 @@
 
 import { batch, computed, signal } from '@preact/signals';
 
-export type EditorKind = 'diff' | 'file';
+export type EditorKind = 'diff' | 'file' | 'commit';
 
 export interface Editor {
   readonly kind: EditorKind;
   readonly path: string;
+  /**
+   * 只有 `commit` 有：这个文件是哪次提交里的那一版。**单独一个字段而不是拼进 `path`**——
+   * `path` 的消费者（两栏高亮、tab 上的名字与目录、`title`）照旧读文件路径，不必学会拆一个
+   * 复合字符串。
+   */
+  readonly sha?: string;
   /** false 即预览 tab：标题斜体，会被下一次单击顶掉。 */
   readonly pinned: boolean;
 }
@@ -25,8 +31,13 @@ export interface Editor {
  */
 export type EditorKey = `${EditorKind}:${string}`;
 
-export const editorKey = (kind: EditorKind, path: string): EditorKey => `${kind}:${path}`;
-export const keyOf = (editor: Editor): EditorKey => editorKey(editor.kind, editor.path);
+/**
+ * `commit` 的键是 `commit:<sha>:<path>`：同一个文件在两次提交里是两个 tab。sha 是固定长度的
+ * 十六进制、不含 `:`，夹在中间也不产生歧义。
+ */
+export const editorKey = (kind: EditorKind, path: string, sha?: string): EditorKey =>
+  sha === undefined ? `${kind}:${path}` : `${kind}:${sha}:${path}`;
+export const keyOf = (editor: Editor): EditorKey => editorKey(editor.kind, editor.path, editor.sha);
 
 /** 换掉第 `index` 项，回一份新数组。`Array.prototype.with` 是 ES2023，前端 lib 停在 ES2022。 */
 const replaceAt = (list: readonly Editor[], index: number, editor: Editor): Editor[] =>
@@ -53,7 +64,12 @@ export const activeEditor = computed<Editor | null>(() => {
  * 文件，左栏却说「你没在看它」。高亮回答的是「右侧此刻是哪个文件」，两栏各拿自己的路径去比
  * 同一个值；VS Code 的列表选中态同样不随编辑器种类变。
  */
-export const activeEditorPath = computed<string | null>(() => activeEditor.value?.path ?? null);
+export const activeEditorPath = computed<string | null>(() => {
+  const editor = activeEditor.value;
+  // **commit tab 是唯一的例外**：两栏里同名的那一行说的是工作区那一份，而右侧是历史上的某一
+  // 版——照亮它是在说一件不成立的事。判据是「左栏那一行与右侧是不是同一份内容」，不是种类
+  return editor === null || editor.kind === 'commit' ? null : editor.path;
+});
 
 /**
  * 打开（或切到）一个 tab。缺省开出来的是预览 tab，固定归双击那一路的 `pinEditor`。返回**被顶掉的
@@ -70,13 +86,18 @@ export const activeEditorPath = computed<string | null>(() => activeEditor.value
  * - 键不存在：**追加一个固定 tab，不碰现有的预览 tab**——「先开预览再 pin」会先顶掉一个无辜的
  *   预览 tab、再把顶掉它的那个固定住，两步都在这里判才不会那样
  */
-export function openEditor(kind: EditorKind, path: string, pinned = false): Editor | null {
-  const key = editorKey(kind, path);
+export function openEditor(
+  kind: EditorKind,
+  path: string,
+  pinned = false,
+  sha?: string,
+): Editor | null {
+  const key = editorKey(kind, path, sha);
   const list = editors.value;
   let replaced: Editor | null = null;
   batch(() => {
     if (indexOfKey(list, key) === -1) {
-      const next: Editor = { kind, path, pinned };
+      const next: Editor = sha === undefined ? { kind, path, pinned } : { kind, path, pinned, sha };
       const previewIndex = pinned ? -1 : list.findIndex((editor) => !editor.pinned);
       const preview = list[previewIndex];
       if (preview === undefined) {

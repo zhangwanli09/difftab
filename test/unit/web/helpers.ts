@@ -13,14 +13,33 @@ import {
   openEditor,
   pinEditor,
 } from '../../../src/web/state/editors';
-import { diffStates, fileStates } from '../../../src/web/state/store';
+import {
+  commitDetails,
+  expandedCommits,
+  historyError,
+  historyList,
+  loadingMore,
+  moreError,
+} from '../../../src/web/state/history';
+import { commitDiffStates, diffStates, fileStates } from '../../../src/web/state/store';
 
-/** 清空标签栏与两张缓存。用到右侧状态的用例都从这里起。 */
+/** 清空标签栏与三张缓存。用到右侧状态的用例都从这里起。 */
 export function resetEditors(): void {
   editors.value = [];
   activeEditorKey.value = null;
   diffStates.value = new Map();
   fileStates.value = new Map();
+  commitDiffStates.value = new Map();
+}
+
+/** 清空 `History` 那一档：列表、详情缓存、展开集合。 */
+export function resetHistory(): void {
+  historyList.value = null;
+  historyError.value = null;
+  loadingMore.value = false;
+  moreError.value = null;
+  commitDetails.value = new Map();
+  expandedCommits.value = new Set();
 }
 
 /** 开一个固定 tab——产品里开出来的一律是预览，固定是双击那一下另做的，用例里合成一步。 */

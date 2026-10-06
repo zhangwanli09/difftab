@@ -13,8 +13,15 @@ import type { ComponentChildren } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
 import type { DiffPayload } from '../../server/shared/protocol';
 import { renderDiff } from '../diff/render';
+import { commitDetails, shortSha } from '../state/history';
 import { diffOutputFormat } from '../state/layout';
-import { diffStates, type RenameInfo } from '../state/store';
+import {
+  commitDiffKey,
+  commitDiffStates,
+  type DiffRequestState,
+  diffStates,
+  type RenameInfo,
+} from '../state/store';
 import { ImageDiff } from './ImageView';
 
 /**
@@ -142,7 +149,15 @@ export function Panel({ children }: { children: ComponentChildren }) {
   return <div class="min-h-0 flex-1 overflow-auto">{children}</div>;
 }
 
-function Payload({ path, payload }: { path: string; payload: DiffPayload }) {
+function Payload({
+  path,
+  payload,
+  commit,
+}: {
+  path: string;
+  payload: DiffPayload;
+  commit?: string | undefined;
+}) {
   switch (payload.kind) {
     case 'text':
     case 'untracked-text':
@@ -150,7 +165,7 @@ function Payload({ path, payload }: { path: string; payload: DiffPayload }) {
     case 'binary':
       return <Notice>Binary file — contents are not compared.</Notice>;
     case 'image':
-      return <ImageDiff payload={payload} />;
+      return <ImageDiff payload={payload} commit={commit} />;
     case 'too-large':
       return <Notice>{tooLargeNotice(payload, 'diff')}</Notice>;
   }
@@ -165,10 +180,46 @@ function Payload({ path, payload }: { path: string; payload: DiffPayload }) {
 export function DiffView({ path }: { path: string }) {
   // 缓存里没有这一项就按加载中画：`openEditor` 与写 loading 在同一个同步 tick 里，产品里到不了，
   // 兜底只为让组件对每个状态都有答案
-  const state = diffStates.value.get(path) ?? { status: 'loading', rename: null };
+  return <DiffBody path={path} state={diffStates.value.get(path) ?? LOADING} />;
+}
 
+/**
+ * commit tab 的视图：同一个 `DiffBody`，顶上多一行「这是哪次提交」。那一行读 `History` 里展开
+ * 时取到的详情——tab 只能从展开的那一列点出来，详情必然在；万一不在（不该发生）就不画，补丁照常。
+ * **合并提交在这里说明对比端**：补丁是相对第一父算的，而这件事只在看补丁时才需要知道。
+ */
+export function CommitDiffView({ sha, path }: { sha: string; path: string }) {
+  const state = commitDiffStates.value.get(commitDiffKey(sha, path)) ?? LOADING;
+  const detail = commitDetails.value.get(sha);
+  const commit = detail?.status === 'ready' ? detail.detail : null;
+  return (
+    <DiffBody path={path} state={state} commit={sha}>
+      {commit && (
+        <p class="truncate border-b border-panel-border px-4 py-1 text-xs text-description-foreground">
+          <span class="font-mono">{shortSha(sha)}</span> {commit.subject}
+          {commit.parents.length > 1 && ' · Merge commit · compared with first parent'}
+        </p>
+      )}
+    </DiffBody>
+  );
+}
+
+const LOADING: DiffRequestState = { status: 'loading', rename: null };
+
+function DiffBody({
+  path,
+  state,
+  commit,
+  children,
+}: {
+  path: string;
+  state: DiffRequestState;
+  commit?: string;
+  children?: ComponentChildren;
+}) {
   return (
     <Panel>
+      {children}
       {/* 三个状态下都标注：标注属于「选了哪个条目」，与补丁取到没有无关。它跟着补丁一起滚
           ——这一行说的是这份补丁的来历，不是「我在看哪个文件」，后者由标签栏答 */}
       {state.rename && <RenameNotice rename={state.rename} />}
@@ -181,7 +232,7 @@ export function DiffView({ path }: { path: string }) {
       )}
       {/* 换文件走的是卸载重挂——`App` 按 tab 键给本组件 `key`，本组件挂着期间 `path` 不会变，
           两次 draw() 因此不可能落在同一个元素上 */}
-      {state.status === 'ready' && <Payload path={path} payload={state.payload} />}
+      {state.status === 'ready' && <Payload path={path} payload={state.payload} commit={commit} />}
     </Panel>
   );
 }

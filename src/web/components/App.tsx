@@ -4,21 +4,31 @@
 // 档位)，与右边看的是哪个文件无关，横跨等于在 diff 面板顶上切一条与 diff 无关的横杠。
 // 两侧的所有权是分开的：列表归 Preact 的 keyed reconcile，单文件 diff 容器归 `Diff2HtmlUI`。
 
-import { ChevronsDownUp, Folder, GitBranch, List, ListTree, type LucideIcon } from 'lucide-preact';
+import {
+  ChevronsDownUp,
+  Folder,
+  GitBranch,
+  History,
+  List,
+  ListTree,
+  type LucideIcon,
+} from 'lucide-preact';
 import { useEffect, useRef } from 'preact/hooks';
 import { type ChangeView, changeView, toggleChangeView } from '../state/change-tree';
 import { activeEditor, keyOf } from '../state/editors';
+import { ensureHistory } from '../state/history';
 import { observeDiffPanel } from '../state/layout';
 import { activeTab, loadError, repoState } from '../state/store';
 import { PRODUCT_NAME } from '../state/title';
 import { collapseAll, loadDir, ROOT, refreshTree, treeCache } from '../state/tree';
 import { BranchStatus } from './BranchStatus';
 import { ChangeList } from './ChangeList';
-import { DiffView } from './DiffView';
+import { CommitDiffView, DiffView } from './DiffView';
 import { EditorTabs } from './EditorTabs';
 import { PanelEmptyState, SidebarPlaceholder } from './EmptyState';
 import { FileTree } from './FileTree';
 import { FileView } from './FileView';
+import { HistoryList } from './HistoryList';
 import { Icon } from './Icon';
 import { IconButton } from './IconButton';
 import { DifftabMark } from './Logo';
@@ -33,7 +43,8 @@ import { WatchBadge } from './WatchBadge';
  * `Changes` 那枚**与状态条上分支名前的是同一枚 `GitBranch`**（对应 VS Code activity bar 上的
  * Source Control）。两处 import 同一个具名组件，**「同一枚」这件事因此由编译器保证**——拼错标
  * 识符是编译错误，而共用一条 path 字符串的老做法里，两份漂开之后同一个概念在页面上就是两个
- * 图形，没有任何东西会响。`Files` 那枚是 `Folder`。
+ * 图形，没有任何东西会响。`Files` 那枚是 `Folder`，`History` 那枚是 `History`（时钟加一支逆时针
+ * 箭头，对应 VS Code 的 Timeline / Git Graph 一类视图）。
  *
  * `label` 不再进 DOM 文本，改作 `aria-label` 与 tooltip：只画图标时它是这个按钮名字的**唯一**
  * 来源，掉了之后读屏里就是两个无名控件，而页面上什么都看不出来（同 `ThemeToggle`）。
@@ -41,6 +52,7 @@ import { WatchBadge } from './WatchBadge';
 const TABS = [
   { id: 'changes', label: 'Changes', icon: GitBranch },
   { id: 'files', label: 'Files', icon: Folder },
+  { id: 'history', label: 'History', icon: History },
 ] as const;
 
 // **不给 `flex-1`**：两枚各按自身宽度排、紧挨着靠左，平分整栏时选中那条下划线有半栏宽，看着
@@ -158,6 +170,12 @@ export function App() {
     refreshTree();
   }, [tab]);
 
+  // `History` 那一档同一个取向：没取过、或离开期间来过 SSE，切过来才取第一页——不在挂载时预取，
+  // 多数会话根本不会点开它
+  useEffect(() => {
+    if (tab === 'history') ensureHistory();
+  }, [tab]);
+
   // diff 版式的**唯一**测量点。本组件只管「量哪个元素、什么时候开始和停」——量法与阈值都在
   // `state/layout.ts`，两者是一个取舍的两半。量的是这个 `<section>`，**既不是 DiffView 底下那
   // 个宿主 div、也不是两个视图里那层滚动容器**：这一层从挂载到卸载一直在，那两个各自会随换文
@@ -210,6 +228,8 @@ export function App() {
         <nav class="min-h-0 flex-1 overflow-auto text-sm/6">
           {tab === 'files' ? (
             <FileTree />
+          ) : tab === 'history' ? (
+            <HistoryList />
           ) : state === null ? (
             // 第一次就失败时不能继续说「读取中」——那份加载态永远不会结束，
             // 页面看上去像卡住了，而错误条其实已经把原因写在上面了
@@ -252,6 +272,8 @@ export function App() {
             <EditorTabs />
             {active.kind === 'file' ? (
               <FileView key={keyOf(active)} path={active.path} />
+            ) : active.sha !== undefined ? (
+              <CommitDiffView key={keyOf(active)} sha={active.sha} path={active.path} />
             ) : (
               <DiffView key={keyOf(active)} path={active.path} />
             )}
