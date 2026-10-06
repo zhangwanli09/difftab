@@ -6,12 +6,14 @@
 import type { Stats } from 'node:fs';
 import { lstat } from 'node:fs/promises';
 import type { DiffPayload } from '../shared/protocol.ts';
+import { commitParent, readCommitSummary } from './history.ts';
 import { baseBlobSize } from './image.ts';
 import { type DiffBase, resolveDiffBase } from './repo.ts';
 import { GitError, runGit, runGitStrict } from './run.ts';
 import {
   imageMimeOf,
   inspectFile,
+  literalRepoPath,
   MAX_BYTES,
   MAX_LINES,
   resolveInRepo,
@@ -75,7 +77,7 @@ export function parseNumstat(output: string): Numstat[] {
 }
 
 /**
- * 「基准 → 工作区」这条路径上的 numstat 记录；不在差异里就是 `null`。这一次调用同时回答
+ * 「基准 → 工作区」（或提交历史里「父 → 提交」）这条路径上的 numstat 记录；不在差异里就是 `null`。这一次调用同时回答
  * 三个问题，所以它取代了原先那次 `diff --name-only`：
  * 1. **它是不是已跟踪的**。已跟踪是 **HEAD ∪ index**，而 `ls-files` 只答得出 index——
  *    `git rm` 之后已暂存的删除在 index 里已经没有了，status 却照样报 `1 D.`、基准侧也
@@ -89,13 +91,13 @@ export function parseNumstat(output: string): Numstat[] {
  */
 async function readNumstat(
   root: string,
-  base: string,
+  range: readonly string[],
   path: string,
   oldPath: string | undefined,
 ): Promise<{ binary: boolean; lines: number } | null> {
   const args = oldPath
-    ? ['diff', base, '--numstat', '-z', '-M', '--', path, oldPath]
-    : ['diff', base, '--numstat', '-z', '--', path];
+    ? ['diff', ...range, '--numstat', '-z', '-M', '--', path, oldPath]
+    : ['diff', ...range, '--numstat', '-z', '--', path];
   const records = parseNumstat(await runGitStrict(args, root));
 
   /**
@@ -200,26 +202,50 @@ async function trackedDiff(
   oldPath: string | undefined,
   stat: { binary: boolean; lines: number } | null,
 ): Promise<DiffPayload> {
+  return gatedPatch(root, {
+    range: [base.ref],
+    path,
+    oldPath,
+    stat,
+    image: () => imageDiff(root, base, path, abs, oldPath),
+    size: async () => (await worktreeSize(abs)) ?? 0,
+  });
+}
+
+/**
+ * 三道闸本身，工作区 diff 与提交 diff 共用这一份——两份阈值漂开后同一个文件在两个视图里一个
+ * 说太大、一个照常渲染。两者只差三样：比的是哪一段（`range`）、图片两侧从哪来（`image`）、
+ * 拒绝时报的体积从哪取（`size`，提交那侧没有工作区体积可取，给 0）。
+ */
+interface PatchSource {
+  range: readonly string[];
+  path: string;
+  oldPath: string | undefined;
+  stat: { binary: boolean; lines: number } | null;
+  image: () => Promise<DiffPayload>;
+  size: () => Promise<number>;
+}
+
+async function gatedPatch(root: string, source: PatchSource): Promise<DiffPayload> {
+  const { range, path, oldPath, stat } = source;
   if (stat?.binary) {
-    return imageMimeOf(path) === null
-      ? { kind: 'binary' }
-      : imageDiff(root, base, path, abs, oldPath);
+    return imageMimeOf(path) === null ? { kind: 'binary' } : source.image();
   }
   if (stat && stat.lines > MAX_LINES) {
     // 行数这一路的 size 可能只有几百 KB，前端因此必须靠 reason 而不是 size 说话
-    return { kind: 'too-large', size: (await worktreeSize(abs)) ?? 0, reason: 'lines' };
+    return { kind: 'too-large', size: await source.size(), reason: 'lines' };
   }
 
   const args = oldPath
-    ? ['diff', base.ref, '-M', '--', path, oldPath]
-    : ['diff', base.ref, '--', path];
+    ? ['diff', ...range, '-M', '--', path, oldPath]
+    : ['diff', ...range, '--', path];
   let result: Awaited<ReturnType<typeof runGit>>;
   try {
     result = await runGit(args, root, { maxStdoutBytes: MAX_BYTES });
   } catch (cause) {
     // 超限是**这一路要的答案**而不是意外：git 被就地掐断，补丁一个字节都不会发给前端
     if (cause instanceof GitError && cause.kind === 'overflow') {
-      return { kind: 'too-large', size: (await worktreeSize(abs)) ?? 0, reason: 'size' };
+      return { kind: 'too-large', size: await source.size(), reason: 'size' };
     }
     throw cause;
   }
@@ -307,10 +333,65 @@ export async function readDiff(root: string, query: DiffQuery): Promise<DiffPayl
 
   // 这一轮躲不掉：二进制与行数都必须在**取补丁之前**判完。未跟踪那条路两样
   // 都不用——它自己读磁盘时顺手就有，所以这里只为已跟踪那一侧付这次调用
-  const stat = await readNumstat(root, base.ref, path, oldPath);
+  const stat = await readNumstat(root, [base.ref], path, oldPath);
 
   if (listed || stat !== null) {
     return trackedDiff(root, base, path, abs, oldPath, stat);
   }
   return untrackedDiff(root, path);
+}
+
+/**
+ * 一次提交里单个文件的补丁（相对第一父）。三道闸与工作区那条同一份（`gatedPatch`）；两侧都在
+ * 对象库里，没有未跟踪那条路、也不读磁盘——路径因此只过字面量那道边界（文件在工作区里可能
+ * 早已不在），归一化后的那份照样拼进 `<rev>:<path>`。numstat 不回记录即「这次提交没动它」，
+ * 是坏请求。
+ */
+export async function readCommitDiff(
+  root: string,
+  sha: string,
+  query: DiffQuery,
+): Promise<DiffPayload> {
+  const path = literalRepoPath(root, query.path).path;
+  const oldPath = query.oldPath ? literalRepoPath(root, query.oldPath).path : undefined;
+  const commit = await readCommitSummary(root, sha);
+  const parent = await commitParent(root, commit);
+  const range = [parent, commit.sha];
+
+  const stat = await readNumstat(root, range, path, oldPath);
+  if (stat === null) throw new WorktreeError('not-found', 'file not changed in this commit');
+  return gatedPatch(root, {
+    range,
+    path,
+    oldPath,
+    stat,
+    image: () => commitImageDiff(root, parent, commit.sha, path, oldPath),
+    size: async () => 0,
+  });
+}
+
+/**
+ * 提交里图片的两侧，**都读对象库**：旧侧 `<parent>:<旧路径或路径>`、新侧 `<sha>:<路径>`，与
+ * 工作区 diff 的旧侧同一条 `cat-file -s`。`version` 是两端的对象名——提交不可变，这两个身份
+ * 永远不会换内容。5MB 按侧卡、`size` 取大的那个，与 `imageDiff` 同一条口径。
+ */
+async function commitImageDiff(
+  root: string,
+  parent: string,
+  sha: string,
+  path: string,
+  oldPath: string | undefined,
+): Promise<DiffPayload> {
+  const basePath = oldPath ?? path;
+  const [oldSize, newSize] = await Promise.all([
+    baseBlobSize(root, parent, basePath),
+    baseBlobSize(root, sha, path),
+  ]);
+  const largest = Math.max(oldSize ?? 0, newSize ?? 0);
+  if (largest > MAX_BYTES) return { kind: 'too-large', size: largest, reason: 'size' };
+  return {
+    kind: 'image',
+    old: oldSize === null ? null : { path: basePath, size: oldSize, version: parent },
+    new: newSize === null ? null : { path, size: newSize, version: sha },
+  };
 }

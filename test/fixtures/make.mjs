@@ -77,6 +77,7 @@ export const ALL_REPOS = [
   'sha256Empty',
   'ignoredTree',
   'images',
+  'history',
 ];
 
 /**
@@ -614,6 +615,70 @@ export function makeFixtures(destDir, only) {
     write(cwd, 'blob.bin', binaryBytes('v2 with different length'));
     write(cwd, 'fake.png', 'still not a png\n');
     repos.images = cwd;
+  }
+
+  // 11. 提交历史：根提交、修改、`git mv` 重命名、改写一张 PNG、一次 `--no-ff` 合并，再补足到过
+  //     50 条——**每一样钉一件事**：根提交没有父（对比端是空树）、`--name-status -z` 的重命名
+  //     记录占三段、图片两侧都从对象库读、合并提交只对第一父求 diff、第二页存在且不与第一页重叠。
+  //     时间逐条递增：所有提交同一秒时 `log` 的顺序只剩拓扑序，断言「第一条是最新的」就没了依据
+  if (wanted('history')) {
+    const cwd = init('history');
+    let tick = 0;
+    const commitAt = (message) => {
+      tick += 1;
+      const date = new Date(Date.UTC(2026, 0, 1, 0, 0, tick)).toISOString();
+      git(cwd, 'add', '-A');
+      execFileSync('git', ['commit', '--quiet', '--allow-empty', '-m', message], {
+        cwd,
+        env: { ...env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    };
+    write(cwd, 'README.md', '# history\n');
+    write(
+      cwd,
+      'src/a.txt',
+      lines(10, (i) => `line ${i}`),
+    );
+    write(cwd, 'img/p.png', tinyPng(PNG_RED));
+    commitAt('root commit');
+
+    write(
+      cwd,
+      'src/a.txt',
+      lines(10, (i) => (i === 3 ? 'changed' : `line ${i}`)),
+    );
+    commitAt('edit a');
+
+    git(cwd, 'mv', 'src/a.txt', 'src/b.txt');
+    commitAt('rename a to b');
+
+    write(cwd, 'img/p.png', tinyPng(PNG_BLUE));
+    commitAt('recolor png');
+
+    git(cwd, 'checkout', '--quiet', '-b', 'side');
+    write(cwd, 'side.txt', 'from side\n');
+    commitAt('side work');
+    git(cwd, 'checkout', '--quiet', 'main');
+    write(cwd, 'main.txt', 'from main\n');
+    commitAt('main work');
+    tick += 1;
+    const mergeDate = new Date(Date.UTC(2026, 0, 1, 0, 0, tick)).toISOString();
+    execFileSync('git', ['merge', '--quiet', '--no-ff', '-m', 'merge side', 'side'], {
+      cwd,
+      env: { ...env, GIT_AUTHOR_DATE: mergeDate, GIT_COMMITTER_DATE: mergeDate },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    for (let i = 0; i < 52; i += 1) {
+      write(
+        cwd,
+        'log.txt',
+        lines(i + 1, (n) => `step ${n}`),
+      );
+      commitAt(`step ${i}`);
+    }
+    repos.history = cwd;
   }
 
   // 没生成的仓库不能是 undefined：调用方会拿着它去 spawn,cwd 变成进程当前目录，

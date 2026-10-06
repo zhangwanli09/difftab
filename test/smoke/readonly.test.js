@@ -21,8 +21,17 @@ import { cleanupOnExit, once, parseTrace, REPO_ROOT, runFullFlow } from './helpe
  * 只读白名单。加一条就要问一次「它真的不写仓库吗」——这张表的价值全在它短。
  * `version` 是 `git --version` 在 trace 里的形态。`cat-file` 是图片旧侧读对象库那一条（`blob` /
  * `-s` 两种参数，见下面那条参数断言——白名单只看子命令，`--filters` 那类会跑 smudge 的参数它看不见）。
+ * `log` 是提交历史那一条，argv 同样整条钉死（见下面那条参数断言）。
  */
-const READ_ONLY = new Set(['version', 'rev-parse', 'status', 'diff', 'ls-files', 'cat-file']);
+const READ_ONLY = new Set([
+  'version',
+  'rev-parse',
+  'status',
+  'diff',
+  'ls-files',
+  'cat-file',
+  'log',
+]);
 
 /** 本文件用得到的 fixture。生成全部 16 个要 1.5s 上下，其中一半这里根本不打开。 */
 const NEEDED = [
@@ -36,6 +45,8 @@ const NEEDED = [
   'ignoredTree',
   // `cat-file` 唯一的来处：图片旧侧。没有它白名单里那一条就是一条没人走过的路
   'images',
+  // `log` 唯一的来处：提交历史。两页、每条提交的文件清单、每个文件的提交 diff 与图片两侧
+  'history',
 ];
 
 let workdir;
@@ -72,7 +83,7 @@ test('劫持真的生效——日志里确实记到了东西', async () => {
   assert.ok(commands.length >= 8, `只记到 ${commands.length} 条 git 调用，劫持多半没生效`);
 
   const seen = new Set(commands.map((c) => c.subcommand));
-  for (const expected of ['status', 'diff', 'rev-parse', 'ls-files', 'cat-file']) {
+  for (const expected of ['status', 'diff', 'rev-parse', 'ls-files', 'cat-file', 'log']) {
     assert.ok(seen.has(expected), `完整流程里没看到 git ${expected}——流程没跑到位`);
   }
 });
@@ -119,6 +130,39 @@ test('cat-file 之后只能是 blob 或 -s——白名单看不见参数，smudg
       cmd.argv[2].includes(':'),
       `cat-file 的对象名不是 <rev>:<path>：${cmd.argv.join(' ')}`,
     );
+  }
+});
+
+test('log 的参数逐段等于两种字面量形态——gpg 与外部 diff 驱动都藏在它的参数面里', async () => {
+  const commands = await trace();
+  const logs = commands.filter((c) => c.subcommand === 'log');
+  // 正面断言：`history` 仓库翻两页、展开每条提交，必然走到这里
+  assert.ok(logs.length > 0, '完整流程里没有任何 log 调用——提交历史那条路没跑到');
+  // GIT_TRACE 给含 `%` 的参数加单引号，比对前剥掉
+  const unquote = (token) => token.replace(/^'(.*)'$/, '$1');
+  const OID = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
+  for (const cmd of logs) {
+    const argv = cmd.argv.map(unquote);
+    const shown = argv.join(' ');
+    assert.deepEqual(
+      argv.slice(0, 6),
+      [
+        'log',
+        '--no-show-signature',
+        '--no-color',
+        '-z',
+        '--format=%H%x00%P%x00%an%x00%at%x00%s',
+        argv[5],
+      ],
+      `log 的前缀不是那串字面量：${shown}`,
+    );
+    assert.match(argv[5], /^--max-count=\d+$/, `log 缺 --max-count：${shown}`);
+    // 列表多一段 `--skip=<n>`，单条提交没有；之后恰好是一个完整对象名 + `--`
+    const rest = argv.slice(6);
+    if (rest.length === 3) assert.match(rest.shift(), /^--skip=\d+$/, `log 的第七段：${shown}`);
+    assert.equal(rest.length, 2, `log 的参数段数不对：${shown}`);
+    assert.match(rest[0], OID, `log 的起点不是完整对象名：${shown}`);
+    assert.equal(rest[1], '--', `log 没以 -- 收尾：${shown}`);
   }
 });
 

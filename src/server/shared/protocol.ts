@@ -223,3 +223,44 @@ export type FilePayload =
   | { kind: 'binary' }
   | { kind: 'image'; size: number; version: string }
   | { kind: 'too-large'; size: number; reason: 'size' | 'lines' };
+
+/**
+ * 提交列表里的一条。**`sha` 是完整对象名**，前端原样回传、不缩写不拼接——短哈希只是展示，截断
+ * 归前端。`parents` 是全部父提交（根提交为空，合并提交不止一个）；`time` 是**作者时间**的 Unix
+ * 秒，「3 hours ago」怎么说归前端。只带作者不带提交者：rebase 过的提交两者不同，而这一栏回答的
+ * 是「谁写的、什么时候写的」。
+ */
+export interface CommitSummary {
+  sha: string;
+  parents: string[];
+  author: string;
+  time: number;
+  subject: string;
+}
+
+/**
+ * `GET /api/commits` 的响应体。**`head` 是这一串分页的锚点**：第一页不带 `from` 时后端把 HEAD
+ * 此刻的 oid 回传，之后每一页都以它为起点——按 HEAD 往下数的写法在两次翻页之间有新提交时会让
+ * 第二页重复第一页的最后一条。`head: null` 即空仓库（HEAD 未出生），与 `upstream: null` 同一个
+ * 取向：把「没有」编码进类型。
+ */
+export interface CommitPage {
+  head: string | null;
+  commits: CommitSummary[];
+  hasMore: boolean;
+}
+
+/**
+ * 一次提交里改动的一个文件（相对第一父）。**不复用 `FileEntry`**：后者的 `staged` /
+ * `unstaged` / `kind` 是工作区的双状态位，一次提交只有一个状态字母。`oldPath` 只有 `R` 有。
+ */
+export interface CommitFileEntry {
+  path: string;
+  oldPath?: string;
+  status: 'A' | 'M' | 'D' | 'R' | 'T';
+}
+
+/** `GET /api/commit` 的响应体：元数据 + 改了哪些文件。 */
+export interface CommitDetail extends CommitSummary {
+  files: CommitFileEntry[];
+}

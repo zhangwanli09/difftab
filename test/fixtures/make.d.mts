@@ -62,6 +62,11 @@ export interface FixtureRepos {
    * `new.png`；对照面是非图片扩展名的二进制 `blob.bin` 与内容是文本的 `fake.png`。
    */
   images: string;
+  /**
+   * 59 条提交：根提交、修改、`git mv` 重命名、改写 PNG、`--no-ff` 合并（第一父是 main 那侧），
+   * 外加 52 条 `step N`。时间逐条递增，最新的是 `step 51`。
+   */
+  history: string;
 }
 
 export type FixtureName = keyof FixtureRepos;

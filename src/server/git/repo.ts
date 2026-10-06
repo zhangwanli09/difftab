@@ -140,11 +140,18 @@ export async function resolveDiffBase(root: string): Promise<DiffBase> {
   const head = await runGit(['rev-parse', '--verify', '--quiet', 'HEAD'], root);
   const oid = head.stdout.trim();
   if (head.code === 0 && oid) return { ref: 'HEAD', oid };
+  const empty = await emptyTree(root);
+  return { ref: empty, oid: empty };
+}
 
+/**
+ * 本仓库对象格式下的空树哈希。空仓库的 diff 基准与根提交的对比端都是它——两处共用一个
+ * 常量，根提交因此不需要特殊分支。
+ */
+export async function emptyTree(root: string): Promise<string> {
   const format = await runGit(['rev-parse', '--show-object-format'], root);
   // `--show-object-format` 随 SHA-256 支持（git 2.29 前后）才引入，高于下限 2.11。
   // **非零退出即按 SHA-1 处理**——那个区间的 git 根本造不出 SHA-256 仓库，降级无歧义
   const name = format.code === 0 ? format.stdout.trim() : 'sha1';
-  const empty = name === 'sha256' ? EMPTY_TREE.sha256 : EMPTY_TREE.sha1;
-  return { ref: empty, oid: empty };
+  return name === 'sha256' ? EMPTY_TREE.sha256 : EMPTY_TREE.sha1;
 }

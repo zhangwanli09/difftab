@@ -89,6 +89,25 @@ export interface RepoPath {
 }
 
 /**
+ * 只过**字面量那道**：拒绝绝对路径、含 `\0` 的、以及 `relative()` 走出去的那些，回归一化后的
+ * 路径。**只给不落磁盘的路径用**——提交历史里的路径只拼进 pathspec 与 `<rev>:<path>`，那个文件
+ * 在工作区里可能早已不在，`realpath` 那道既无从验、也没有东西需要它保护。凡是真要落磁盘的，
+ * 一律走下面的 `resolveInRepo`。
+ */
+export function literalRepoPath(root: string, path: string, allowRoot = false): RepoPath {
+  if (path.includes('\0') || isAbsolute(path)) {
+    throw new WorktreeError('invalid-path', 'invalid path');
+  }
+  if (path === '' && !allowRoot) throw new WorktreeError('invalid-path', 'invalid path');
+  const abs = path === '' ? resolve(root) : resolve(root, path);
+  const rel = relative(root, abs);
+  if (!contains(root, abs) || (rel === '' && !allowRoot)) {
+    throw new WorktreeError('invalid-path', 'invalid path');
+  }
+  return { abs, path: rel.split(sep).join('/') };
+}
+
+/**
  * 把请求里的路径落到磁盘上，**两道边界一次过完**。
  *
  * 1. **字面量那道**：拒绝绝对路径、含 `\0` 的、以及 `relative()` 走出去的那些。
@@ -106,16 +125,7 @@ export async function resolveInRepo(
   path: string,
   options: ResolveOptions,
 ): Promise<RepoPath> {
-  if (path.includes('\0') || isAbsolute(path))
-    throw new WorktreeError('invalid-path', 'invalid path');
-  if (path === '') {
-    if (options.allowRoot !== true) throw new WorktreeError('invalid-path', 'invalid path');
-  }
-  const abs = path === '' ? resolve(root) : resolve(root, path);
-  const rel = relative(root, abs);
-  if (!contains(root, abs) || (rel === '' && options.allowRoot !== true)) {
-    throw new WorktreeError('invalid-path', 'invalid path');
-  }
+  const { abs, path: normalized } = literalRepoPath(root, path, options.allowRoot === true);
 
   const realRoot = await realpath(root);
   if (options.follow) {
@@ -138,7 +148,7 @@ export async function resolveInRepo(
     if (!contains(realRoot, realParent)) throw new WorktreeError('invalid-path', 'invalid path');
   }
 
-  return { abs, path: rel.split(sep).join('/') };
+  return { abs, path: normalized };
 }
 
 /**

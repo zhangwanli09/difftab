@@ -6,8 +6,9 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { Socket } from 'node:net';
 import { homedir } from 'node:os';
-import { readDiff } from '../git/diff.ts';
+import { readCommitDiff, readDiff } from '../git/diff.ts';
 import { readFileContent } from '../git/file.ts';
+import { listCommits, readCommit } from '../git/history.ts';
 import { readImageBytes } from '../git/image.ts';
 import { type RepoInfo, repoNameOf } from '../git/repo.ts';
 import { readStatus, readStatusRaw } from '../git/status.ts';
@@ -307,7 +308,7 @@ export async function startServer(
 
       /**
        * 图片字节，**唯一一个正文不是 JSON 的 API 端点**。`path` / `side` 都必填：`old` 是
-       * diff 基准里的 blob、`new` 是工作区那份。只服务图片扩展名表里的路径、`Content-Type`
+       * diff 基准里的 blob、`new` 是工作区那份；带 `commit` 时两侧都读对象库（第一父 / 提交本身）。只服务图片扩展名表里的路径、`Content-Type`
        * 按表给精确 MIME（`nosniff` 之下类型错一个字浏览器就不画），非图片一律 400——判据与
        * 5MB 那道闸都在 git 那侧，这里只把字节发出去。前端加的 `v=` 戳这里不看。
        */
@@ -322,8 +323,56 @@ export async function startServer(
           sendError(res, 400, 'bad-request', 'side must be old or new');
           return;
         }
-        const image = await readImageBytes(repo.root, path, side);
+        const commit = url.searchParams.get('commit');
+        const image = await readImageBytes(repo.root, path, side, commit ?? undefined);
         send(res, 200, image.buffer, image.mime);
+        return;
+      }
+
+      /**
+       * 提交列表的一页。`from` 缺省即「从 HEAD 起」，响应里的 `head` 就是之后各页要带的锚点；
+       * `skip` 缺省为 0。两者的合法性（完整对象名、非负整数）在这里与 git 那侧各判一半：
+       * 数字归这里，对象名归 `assertOid`——它也是 `/api/commit` 那条路的同一把钥匙。
+       */
+      case '/api/commits': {
+        const from = url.searchParams.get('from');
+        const rawSkip = url.searchParams.get('skip') ?? '0';
+        if (!/^\d{1,9}$/.test(rawSkip)) {
+          sendError(res, 400, 'bad-request', 'skip must be a non-negative integer');
+          return;
+        }
+        sendJson(
+          res,
+          200,
+          await listCommits(repo.root, { from: from ?? undefined, skip: Number(rawSkip) }),
+        );
+        return;
+      }
+
+      case '/api/commit': {
+        const sha = url.searchParams.get('sha');
+        if (!sha) {
+          sendError(res, 400, 'bad-request', 'sha is required');
+          return;
+        }
+        sendJson(res, 200, await readCommit(repo.root, sha));
+        return;
+      }
+
+      /** 一次提交里单个文件的补丁（相对第一父）。`oldPath` 只有重命名传，与 `/api/diff` 同。 */
+      case '/api/commit-diff': {
+        const sha = url.searchParams.get('sha');
+        const path = url.searchParams.get('path');
+        if (!sha || !path) {
+          sendError(res, 400, 'bad-request', 'sha and path are required');
+          return;
+        }
+        const oldPath = url.searchParams.get('oldPath');
+        sendJson(
+          res,
+          200,
+          await readCommitDiff(repo.root, sha, { path, ...(oldPath ? { oldPath } : {}) }),
+        );
         return;
       }
 
