@@ -22,6 +22,7 @@ import {
 } from '../../../src/web/state/tree';
 import {
   actionOf,
+  expectStatusGap,
   file,
   groupOf,
   openPinned,
@@ -373,6 +374,8 @@ describe('FileTree 的 Copy path 行内动作', () => {
       expect(node?.className).toContain(REVEAL);
     }
     expect(spacer?.classList.contains('w-5')).toBe(true);
+    // 没改动的文件没有状态记号：悬停时补一个状态位宽的空槽
+    expectStatusGap(rowOf('a.ts'));
   });
 
   it('点它把仓库相对路径写进剪贴板，不开 tab 也不折叠目录', async () => {

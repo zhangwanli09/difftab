@@ -115,6 +115,12 @@ export const ACTION_SHELL = `${REVEAL} absolute inset-y-0 right-9.5 items-center
 const SPACER_WIDTH = ['', 'w-5', 'w-10'];
 
 /**
+ * 行尾状态位的宽度，**只此一份**：记号外壳（`ChangeList` 的 `STATUS_SLOT`）与没有记号的行悬停时补的
+ * 空槽都取它（为什么要补见 `TreeRow`）。
+ */
+export const STATUS_WIDTH = 'w-5';
+
+/**
  * 两棵树共用的一行：`<li>` 里一个 `ROW_GROUP` div 装行按钮与它的行内动作，子层（`sublevel`）在
  * div 之外。行按钮的属性（点击、`title`、`class`、`style`、`aria-expanded`）原样透传，`class` 可以是
  * signal——signals 把它直接绑到 `<button>` 上，每行只改自己那两个类。
@@ -124,12 +130,13 @@ const SPACER_WIDTH = ['', 'w-5', 'w-10'];
  *
  * 外壳是行按钮的**兄弟**，不套在里面：按钮里不能套按钮，理由与编辑器 tab 上那枚 × 一字不差；它的
  * 事件压根不经过行按钮，点它不会顺带开一个 tab、也不会折叠目录。绝对定位在状态位左侧：
- * `right-9.5`（38px）= ROW_BASE 的 `pr-3`（12）+ 状态位 `w-5`（20）+ `gap-1.5`（6），与枚数无关。
+ * `right-9.5`（38px）= ROW_BASE 的 `pr-3`（12）+ 状态位 `STATUS_WIDTH`（20）+ `gap-1.5`（6），与枚数无关。
  * 文字被截断的行里占位正好在它底下；短行里占位贴着文字、按钮悬在空白上，两种情况都盖不到字
  * ——改行骨架的间距或状态位宽度时这道加法要跟着改，症状只是与字母挨着或错开几像素。几枚之间
- * 不加 gap：各自的 `p-0.5` 已隔出 4px，照 VS Code 的 action bar。没有状态记号的行（没改动的文件、
- * 目录）里占位落在外壳右侧 26px 处：外壳锚在状态位左侧不随记号有无变（一列按钮才对得齐），占位
- * 只保证「文字末端在按钮左缘之左」，那条在两种行里都成立。
+ * 不加 gap：各自的 `p-0.5` 已隔出 4px，照 VS Code 的 action bar。**没有状态记号的行（没改动的文件、
+ * 目录、提交行）在悬停时补一个状态位宽的空槽**：外壳锚在状态位左侧不随记号有无变（一列按钮才对得
+ * 齐），少了这一槽时占位落在外壳右侧 26px 处，文字被截断的行里末尾那 20px 正好压在按钮底下——
+ * 不报错，只是字和图标叠在一起。空槽与占位同一对显隐变体，静止时不占文字宽度。
  */
 export function TreeRow({
   actions,
@@ -156,7 +163,7 @@ export function TreeRow({
         <button type="button" ref={buttonRef} {...button}>
           {children}
           {list.length > 0 && <span class={`${REVEAL} shrink-0 ${SPACER_WIDTH[list.length]}`} />}
-          {badge}
+          {badge || (list.length > 0 && <span class={`${REVEAL} ${STATUS_WIDTH} shrink-0`} />)}
         </button>
         <span class={ACTION_SHELL}>{list}</span>
       </div>
@@ -169,8 +176,8 @@ export function TreeRow({
 const COPIED_MS = 1500;
 
 /**
- * `Copy path`：把仓库相对路径（页面上现成的 `path`，`/` 分隔）写进剪贴板。贴给 agent 与 git 子命令
- * 要的都是这一种，绝对路径要给协议加 `root`。
+ * 行内动作里那枚复制按钮：把 `text` 写进剪贴板，`label` 是它静止时的名字。文件行复制路径、提交行
+ * 复制哈希都是它——反馈、计时器与失败时静默这几条只此一份。
  *
  * **反馈画在按钮自己身上**：写成功后图标换 `Check`、名字换 `Copied`，1.5s 后复原；320px 侧栏里
  * 没地方放 toast，而反馈本就该出现在手指底下。写失败静默不换——服务绑定 `127.0.0.1`，loopback
@@ -178,12 +185,12 @@ const COPIED_MS = 1500;
  * 没地方落。计时器随卸载清掉：SSE 刷新可能在 1.5s 内把这一行换掉，之后再写一个已卸载组件的
  * signal 虽不报错，但也不该留着。
  */
-export function CopyPathButton({ path }: { path: string }) {
+export function CopyButton({ text, label }: { text: string; label: string }) {
   const copied = useSignal(false);
   const timer = useRef<ReturnType<typeof setTimeout>>();
   useEffect(() => () => clearTimeout(timer.current), []);
   const copy = () =>
-    navigator.clipboard.writeText(path).then(
+    navigator.clipboard.writeText(text).then(
       () => {
         copied.value = true;
         clearTimeout(timer.current);
@@ -196,8 +203,16 @@ export function CopyPathButton({ path }: { path: string }) {
   return (
     <IconButton
       icon={copied.value ? Check : Copy}
-      label={copied.value ? 'Copied' : 'Copy path'}
+      label={copied.value ? 'Copied' : label}
       onClick={copy}
     />
   );
+}
+
+/**
+ * `Copy path`：仓库相对路径（页面上现成的 `path`，`/` 分隔）。贴给 agent 与 git 子命令要的都是这
+ * 一种，绝对路径要给协议加 `root`。
+ */
+export function CopyPathButton({ path }: { path: string }) {
+  return <CopyButton text={path} label="Copy path" />;
 }

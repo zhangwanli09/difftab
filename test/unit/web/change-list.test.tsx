@@ -13,10 +13,12 @@ import { changeView, collapsedChangeDirs } from '../../../src/web/state/change-t
 import { editors } from '../../../src/web/state/editors';
 import {
   actionOf,
+  expectStatusGap,
   file,
   groupOf,
   openPinned,
   resetEditors,
+  revealSlotsIn,
   spacerIn,
   stubClipboard,
   stubJson,
@@ -552,6 +554,9 @@ describe('ChangeList 的 Copy path 行内动作', () => {
     // 目录行的 group 里只有它自己那一行：子层 `<ul>` 在外面，悬停后代不会把它一起点亮
     expect(groupOf(dirRow)?.contains(rowByTitle('src/web/a.ts') ?? null)).toBe(false);
     expect(groupOf(dirRow)?.className).toBe(ROW_GROUP);
+    // 目录行没有状态记号：悬停时补一个状态位宽的空槽；文件行有字母，不补
+    expectStatusGap(dirRow);
+    expect(revealSlotsIn(rowByTitle('src/web/a.ts'))).toHaveLength(1);
 
     copyButtonOf('src/web')?.click();
     expect(writeText).toHaveBeenCalledWith('src/web');

@@ -36,7 +36,15 @@ import {
   repoState,
   selectCommitFile,
 } from '../../../src/web/state/store';
-import { resetEditors, resetHistory, stubJsonBy, waitFor } from './helpers';
+import {
+  actionOf,
+  expectStatusGap,
+  resetEditors,
+  resetHistory,
+  stubClipboard,
+  stubJsonBy,
+  waitFor,
+} from './helpers';
 
 const sha = (n: number) => n.toString(16).padStart(40, '0');
 const commit = (n: number, extra: Partial<CommitSummary> = {}): CommitSummary => ({
@@ -193,6 +201,25 @@ describe('HistoryList 组件', () => {
     expect(row.getAttribute('title')).toContain(sha(100).slice(0, 7));
     expect(row.getAttribute('aria-expanded')).toBe('false');
     expect(container.textContent).toContain('Load more');
+  });
+
+  test('提交行的 Copy commit hash 写入完整 sha、换成 Copied，且不顺带展开这条提交', async () => {
+    historyList.value = mergeFirstPage(null, page(100, 100, 1, false));
+    const writeText = stubClipboard();
+    const calls = stubJsonBy(() => ({ payload: { ...commit(100), files: [] } }));
+    render(<HistoryList />, container);
+    const row = container.querySelector('[aria-expanded]') as HTMLElement;
+    const copy = actionOf(row, 'Copy commit hash');
+    expect(copy).not.toBeNull();
+    // 提交行没有状态记号
+    expectStatusGap(row);
+
+    copy?.click();
+    expect(writeText).toHaveBeenCalledWith(sha(100));
+    await waitFor(() => expect(actionOf(row, 'Copied')).not.toBeNull());
+    // 按钮是行按钮的兄弟：点它不经过行按钮，既不展开也不去取详情
+    expect(row.getAttribute('aria-expanded')).toBe('false');
+    expect(calls).toEqual([]);
   });
 
   test('浅克隆的边界：不画文件清单，说清楚父提交不在本地', async () => {

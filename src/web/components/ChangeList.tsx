@@ -39,6 +39,7 @@ import {
   indent,
   ROW_BASE,
   SELECTED,
+  STATUS_WIDTH,
   TreeRow,
 } from './tree-row';
 
@@ -111,7 +112,7 @@ export const CODE_COLORS: Record<StatusCode, string> = {
  * 时记号看着比编辑器里重。**是 `opacity` 不是 token 的 `/75` 修饰符**：双值 token 经 `color-mix()`
  * 会让整条声明作废。圆点是 `bg-current`，跟着外壳一起淡，不必各写。
  */
-export const STATUS_SLOT = 'ml-auto w-5 shrink-0 opacity-75';
+export const STATUS_SLOT = `ml-auto ${STATUS_WIDTH} shrink-0 opacity-75`;
 const LETTER_CLASS = `${STATUS_SLOT} text-center font-mono text-xs`;
 
 /**

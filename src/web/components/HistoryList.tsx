@@ -23,6 +23,7 @@ import { StatusBadge, splitForDisplay } from './ChangeList';
 import { SidebarPlaceholder } from './EmptyState';
 import {
   ChevronPlaceholder,
+  CopyButton,
   CopyPathButton,
   ExpandChevron,
   indent,
@@ -119,7 +120,7 @@ function CommitFiles({ sha }: { sha: string }) {
  * 一条提交：主题 + 作者，照 VS Code Source Control Graph。**两段同住一个 `truncate` span**（主题在
  * 前、作者作它的行内子元素），与变更列表「文件名 + 目录」同一个结构：省略号在右端先吃掉作者，主题
  * 留到最后；拆成两个平级 flex 子项会让两段按底边对齐。短哈希与时间不上行（320px 里放不下），进
- * `title`——短哈希是拿去与终端里 `git log --oneline` 对照的那把钥匙。
+ * `title`——短哈希是拿去与终端里 `git log --oneline` 对照的那把钥匙；要拿去用的是行内那枚复制按钮。
  */
 function CommitRow({ commit }: { commit: CommitSummary }) {
   const expanded = useComputed(() => expandedCommits.value.has(commit.sha)).value;
@@ -131,7 +132,8 @@ function CommitRow({ commit }: { commit: CommitSummary }) {
       aria-expanded={expanded}
       class={COMMIT_ROW_CLASS}
       style={indent(0)}
-      actions={null}
+      // 复制完整 sha 而不是短哈希：短哈希在仓库长大后可能有歧义，贴给 agent 的东西不该要它再去消歧
+      actions={<CopyButton text={commit.sha} label="Copy commit hash" />}
       sublevel={expanded && <CommitFiles sha={commit.sha} />}
     >
       <ExpandChevron expanded={expanded} />
