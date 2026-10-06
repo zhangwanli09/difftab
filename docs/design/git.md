@@ -52,11 +52,26 @@
 
 **判据是「二进制 ∧ 扩展名在表里」，两个条件缺一不可**，表在 `server/git/worktree.ts`（`imageMimeOf`，与分类链同住——它是分类链的一环，放进 `image.ts` 会让底座反向 import 一个 feature 模块；png / jpg / jpeg / gif / webp / bmp / ico / avif；**SVG 不在**——它是文本，走文本 diff 更有信息量）。二进制那一半照旧由上面那道闸给：已跟踪侧是 numstat 的 `-\t-`（含 `.gitattributes`），未跟踪侧是 NUL 探测；扩展名只在**已判定为二进制之后**查。单看扩展名的写法会把一个内容是文本的 `.png` 送去 `<img>` 里画成一张破图，而它本来有一份能看的文本 diff。
 
-- **旧侧读 diff 基准里的 blob：`git cat-file blob <base>:<path>`，存在性与体积另用 `cat-file -s`**；它的内容身份（`ImageSide.version`）是基准的 oid——那个 blob 只在基准换了之后才可能变，而 oid 是 `resolveDiffBase` 那次 `rev-parse` 顺手就有的（`DiffBase { ref; oid }`），不为它多起一次进程。新侧的身份是体积 + mtime（`worktreeVersion`），与 git 自己的 stat 缓存同一条判据，已知边界也一样：同体积、同一个 mtime 刻度内的改写认不出来。这是产品代码里唯一一处读对象库的调用，也是白名单第六条。**只允许这两种字面参数**：`--filters` / `--textconv` 会让 git 跑 smudge / textconv 驱动——LFS 的 smudge 会往 `.git/lfs` 里写东西，而白名单只看子命令，看不见参数；不用 `git show <rev>:<path>`：字节一样（实测两者默认都不套 textconv），但它是带整套 log / diff / pretty 参数面的 porcelain，「参数只能是这几个字面量」那条断言在它身上钉不住。
+- **旧侧读 diff 基准里的 blob：`git cat-file blob <base>:<path>`，存在性与体积另用 `cat-file -s`**；它的内容身份（`ImageSide.version`）是基准的 oid——那个 blob 只在基准换了之后才可能变，而 oid 是 `resolveDiffBase` 那次 `rev-parse` 顺手就有的（`DiffBase { ref; oid }`），不为它多起一次进程。新侧的身份是体积 + mtime（`worktreeVersion`），与 git 自己的 stat 缓存同一条判据，已知边界也一样：同体积、同一个 mtime 刻度内的改写认不出来。工作区 diff 里这是唯一一处读对象库的调用，也是白名单第六条（提交历史那一侧两边都走它，见下面「提交历史」）。**只允许这两种字面参数**：`--filters` / `--textconv` 会让 git 跑 smudge / textconv 驱动——LFS 的 smudge 会往 `.git/lfs` 里写东西，而白名单只看子命令，看不见参数；不用 `git show <rev>:<path>`：字节一样（实测两者默认都不套 textconv），但它是带整套 log / diff / pretty 参数面的 porcelain，「参数只能是这几个字面量」那条断言在它身上钉不住。
 - **`<rev>:<path>` 是 revision 语法，不是 pathspec**，`GIT_LITERAL_PATHSPECS=1` 管不到它。拼进去的 `path` 一律取 `resolveInRepo` 归一化后的那份（无 `.` 段、无前导 `./`、`/` 分隔），字面量那道边界校验因此仍然过了一遍；`cat-file -s` 非零退出即「这一侧不存在」（新增、或基准是空树），不是错误。
 - **重命名的旧侧在 `oldPath`**，payload 里 `old.path` 由后端填成它，前端拿着直接问 `/api/blob`。
 - **5MB 那道闸按侧卡**：任一侧超过 `MAX_BYTES` 整个 payload 回 `too-large`（`reason: 'size'`，`size` 取**两侧里大的那个**——固定报工作区那份时，HEAD 里 8MB 的图被换成 120KB 的，提示会说「file is 120 KB」而 Files 里同一个文件正常显示）——一张 8MB 的 PNG 说「太大」是真话。`/api/blob` 自己再卡一次（工作区侧看 `lstat`，blob 侧带 `maxStdoutBytes`）：payload 与取字节是两次请求，中间文件可以长大。
 - **`/api/blob` 只服务表里的扩展名**，非图片一律 400；取 `new` 侧**就是 `inspectFile` 那条链**（`image` 支与 `text` 一样带着 `buffer`），不另写一份「lstat → 体积 → 读」的副本——上一份副本连 NUL 那道都没有，一个内容是文本的 `.png` 在 payload 里是文本、在字节端点上却被当图发出去。
+
+## 提交历史
+
+History tab 的三样东西——提交列表、一次提交改了哪些文件、其中一个文件的补丁——**只往只读白名单里加了 `log` 一条**，其余全部落在已有条目上：提交的 diff 就是 `diff <parent> <sha>`，图片两侧都是 `cat-file`，校验是 `rev-parse`。代码在 `server/git/history.ts`（列表、元数据、文件清单）与 `diff.ts`（单个文件的补丁，与工作区 diff 共用三道闸）。
+
+- **`log` 的 argv 整条是字面量**，只有两种形态：列表是 `log --no-show-signature --no-color -z --format=%H%x00%P%x00%an%x00%at%x00%s --max-count=<n> --skip=<n> <sha> --`，单条提交是同一串去掉 `--skip`、`--max-count=1`。冒烟逐段钉着它（数值那两段只钉形状），理由与 `cat-file` 那条一样——白名单只看子命令，而 `log` 的参数面里有会拉起外部程序的开关：
+  - **`--no-show-signature`**：用户配了 `log.showSignature` 时 `log` 会对每条提交起一次 gpg，挡它要显式关掉。git 下限 2.11 已有这个开关。
+  - **不带 `-p` / `--stat` / 任何 diff 选项**：`log` 一旦开始算 diff，`diff.external` 与 textconv 驱动就都在射程内。列表只要元数据。
+  - **`-z` + 固定五段**：`-z` 让记录之间以 NUL 分隔，`%x00` 让字段之间也是 NUL，于是每条提交恰好五段，按 5 一组切。主题行（`%s`）不含 NUL 与换行，作者名可以有空格——两者都不是分隔符；根提交的 `%P` 是空段，不是缺段。
+- **范围参数只能是完整对象名，`--` 收尾**：请求里的 `sha` / `from` 必须匹配 `^[0-9a-f]{40}([0-9a-f]{24})?$`，不认缩写、不认 `HEAD~3` 一类 revision 表达式，更不认 `-` 开头的值。它们会被原样拼进 argv 的 revision 位置，而那个位置 `GIT_LITERAL_PATHSPECS` 管不到——`--output=<路径>` 在那里就是一次写文件。末尾那个 `--` 让 git 不再把之后的任何东西当选项。校验过的值还要过一次 `rev-parse --verify --quiet <sha>^{commit}`：对象名合法不等于是本仓库里的一个提交，失败即 `not-found`。
+- **分页是「锚点 + skip」，不是「从 HEAD 往下数」**：第一页不带 `from`，后端 `rev-parse --verify --quiet HEAD` 得到 oid、写进响应的 `head`；之后每一页都以这个 oid 为起点再 `--skip`。按 HEAD 数的写法在 agent 中途提交时会让第二页重复第一页的最后一条，而这正是这个工具最常见的使用时刻。一页 50 条，取 51 条来判 `hasMore`，不另起一次计数。空仓库（HEAD 未出生）回 `{ head: null, commits: [], hasMore: false }`，不是错误。
+- **一次提交改了哪些文件：`diff <parent> <sha> --name-status -z -M`**。重命名记录占**三段**——`R<score>` `<旧路径>` `<新路径>`，与 numstat 同为旧在前、与 porcelain 相反——平铺切分会把旧路径当成下一条记录的状态字段。状态字母只认 `A` / `M` / `D` / `R` / `T`（`C` 不会出现：没开 `-C`）。
+- **父提交是第一父**：单条提交那次 `log` 顺手带回 `%P`，取第一个；**合并提交因此展示的是「这次合并相对主线带进来了什么」**，与 GitHub 的提交页、VS Code 的 Timeline 同一口径。组合 diff（`-c` / `--cc`）不做：它的补丁格式 diff2html 解析不了。**根提交没有父**，对比端用空树哈希（`repo.ts` 那份，与空仓库同一个常量），不为它写特殊分支。
+- **单个文件的补丁与工作区 diff 共用一套三道闸**：`diff <parent> <sha> --numstat -z [-M] -- <path> [<旧路径>]` 先判二进制与行数（按路径挑、按合计算，与工作区那条完全一样），再带 `maxStdoutBytes` 取补丁。两侧都在对象库里，没有未跟踪那条路、也不读磁盘；拒绝时的 `size` 取不到工作区体积，给 0。
+- **图片两侧都读对象库**：旧侧 `<parent>:<旧路径或路径>`、新侧 `<sha>:<路径>`，存在性与体积用 `cat-file -s`、字节用 `cat-file blob`，与工作区 diff 的旧侧同两条字面量。`version` 分别是 parent 与 sha 的对象名——提交不可变，这两个身份永远不会换内容。`/api/blob` 带 `commit=<sha>` 即走这一路。
 
 ## 目录树的两条 `ls-files`
 

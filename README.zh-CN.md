@@ -94,7 +94,7 @@ difftab
 
 ## 明确不做
 
-difftab 刻意只是个查看器。长期不做：任何仓库写操作、代码编辑、账号与云同步、多用户评审流程。当前版本不做：提交历史、分支列表、blame。完整清单与理由见 [CONTRIBUTING.md](CONTRIBUTING.md#the-read-only-promise-is-not-negotiable)。
+difftab 刻意只是个查看器。长期不做：任何仓库写操作、代码编辑、账号与云同步、多用户评审流程。当前版本不做：分支列表、blame。完整清单与理由见 [CONTRIBUTING.md](CONTRIBUTING.md#the-read-only-promise-is-not-negotiable)。
 
 ## 参与开发
 

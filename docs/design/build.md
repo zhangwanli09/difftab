@@ -50,11 +50,11 @@ scripts/               bench:startup、size 等门禁
 
 ### 第一层 · 主门禁（`test/smoke/readonly.test.js`）
 
-测试期间用 git 自带的 **`GIT_TRACE=<绝对路径>`** 记录产品发出的每一次 git 调用（含完整参数），断言子命令只出现在只读白名单（`status` / `diff` / `rev-parse` / `ls-files` / `version` 等）。
+测试期间用 git 自带的 **`GIT_TRACE=<绝对路径>`** 记录产品发出的每一次 git 调用（含完整参数），断言子命令只出现在只读白名单（`status` / `diff` / `rev-parse` / `ls-files` / `cat-file` / `log` / `version`）。
 
 - **不用「PATH 上放一个 fake git wrapper」**：那要求一个 Windows 认得的可执行文件，而 Node 自 20.12 起不带 `shell` 就**拒绝 spawn `.cmd` / `.bat`**；退而把 node 二进制装成 `git` 时，node 自己的 CLI 解析会先把参数吃掉一截，记到的「完整子命令」是错的。`GIT_TRACE` 三端同一套写法。
 - `GIT_TRACE` 反而多覆盖一层：git **内部**再起的子进程（自动 gc 之类）同样入账，而那正是「写进 `.git/` 但不改变 status 输出」的典型。
-- **必须同时断言「确实记到了东西」**：环境变量没传下去、路径给成相对的、产品换了个不经封装层的方式调 git，都会让白名单断言对着一个**空数组**通过。**假绿的只读门禁比没有门禁更糟**，因此完整流程跑完后，日志里必须见到 `status` / `diff` / `rev-parse` / `ls-files`。
+- **必须同时断言「确实记到了东西」**：环境变量没传下去、路径给成相对的、产品换了个不经封装层的方式调 git，都会让白名单断言对着一个**空数组**通过。**假绿的只读门禁比没有门禁更糟**，因此完整流程跑完后，日志里必须见到 `status` / `diff` / `rev-parse` / `ls-files` / `cat-file` / `log`。
 
 ### 第二层 · `.git` 没被动过（`test/smoke/readonly-git-dir.test.js`）
 

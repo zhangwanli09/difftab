@@ -8,6 +8,7 @@
 
 - **tab 的身份是「视图种类 + 路径」（`kind:path`），同一路径从 `Changes` 点开的 diff 与从 `Files`（或变更列表行内那枚 `Open file`）点开的全文是两个 tab**。两处点进去看到的是两样东西（补丁 / 全文），VS Code 里 diff editor 与普通 editor 同样是两个 tab；合成一个就得再记一份「这个 tab 此刻显示哪种」，切换时另一种的滚动位置也跟着丢。键只用来比对、不反解析：`kind` 是闭合的 union 且不含 `:`，路径里的 `:` 因此不产生歧义。
 - **预览 tab 全局只有一个，判据是 `pinned === false` 的那一项，不是「最后打开的」**。单击一个不在栏里的文件：有预览 tab 就**原位**替换它（位置不跳），没有就追加；单击已在栏里的只是切过去，它是预览就还是预览。双击把它固定；**`openEditor` 还有一个 `pinned` 档给变更列表那枚 `Open file` 用**（VS Code 的 `git.openFile` 是 `preview: false`）：键不在栏里就**追加一个固定 tab、不碰现有的预览 tab**，已在栏里就固定它并切过去——两条都在 `openEditor` 里判，调用方不自己「先开预览再 pin」，那样会先顶掉一个无辜的预览 tab 再把顶掉它的那个固定住；**`pinEditor` 是幂等的置 `true`，永不 toggle**——浏览器的一次双击是 click、click、dblclick 三个事件，第三个到时 tab 早已存在，写成 toggle 会让已固定的 tab 在双击时静默解开。第二次 click 会再激活一次并重取一趟（沿用「点当前这一行照样重新取」），双击因此多花一趟请求，按路径的「后发为准」保证它不出错；**dblclick 那一下只调 `pinEditor`、不再走 `selectFile`**，否则一次双击是三趟 `git diff`。
+- **第三种 tab 是 `commit`：身份是 `commit:<sha>:<path>`**，`Editor` 为它多带一个 `sha` 字段，`path` 仍是文件路径——`activeEditorPath`、tab 上的名字与目录、`title` 都照旧读 `path`，不必学会拆一个复合字符串。同一个文件在两次提交里是两个 tab，与工作区那份 diff 也是两个 tab。tab 上在文件名后跟一个次要色的短哈希，图标是 `GitCommitHorizontal`。**它活动时 `activeEditorPath` 是 `null`**：两栏里同名的那一行说的是工作区那一份，而这里是历史上的某一版，照亮它是在说一件不成立的事——这是「两栏高亮不看种类」那条唯一的例外，判据是「左栏那一行与右侧是不是同一份内容」。
 - **关掉活动 tab 切到右邻居、没有右邻居才切左邻居**，不按最近使用顺序：MRU 要多维护一份访问序列，而它换来的只是关掉一个刚从别处切过来的 tab 时少切一次。
 - **两栏的高亮同按活动 tab 的路径判（`activeEditorPath`），不看它是 diff 还是全文**：活动 tab 是 `file:src/a.ts` 时变更列表里 `src/a.ts` 那一行照亮，反过来目录树也一样。从前按种类各认各的（活动 tab 是全文时变更列表那一行不亮，理由是「那一行说的是这份补丁」），直接的症状是点了行内 `Open file` 之后那一行就熄了——用户刚从这一行出发、右侧正显示着这个文件，而左栏说「你没在看它」。VS Code 的列表选中态同样不随编辑器种类变。高亮回答的是「右侧此刻是哪个文件」，两栏各说一遍同一个答案即可。
 - **切侧栏 tab、切列表 / 树版式、全部折叠，都不动 `activeEditor`**：换的是左栏在列什么，不是用户此刻在读什么。写成「切到 Files 就清空右侧」时页面看着完全正常，只是每瞄一眼目录树就丢掉正在读的那份 diff。**反方向是有联动的**：活动 tab 的路径一变，`Files` 树沿路径展开并把那一行滚进视野（机制在 [`web.md`](web.md) 的「文件浏览器」），但**不切侧栏档位**——VS Code 也不因为换了编辑器就从 SCM 视图跳回 Explorer。
@@ -20,6 +21,7 @@
 - **重命名不算消失**：先按 `path` 找、再按 `oldPath` 找一次，命中就 `renameEditor` 到新路径（`pinned` 不变，活动键跟着走）。**两趟而不是一趟带 `||` 的谓词**：A→B 改名之后又在 A 位置新建一个文件时，两条都能命中同一个 `path`，而该跟的是路径就是 A 的那条。**新路径上已经开着一个 tab 时并入它**：幸存者保位置，`pinned` 取或，活动键移过去——两个同键的 tab 并排在栏里是没有意义的。
 - **只重取活动那一个 tab，其余切过去时再取**（`activateEditor` 每次都真的去取，与目录树的 `loadDir` 同一取向）。每个 SSE 事件都走这条路，而 agent 跑动期间事件密集：栏里挂着 10 个 diff tab 时每个事件就是 10 趟 `git diff`。切过去时缓存的那份正文照常显示、新的回来再换掉——「同一个 path 已 `ready` 就不回退 `loading`」那条让它不闪。**`refresh()` 内部用列表层的 `removeEditor` 而不是 `closeEditor`**：后者会顺手重取新邻居，而 `refresh()` 末尾本来就要取一次活动 tab，两处各取一趟就是一次事件两趟请求。
 - **在途的那次请求要一并作废**：关掉 X 之后、响应回来之前，那次请求回来照旧写进缓存——不报错，只是内存里多一份没人看的补丁，且下次再打开 X 时先看到的是它。作废手段是按路径 `claim` 一张票（`http.ts` 的 `latestWins` 本就按 key 计数），**与删缓存成对写在 `forget()` 里**，调用方不展开——漏掉作废那一半时没有任何东西会红。票不 `release`，`latest` 那张表随本次会话触过的路径增长，有界。
+- **commit tab 不收编、不重取**：一次提交不可变，SSE 说的「工作区变了」与它无关——`refresh()` 里那一遍只过 `diff` 种类，活动 tab 是 commit 时也不重取。HEAD 被 rebase 掉之后那个提交仍在对象库里（reflog 留着），tab 照样看得了；真被 gc 掉时那一次取写成 `error`，与 file tab 面对已删文件同一个形态。
 - **file tab 永不自动关**：目录树列的是整棵仓库，文件被删了也只是那一次 `loadFile` 写成 `error`，与从前一致。
 - **活动的 file tab 与从前一样在 `loadState()` 之前就重取**，不等新列表也不受它失败影响：它的数据源是工作区本身。收编之后活动键变了（活动 tab 被关、邻居顶上）才对新活动的 file tab 补取一次，否则那一趟已经发过了。
 
@@ -51,9 +53,10 @@
 
 ## 图片视图
 
-**`DiffPayload` / `FilePayload` 的 `image` 支由 `ImageView.tsx` 承接，两个面板共用一个组件**：diff 那侧 `ImageDiff` 按 `old` / `new` 各画一张（`null` 的那侧不画——新增只有右、删除只有左），文件那侧 `ImageFile` 画一张。**说明文字（`Before` / `After` · 像素尺寸，体积另起一段、中间只隔 `gap-2` 不加点）挂在每张图的右下角**（figcaption 排在图之后、`self-end`）：排在图上方时 caption 宽度随文字变，两张并排的图顶边就不齐；文件视图那张没有侧别，只剩尺寸与体积。**像素尺寸从 `<img>` 的 `onLoad` 读 `naturalWidth × naturalHeight`**，不让后端解析图片头——浏览器反正要解码这张图，尺寸是解码的副产品；后端为八种格式各写一份头解析只是第二份事实来源。图到了才补进 caption，0 × 0 不画。tab 仍是 `diff` / `file` 两种，图片不是第三种 tab：它回答的仍是「这个文件的 diff / 全文是什么」，只是正文换成了图。
+**`DiffPayload` / `FilePayload` 的 `image` 支由 `ImageView.tsx` 承接，两个面板共用一个组件**：diff 那侧 `ImageDiff` 按 `old` / `new` 各画一张（`null` 的那侧不画——新增只有右、删除只有左），文件那侧 `ImageFile` 画一张。**说明文字（`Before` / `After` · 像素尺寸，体积另起一段、中间只隔 `gap-2` 不加点）挂在每张图的右下角**（figcaption 排在图之后、`self-end`）：排在图上方时 caption 宽度随文字变，两张并排的图顶边就不齐；文件视图那张没有侧别，只剩尺寸与体积。**像素尺寸从 `<img>` 的 `onLoad` 读 `naturalWidth × naturalHeight`**，不让后端解析图片头——浏览器反正要解码这张图，尺寸是解码的副产品；后端为八种格式各写一份头解析只是第二份事实来源。图到了才补进 caption，0 × 0 不画。图片不是新的一种 tab：它回答的仍是「这个文件的 diff / 全文是什么」，只是正文换成了图。
 
 - **前端不判「这是不是图片」，只认 `payload.kind === 'image'`**。判据（二进制 ∧ 扩展名）与扩展名表都在后端，页面上没有第二份——与 `languageOf` 必须只有一份是同一条取向：两份表漂开的症状是后端说这是图、前端按二进制画一句提示。
+- **commit tab 里的图片两侧都来自对象库**：URL 多带一个 `commit=<sha>`，`version` 是 parent / sha 的对象名，永远不变——那份图取一次就够。
 - **字节走 `<img src="/api/blob?path=&side=&v=">`，同源、cookie 自动带、CSP 的 `img-src 'self'` 现成放行**；不 `fetch` 再 `createObjectURL`（要给 CSP 开 `blob:`），不内联 base64。`path` 直接用 payload 里 `ImageSide.path`——重命名的旧侧后端已填成 `oldPath`。
 - **`v=` 与 figure 的 `key` 都是后端给的内容身份 `ImageSide.version`（旧侧是基准的 oid，新侧是体积 + mtime），前端不解读、只比对**。它必须随内容变：URL 字串相同时 Preact 不改 `src` 属性、浏览器不重新请求，症状是「图改了、页面上还是旧的那张」，不报错。它也**只能**随内容变：`loadDiff` 在每个 SSE `change` 上都跑，按「取过一次」换戳（`Date.now()` 挂在 payload 对象身份上，曾经的写法）会让每一次无关文件的改动都重挂两张图、重下最多 10MB 外加一次 `cat-file blob`——文本 tab 同一事件只付两个子进程。后端对 `v` 视而不见。
 - **图底下垫棋盘（`checkerboard` 工具类，`app.css` 里的 `@utility`）**：透明 PNG 直接压在编辑器底色上看不出透明区，而棋盘正是所有图片工具的惯例。格子色复用 `--color-diff-diagonal-fill`——那本就是「叠在编辑器底色上、明暗两档都成立」的半透明 token，不为棋盘再开一个颜色。图外一圈 `border-panel-border`，让一张与底色同色的图有边界可辨。

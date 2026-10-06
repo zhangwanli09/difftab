@@ -42,6 +42,12 @@
 | 只读读文件走 `git show` / `git cat-file` | 树上点得到的路径包含未跟踪与被忽略的文件，它们在对象库里根本没有对应的对象；而已跟踪文件要看的也是**工作区**那一份，不是 index 或 HEAD 那一份 |
 | 图片旧侧用 `git show <base>:<path>` 取字节 | 字节上两者一样——实测（`*.bin diff=conv` + `diff.conv.textconv`）`show HEAD:x.bin` 与 `cat-file blob HEAD:x.bin` 都给原文、只有 `cat-file --textconv` 给转换结果，textconv 在两者上都是显式开关。差别在 `show` 是 porcelain：带整套 log / diff / pretty 参数面，冒烟里那条「子命令之后只能是 `blob` / `-s`」的字面量断言在它身上钉不住；`cat-file` 是专门读对象的 plumbing，参数面就那几个 |
 | `cat-file` 带 `--filters` / `--textconv`，或按 `.gitattributes` 走 smudge | 那会让 git 跑 clean / smudge / textconv 驱动，而 LFS 的 smudge 会往 `.git/lfs/objects` 写、缺对象时还会联网——**白名单只看子命令，看不见参数**，这是它唯一漏得过的形态，所以参数字面量在冒烟里单独钉一条 |
+| 提交历史继续留在「首版不做」 | 实际使用里暴露的痛点：agent 跑完常常自己 commit，工作区一干净 difftab 就什么都看不到，想回顾「刚才这几步改了什么」只能回终端敲 `git log -p`。这是「瞥一眼」的同一个诉求换了个时刻，不是 GitLens 式的深度追溯——blame 与分支列表因此仍留在原处 |
+| 提交里单个文件的补丁用 `git show <sha> -- <path>` | 与图片旧侧不用 `show` 同一条理由：带整套 log / diff / pretty 参数面，「argv 只能是这几个字面量」那条断言钉不住；而 `diff <parent> <sha>` 本就在白名单里，三道闸、按路径挑 numstat、重命名传两个路径全部原样复用 |
+| 一次提交的文件清单用 `git diff-tree` | 又一条白名单，换来的东西 `diff <parent> <sha> --name-status` 都给得出；且 `diff-tree` 对合并提交默认什么都不输出，要另配 `-m` / `--first-parent` 才说得出话，多一个要钉的参数面 |
+| 父提交用 `rev-list --parents` / `rev-parse <sha>^` 取 | 前者是第二条新白名单；后者对根提交非零退出，要把「没有父」与「坏请求」从退出码里分开。单条提交那次 `log` 本来就要取元数据，`%P` 顺手带回全部父提交，零额外进程 |
+| 提交列表按 `HEAD` + `--skip` 翻页 | agent 在两次翻页之间提交一次，第二页就重复第一页的最后一条——而「边跑边看」正是这个工具最常见的时刻。锚在第一页那次的 HEAD oid 上，翻页与新提交互不干扰；新提交由 SSE 后重取第一页长出来 |
+| 合并提交展示组合 diff（`--cc`） | 补丁格式是多列前缀（`++` / ` -`），diff2html 解析不了；对第一父求 diff 是 GitHub 提交页与 VS Code Timeline 的同一口径，且只需要一个父 |
 | 单看扩展名判图片（不要求二进制） | 一个内容是文本的 `.png`（占位符、被 LFS 换成指针的图）会被送去 `<img>` 里画成一张破图，而它本来有一份能看的文本 diff；且已跟踪侧 git 的二进制判定含 `.gitattributes`，扩展名不含 |
 | 图片字节内联成 base64 放进 `DiffPayload` | 两张 5MB 的图进一份 JSON 多 33%，且两侧不能分别懒加载；CSP 的 `img-src 'self'` 让同源 `<img src>` 零成本可用，独立端点就是最短的路 |
 
