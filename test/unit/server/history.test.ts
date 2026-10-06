@@ -123,7 +123,7 @@ describe('listCommits——锚点分页', () => {
       ],
       { cwd: clone },
     );
-    const second = await listCommits(clone, { from: anchor, skip: PAGE_SIZE });
+    const second = await listCommits(clone, { head: anchor, skip: PAGE_SIZE });
     expect(second.head).toBe(anchor);
     expect(second.hasMore).toBe(false);
     expect(second.commits.map((c) => c.subject)).toEqual([
@@ -149,9 +149,9 @@ describe('listCommits——锚点分页', () => {
     });
   });
 
-  test('from 不是完整对象名 → invalid-path；不存在的提交 → not-found', async () => {
-    expect(await codeOf(listCommits(root, { from: 'HEAD', skip: 0 }))).toBe('invalid-path');
-    expect(await codeOf(listCommits(root, { from: 'f'.repeat(40), skip: 0 }))).toBe('not-found');
+  test('head 不是完整对象名 → invalid-path；不存在的提交 → not-found', async () => {
+    expect(await codeOf(listCommits(root, { head: 'HEAD', skip: 0 }))).toBe('invalid-path');
+    expect(await codeOf(listCommits(root, { head: 'f'.repeat(40), skip: 0 }))).toBe('not-found');
   });
 });
 

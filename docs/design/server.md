@@ -75,7 +75,7 @@
 | `GET /api/tree?path=` | `TreePayload` | 文件浏览器的目录树，**按目录懒加载**，一次只回一层；`path` 缺省即仓库根 |
 | `GET /api/file?path=` | `FilePayload` | 单个文件的只读内容；`path` 必填 |
 | `GET /api/blob?path=&side=old\|new&commit=` | 图片字节，`Content-Type` 是精确的图片 MIME | **只服务图片扩展名表里的路径**；`old` 侧读 diff 基准里的 blob、`new` 侧读工作区；`path` / `side` 都必填。**带 `commit` 时两侧都读对象库**：`old` 是该提交第一父里的 blob、`new` 是该提交里的 |
-| `GET /api/commits?from=&skip=` | `CommitPage` | 提交列表，一页 50 条；`from` 缺省即「从 HEAD 起、并把 HEAD 的 oid 作为锚点回传」，之后的页都带着它 |
+| `GET /api/commits?head=&skip=` | `CommitPage` | 提交列表，一页 50 条；`head` 缺省即「从 HEAD 起、并把 HEAD 的 oid 作为锚点回传」，之后的页都带着它 |
 | `GET /api/commit?sha=` | `CommitDetail` | 一次提交的元数据 + 改了哪些文件；`sha` 必填 |
 | `GET /api/commit-diff?sha=&path=&oldPath=` | `DiffPayload` | 一次提交里单个文件的补丁（相对第一父），三道闸与 `/api/diff` 同一套；`sha` / `path` 必填 |
 | `GET /api/events` | SSE | 事件 `change` / `heartbeat`；空闲退出以本端点的连接数判定 |
@@ -100,7 +100,7 @@
   - `too-large` 的 `size` / `reason` 与 `DiffPayload` 同一条判据，两个触发口，`size` 单独解释不了拒绝的原因。
   - `image` 的判据与 diff 那侧同一条（二进制 ∧ 扩展名），字节由 `/api/blob?side=new` 给。
 - `CommitSummary { sha; parents; author; time; subject }`、`CommitPage { head; commits; hasMore }`、`CommitDetail { …CommitSummary; files }`、`CommitFileEntry { path; oldPath?; status: 'A' | 'M' | 'D' | 'R' | 'T' }`——提交历史那三个端点（git 判据见 [`git.md`](git.md) 的「提交历史」）。
-  - **`sha` 与 `from` 都是完整对象名**，前端原样回传、不缩写不拼接：短哈希只是展示，截断归前端。
+  - **`sha` 与 `head` 都是完整对象名**，前端原样回传、不缩写不拼接：短哈希只是展示，截断归前端。
   - **`head: null` 即空仓库**，与 `upstream: null` 同一个取向：把「没有」编码进类型，而不是给一个空串让前端去猜。
   - **`time` 是作者时间的 Unix 秒**，「3 hours ago」怎么说归前端。只带作者不带提交者：rebase 过的提交两者不同，而这一栏回答的是「谁写的、什么时候写的」。
   - **`CommitFileEntry` 不复用 `FileEntry`**：后者的 `staged` / `unstaged` / `kind` 是工作区的双状态位，一次提交只有一个状态字母，硬塞进去等于让前端分组逻辑面对一份永远不该出现的组合。

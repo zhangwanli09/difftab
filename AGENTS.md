@@ -100,7 +100,7 @@
 - **状态文件一律按 `rev-parse --git-dir` 找，禁拼 `<root>/.git`**——linked worktree 与 submodule 下永远读不到，于是永远标不出操作
 - **冲突的判据是「这条来自 `u` 记录」而不是状态位**——`DD`/`AA` 里一个 `U` 都没有
 - **`log` 的 argv 整条是字面量、只许两种形态**（`--no-show-signature` + `-z` + 固定 `--format`，不带任何 diff 选项）——`log.showSignature` 会起 gpg、`-p` 会走外部 diff / textconv，而白名单只看子命令
-- **提交历史的 `sha` / `from` 只认完整十六进制对象名**——它们拼在 revision 位置，`GIT_LITERAL_PATHSPECS` 管不到，`--output=…` 在那里就是一次写文件
+- **提交历史的 `sha` / `head` 只认完整十六进制对象名**——它们拼在 revision 位置，`GIT_LITERAL_PATHSPECS` 管不到，`--output=…` 在那里就是一次写文件
 - **提交历史只加了 `log` 一条白名单**：提交 diff 走 `diff <parent> <sha>`、父提交取 `%P`，禁引入 `show` / `diff-tree` / `rev-list`
 - **图片旧侧只许 `cat-file blob` / `cat-file -s` 两种字面参数**——`--filters` / `--textconv` 会跑 smudge / textconv 驱动（LFS 的写 `.git/lfs`）而白名单只看子命令、看不见参数；换成 `show` 则参数面大到钉不住
 

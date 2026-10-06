@@ -330,12 +330,12 @@ export async function startServer(
       }
 
       /**
-       * 提交列表的一页。`from` 缺省即「从 HEAD 起」，响应里的 `head` 就是之后各页要带的锚点；
+       * 提交列表的一页。`head` 缺省即「从 HEAD 起」，响应里回传的 `head` 就是之后各页要带的锚点；
        * `skip` 缺省为 0。两者的合法性（完整对象名、非负整数）在这里与 git 那侧各判一半：
        * 数字归这里，对象名归 `assertOid`——它也是 `/api/commit` 那条路的同一把钥匙。
        */
       case '/api/commits': {
-        const from = url.searchParams.get('from');
+        const head = url.searchParams.get('head');
         const rawSkip = url.searchParams.get('skip') ?? '0';
         if (!/^\d{1,9}$/.test(rawSkip)) {
           sendError(res, 400, 'bad-request', 'skip must be a non-negative integer');
@@ -344,7 +344,7 @@ export async function startServer(
         sendJson(
           res,
           200,
-          await listCommits(repo.root, { from: from ?? undefined, skip: Number(rawSkip) }),
+          await listCommits(repo.root, { head: head ?? undefined, skip: Number(rawSkip) }),
         );
         return;
       }

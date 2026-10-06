@@ -94,22 +94,22 @@ export function parseLog(output: string): CommitSummary[] {
 }
 
 /**
- * 提交列表的一页。`from` 缺省即「从 HEAD 起」，并把 HEAD 此刻的 oid 回传当锚点；之后每一页
+ * 提交列表的一页。`head` 缺省即「从 HEAD 起」，并把 HEAD 此刻的 oid 回传当锚点；之后每一页
  * 都带着它再 `--skip`——按 HEAD 往下数时，agent 在两次翻页之间提交一次，第二页就重复第一页的
  * 最后一条。空仓库（HEAD 未出生）是一页空列表，不是错误。
  */
 export async function listCommits(
   root: string,
-  query: { from?: string | undefined; skip: number },
+  query: { head?: string | undefined; skip: number },
 ): Promise<CommitPage> {
   let head: string;
-  if (query.from === undefined) {
+  if (query.head === undefined) {
     const resolved = await runGit(['rev-parse', '--verify', '--quiet', 'HEAD'], root);
     const oid = resolved.stdout.trim();
     if (resolved.code !== 0 || !OID.test(oid)) return { head: null, commits: [], hasMore: false };
     head = oid;
   } else {
-    head = assertOid(query.from);
+    head = assertOid(query.head);
     await verifyCommit(root, head);
   }
 

@@ -239,7 +239,7 @@ export interface CommitSummary {
 }
 
 /**
- * `GET /api/commits` 的响应体。**`head` 是这一串分页的锚点**：第一页不带 `from` 时后端把 HEAD
+ * `GET /api/commits` 的响应体。**`head` 是这一串分页的锚点**：第一页不带 `head` 参数时后端把 HEAD
  * 此刻的 oid 回传，之后每一页都以它为起点——按 HEAD 往下数的写法在两次翻页之间有新提交时会让
  * 第二页重复第一页的最后一条。`head: null` 即空仓库（HEAD 未出生），与 `upstream: null` 同一个
  * 取向：把「没有」编码进类型。

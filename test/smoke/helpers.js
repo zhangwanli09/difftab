@@ -369,7 +369,7 @@ export async function runFullFlow(cwd, { env } = {}) {
     const firstPage = commitPages[0].status === 200 ? JSON.parse(commitPages[0].body) : null;
     const commitList = [...(firstPage?.commits ?? [])];
     if (firstPage?.hasMore) {
-      const query = new URLSearchParams({ from: firstPage.head, skip: String(commitList.length) });
+      const query = new URLSearchParams({ head: firstPage.head, skip: String(commitList.length) });
       const second = await authedGet(server.port, server.token, `/api/commits?${query}`);
       commitPages.push(second);
       if (second.status === 200) commitList.push(...JSON.parse(second.body).commits);
