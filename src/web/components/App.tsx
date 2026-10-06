@@ -170,10 +170,10 @@ export function App() {
     refreshTree();
   }, [tab]);
 
-  // `History` 那一档同一个取向：没取过、或离开期间来过 SSE，切过来才取第一页——不在挂载时预取，
-  // 多数会话根本不会点开它
+  // `History` 那一档同一个取向：没取过、上次没取到、或离开期间 HEAD 挪过，切过来才取第一页——不在
+  // 挂载时预取，多数会话根本不会点开它
   useEffect(() => {
-    if (tab === 'history') ensureHistory();
+    if (tab === 'history') void ensureHistory(repoState.peek());
   }, [tab]);
 
   // diff 版式的**唯一**测量点。本组件只管「量哪个元素、什么时候开始和停」——量法与阈值都在

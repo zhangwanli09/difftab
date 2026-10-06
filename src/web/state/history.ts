@@ -1,19 +1,31 @@
 // `History` 那一档的状态：分页的提交列表、按 sha 缓存的提交详情、展开集合。取单个文件的提交
 // diff 在 `store.ts`——那是 tab 的事，与 diff / file 两种 tab 同住一处。
 //
-// **列表锚在第一页那次的 HEAD 上**：之后每一页都带着 `head` 再 `skip`，agent 在两次翻页之间提交
-// 一次也不会让第二页重复第一页的最后一条。新提交由 SSE 之后重取第一页长出来。
+// **翻页锚在一个固定的提交上**：每一页都带着 `anchor` 再 `skip`，agent 在两次翻页之间提交一次也
+// 不会让第二页重复第一页的最后一条。新提交由「HEAD 挪了 → 重取第一页 → 接在顶上」长出来。
 
 import { signal } from '@preact/signals';
-import type { CommitDetail, CommitPage, CommitSummary } from '../../server/shared/protocol';
+import type {
+  CommitDetail,
+  CommitPage,
+  CommitSummary,
+  RepoState,
+} from '../../server/shared/protocol';
 import { getJson, latestWins, toMessage } from './http';
 import { setIn } from './immutable';
 
 export interface HistoryList {
-  /** 分页的锚点。null 即空仓库。 */
+  /** 列表顶上那条是哪个 HEAD 时取的。null 即空仓库。 */
   head: string | null;
   commits: readonly CommitSummary[];
   hasMore: boolean;
+  /**
+   * 翻页的锚点与它在 `commits` 里的位置：下一页问的是「从 `anchor` 起跳过 `commits.length -
+   * offset` 条」。新提交接在顶上时锚点不动、`offset` 加上新长出来的条数——锚点一换，已翻到的
+   * 那几页就得按新锚点重数一遍。
+   */
+  anchor: string | null;
+  offset: number;
 }
 
 /** 已加载的那一串提交。null 即还没取过第一页。 */
@@ -26,65 +38,92 @@ export const historyError = signal<string | null>(null);
 export const loadingMore = signal(false);
 export const moreError = signal<string | null>(null);
 
-/**
- * 看不见时 SSE 不取，只记一笔；切过来再取。与 `Files` 档同一取向：看不见的东西不为它付
- * `git log`。初值为 true——第一次切过来本来就要取。
- */
-let stale = true;
-
 const pageTickets = latestWins();
 
+const fresh = (page: CommitPage): HistoryList => ({ ...page, anchor: page.head, offset: 0 });
+
 /**
- * 重取第一页。**`head` 没变就什么都不换**：已翻到的页、展开的提交都留着——agent 改的是工作区
- * 时每个文件事件都会走到这里，而提交列表根本没变。变了就以新的第一页整体替换：新提交长在顶上，
- * 而旧的那串页是以旧锚点数的，接着用会让 skip 错位。
+ * 新的第一页与已加载的列表合起来。**新 HEAD 只是在旧 HEAD 之上又长了几条**（agent 最常见的那种
+ * 提交）时，把新长出来的那几条接在顶上，已翻到的页与滚动位置都留着；判据是旧 HEAD 出现在新的
+ * 第一页里、且它往下那一截与已加载的逐条相同。其余（amend、reset、rebase、一次长出 50 条以上、
+ * 合并把旧提交排进了中间）一律以新的第一页整体替换——拼一份对不上的列表比少几页更糟。
  */
+export function mergeFirstPage(list: HistoryList | null, page: CommitPage): HistoryList {
+  if (list === null || list.head === null || page.head === null) return fresh(page);
+  if (list.head === page.head) return list;
+  const at = page.commits.findIndex((commit) => commit.sha === list.head);
+  if (at <= 0) return fresh(page);
+  const overlap = page.commits.slice(at);
+  if (overlap.some((commit, i) => list.commits[i]?.sha !== commit.sha)) return fresh(page);
+  return {
+    ...list,
+    head: page.head,
+    commits: [...page.commits.slice(0, at), ...list.commits],
+    offset: list.offset + at,
+  };
+}
+
+/** 重取第一页，并与已加载的那一串合起来（见 `mergeFirstPage`）。 */
 export async function refreshHistory(): Promise<void> {
-  stale = false;
   const ticket = pageTickets.claim();
   try {
     const page = await getJson<CommitPage>('/api/commits');
     if (!pageTickets.isCurrent(ticket)) return;
     historyError.value = null;
-    if (historyList.value?.head === page.head) return;
-    historyList.value = page;
-    moreError.value = null;
+    const merged = mergeFirstPage(historyList.value, page);
+    if (merged === historyList.value) return;
+    if (merged.anchor !== historyList.value?.anchor) moreError.value = null;
+    historyList.value = merged;
   } catch (cause) {
     if (!pageTickets.isCurrent(ticket)) return;
     historyError.value = toMessage(cause);
   }
 }
 
-/** 切到 `History` 那一档时调：没取过、或离开期间来过 SSE，就取一次。 */
-export function ensureHistory(): void {
-  if (stale || historyList.value === null) void refreshHistory();
+/**
+ * 这份列表还对得上仓库此刻的 HEAD 吗。**判据是 `/api/state` 带来的 HEAD oid，不是「来过 SSE」**：
+ * agent 改工作区时每个文件事件都会推一次 SSE，而能让提交列表变的只有 HEAD 挪动——按事件重取等于
+ * 每个事件一次 `rev-parse` + `log`。上一次取失败了（`historyError` 还在）也算对不上，切过来即重试。
+ */
+export function historyIsCurrent(state: RepoState | null): boolean {
+  const list = historyList.value;
+  if (list === null || historyError.value !== null || state === null) return false;
+  return list.head === (state.branch.oid ?? null);
 }
 
-/** 不可见时的 SSE：只记一笔。 */
-export function markHistoryStale(): void {
-  stale = true;
+/** 切到 `History` 那一档、或它可见时来了一次 SSE：对不上 HEAD 才取。 */
+export function ensureHistory(state: RepoState | null): Promise<void> {
+  return historyIsCurrent(state) ? Promise.resolve() : refreshHistory();
 }
 
 /**
- * 翻一页。带着锚点与已加载的条数去问；回来时**锚点或条数变了就丢掉**——中途第一页被换掉了
- * （新提交），这一页是按旧的那串数的。
+ * 翻一页。带着锚点与「锚点之下已加载几条」去问；回来时**列表已经换过就丢掉**——中途第一页被整体
+ * 替换了，这一页是按旧锚点数的。只是顶上接了新提交（锚点没变）的话，这一页照样接在末尾。
  */
 export async function loadMore(): Promise<void> {
   const current = historyList.value;
-  if (current === null || current.head === null || !current.hasMore || loadingMore.value) return;
+  if (current === null || current.anchor === null || !current.hasMore || loadingMore.value) return;
   loadingMore.value = true;
   moreError.value = null;
+  const { anchor } = current;
+  const skip = current.commits.length - current.offset;
   try {
-    const query = new URLSearchParams({ head: current.head, skip: String(current.commits.length) });
+    const query = new URLSearchParams({ head: anchor, skip: String(skip) });
     const page = await getJson<CommitPage>(`/api/commits?${query}`);
-    if (historyList.value !== current) return;
+    const latest = historyList.value;
+    if (
+      latest === null ||
+      latest.anchor !== anchor ||
+      latest.commits.length - latest.offset !== skip
+    )
+      return;
     historyList.value = {
-      head: current.head,
-      commits: [...current.commits, ...page.commits],
+      ...latest,
+      commits: [...latest.commits, ...page.commits],
       hasMore: page.hasMore,
     };
   } catch (cause) {
-    if (historyList.value === current) moreError.value = toMessage(cause);
+    if (historyList.value?.anchor === anchor) moreError.value = toMessage(cause);
   } finally {
     loadingMore.value = false;
   }

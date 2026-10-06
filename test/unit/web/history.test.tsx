@@ -20,12 +20,15 @@ import {
 } from '../../../src/web/state/editors';
 import {
   expandedCommits,
+  historyError,
   historyList,
   loadMore,
+  mergeFirstPage,
   refreshHistory,
   toggleCommit,
 } from '../../../src/web/state/history';
 import {
+  activateEditor,
   activeTab,
   commitDiffKey,
   commitDiffStates,
@@ -100,22 +103,54 @@ describe('列表与翻页', () => {
     expect(historyList.value).toBe(before);
   });
 
-  test('head 变了就以新的第一页整体替换，展开集合按 sha 留着', async () => {
+  test('HEAD 往上长了几条：接在顶上，已翻到的页与展开集合都留着', async () => {
     let head = 100;
-    stubJsonBy((url) =>
-      url.pathname === '/api/commit'
-        ? { payload: { ...commit(99), files: [] } satisfies CommitDetail }
-        : { payload: page(head, head, 2, true) },
-    );
+    stubJsonBy((url) => {
+      if (url.pathname === '/api/commit')
+        return { payload: { ...commit(99), files: [] } satisfies CommitDetail };
+      if (url.searchParams.has('head')) return { payload: page(100, 98, 2, true) };
+      return { payload: page(head, head, 2, true) };
+    });
     await refreshHistory();
+    await loadMore();
     toggleCommit(sha(99));
     head = 101;
     await refreshHistory();
-    expect(historyList.value?.commits[0]?.sha).toBe(sha(101));
+    expect(historyList.value?.commits.map((c) => c.sha)).toEqual([101, 100, 99, 98, 97].map(sha));
+    expect(historyList.value).toMatchObject({ head: sha(101), anchor: sha(100), offset: 1 });
     expect(expandedCommits.value.has(sha(99))).toBe(true);
   });
 
-  test('翻页回来时第一页已被换掉——这一页是按旧锚点数的，丢掉', async () => {
+  test('接在顶上之后再翻页：锚点不动，skip 只数锚点之下那几条', async () => {
+    let head = 100;
+    const calls = stubJsonBy((url) =>
+      url.searchParams.has('head')
+        ? { payload: page(100, 98, 2, false) }
+        : { payload: page(head, head, 2, true) },
+    );
+    await refreshHistory();
+    head = 101;
+    await refreshHistory();
+    await loadMore();
+    const more = query(calls.at(-1) as string);
+    expect([more.get('head'), more.get('skip')]).toEqual([sha(100), '2']);
+    expect(historyList.value?.commits.map((c) => c.sha)).toEqual([101, 100, 99, 98, 97].map(sha));
+  });
+
+  test('旧 HEAD 不在新的第一页里（amend / reset / 一次长出一整页）：整体替换', () => {
+    const list = mergeFirstPage(null, page(100, 100, 2, true));
+    const amended = page(200, 200, 2, true);
+    expect(mergeFirstPage(list, amended)).toEqual({ ...amended, anchor: sha(200), offset: 0 });
+    // 旧 HEAD 在、但往下那一截对不上（合并把别的提交排进了中间）：同样整体替换
+    const interleaved: CommitPage = {
+      head: sha(300),
+      commits: [commit(300), commit(100), commit(55)],
+      hasMore: true,
+    };
+    expect(mergeFirstPage(list, interleaved).anchor).toBe(sha(300));
+  });
+
+  test('翻页回来时列表已被整体替换——这一页是按旧锚点数的，丢掉', async () => {
     let release: () => void = () => {};
     const gate = new Promise<void>((resolve) => {
       release = resolve;
@@ -131,23 +166,23 @@ describe('列表与翻页', () => {
     );
     await refreshHistory();
     const more = loadMore();
-    head = 101;
+    head = 200;
     await refreshHistory();
     release();
     await more;
-    expect(historyList.value?.commits.map((c) => c.sha)).toEqual([sha(101), sha(100)]);
+    expect(historyList.value?.commits.map((c) => c.sha)).toEqual([sha(200), sha(199)]);
   });
 });
 
 describe('HistoryList 组件', () => {
   test('空仓库说 No commits yet', () => {
-    historyList.value = { head: null, commits: [], hasMore: false };
+    historyList.value = mergeFirstPage(null, { head: null, commits: [], hasMore: false });
     render(<HistoryList />, container);
     expect(container.textContent).toContain('No commits yet');
   });
 
   test('一行是主题 + 短哈希 + 相对时间；hasMore 时末尾有 Load more', () => {
-    historyList.value = page(100, 100, 1, true);
+    historyList.value = mergeFirstPage(null, page(100, 100, 1, true));
     render(<HistoryList />, container);
     const row = container.querySelector('[aria-expanded]') as HTMLElement;
     expect(row.textContent).toContain('commit 100');
@@ -157,7 +192,7 @@ describe('HistoryList 组件', () => {
   });
 
   test('单击展开才取详情；文件行单击开预览 commit tab、双击固定', async () => {
-    historyList.value = page(100, 100, 1, false);
+    historyList.value = mergeFirstPage(null, page(100, 100, 1, false));
     const detail: CommitDetail = {
       ...commit(100),
       files: [{ path: 'src/b.ts', oldPath: 'src/a.ts', status: 'R' }],
@@ -221,6 +256,23 @@ describe('commit tab', () => {
     selectCommitFile(sha(1), { path: 'a.ts', status: 'M' });
     expect(calls.filter((url) => url.startsWith('/api/commit-diff'))).toHaveLength(1);
   });
+
+  test('上次没取到：切回这个 tab 就重试，并带上旧路径', async () => {
+    let fail = true;
+    const calls = stubJsonBy(() =>
+      fail
+        ? { payload: { error: { code: 'internal', message: 'boom' } }, status: 500 }
+        : { payload: { kind: 'text', patch: 'p\n' } },
+    );
+    selectCommitFile(sha(1), { path: 'b.ts', oldPath: 'a.ts', status: 'R' });
+    const key = commitDiffKey(sha(1), 'b.ts');
+    await waitFor(() => expect(commitDiffStates.value.get(key)?.status).toBe('error'));
+    openEditor('diff', 'other.ts', true);
+    fail = false;
+    activateEditor(editorKey('commit', 'b.ts', sha(1)));
+    await waitFor(() => expect(commitDiffStates.value.get(key)?.status).toBe('ready'));
+    expect(query(calls.at(-1) as string).get('oldPath')).toBe('a.ts');
+  });
 });
 
 describe('refresh 对 History 那一半', () => {
@@ -246,15 +298,48 @@ describe('refresh 对 History 那一半', () => {
     repoState.value = null;
   });
 
-  test('History 可见时重取第一页，不可见时不取', async () => {
+  test('History 可见且 HEAD 挪了才重取第一页；HEAD 没挪、或不可见时一条都不发', async () => {
+    let oid = sha(1);
     const calls = stubJsonBy((url) =>
-      url.pathname === '/api/state' ? { payload: state } : { payload: page(1, 1, 1, false) },
+      url.pathname === '/api/state'
+        ? { payload: { ...state, branch: { ...state.branch, oid } } }
+        : { payload: page(Number.parseInt(oid, 16), Number.parseInt(oid, 16), 1, false) },
     );
+    const commitsCalls = () => calls.filter((url) => url.startsWith('/api/commits')).length;
     await refresh();
-    expect(calls.filter((url) => url.startsWith('/api/commits'))).toHaveLength(0);
+    expect(commitsCalls()).toBe(0);
+
     activeTab.value = 'history';
     await refresh();
-    expect(calls.filter((url) => url.startsWith('/api/commits'))).toHaveLength(1);
+    expect(commitsCalls()).toBe(1);
+    // 工作区改动推来的 SSE：HEAD 没挪，不起 `git log`
+    await refresh();
+    await refresh();
+    expect(commitsCalls()).toBe(1);
+
+    oid = sha(2);
+    await refresh();
+    expect(commitsCalls()).toBe(2);
+    expect(historyList.value?.head).toBe(sha(2));
+    repoState.value = null;
+  });
+
+  test('上一次取失败了：HEAD 没挪也重试', async () => {
+    let fail = true;
+    const calls = stubJsonBy((url) => {
+      if (url.pathname === '/api/state')
+        return { payload: { ...state, branch: { ...state.branch, oid: sha(1) } } };
+      return fail
+        ? { payload: { error: { code: 'internal', message: 'busy' } }, status: 500 }
+        : { payload: page(1, 1, 1, false) };
+    });
+    activeTab.value = 'history';
+    await refresh();
+    expect(historyError.value).toBe('busy');
+    fail = false;
+    await refresh();
+    expect(historyError.value).toBeNull();
+    expect(calls.filter((url) => url.startsWith('/api/commits'))).toHaveLength(2);
     repoState.value = null;
   });
 });
@@ -262,6 +347,8 @@ describe('refresh 对 History 那一半', () => {
 test('relativeTime：一分钟以内是 now，其余取最大的那一档', () => {
   const now = 1_700_000_000_000;
   expect(relativeTime(now / 1000 - 30, now)).toBe('now');
+  // 时钟漂移：未来的时间不说「in 10 minutes」
+  expect(relativeTime(now / 1000 + 600, now)).toBe('now');
   expect(relativeTime(now / 1000 - 3 * 3600, now)).toBe('3 hours ago');
   expect(relativeTime(now / 1000 - 24 * 3600, now)).toBe('yesterday');
 });

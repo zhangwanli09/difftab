@@ -30,7 +30,7 @@ import {
   removeEditor,
   renameEditor,
 } from './editors';
-import { markHistoryStale, refreshHistory } from './history';
+import { ensureHistory } from './history';
 import { getJson, latestWins, type Tickets, toMessage } from './http';
 import { removeFrom, setIn } from './immutable';
 import { ancestorDirs, refreshTree } from './tree';
@@ -338,15 +338,15 @@ export async function refresh(): Promise<void> {
    * `App` 那个 tab effect 补一次，而后台的 file tab 切过去时 `activateEditor` 自己就取。
    */
   if (activeTab.value === 'files') refreshTree();
-  // 提交列表同一个取向：看得见才重取第一页（`head` 没变就什么都不换），看不见只记一笔
-  if (activeTab.value === 'history') void refreshHistory();
-  else markHistoryStale();
   const before = activeEditor.value;
   // **活动的文件也要重取**，与「活动的 diff 也要重取」同源：内容变了而树没变是最常见的
   // 形态，只刷树的话右侧停在旧内容上，而页面看不出任何异样
   if (before?.kind === 'file') void loadFile(before.path);
 
   if (!(await loadState())) return;
+  // 提交列表要等新列表：判据是新 state 里的 HEAD oid——HEAD 没挪就一条请求都不发。看不见时不判，
+  // 切过来时 `App` 那个 tab effect 拿当时的 state 再判一次
+  const history = activeTab.value === 'history' ? ensureHistory(repoState.value) : null;
   const files = repoState.value?.files ?? [];
   /**
    * 对着**收编之前那份列表**走一遍（`editors.value` 在循环开始时就取定了，改名并入掉的 tab 不会
@@ -377,8 +377,9 @@ export async function refresh(): Promise<void> {
   // 活动的 file tab 上面已经取过：收编只动 diff tab，活动的 file tab 前后是同一个。其余（活动的
   // diff tab；活动的 diff tab 被关、file tab 顶上）都要取一次
   const after = activeEditor.value;
-  if (after === null || (after.kind === 'file' && before?.kind === 'file')) return;
-  await refetch(after);
+  const editor =
+    after === null || (after.kind === 'file' && before?.kind === 'file') ? null : refetch(after);
+  await Promise.all([history, editor]);
 }
 
 /**
@@ -393,11 +394,19 @@ export function activateEditor(key: EditorKey): void {
 }
 
 /**
- * 重取一个 tab。diff 那一路条目取不到时什么都不发，回一个已完成的 promise。**commit tab 永不
- * 重取**：一次提交不可变，打开时取到的那份就是它的全部。
+ * 重取一个 tab。diff 那一路条目取不到时什么都不发，回一个已完成的 promise。**commit tab 只在
+ * 没取到时重取**：一次提交不可变，`ready` 的那份就是它的全部；而上次失败了（网络抖一下、后端
+ * 重启）的话，切过来就是重试的时机——不然唯一的重试路径是回 `History` 重新展开再点一次。
  */
 function refetch(editor: Editor): Promise<void> {
-  if (editor.kind === 'commit') return Promise.resolve();
+  if (editor.kind === 'commit') {
+    const sha = editor.sha;
+    if (sha === undefined) return Promise.resolve();
+    const state = commitDiffStates.value.get(commitDiffKey(sha, editor.path));
+    if (state?.status === 'ready') return Promise.resolve();
+    // 旧路径从上次那份状态里拿：它跟着请求走，打开时就记下了
+    return loadCommitDiff(sha, editor.path, state?.rename?.oldPath);
+  }
   if (editor.kind === 'file') return loadFile(editor.path);
   const entry = repoState.value?.files.find((file) => file.path === editor.path);
   return entry === undefined ? Promise.resolve() : loadDiff(entry);
@@ -485,14 +494,18 @@ export const commitDiffStates = commitDiffCache.states;
  * 取一次提交里一个文件的补丁。重命名同样要把 `oldPath` 带上（只传新路径时退化成全新增）；相似
  * 度那一档没有——`--name-status` 的 `R<score>` 不进协议，标注只说「从哪改名来的」。
  */
-async function loadCommitDiff(sha: string, entry: CommitFileEntry): Promise<void> {
-  const key = commitDiffKey(sha, entry.path);
+async function loadCommitDiff(
+  sha: string,
+  path: string,
+  oldPath: string | undefined,
+): Promise<void> {
+  const key = commitDiffKey(sha, path);
   const ticket = commitDiffCache.tickets.claim(key);
-  const rename = entry.oldPath === undefined ? null : { oldPath: entry.oldPath, score: null };
+  const rename = oldPath === undefined ? null : { oldPath, score: null };
   commitDiffCache.set(key, { status: 'loading', rename });
   try {
-    const query = new URLSearchParams({ sha, path: entry.path });
-    if (entry.oldPath) query.set('oldPath', entry.oldPath);
+    const query = new URLSearchParams({ sha, path });
+    if (oldPath) query.set('oldPath', oldPath);
     const payload = await getJson<DiffPayload>(`/api/commit-diff?${query}`);
     if (!commitDiffCache.tickets.isCurrent(ticket, key)) return;
     commitDiffCache.set(key, { status: 'ready', rename, payload });
@@ -510,6 +523,6 @@ export function selectCommitFile(sha: string, entry: CommitFileEntry): void {
   const replaced = openEditor('commit', entry.path, false, sha);
   if (replaced !== null) forget(replaced);
   if (commitDiffStates.value.get(commitDiffKey(sha, entry.path))?.status !== 'ready') {
-    void loadCommitDiff(sha, entry);
+    void loadCommitDiff(sha, entry.path, entry.oldPath);
   }
 }

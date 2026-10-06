@@ -49,8 +49,10 @@ const STEPS: readonly [Intl.RelativeTimeFormatUnit, number][] = [
  */
 export function relativeTime(seconds: number, now = Date.now()): string {
   const delta = seconds - Math.floor(now / 1000);
+  // 未来的时间只可能是时钟漂移（提交那台机器的钟快了），说「in 10 minutes」是在复述一个错
+  if (delta > 0) return 'now';
   for (const [unit, size] of STEPS) {
-    if (Math.abs(delta) >= size) return RELATIVE.format(Math.trunc(delta / size), unit);
+    if (-delta >= size) return RELATIVE.format(Math.trunc(delta / size), unit);
   }
   return 'now';
 }
