@@ -5,14 +5,16 @@
 // `diff <parent> <sha>`，父提交取 `log` 的 `%P`，校验是 `rev-parse`。不用 `show`（参数面太大、
 // 钉不住）、`diff-tree`（又一条白名单，合并提交默认还什么都不输出）、`rev-list`（同上）。
 
+import { readFile } from 'node:fs/promises';
+import { isAbsolute, join } from 'node:path';
 import type {
   CommitDetail,
   CommitFileEntry,
   CommitPage,
   CommitSummary,
 } from '../shared/protocol.ts';
-import { emptyTree } from './repo.ts';
-import { runGit, runGitStrict } from './run.ts';
+import { emptyTreeOf, parseGitVersion } from './repo.ts';
+import { DIFF_GUARDS, GitError, runGit, runGitStrict } from './run.ts';
 import { WorktreeError } from './worktree.ts';
 
 /** 一页多少条。取 `PAGE_SIZE + 1` 条来判 `hasMore`，不另起一次计数。 */
@@ -117,21 +119,100 @@ export async function listCommits(
   return { head, commits: commits.slice(0, PAGE_SIZE), hasMore: commits.length > PAGE_SIZE };
 }
 
-/** 单条提交的元数据。`sha` 先过 `assertOid` 与 `verifyCommit`。 */
-export async function readCommitSummary(root: string, sha: string): Promise<CommitSummary> {
-  await verifyCommit(root, sha);
-  const [commit] = parseLog(await runGitStrict(logArgs(sha, 1), root));
-  if (!commit) throw new WorktreeError('not-found', 'no such commit');
-  return commit;
+/** 一次提交与它的对比端。提交详情、单个文件的补丁、图片两侧三条路都从这一份出发。 */
+export interface CommitRange {
+  commit: CommitSummary;
+  /**
+   * **第一父**。合并提交因此展示「这次合并相对主线带进来了什么」，与 GitHub 提交页、VS Code
+   * Timeline 同一口径（组合 diff 的多列前缀 diff2html 解析不了）。根提交没有父，对比端是空树
+   * ——与空仓库的 diff 基准同一个常量，按对象名长度取，不为它多起一次进程。
+   */
+  parent: string;
 }
 
 /**
- * 这次提交的对比端：**第一父**。合并提交因此展示「这次合并相对主线带进来了什么」，与 GitHub
- * 提交页、VS Code Timeline 同一口径（组合 diff 的多列前缀 diff2html 解析不了）。根提交没有父，
- * 对比端是空树——与空仓库的 diff 基准同一个常量，不为它写特殊分支。
+ * 把请求里的 sha 落成 `CommitRange`。**对比端只在这里定一次**：三条路各自去找父提交时，将来
+ * 改一处（比如合并提交换个父）漏改另一处，文件清单、补丁与图片就是对着三个不同的父在比，而
+ * 不报错。
+ *
+ * 一次 `log -1` 同时做校验与取元数据：对象名合法不等于是本仓库里的一个提交——`log` 对不存在
+ * 的对象以 128 退出，对树与 blob **以 0 退出、输出为空**，对附注标签则剥到它指向的提交（实测）。
+ * 所以判据是「回来的那条正好就是问的这个 sha」，退出码只是其中一半。
  */
-export async function commitParent(root: string, commit: CommitSummary): Promise<string> {
-  return commit.parents[0] ?? emptyTree(root);
+export async function resolveCommit(root: string, sha: string): Promise<CommitRange> {
+  assertOid(sha);
+  await guardLazyFetch(root);
+  const result = await runGit(logArgs(sha, 1), root);
+  const [commit] = result.code === 0 ? parseLog(result.stdout) : [];
+  if (commit?.sha !== sha) throw new WorktreeError('not-found', 'no such commit');
+  return { commit, parent: commit.parents[0] ?? emptyTreeOf(sha) };
+}
+
+/** `GIT_NO_LAZY_FETCH` 的版本下限（git 2.44）。 */
+const LAZY_FETCH_SWITCH = { major: 2, minor: 44 };
+
+const lazyFetchGuards = new Map<string, Promise<void>>();
+
+/**
+ * **老 git + partial clone 下提交历史整个拒绝**。`GIT_NO_LAZY_FETCH` 是 git 2.44 才有的变量，更老
+ * 的 git 不认它：缺的 blob 照样当场从 promisor remote 取回来写进 `.git/objects`，而提交历史读的
+ * 恰恰是那些从没检出过的旧 blob——工作区 diff 只碰 HEAD 里已检出的那一份，不在此列。
+ *
+ * 判据是 git 版本 + 共享 git 目录下 `config` 里有没有 partial clone 的记号：老 git 写的是
+ * `extensions.partialClone`，新一些的只写 `remote.<名>.promisor = true`（实测 2.54 只有后者），两种
+ * 都认、不区分大小写——与进行中的操作同一个取向：读状态文件，不为它往白名单里添 `config`。两样在一次
+ * 会话里都不会变，按仓库缓存。
+ */
+function guardLazyFetch(root: string): Promise<void> {
+  let guard = lazyFetchGuards.get(root);
+  if (guard === undefined) {
+    guard = checkLazyFetch(root);
+    lazyFetchGuards.set(root, guard);
+    // 失败不缓存：拒绝本身也可能是一次读失败，下一次请求再判
+    guard.catch(() => lazyFetchGuards.delete(root));
+  }
+  return guard;
+}
+
+async function checkLazyFetch(root: string): Promise<void> {
+  const version = parseGitVersion((await runGit(['--version'], root)).stdout);
+  if (
+    version === null ||
+    version.major > LAZY_FETCH_SWITCH.major ||
+    (version.major === LAZY_FETCH_SWITCH.major && version.minor >= LAZY_FETCH_SWITCH.minor)
+  ) {
+    return;
+  }
+  const common = (await runGitStrict(['rev-parse', '--git-common-dir'], root)).trim();
+  let config = '';
+  try {
+    config = await readFile(
+      join(isAbsolute(common) ? common : join(root, common), 'config'),
+      'utf8',
+    );
+  } catch {
+    return;
+  }
+  if (/^\s*(?:partialclone\s*=|promisor\s*=\s*true\b)/im.test(config)) {
+    throw new WorktreeError(
+      'unsupported',
+      'commit history in a partial clone needs git 2.44 or newer',
+    );
+  }
+}
+
+/**
+ * 缺对象（partial clone，`GIT_NO_LAZY_FETCH` 之下）翻译成一句能看懂的拒绝，而不是一条 500。
+ * 其余失败原样抛。
+ */
+export function missingObjects(cause: unknown): never {
+  if (cause instanceof GitError && /promisor remote|lazy fetching disabled/.test(cause.stderr)) {
+    throw new WorktreeError(
+      'unsupported',
+      'this commit is not available locally (partial clone) — difftab does not fetch',
+    );
+  }
+  throw cause;
 }
 
 /**
@@ -164,11 +245,10 @@ export function parseNameStatus(output: string): CommitFileEntry[] {
 
 /** 一次提交的元数据 + 改了哪些文件（相对第一父）。 */
 export async function readCommit(root: string, sha: string): Promise<CommitDetail> {
-  const commit = await readCommitSummary(root, sha);
-  const parent = await commitParent(root, commit);
+  const { commit, parent } = await resolveCommit(root, sha);
   const output = await runGitStrict(
-    ['diff', parent, commit.sha, '--name-status', '-z', '-M', '--'],
+    ['diff', ...DIFF_GUARDS, parent, commit.sha, '--name-status', '-z', '-M', '--'],
     root,
-  );
+  ).catch(missingObjects);
   return { ...commit, files: parseNameStatus(output) };
 }

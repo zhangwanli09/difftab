@@ -67,6 +67,11 @@ export interface FixtureRepos {
    * 外加 52 条 `step N`。时间逐条递增，最新的是 `step 51`。
    */
   history: string;
+  /**
+   * `blob:none` 的 partial clone（三条提交，只有 HEAD 的 blob 在本地）+ `*.x diff=up` 配了
+   * `cachetextconv` 的 textconv 驱动 + 工作区里改过的 `f.x`。两个「读一下就写库」的陷阱。
+   */
+  driverTraps: string;
 }
 
 export type FixtureName = keyof FixtureRepos;

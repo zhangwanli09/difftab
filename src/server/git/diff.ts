@@ -6,10 +6,10 @@
 import type { Stats } from 'node:fs';
 import { lstat } from 'node:fs/promises';
 import type { DiffPayload } from '../shared/protocol.ts';
-import { commitParent, readCommitSummary } from './history.ts';
+import { missingObjects, resolveCommit } from './history.ts';
 import { baseBlobSize } from './image.ts';
 import { type DiffBase, resolveDiffBase } from './repo.ts';
-import { GitError, runGit, runGitStrict } from './run.ts';
+import { DIFF_GUARDS, GitError, runGit, runGitStrict } from './run.ts';
 import {
   imageMimeOf,
   inspectFile,
@@ -96,8 +96,8 @@ async function readNumstat(
   oldPath: string | undefined,
 ): Promise<{ binary: boolean; lines: number } | null> {
   const args = oldPath
-    ? ['diff', ...range, '--numstat', '-z', '-M', '--', path, oldPath]
-    : ['diff', ...range, '--numstat', '-z', '--', path];
+    ? ['diff', ...DIFF_GUARDS, ...range, '--numstat', '-z', '-M', '--', path, oldPath]
+    : ['diff', ...DIFF_GUARDS, ...range, '--numstat', '-z', '--', path];
   const records = parseNumstat(await runGitStrict(args, root));
 
   /**
@@ -237,8 +237,8 @@ async function gatedPatch(root: string, source: PatchSource): Promise<DiffPayloa
   }
 
   const args = oldPath
-    ? ['diff', ...range, '-M', '--', path, oldPath]
-    : ['diff', ...range, '--', path];
+    ? ['diff', ...DIFF_GUARDS, ...range, '-M', '--', path, oldPath]
+    : ['diff', ...DIFF_GUARDS, ...range, '--', path];
   let result: Awaited<ReturnType<typeof runGit>>;
   try {
     result = await runGit(args, root, { maxStdoutBytes: MAX_BYTES });
@@ -354,11 +354,10 @@ export async function readCommitDiff(
 ): Promise<DiffPayload> {
   const path = literalRepoPath(root, query.path).path;
   const oldPath = query.oldPath ? literalRepoPath(root, query.oldPath).path : undefined;
-  const commit = await readCommitSummary(root, sha);
-  const parent = await commitParent(root, commit);
+  const { commit, parent } = await resolveCommit(root, sha);
   const range = [parent, commit.sha];
 
-  const stat = await readNumstat(root, range, path, oldPath);
+  const stat = await readNumstat(root, range, path, oldPath).catch(missingObjects);
   if (stat === null) throw new WorktreeError('not-found', 'file not changed in this commit');
   return gatedPatch(root, {
     range,

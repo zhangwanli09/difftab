@@ -28,12 +28,32 @@ const GLOBAL_CONFIG = ['-c', 'core.quotePath=false'];
  * 模式，而我们的路径全部来自 URL query——`path=*` 会让 `git diff HEAD -- '*'` 回一份
  * **整仓 diff**，正是红线明令禁止、会把浏览器主线程冻上数十秒的那件事；而一个真实存在、
  * 名字里带 `*` 的文件同样会匹配到别人身上，页面在 A 的标题下显示 B 的补丁。
+ *
+ * **`GIT_NO_LAZY_FETCH=1` 同样是只读承诺的一部分**：partial clone（`--filter=blob:none`）里缺的
+ * 对象，git 默认会当场从 promisor remote 取回来并写进 `.git/objects`——任何一条要读 blob 的命令
+ * （`diff`、`cat-file`）都会触发，而提交历史正是去读那些从没检出过的旧 blob。关掉之后缺对象就是
+ * 一次非零退出（实测 128：`could not fetch … from promisor remote`），不联网、不写库。它是
+ * git 2.44 才有的变量，更老的 git 不认——那一档的防线在 `history.ts`（partial clone 下直接拒）。
  */
 const GIT_ENV = {
   GIT_OPTIONAL_LOCKS: '0',
   GIT_TERMINAL_PROMPT: '0',
   GIT_LITERAL_PATHSPECS: '1',
+  GIT_NO_LAZY_FETCH: '1',
 } as const;
+
+/**
+ * **每一条 `git diff` 都紧跟在子命令之后带上这两个开关**，不留给调用点挑：
+ * - `--no-textconv`：`.gitattributes` 里 `diff=<驱动>` + `diff.<驱动>.textconv` 会让补丁那一形态
+ *   对两侧各起一次外部程序，配了 `cachetextconv` 时还把结果写进 `refs/notes/textconv/<驱动>`
+ *   ——实测补丁形态（工作区 diff 与提交 diff 都是）会写，`--numstat` / `--name-status` 不写，加上
+ *   本开关后一条都不写。numstat 那几条也带：二进制与行数的判定得与补丁看的是同一份内容；
+ * - `--no-ext-diff`：`diff.external` / `GIT_EXTERNAL_DIFF` 同理是一个外部程序。
+ *
+ * 代价是配了 textconv 的文件（`.docx`、加密文件）按原始字节比——二进制就说二进制。冒烟逐条
+ * 断言 `diff` 的 argv 里两者都在。
+ */
+export const DIFF_GUARDS = ['--no-ext-diff', '--no-textconv'] as const;
 
 /**
  * stdout 的**兜底**上限：没有它，一个几百 MB 的文件的 diff 会被整个读进内存，而这条路径

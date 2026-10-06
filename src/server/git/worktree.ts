@@ -53,7 +53,7 @@ export function imageMimeOf(path: string): string | null {
  * `too-large` 只有取图片字节那条路会抛：payload 那一步已经按侧卡过 5MB，可字节是第二次请求，
  * 中间文件可以长大。其余两条路上「太大」是 payload 的一个分支，不是错误。
  */
-export type WorktreeErrorCode = 'invalid-path' | 'not-found' | 'too-large';
+export type WorktreeErrorCode = 'invalid-path' | 'not-found' | 'too-large' | 'unsupported';
 
 /** 坏请求（路径非法 / 目标不在了）。**不叫 `DiffRequestError`**：三条路都会抛它。 */
 export class WorktreeError extends Error {

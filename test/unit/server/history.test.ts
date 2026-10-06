@@ -7,7 +7,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { readCommitDiff } from '../../../src/server/git/diff.ts';
+import { readCommitDiff, readDiff } from '../../../src/server/git/diff.ts';
 import {
   assertOid,
   listCommits,
@@ -32,7 +32,7 @@ let root: string;
 
 beforeAll(() => {
   dest = mkdtempSync(join(tmpdir(), 'difftab-history-'));
-  repos = makeFixtures(dest, ['history', 'empty']);
+  repos = makeFixtures(dest, ['history', 'empty', 'driverTraps']);
   root = repos.history;
 }, 30_000);
 
@@ -178,6 +178,18 @@ describe('readCommit——元数据与文件清单', () => {
     expect(detail.files).toEqual([{ path: 'side.txt', status: 'A' }]);
   });
 
+  test('附注标签的对象名 → not-found：log 会把它剥到提交上，而回来的那条不是问的这个', async () => {
+    execFileSync(
+      'git',
+      ['-c', 'user.name=x', '-c', 'user.email=x@x', 'tag', '-a', 'v1', '-m', 'v1'],
+      {
+        cwd: root,
+      },
+    );
+    const tag = execFileSync('git', ['rev-parse', 'v1'], { cwd: root, encoding: 'utf8' }).trim();
+    expect(await codeOf(readCommit(root, tag))).toBe('not-found');
+  });
+
   test('树对象、标签以外的对象名 → not-found', async () => {
     const tree = execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { cwd: root, encoding: 'utf8' });
     expect(await codeOf(readCommit(root, tree.trim()))).toBe('not-found');
@@ -229,5 +241,27 @@ describe('readCommitDiff——提交里单个文件的补丁', () => {
   test('根提交里的图片只有新侧', async () => {
     const payload = await readCommitDiff(root, shaOf('root commit'), { path: 'img/p.png' });
     expect(payload).toMatchObject({ kind: 'image', old: null });
+  });
+});
+
+describe('读一下就写库的两个陷阱（driverTraps：partial clone + cachetextconv）', () => {
+  const objects = (cwd: string) =>
+    execFileSync('git', ['count-objects', '-v'], { cwd, encoding: 'utf8' });
+  const notes = (cwd: string) =>
+    execFileSync('git', ['for-each-ref', 'refs/notes'], { cwd, encoding: 'utf8' });
+
+  test('旧提交的 blob 不在本地：明确拒绝（unsupported），不去 promisor remote 取', async () => {
+    const cwd = repos.driverTraps;
+    const before = objects(cwd);
+    const sha = execFileSync('git', ['rev-parse', 'HEAD~1'], { cwd, encoding: 'utf8' }).trim();
+    expect(await codeOf(readCommitDiff(cwd, sha, { path: 'f.x' }))).toBe('unsupported');
+    expect(objects(cwd)).toBe(before);
+  });
+
+  test('配了 cachetextconv 的驱动：工作区 diff 不跑它，也不写 refs/notes', async () => {
+    const cwd = repos.driverTraps;
+    const payload = await readDiff(cwd, { path: 'f.x' });
+    expect(payload.kind).toBe('text');
+    expect(notes(cwd)).toBe('');
   });
 });

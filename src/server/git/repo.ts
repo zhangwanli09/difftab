@@ -145,8 +145,15 @@ export async function resolveDiffBase(root: string): Promise<DiffBase> {
 }
 
 /**
- * 本仓库对象格式下的空树哈希。空仓库的 diff 基准与根提交的对比端都是它——两处共用一个
- * 常量，根提交因此不需要特殊分支。
+ * 某个对象名所在格式下的空树哈希：64 位即 SHA-256，其余按 SHA-1。提交历史手里已经有一个对象名，
+ * 用它的长度就能定格式，不必为根提交再问一次 `--show-object-format`。
+ */
+export function emptyTreeOf(oid: string): string {
+  return oid.length === 64 ? EMPTY_TREE.sha256 : EMPTY_TREE.sha1;
+}
+
+/**
+ * 本仓库对象格式下的空树哈希——空仓库的 diff 基准。手上还没有任何对象名，只能问 git。
  */
 export async function emptyTree(root: string): Promise<string> {
   const format = await runGit(['rev-parse', '--show-object-format'], root);

@@ -122,6 +122,17 @@ describe('parseStatus', () => {
     expect(files.find((f) => f.path === 'plain.txt')).not.toHaveProperty('conflicted');
   });
 
+  test('`# branch.oid` 只收完整对象名：空仓库的 `(initial)` 与截短的都不进 oid', () => {
+    const full = 'a'.repeat(40);
+    expect(parseStatus(z(`# branch.oid ${full}`, '# branch.head main')).branch.oid).toBe(full);
+    expect(
+      parseStatus(z('# branch.oid (initial)', '# branch.head main')).branch,
+    ).not.toHaveProperty('oid');
+    expect(parseStatus(z('# branch.oid 9f9500cb', '# branch.head main')).branch).not.toHaveProperty(
+      'oid',
+    );
+  });
+
   test('空输出不崩溃，分支退化为「无上游」', () => {
     expect(parseStatus('')).toEqual({
       branch: { head: '', detached: false, upstream: null },

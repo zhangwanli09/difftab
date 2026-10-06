@@ -81,6 +81,8 @@
 - 封装层统一注入 `-c core.quotePath=false`——`-z` 管不到补丁正文，漏了界面上直接显示 `\351\234\200`
 - 封装层统一设 `GIT_OPTIONAL_LOCKS=0`——否则 `git status` 写回 `.git/index`，只有逐字节比对与「读 `/api/state` 不引出刷新事件」两处看得见
 - 封装层统一设 `GIT_LITERAL_PATHSPECS=1`——pathspec 默认是通配模式，`path=*` 会回一份整仓 diff
+- 封装层统一设 `GIT_NO_LAZY_FETCH=1`——partial clone 里读一个不在本地的 blob 就会从远端取回来写进 `.git/objects`；git < 2.44 不认这个变量，提交历史在那一档 partial clone 下整个拒绝
+- **每一条 `git diff` 紧跟子命令带 `--no-ext-diff --no-textconv`**（`DIFF_GUARDS`）——补丁形态会跑 textconv 驱动，配了 `cachetextconv` 时写 `refs/notes/textconv/*`；两条都只有 `.git` 逐字节比对看得见
 - `porcelain=v2 -z` 的重命名记录占**两个** NUL 段；无上游时不输出 `# branch.ab` 行
 - `diff --numstat -z` 的重命名记录占**三**段（空路径 + 旧 + 新，顺序与 porcelain 相反）——平铺切分会把路径当成记录
 - 重命名取 diff 必须传新旧两个路径（`-M -- <新> <旧>`），否则退化成全新增

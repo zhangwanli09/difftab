@@ -78,6 +78,7 @@ export const ALL_REPOS = [
   'ignoredTree',
   'images',
   'history',
+  'driverTraps',
 ];
 
 /**
@@ -679,6 +680,40 @@ export function makeFixtures(destDir, only) {
       commitAt(`step ${i}`);
     }
     repos.history = cwd;
+  }
+
+  // 12. 两个「读一下就写库」的陷阱同住一个仓库：**`blob:none` 的 partial clone**（旧提交的 blob
+  //     不在本地，git 默认当场从 promisor remote 取回来写进 `.git/objects`）+ **配了
+  //     `cachetextconv` 的 textconv 驱动**（补丁形态的 `git diff` 把转换结果写进
+  //     `refs/notes/textconv/<驱动>`）。工作区再改一下，让工作区 diff 那条路也踩一次。两者都不让任
+  //     何命令失败、不改 status 输出，只有 `.git` 逐字节比对看得见。textconv 用 `cat`：它只需要
+  //     「真的跑了一个外部程序」，Windows 档的 Git for Windows 也带着它
+  if (wanted('driverTraps')) {
+    const origin = init('driverTraps-origin');
+    git(origin, 'config', 'uploadpack.allowFilter', 'true');
+    write(origin, '.gitattributes', '*.x diff=up\n');
+    write(origin, 'f.x', 'one\n');
+    commit(origin, 'first');
+    write(origin, 'f.x', 'two\n');
+    commit(origin, 'second');
+    write(origin, 'f.x', 'three\n');
+    commit(origin, 'third');
+
+    const cwd = join(dest, 'driverTraps');
+    git(
+      dest,
+      'clone',
+      '--quiet',
+      '--no-local',
+      '--filter=blob:none',
+      pathToFileURL(origin).href,
+      cwd,
+    );
+    git(cwd, 'config', 'core.autocrlf', 'false');
+    git(cwd, 'config', 'diff.up.textconv', 'cat');
+    git(cwd, 'config', 'diff.up.cachetextconv', 'true');
+    write(cwd, 'f.x', 'dirty\n');
+    repos.driverTraps = cwd;
   }
 
   // 没生成的仓库不能是 undefined：调用方会拿着它去 spawn,cwd 变成进程当前目录，

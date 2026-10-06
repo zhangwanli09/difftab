@@ -8,7 +8,7 @@
 // 跑 smudge / textconv 驱动（LFS 的 smudge 往 `.git/lfs/objects` 写、缺对象时还会联网），而只读
 // 白名单只看子命令、看不见参数——这是它唯一漏得过的形态，冒烟里因此单独钉了一条参数断言。
 
-import { commitParent, readCommitSummary } from './history.ts';
+import { resolveCommit } from './history.ts';
 import { resolveDiffBase } from './repo.ts';
 import { GitError, type GitResult, runGit, runGitRaw } from './run.ts';
 import {
@@ -71,8 +71,8 @@ export async function readImageBytes(
   // 提交历史那一侧两边都在对象库里：旧侧是第一父、新侧是提交本身。路径只过字面量那道——
   // 文件在工作区里可能早已不在，而这里不落磁盘
   if (commit !== undefined) {
-    const summary = await readCommitSummary(root, commit);
-    const rev = side === 'new' ? summary.sha : await commitParent(root, summary);
+    const { commit: summary, parent } = await resolveCommit(root, commit);
+    const rev = side === 'new' ? summary.sha : parent;
     return { buffer: await readBlob(root, rev, literalRepoPath(root, path).path), mime };
   }
 

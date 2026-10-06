@@ -93,6 +93,13 @@ export interface BranchState {
    */
   upstream: null | { ahead: number; behind: number };
   /**
+   * HEAD 此刻指向的提交（`# branch.oid`）；缺省即 HEAD 尚未出生（`(initial)`）。**前端拿它判
+   * 「提交列表要不要重取」**：agent 改工作区时每个文件事件都会推一次 SSE，而能让提交列表变的只有
+   * HEAD 挪动——比对这一个字段，`History` 就不必在每个事件上起一次 `git log`。它本来就在那一次
+   * status 输出里，不多付一个进程。
+   */
+  oid?: string;
+  /**
    * 仓库正处于的多步操作；缺省即「没有」。它**不来自 status 输出**——porcelain 里一行都
    * 没有，判据是 git 目录下的状态文件。`am` 与 `rebase` 分开列是因为两者共用同一个
    * `rebase-apply/` 目录，合并成一个标注等于对用户说假话。

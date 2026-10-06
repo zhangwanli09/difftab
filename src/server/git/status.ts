@@ -61,6 +61,7 @@ export function parseStatus(raw: string): StatusResult {
   let head = '';
   let detached = false;
   let upstream: BranchState['upstream'] = null;
+  let oid: string | undefined;
 
   for (let i = 0; i < segments.length; i += 1) {
     const rec = segments[i];
@@ -71,7 +72,10 @@ export function parseStatus(raw: string): StatusResult {
         const sp = rec.indexOf(' ', 2);
         const key = sp === -1 ? rec.slice(2) : rec.slice(2, sp);
         const value = sp === -1 ? '' : rec.slice(sp + 1);
-        if (key === 'branch.head') {
+        if (key === 'branch.oid') {
+          // 空仓库下是字面量 `(initial)`，那时 HEAD 没有提交可指
+          if (/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(value)) oid = value;
+        } else if (key === 'branch.head') {
           head = value;
           // git 在 detached HEAD 下把这一行的值写成字面量 `(detached)`
           detached = value === '(detached)';
@@ -152,7 +156,7 @@ export function parseStatus(raw: string): StatusResult {
     }
   }
 
-  return { branch: { head, detached, upstream }, files };
+  return { branch: { head, detached, upstream, ...(oid === undefined ? {} : { oid }) }, files };
 }
 
 /**

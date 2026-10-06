@@ -110,6 +110,13 @@ test('diff 调用一律带上 -c core.quotePath=false 之外的只读形态，�
         `git diff 用了 ${forbidden}:${diff.argv.join(' ')}`,
       );
     }
+    // 外部程序那两条门**必须显式关上**：textconv 驱动配了 `cachetextconv` 时补丁形态会写
+    // `refs/notes/textconv/*`，`diff.external` 同理是一个外部程序——白名单只看子命令，看不见这件事
+    assert.deepEqual(
+      diff.argv.slice(1, 3),
+      ['--no-ext-diff', '--no-textconv'],
+      `git diff 没有紧跟着 --no-ext-diff --no-textconv：${diff.argv.join(' ')}`,
+    );
   }
 });
 

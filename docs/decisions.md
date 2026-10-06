@@ -47,6 +47,9 @@
 | 一次提交的文件清单用 `git diff-tree` | 又一条白名单，换来的东西 `diff <parent> <sha> --name-status` 都给得出；且 `diff-tree` 对合并提交默认什么都不输出，要另配 `-m` / `--first-parent` 才说得出话，多一个要钉的参数面 |
 | 父提交用 `rev-list --parents` / `rev-parse <sha>^` 取 | 前者是第二条新白名单；后者对根提交非零退出，要把「没有父」与「坏请求」从退出码里分开。单条提交那次 `log` 本来就要取元数据，`%P` 顺手带回全部父提交，零额外进程 |
 | 提交列表按 `HEAD` + `--skip` 翻页 | agent 在两次翻页之间提交一次，第二页就重复第一页的最后一条——而「边跑边看」正是这个工具最常见的时刻。锚在第一页那次的 HEAD oid 上，翻页与新提交互不干扰；新提交由 SSE 后重取第一页长出来 |
+| 只读承诺只靠「子命令白名单 + 只读 `.git` 跑一遍」来证 | 两个陷阱都穿得过去：partial clone 的 lazy fetch 与 textconv 的 `cachetextconv` 都发生在白名单里的 `diff` / `cat-file` 之内，不让命令失败、不改输出；锁死的 `.git` 下 git 把写入当 best-effort，取不回来、写不进去也照常 exit 0。实测（git 2.54）：`blob:none` 克隆里 `git diff <旧> <旧>` 让 in-pack 从 7 变 9，`GIT_NO_LAZY_FETCH=1` 下以 128 退出、一个对象都不多；补丁形态的 `git diff`（工作区与提交都是）写出 `refs/notes/textconv/<驱动>`，`--numstat` / `--name-status` 不写，带 `--no-textconv` 一条都不写。所以第二层 B 半另有一个专门布了这两个陷阱的仓库，并带一条默认环境下确实写了库的正面对照 |
+| 提交列表在每个 SSE 事件上重取第一页 | agent 改工作区时每个文件事件都推一次 SSE，开着 `History` 改 300 个文件就是 300 次 `rev-parse` + `log`，只为确认 HEAD 没动。HEAD 的 oid 本来就在每次 `/api/state` 那条 status 输出里（`# branch.oid`），比对它一条请求都不用多发 |
+| HEAD 一挪就以新的第一页整体替换列表 | 翻到 200 条之后 agent 提交一次，列表缩回 50 条、滚动位置跳走，而那正是「边跑边看」最常见的时刻。新 HEAD 只是在旧 HEAD 之上多长了几条时接在顶上即可；锚点不动、只记新长出来几条（`offset`），翻页照旧从原锚点数 |
 | 合并提交展示组合 diff（`--cc`） | 补丁格式是多列前缀（`++` / ` -`），diff2html 解析不了；对第一父求 diff 是 GitHub 提交页与 VS Code Timeline 的同一口径，且只需要一个父 |
 | 单看扩展名判图片（不要求二进制） | 一个内容是文本的 `.png`（占位符、被 LFS 换成指针的图）会被送去 `<img>` 里画成一张破图，而它本来有一份能看的文本 diff；且已跟踪侧 git 的二进制判定含 `.gitattributes`，扩展名不含 |
 | 图片字节内联成 base64 放进 `DiffPayload` | 两张 5MB 的图进一份 JSON 多 33%，且两侧不能分别懒加载；CSP 的 `img-src 'self'` 让同源 `<img src>` 零成本可用，独立端点就是最短的路 |
