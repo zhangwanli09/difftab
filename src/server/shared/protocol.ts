@@ -243,6 +243,8 @@ export interface CommitSummary {
   author: string;
   time: number;
   subject: string;
+  /** 提交说明正文（主题与空行之后的部分），去掉了末尾空白；没有正文时是空串。 */
+  body: string;
 }
 
 /**

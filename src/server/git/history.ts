@@ -21,11 +21,12 @@ import { WorktreeError } from './worktree.ts';
 export const PAGE_SIZE = 50;
 
 /**
- * 每条提交恰好五段：`-z` 让记录之间以 NUL 分隔，`%x00` 让字段之间也是 NUL。主题行（`%s`）
- * 不含 NUL 与换行，作者名里的空格不是分隔符；根提交的 `%P` 是一个空段，不是缺段。
+ * 每条提交恰好六段：`-z` 让记录之间以 NUL 分隔，`%x00` 让字段之间也是 NUL。主题行（`%s`）
+ * 不含 NUL 与换行，作者名里的空格、正文（`%b`）里的换行都不是分隔符；根提交的 `%P` 是一个空段，
+ * 不是缺段。
  */
-const LOG_FORMAT = '--format=%H%x00%P%x00%an%x00%at%x00%s';
-const FIELDS = 5;
+const LOG_FORMAT = '--format=%H%x00%P%x00%an%x00%at%x00%s%x00%b';
+const FIELDS = 6;
 
 /**
  * `log` 的 argv，**整条是字面量**，冒烟逐段钉着它：
@@ -61,15 +62,17 @@ export function assertOid(value: string): string {
   return value;
 }
 
-/** `log -z` + `LOG_FORMAT` 的解析：按五段一组切。 */
+/**
+ * `log -z` + `LOG_FORMAT` 的解析：按六段一组切。正文含 NUL 也不会错位——git 输出 `%b` 时在第一个
+ * NUL 处截断（实测：`hash-object --literally` 造一条「Reverts\0<sha>\0tail」的说明，回来的正文就是
+ * `Reverts`），于是每条记录在输出里恒为六段。
+ */
 export function parseLog(output: string): CommitSummary[] {
   const segments = output.split('\0');
   const commits: CommitSummary[] = [];
   for (let i = 0; i + FIELDS <= segments.length; i += FIELDS) {
-    const [sha = '', parents = '', author = '', time = '', subject = ''] = segments.slice(
-      i,
-      i + FIELDS,
-    );
+    const [sha = '', parents = '', author = '', time = '', subject = '', body = ''] =
+      segments.slice(i, i + FIELDS);
     // 换行只可能出现在记录之间（老版本 git 在 `-z` 下仍可能补一个），不属于任何字段
     const id = sha.replace(/^\n/, '');
     if (!isOid(id)) continue;
@@ -79,6 +82,8 @@ export function parseLog(output: string): CommitSummary[] {
       author,
       time: Number(time),
       subject,
+      // `%b` 以换行收尾；没有正文时是空串
+      body: body.trimEnd(),
     });
   }
   return commits;
