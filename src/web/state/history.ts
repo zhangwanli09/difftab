@@ -34,7 +34,7 @@ export const historyList = signal<LoadedHistory | null>(null);
 /** 第一页取不到时的那句话。翻页失败另记在 `moreError`，不让已加载的列表整个变成错误。 */
 export const historyError = signal<string | null>(null);
 
-/** `Load more` 在途。按钮据此写 `Loading…` 并 disabled，同一时刻只翻一页。 */
+/** 翻页在途。同一时刻只翻一页：哨兵在取的途中再次可见也不重发。 */
 export const loadingMore = signal(false);
 export const moreError = signal<string | null>(null);
 
@@ -175,5 +175,5 @@ export function toggleCommit(sha: string): void {
   if (state === undefined || state.status === 'error') void loadCommit(sha);
 }
 
-/** 展示用的短哈希：前 7 位，与 `git log --oneline` 的默认一致。完整 sha 挂在 `title` 上。 */
+/** 展示用的短哈希：前 7 位，与 `git log --oneline` 的默认一致。完整 sha 只经复制按钮给出。 */
 export const shortSha = (sha: string): string => sha.slice(0, 7);
