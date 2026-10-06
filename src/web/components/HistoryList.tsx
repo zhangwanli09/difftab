@@ -5,6 +5,7 @@
 // 时落在同一个位置、同一个颜色。
 
 import { useComputed } from '@preact/signals';
+import { useEffect, useRef } from 'preact/hooks';
 import type { CommitFileEntry, CommitSummary } from '../../server/shared/protocol';
 import { activeEditorKey, editorKey, pinEditor } from '../state/editors';
 import {
@@ -12,6 +13,7 @@ import {
   expandedCommits,
   historyError,
   historyList,
+  type LoadedHistory,
   loadingMore,
   loadMore,
   moreError,
@@ -57,6 +59,23 @@ export function relativeTime(seconds: number, now = Date.now()): string {
     if (-delta >= size) return RELATIVE.format(Math.trunc(delta / size), unit);
   }
   return 'now';
+}
+
+/**
+ * 提交行的悬停提示。次序照 VS Code 那张悬停卡片：作者与时间、主题、正文、哈希，段与段之间空一行；
+ * 没有正文就连那一段带它的空行一起不画。仍是原生 `title`——正文是纯文本，自绘卡片换不来多少东西。
+ */
+export function commitTooltip(commit: CommitSummary, now = Date.now()): string {
+  const when = new Date(commit.time * 1000).toLocaleString();
+  return [
+    `${commit.author} · ${relativeTime(commit.time, now)} (${when})`,
+    commit.subject,
+    commit.body,
+    // 只放短哈希：完整 sha 在提示里只是一行噪音，要拿去用的是行内那枚复制按钮
+    shortSha(commit.sha),
+  ]
+    .filter((part) => part !== '')
+    .join('\n\n');
 }
 
 /** 一条提交展开后的一个文件。单击开预览 tab、双击固定，与另两栏同一条惯例。 */
@@ -124,11 +143,10 @@ function CommitFiles({ sha }: { sha: string }) {
  */
 function CommitRow({ commit }: { commit: CommitSummary }) {
   const expanded = useComputed(() => expandedCommits.value.has(commit.sha)).value;
-  const when = new Date(commit.time * 1000);
   return (
     <TreeRow
       onClick={() => toggleCommit(commit.sha)}
-      title={`${shortSha(commit.sha)} · ${commit.sha}\n${commit.subject}\n${commit.author} · ${relativeTime(commit.time)} (${when.toLocaleString()})`}
+      title={commitTooltip(commit)}
       aria-expanded={expanded}
       class={COMMIT_ROW_CLASS}
       style={indent(0)}
@@ -146,14 +164,35 @@ function CommitRow({ commit }: { commit: CommitSummary }) {
 }
 
 /**
- * 列表末尾那枚 `Load more`。**不做无限滚动**：滚到底自动取，在边跑边看的场景下会在不经意间把
- * 列表拉到几百条，而每条提交都是一行 DOM。失败时原地换成错误文案，再点一次就重试。
+ * 列表末尾的哨兵：一进入可视区就取下一页，照 VS Code。root 取默认视口——祖先那层 `overflow-auto`
+ * 照样参与裁剪，滚出侧栏可视区的哨兵不算可见。DOM 的增长仍由用户驱动：每一页都要有人滚到底才取。
+ *
+ * **列表每变一次就换一个观察者**：新观察者一 `observe` 就报一次初始状态，高屏上一页填不满时就接着
+ * 取。只靠一个观察者时，哨兵一直可见、交叉状态没变，它不再回调，列表就停在半截——一页回来、列表
+ * 被整体换成新的第一页都是这样。换观察者而不是按某几个字段 `key` 住整行重挂：后者要逐一列出
+ * 「列表怎么变了」，漏一种就卡住，而重挂还会把按钮上的键盘焦点丢回 `body`。
+ *
+ * 空闲时它是一枚 `Load more` 按钮，只有在取时才写 `Loading…`——两种状态写成同一句时，观察者万一
+ * 不回调，页面上就是一个永远不结束、也点不动的加载态；按钮同时是键盘那条路。**失败后不自动
+ * 重试**——哨兵一直可见时那就是一串打不停的失败请求；原地换成错误文案，点一下才重试。
  */
-function LoadMore() {
+function LoadMore({ list }: { list: LoadedHistory }) {
+  const sentinel = useRef<HTMLLIElement>(null);
+  useEffect(() => {
+    const el = sentinel.current;
+    if (el === null) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting) && moreError.value === null) {
+        void loadMore();
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [list]);
   const busy = loadingMore.value;
   const error = moreError.value;
   return (
-    <li>
+    <li ref={sentinel}>
       <button
         type="button"
         disabled={busy}
@@ -185,7 +224,7 @@ export function HistoryList() {
       {list.commits.map((commit) => (
         <CommitRow key={commit.sha} commit={commit} />
       ))}
-      {list.hasMore && <LoadMore />}
+      {list.hasMore && <LoadMore list={list} />}
     </ul>
   );
 }

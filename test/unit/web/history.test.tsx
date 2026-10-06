@@ -9,7 +9,7 @@ import type {
   CommitSummary,
   RepoState,
 } from '../../../src/server/shared/protocol';
-import { HistoryList, relativeTime } from '../../../src/web/components/HistoryList';
+import { commitTooltip, HistoryList, relativeTime } from '../../../src/web/components/HistoryList';
 import {
   activeEditor,
   activeEditorPath,
@@ -25,6 +25,7 @@ import {
   historyList,
   loadMore,
   mergeFirstPage,
+  moreError,
   refreshHistory,
   toggleCommit,
 } from '../../../src/web/state/history';
@@ -53,6 +54,7 @@ const commit = (n: number, extra: Partial<CommitSummary> = {}): CommitSummary =>
   author: 'Ann',
   time: 1_700_000_000,
   subject: `commit ${n}`,
+  body: '',
   ...extra,
 });
 const page = (head: number, from: number, count: number, hasMore: boolean): CommitPage => ({
@@ -189,7 +191,7 @@ describe('HistoryList 组件', () => {
     expect(container.textContent).toContain('No commits yet');
   });
 
-  test('一行是主题 + 作者，两段同住一个 truncate span；短哈希进 title；hasMore 时末尾有 Load more', () => {
+  test('一行是主题 + 作者，两段同住一个 truncate span；短哈希进 title；hasMore 时末尾有加载哨兵', () => {
     historyList.value = mergeFirstPage(null, page(100, 100, 1, true));
     render(<HistoryList />, container);
     const row = container.querySelector('[aria-expanded]') as HTMLElement;
@@ -201,6 +203,137 @@ describe('HistoryList 组件', () => {
     expect(row.getAttribute('title')).toContain(sha(100).slice(0, 7));
     expect(row.getAttribute('aria-expanded')).toBe('false');
     expect(container.textContent).toContain('Load more');
+  });
+
+  test('悬停提示照 VS Code 的次序：作者与时间、主题、正文、哈希；没有正文不留空段', () => {
+    const now = (1_700_000_000 + 3 * 3600) * 1000;
+    const withBody = commitTooltip(commit(100, { body: 'line 1\nline 2' }), now);
+    const parts = withBody.split('\n\n');
+    expect(parts[0]).toMatch(/^Ann · 3 hours ago \(.+\)$/);
+    expect(parts.slice(1)).toEqual(['commit 100', 'line 1\nline 2', sha(100).slice(0, 7)]);
+    expect(withBody).not.toContain(sha(100));
+    const bare = commitTooltip(commit(100), now);
+    expect(bare.split('\n\n')).toHaveLength(3);
+    expect(bare).not.toContain('\n\n\n');
+  });
+
+  describe('滚到底自动翻页', () => {
+    /** happy-dom 的 IntersectionObserver 从不回调：换成一个记下回调、由用例手动触发的桩。 */
+    let observers: { callback: IntersectionObserverCallback; disconnected: boolean }[];
+    const live = () => observers.filter((o) => !o.disconnected);
+    /** 哨兵的观察者挂在 effect 里，effect 要等一拍才跑。 */
+    const mounted = () => waitFor(() => expect(live()).toHaveLength(1));
+    const intersect = (visible = true) => {
+      for (const o of live()) {
+        o.callback(
+          [{ isIntersecting: visible } as IntersectionObserverEntry],
+          {} as IntersectionObserver,
+        );
+      }
+    };
+    beforeEach(() => {
+      observers = [];
+      vi.stubGlobal(
+        'IntersectionObserver',
+        class {
+          record: { callback: IntersectionObserverCallback; disconnected: boolean };
+          constructor(callback: IntersectionObserverCallback) {
+            this.record = { callback, disconnected: false };
+            observers.push(this.record);
+          }
+          observe() {}
+          disconnect() {
+            this.record.disconnected = true;
+          }
+        },
+      );
+    });
+
+    test('哨兵可见即按锚点取下一页；一页回来后换一个观察者，仍可见就接着取', async () => {
+      historyList.value = mergeFirstPage(null, page(100, 100, 50, true));
+      const calls = stubJsonBy((url) => {
+        const skip = Number(url.searchParams.get('skip'));
+        return { payload: page(100, 100 - skip, 2, skip < 52) };
+      });
+      render(<HistoryList />, container);
+      await mounted();
+      intersect(false);
+      expect(calls).toHaveLength(0);
+      intersect();
+      await waitFor(() => expect(historyList.value?.commits).toHaveLength(52));
+      expect(query(calls[0] as string).get('head')).toBe(sha(100));
+      expect(query(calls[0] as string).get('skip')).toBe('50');
+      // 旧观察者已断开，新换上的那个报一次初始状态
+      // 等的是「第二个出现」：只等「活着的恰好一个」时，旧的那个在新 effect 跑之前就满足它
+      await waitFor(() => expect(observers).toHaveLength(2));
+      expect(live()).toHaveLength(1);
+      intersect();
+      await waitFor(() => expect(historyList.value?.commits).toHaveLength(54));
+      expect(query(calls[1] as string).get('skip')).toBe('52');
+      await waitFor(() => expect(container.textContent).not.toContain('Loading…'));
+    });
+
+    test('列表被整体换成条数相同的新第一页：换一个观察者，不停在半截；按钮不重挂', async () => {
+      historyList.value = mergeFirstPage(null, page(100, 100, 50, true));
+      stubJsonBy(() => ({ payload: page(100, 50, 2, false) }));
+      render(<HistoryList />, container);
+      await mounted();
+      const button = container.querySelector('li:last-child > button');
+      // amend 之后换上来的新第一页：锚点换了，条数还是 50
+      historyList.value = mergeFirstPage(historyList.value, page(300, 300, 50, true));
+      await waitFor(() => expect(observers).toHaveLength(2));
+      expect(live()).toHaveLength(1);
+      // 同一个元素：重挂会把键盘焦点丢回 body
+      expect(container.querySelector('li:last-child > button')).toBe(button);
+    });
+
+    test('空闲时是一枚 Load more 按钮，在取时写 Loading… 并 disabled', async () => {
+      historyList.value = mergeFirstPage(null, page(100, 100, 50, true));
+      let release: () => void = () => {};
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => {
+          await gate;
+          return new Response(JSON.stringify(page(100, 50, 2, false)), { status: 200 });
+        }),
+      );
+      render(<HistoryList />, container);
+      const button = () => container.querySelector('li:last-child > button') as HTMLButtonElement;
+      expect(button().textContent).toBe('Load more');
+      expect(button().disabled).toBe(false);
+      button().click();
+      await waitFor(() => expect(button().textContent).toBe('Loading…'));
+      expect(button().disabled).toBe(true);
+      release();
+      await waitFor(() => expect(historyList.value?.commits).toHaveLength(52));
+    });
+
+    test('失败后不自动重试：哨兵再可见也不发请求，点一下才重试', async () => {
+      historyList.value = mergeFirstPage(null, page(100, 100, 50, true));
+      let fail = true;
+      const calls = stubJsonBy(() =>
+        fail ? { status: 500, payload: { error: 'boom' } } : { payload: page(100, 50, 2, false) },
+      );
+      render(<HistoryList />, container);
+      await mounted();
+      intersect();
+      await waitFor(() => expect(moreError.value).not.toBeNull());
+      intersect();
+      expect(calls).toHaveLength(1);
+      const retryButton = () =>
+        [...container.querySelectorAll('button')].find((b) =>
+          b.textContent?.includes('click to retry'),
+        );
+      await waitFor(() => expect(retryButton()).toBeDefined());
+      const retry = retryButton() as HTMLButtonElement;
+      fail = false;
+      retry.click();
+      await waitFor(() => expect(historyList.value?.commits).toHaveLength(52));
+      expect(calls).toHaveLength(2);
+    });
   });
 
   test('提交行的 Copy commit hash 写入完整 sha、换成 Copied，且不顺带展开这条提交', async () => {

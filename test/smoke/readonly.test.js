@@ -158,7 +158,7 @@ test('log 的参数逐段等于两种字面量形态——gpg 与外部 diff 驱
         '--no-show-signature',
         '--no-color',
         '-z',
-        '--format=%H%x00%P%x00%an%x00%at%x00%s',
+        '--format=%H%x00%P%x00%an%x00%at%x00%s%x00%b',
         argv[5],
       ],
       `log 的前缀不是那串字面量：${shown}`,

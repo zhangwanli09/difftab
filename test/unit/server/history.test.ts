@@ -61,13 +61,20 @@ function shaOf(subject: string): string {
 }
 
 describe('解析器', () => {
-  test('parseLog 按五段一组切，根提交的空 %P 是空段不是缺段', () => {
+  test('parseLog 六段一条，根提交的空 %P 是空段不是缺段，正文去掉末尾换行', () => {
     const a = 'a'.repeat(40);
     const b = 'b'.repeat(40);
-    const out = `${a}\0${b}\0Ann Lee\x001700000000\0fix: x\0${b}\0\0Bob\x001600000000\0root\0`;
+    const out = `${a}\0${b}\0Ann Lee\x001700000000\0fix: x\0line 1\n\nline 2\n\0\n${b}\0\0Bob\x001600000000\0root\0\0`;
     expect(parseLog(out)).toEqual([
-      { sha: a, parents: [b], author: 'Ann Lee', time: 1700000000, subject: 'fix: x' },
-      { sha: b, parents: [], author: 'Bob', time: 1600000000, subject: 'root' },
+      {
+        sha: a,
+        parents: [b],
+        author: 'Ann Lee',
+        time: 1700000000,
+        subject: 'fix: x',
+        body: 'line 1\n\nline 2',
+      },
+      { sha: b, parents: [], author: 'Bob', time: 1600000000, subject: 'root', body: '' },
     ]);
   });
 
@@ -141,6 +148,58 @@ describe('listCommits——锚点分页', () => {
     ]);
     const seen = new Set(first.commits.map((c) => c.sha));
     expect(second.commits.some((c) => seen.has(c.sha))).toBe(false);
+  });
+
+  test('正文随列表一起回来：多段说明原样保留，没有正文的提交是空串', async () => {
+    const clone = join(dest, 'history-body');
+    execFileSync('git', ['clone', '--quiet', root, clone]);
+    const message = ['feat: x', 'first paragraph\nwraps here', 'Co-authored-by: A <a@a>'];
+    execFileSync(
+      'git',
+      [
+        '-c',
+        'user.name=x',
+        '-c',
+        'user.email=x@x',
+        'commit',
+        '--quiet',
+        '--allow-empty',
+        ...message.flatMap((m) => ['-m', m]),
+      ],
+      { cwd: clone },
+    );
+    const [latest, previous] = (await listCommits(clone, { skip: 0 })).commits;
+    expect(latest).toMatchObject({ subject: 'feat: x', body: message.slice(1).join('\n\n') });
+    expect(previous).toMatchObject({ subject: 'step 51', body: '' });
+  });
+
+  test('正文里夹着 NUL：git 在 NUL 处截断，之后的记录照样六段一条、不错位', async () => {
+    // `git commit` 拒绝含 NUL 的说明，只有手造对象才有；造一条 NUL 之后正好是一个 sha 的，
+    // 若 git 不截断，那个 sha 会被当成下一条记录的开头
+    const clone = join(dest, 'history-nul');
+    execFileSync('git', ['clone', '--quiet', root, clone]);
+    const git = (args: string[], input?: string) =>
+      execFileSync('git', args, { cwd: clone, encoding: 'utf8', input }).trim();
+    const parent = git(['rev-parse', 'HEAD']);
+    const raw = [
+      `tree ${git(['rev-parse', 'HEAD^{tree}'])}`,
+      `parent ${parent}`,
+      'author x <x@x> 1700000000 +0000',
+      'committer x <x@x> 1700000000 +0000',
+      '',
+      'subj',
+      '',
+      `Reverts\0${parent}\0tail`,
+      '',
+    ].join('\n');
+    const nul = git(['hash-object', '-t', 'commit', '-w', '--literally', '--stdin'], raw);
+    git(['update-ref', 'HEAD', nul]);
+    const { commits } = await listCommits(clone, { skip: 0 });
+    expect(commits.slice(0, 2).map((c) => [c.sha, c.subject, c.body])).toEqual([
+      [nul, 'subj', 'Reverts'],
+      [parent, 'step 51', ''],
+    ]);
+    expect(commits).toHaveLength(PAGE_SIZE);
   });
 
   test('空仓库是一页空列表，不是错误', async () => {
