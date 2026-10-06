@@ -181,12 +181,16 @@ describe('HistoryList 组件', () => {
     expect(container.textContent).toContain('No commits yet');
   });
 
-  test('一行是主题 + 短哈希 + 相对时间；hasMore 时末尾有 Load more', () => {
+  test('一行是主题 + 作者，两段同住一个 truncate span；短哈希进 title；hasMore 时末尾有 Load more', () => {
     historyList.value = mergeFirstPage(null, page(100, 100, 1, true));
     render(<HistoryList />, container);
     const row = container.querySelector('[aria-expanded]') as HTMLElement;
-    expect(row.textContent).toContain('commit 100');
-    expect(row.textContent).toContain(sha(100).slice(0, 7));
+    // 拆成两个平级 flex 子项时两段按底边对齐——页面上只是「看着没对齐」，所以钉结构
+    const label = row.querySelector('.truncate') as HTMLElement;
+    expect(label.textContent).toBe('commit 100Ann');
+    expect(label.lastElementChild?.textContent).toBe('Ann');
+    expect(row.textContent).not.toContain(sha(100).slice(0, 7));
+    expect(row.getAttribute('title')).toContain(sha(100).slice(0, 7));
     expect(row.getAttribute('aria-expanded')).toBe('false');
     expect(container.textContent).toContain('Load more');
   });
