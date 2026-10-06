@@ -325,7 +325,7 @@ export async function startServer(
           return;
         }
         const commit = url.searchParams.get('commit');
-        const image = await readImageBytes(repo.root, path, side, commit ?? undefined);
+        const image = await readImageBytes(repo, path, side, commit ?? undefined);
         send(res, 200, image.buffer, image.mime);
         return;
       }
@@ -356,7 +356,7 @@ export async function startServer(
           sendError(res, 400, 'bad-request', 'sha is required');
           return;
         }
-        sendJson(res, 200, await readCommit(repo.root, sha));
+        sendJson(res, 200, await readCommit(repo, sha));
         return;
       }
 
@@ -372,7 +372,7 @@ export async function startServer(
         sendJson(
           res,
           200,
-          await readCommitDiff(repo.root, sha, { path, ...(oldPath ? { oldPath } : {}) }),
+          await readCommitDiff(repo, sha, { path, ...(oldPath ? { oldPath } : {}) }),
         );
         return;
       }

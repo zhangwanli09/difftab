@@ -11,7 +11,7 @@ import type {
   CommitSummary,
   RepoState,
 } from '../../server/shared/protocol';
-import { getJson, toMessage } from './http';
+import { getJson, singleFlight, toMessage } from './http';
 import { setIn } from './immutable';
 
 export interface LoadedHistory {
@@ -61,20 +61,13 @@ export function mergeFirstPage(list: LoadedHistory | null, page: CommitPage): Lo
   };
 }
 
-let inflight: Promise<void> | null = null;
-
 /**
- * 重取第一页，并与已加载的那一串合起来（见 `mergeFirstPage`）。**同一时刻只有一次在途**：第一页回来
- * 之前列表顶上仍是旧 HEAD，每个 SSE 都会判「对不上」——每次都新发一次、后发的作废先发的，在 agent
- * 跑动期间就是一串永远轮不到落地的 `git log`。在途时直接搭上那一次；它回来之后若 HEAD 又挪了，
- * 下一个 SSE 自然会再判出来。
+ * 重取第一页，并与已加载的那一串合起来（见 `mergeFirstPage`）。**同一时刻只有一次在途，在途期间又被
+ * 叫过就回来后补跑一次**（`singleFlight`）：第一页回来之前列表顶上仍是旧 HEAD，每个 SSE 都会判「对不
+ * 上」——每次都新发、后发的作废先发的，在 agent 跑动期间就是一串永远落不了地的 `git log`；而只搭车
+ * 不补跑时，在途那一次若是 HEAD 挪动之前发出去的，最后那个 SSE 就白来了。
  */
-export function refreshHistory(): Promise<void> {
-  inflight ??= fetchFirstPage().finally(() => {
-    inflight = null;
-  });
-  return inflight;
-}
+export const refreshHistory = singleFlight(fetchFirstPage);
 
 async function fetchFirstPage(): Promise<void> {
   try {

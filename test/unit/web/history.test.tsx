@@ -244,16 +244,21 @@ describe('HistoryList 组件', () => {
 });
 
 describe('同一时刻只有一次在途', () => {
-  test('第一页还没回来时再刷新：搭上那一次，不另发', async () => {
-    const calls = stubJsonBy(() => ({ payload: page(1, 1, 1, false) }));
+  test('第一页还没回来时再刷新：搭上那一次，回来后补跑一次——叫多少次都只补一次', async () => {
+    let head = 1;
+    const calls = stubJsonBy(() => ({ payload: page(head, head, 1, false) }));
     const first = refreshHistory();
-    const second = refreshHistory();
-    expect(second).toBe(first);
+    // 在途期间 HEAD 挪了、又来了三个 SSE：在途那一次是挪动之前发的，搭车不等于拿到了答案
+    head = 2;
+    expect(refreshHistory()).toBe(first);
+    refreshHistory();
+    refreshHistory();
     await first;
-    expect(calls.filter((url) => url.startsWith('/api/commits'))).toHaveLength(1);
-    // 回来之后再刷新照常发
-    await refreshHistory();
     expect(calls.filter((url) => url.startsWith('/api/commits'))).toHaveLength(2);
+    expect(historyList.value?.head).toBe(sha(2));
+    // 都落定之后再刷新照常发
+    await refreshHistory();
+    expect(calls.filter((url) => url.startsWith('/api/commits'))).toHaveLength(3);
   });
 
   test('commit tab 的补丁在途时切回去：不另发——新票会作废旧票，慢补丁永远落不了地', async () => {

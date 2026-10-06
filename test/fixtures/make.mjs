@@ -669,8 +669,15 @@ export function makeFixtures(destDir, only) {
     commitAt('main work');
     atNextTick('merge', '--quiet', '--no-ff', '-m', 'merge side', 'side');
 
-    // 补足到过 50 条只为翻页：空提交即可，省掉每条一次 `add`
-    for (let i = 0; i < 52; i += 1) {
+    // 第一条补足提交顺带放一个超行数闸的文件：提交 diff 被拒时报不报体积，只有它证伪得了
+    write(
+      cwd,
+      'wide.txt',
+      lines(OVER_LINE_COUNT, (i) => `wide ${i}`),
+    );
+    commitAt('step 0');
+    // 其余补足到过 50 条只为翻页：空提交即可，省掉每条一次 `add`
+    for (let i = 1; i < 52; i += 1) {
       atNextTick('commit', '--quiet', '--allow-empty', '-m', `step ${i}`);
     }
     repos.history = cwd;

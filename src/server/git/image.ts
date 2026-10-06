@@ -9,7 +9,7 @@
 // 白名单只看子命令、看不见参数——这是它唯一漏得过的形态，冒烟里因此单独钉了一条参数断言。
 
 import { requireParent, resolveCommit } from './history.ts';
-import { resolveDiffBase } from './repo.ts';
+import { type RepoInfo, resolveDiffBase } from './repo.ts';
 import { GitError, type GitResult, runGit, runGitRaw } from './run.ts';
 import {
   imageMimeOf,
@@ -60,18 +60,19 @@ export interface ImageBytes {
  * `maxStdoutBytes` 去撞，超限即就地掐断 git。
  */
 export async function readImageBytes(
-  root: string,
+  repo: RepoInfo,
   path: string,
   side: ImageSideName,
   commit?: string,
 ): Promise<ImageBytes> {
+  const { root } = repo;
   const mime = imageMimeOf(path);
   if (mime === null) throw new WorktreeError('invalid-path', 'not an image');
 
   // 提交历史那一侧两边都在对象库里：旧侧是第一父、新侧是提交本身。路径只过字面量那道——
   // 文件在工作区里可能早已不在，而这里不落磁盘
   if (commit !== undefined) {
-    const resolved = await resolveCommit(root, commit);
+    const resolved = await resolveCommit(repo, commit);
     const rev = side === 'new' ? resolved.commit.sha : requireParent(resolved);
     return { buffer: await readBlob(root, rev, literalRepoPath(root, path).path), mime };
   }

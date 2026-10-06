@@ -19,6 +19,7 @@ import {
   readCommit,
 } from '../../../src/server/git/history.ts';
 import { readImageBytes } from '../../../src/server/git/image.ts';
+import { locateRepo, type RepoInfo } from '../../../src/server/git/repo.ts';
 import { WorktreeError } from '../../../src/server/git/worktree.ts';
 import {
   type FixtureRepos,
@@ -31,12 +32,21 @@ import {
 let dest: string;
 let repos: FixtureRepos;
 let root: string;
+let repo: RepoInfo;
 
 beforeAll(() => {
   dest = mkdtempSync(join(tmpdir(), 'difftab-history-'));
   repos = makeFixtures(dest, ['history', 'empty', 'driverTraps']);
   root = repos.history;
 }, 30_000);
+
+beforeAll(async () => {
+  repo = await locateRepo(root);
+});
+
+/** HEAD 此刻的完整 sha。 */
+const headOf = (cwd: string) =>
+  execFileSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' }).trim();
 
 afterAll(() => {
   rmSync(dest, { recursive: true, force: true });
@@ -83,7 +93,7 @@ describe('解析器', () => {
 describe('listCommits——锚点分页', () => {
   test('第一页 50 条、最新的在前，head 是 HEAD 的 oid', async () => {
     const page = await listCommits(root, { skip: 0 });
-    const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+    const head = headOf(root);
     expect(page.head).toBe(head);
     expect(page.commits).toHaveLength(PAGE_SIZE);
     expect(page.hasMore).toBe(true);
@@ -153,7 +163,7 @@ describe('listCommits——锚点分页', () => {
 
 describe('readCommit——元数据与文件清单', () => {
   test('根提交对空树求 diff，全部是新增', async () => {
-    const detail = await readCommit(root, shaOf('root commit'));
+    const detail = await readCommit(repo, shaOf('root commit'));
     expect(detail.parents).toEqual([]);
     expect(detail.files).toEqual([
       { path: 'README.md', status: 'A' },
@@ -163,12 +173,12 @@ describe('readCommit——元数据与文件清单', () => {
   });
 
   test('git mv 是一条 R，带旧路径', async () => {
-    const detail = await readCommit(root, shaOf('rename a to b'));
+    const detail = await readCommit(repo, shaOf('rename a to b'));
     expect(detail.files).toEqual([{ path: 'src/b.txt', oldPath: 'src/a.txt', status: 'R' }]);
   });
 
   test('合并提交只对第一父求 diff：带进来的是 side 那侧', async () => {
-    const detail = await readCommit(root, shaOf('merge side'));
+    const detail = await readCommit(repo, shaOf('merge side'));
     expect(detail.parents).toHaveLength(2);
     expect(detail.parents[0]).toBe(shaOf('main work'));
     expect(detail.files).toEqual([{ path: 'side.txt', status: 'A' }]);
@@ -183,18 +193,18 @@ describe('readCommit——元数据与文件清单', () => {
       },
     );
     const tag = execFileSync('git', ['rev-parse', 'v1'], { cwd: root, encoding: 'utf8' }).trim();
-    await expect(readCommit(root, tag)).rejects.toMatchObject({ code: 'not-found' });
+    await expect(readCommit(repo, tag)).rejects.toMatchObject({ code: 'not-found' });
   });
 
   test('树对象、标签以外的对象名 → not-found', async () => {
     const tree = execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { cwd: root, encoding: 'utf8' });
-    await expect(readCommit(root, tree.trim())).rejects.toMatchObject({ code: 'not-found' });
+    await expect(readCommit(repo, tree.trim())).rejects.toMatchObject({ code: 'not-found' });
   });
 });
 
 describe('readCommitDiff——提交里单个文件的补丁', () => {
   test('修改：补丁相对第一父', async () => {
-    const payload = await readCommitDiff(root, shaOf('edit a'), { path: 'src/a.txt' });
+    const payload = await readCommitDiff(repo, shaOf('edit a'), { path: 'src/a.txt' });
     expect(payload.kind).toBe('text');
     if (payload.kind !== 'text') return;
     expect(payload.patch).toContain('-line 3');
@@ -202,7 +212,7 @@ describe('readCommitDiff——提交里单个文件的补丁', () => {
   });
 
   test('重命名传两个路径：不退化成全新增', async () => {
-    const payload = await readCommitDiff(root, shaOf('rename a to b'), {
+    const payload = await readCommitDiff(repo, shaOf('rename a to b'), {
       path: 'src/b.txt',
       oldPath: 'src/a.txt',
     });
@@ -214,9 +224,9 @@ describe('readCommitDiff——提交里单个文件的补丁', () => {
 
   test('这次提交没动的文件 → not-found；路径走出仓库 → invalid-path', async () => {
     await expect(
-      readCommitDiff(root, shaOf('edit a'), { path: 'README.md' }),
+      readCommitDiff(repo, shaOf('edit a'), { path: 'README.md' }),
     ).rejects.toMatchObject({ code: 'not-found' });
-    await expect(readCommitDiff(root, shaOf('edit a'), { path: '../x' })).rejects.toMatchObject({
+    await expect(readCommitDiff(repo, shaOf('edit a'), { path: '../x' })).rejects.toMatchObject({
       code: 'invalid-path',
     });
   });
@@ -224,18 +234,18 @@ describe('readCommitDiff——提交里单个文件的补丁', () => {
   test('图片：两侧都来自对象库，version 是两端的对象名', async () => {
     const sha = shaOf('recolor png');
     const parent = shaOf('rename a to b');
-    const payload = await readCommitDiff(root, sha, { path: 'img/p.png' });
+    const payload = await readCommitDiff(repo, sha, { path: 'img/p.png' });
     expect(payload).toEqual({
       kind: 'image',
       old: { path: 'img/p.png', size: tinyPng(PNG_RED).length, version: parent },
       new: { path: 'img/p.png', size: tinyPng(PNG_BLUE).length, version: sha },
     });
-    expect((await readImageBytes(root, 'img/p.png', 'old', sha)).buffer).toEqual(tinyPng(PNG_RED));
-    expect((await readImageBytes(root, 'img/p.png', 'new', sha)).buffer).toEqual(tinyPng(PNG_BLUE));
+    expect((await readImageBytes(repo, 'img/p.png', 'old', sha)).buffer).toEqual(tinyPng(PNG_RED));
+    expect((await readImageBytes(repo, 'img/p.png', 'new', sha)).buffer).toEqual(tinyPng(PNG_BLUE));
   });
 
   test('根提交里的图片只有新侧', async () => {
-    const payload = await readCommitDiff(root, shaOf('root commit'), { path: 'img/p.png' });
+    const payload = await readCommitDiff(repo, shaOf('root commit'), { path: 'img/p.png' });
     expect(payload).toMatchObject({ kind: 'image', old: null });
   });
 });
@@ -250,9 +260,11 @@ describe('读一下就写库的两个陷阱（driverTraps：partial clone + cach
     const cwd = repos.driverTraps;
     const before = objects(cwd);
     const sha = execFileSync('git', ['rev-parse', 'HEAD~1'], { cwd, encoding: 'utf8' }).trim();
-    await expect(readCommitDiff(cwd, sha, { path: 'f.x' })).rejects.toMatchObject({
-      kind: 'missing-object',
-    });
+    await expect(readCommitDiff(await locateRepo(cwd), sha, { path: 'f.x' })).rejects.toMatchObject(
+      {
+        kind: 'missing-object',
+      },
+    );
     expect(objects(cwd)).toBe(before);
   });
 
@@ -284,13 +296,12 @@ describe('不是根提交的「没有父」', () => {
   test('浅克隆的边界：不拿空树去比——文件清单为空并标 shallow，补丁明确拒绝', async () => {
     const clone = join(dest, 'history-shallow');
     execFileSync('git', ['clone', '--quiet', '--depth', '1', pathToFileURL(root).href, clone]);
-    const head = execFileSync('git', ['rev-parse', 'HEAD'], {
-      cwd: clone,
-      encoding: 'utf8',
-    }).trim();
-    const detail = await readCommit(clone, head);
+    const head = headOf(clone);
+    const detail = await readCommit(await locateRepo(clone), head);
     expect(detail).toMatchObject({ files: [], shallow: true });
-    await expect(readCommitDiff(clone, head, { path: 'README.md' })).rejects.toMatchObject({
+    await expect(
+      readCommitDiff(await locateRepo(clone), head, { path: 'README.md' }),
+    ).rejects.toMatchObject({
       code: 'unsupported',
     });
   });
@@ -305,23 +316,13 @@ describe('不是根提交的「没有父」', () => {
 });
 
 test('提交 diff 被行数闸拒绝时照样报体积——与工作区那份同一个文件说同一个数', async () => {
-  const repo = join(dest, 'history-wide');
-  execFileSync('git', ['init', '--quiet', repo]);
-  const env = {
-    ...process.env,
-    GIT_AUTHOR_NAME: 'x',
-    GIT_AUTHOR_EMAIL: 'x@x',
-    GIT_COMMITTER_NAME: 'x',
-    GIT_COMMITTER_EMAIL: 'x@x',
-  };
-  const body = `${Array.from({ length: 60_000 }, (_, i) => `l${i}`).join('\n')}\n`;
-  writeFileSync(join(repo, 'wide.txt'), body);
-  execFileSync('git', ['add', '-A'], { cwd: repo });
-  execFileSync('git', ['commit', '--quiet', '-m', 'wide'], { cwd: repo, env });
-  const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).trim();
+  const sha = shaOf('step 0');
+  const size = Number(
+    execFileSync('git', ['cat-file', '-s', `${sha}:wide.txt`], { cwd: root, encoding: 'utf8' }),
+  );
   expect(await readCommitDiff(repo, sha, { path: 'wide.txt' })).toEqual({
     kind: 'too-large',
-    size: Buffer.byteLength(body),
+    size,
     reason: 'lines',
   });
 });

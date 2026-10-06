@@ -398,7 +398,7 @@ export function activateEditor(key: EditorKey): void {
 
 /**
  * 重取一个 tab。diff 那一路条目取不到时什么都不发，回一个已完成的 promise。**commit tab 只在
- * 没取到（且没有一次在途）时重取**：一次提交不可变，`ready` 的那份就是它的全部；而上次失败了（网络抖一下、后端
+ * 没取到时重取**：一次提交不可变，`ready` 的那份就是它的全部；而上次失败了（网络抖一下、后端
  * 重启）的话，切过来就是重试的时机——不然唯一的重试路径是回 `History` 重新展开再点一次。
  */
 function refetch(editor: Editor): Promise<void> {

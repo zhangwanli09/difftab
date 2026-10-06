@@ -35,6 +35,13 @@ export interface RepoInfo {
   root: string;
   /** git 目录绝对路径。**不得假设它是 `<root>/.git`**——linked worktree 下 `.git` 是文件。 */
   gitDir: string;
+  /**
+   * 共享 git 目录绝对路径：linked worktree 下是主仓库那一份，`config` 与 `shallow` 都在那里，
+   * 而不在 `gitDir`。普通仓库里两者相同。
+   */
+  commonDir: string;
+  /** 启动时 `git --version` 解析出的版本；解析不出（包装过的 git）即 `null`。 */
+  gitVersion: GitVersion | null;
 }
 
 /** `git version 2.50.1 (Apple Git-155)` → `{ major: 2, minor: 50 }`。 */
@@ -72,7 +79,7 @@ export async function locateRepo(cwd: string): Promise<RepoInfo> {
     runGit(['--version'], cwd),
     // **不问 `--is-bare-repository`**：成功那条路上它的答案必然是 false，而失败那条路要
     // 靠它区分 bare 与「不是仓库」——那时再单独问一次
-    runGit(['rev-parse', '--show-toplevel', '--git-dir'], cwd),
+    runGit(['rev-parse', '--show-toplevel', '--git-dir', '--git-common-dir'], cwd),
   ]).catch((cause: unknown) => {
     if (cause instanceof GitError && cause.kind === 'missing') {
       throw new PreflightError(
@@ -110,7 +117,8 @@ export async function locateRepo(cwd: string): Promise<RepoInfo> {
   const lines = located.stdout.split('\n');
   const root = lines[0]?.trim();
   const gitDir = lines[1]?.trim();
-  if (!root || !gitDir) {
+  const commonDir = lines[2]?.trim();
+  if (!root || !gitDir || !commonDir) {
     throw new PreflightError('not-a-repo', 'this directory is not inside a git repository.');
   }
 
@@ -118,6 +126,9 @@ export async function locateRepo(cwd: string): Promise<RepoInfo> {
     root,
     // `--git-dir` 在仓库根下返回相对路径 `.git`，换个子目录跑又是绝对路径
     gitDir: isAbsolute(gitDir) ? gitDir : resolve(root, gitDir),
+    // `--git-common-dir` 的相对路径是**相对 cwd** 的（实测在子目录里给 `../.git`），不是相对根
+    commonDir: resolve(cwd, commonDir),
+    gitVersion: parsed,
   };
 }
 
@@ -152,11 +163,21 @@ export interface DiffBase {
  * 变回未出生状态，缓存的正结果会让 diff 从此全部 fatal。
  */
 export async function resolveDiffBase(root: string): Promise<DiffBase> {
-  const head = await runGit(['rev-parse', '--verify', '--quiet', 'HEAD'], root);
-  const oid = head.stdout.trim();
-  if (head.code === 0 && oid) return { ref: 'HEAD', oid };
+  const oid = await headOid(root);
+  if (oid !== null) return { ref: 'HEAD', oid };
   const empty = await emptyTree(root);
   return { ref: empty, oid: empty };
+}
+
+/**
+ * HEAD 此刻指向的提交；**`null` 即 HEAD 未出生**（空仓库、`checkout --orphan` 之后）。「未出生」的
+ * 判据只此一份——diff 基准退回空树与提交列表说「没有提交」用的是同一条：`rev-parse --verify` 在
+ * 未出生时退 1；指着一个缺失的对象时却退 0 并照样印出 oid（实测），那不是未出生。
+ */
+export async function headOid(root: string): Promise<string | null> {
+  const head = await runGit(['rev-parse', '--verify', '--quiet', 'HEAD'], root);
+  const oid = head.stdout.trim();
+  return head.code === 0 && oid ? oid : null;
 }
 
 /**

@@ -8,7 +8,7 @@ import { lstat } from 'node:fs/promises';
 import type { DiffPayload, ImageSide } from '../shared/protocol.ts';
 import { requireParent, resolveCommit } from './history.ts';
 import { baseBlobSize } from './image.ts';
-import { type DiffBase, resolveDiffBase } from './repo.ts';
+import { type DiffBase, type RepoInfo, resolveDiffBase } from './repo.ts';
 import { GitError, runGit, runGitStrict } from './run.ts';
 import {
   imageMimeOf,
@@ -356,15 +356,16 @@ export async function readDiff(root: string, query: DiffQuery): Promise<DiffPayl
  * 是坏请求。
  */
 export async function readCommitDiff(
-  root: string,
+  repo: RepoInfo,
   sha: string,
   query: DiffQuery,
 ): Promise<DiffPayload> {
+  const { root } = repo;
   const path = literalRepoPath(root, query.path).path;
   const oldPath = query.oldPath ? literalRepoPath(root, query.oldPath).path : undefined;
-  const resolved = await resolveCommit(root, sha);
-  const { commit } = resolved;
+  const resolved = await resolveCommit(repo, sha);
   const parent = requireParent(resolved);
+  const { commit } = resolved;
   const range = [parent, commit.sha];
 
   const stat = await readNumstat(root, range, path, oldPath);
