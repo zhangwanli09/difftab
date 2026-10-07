@@ -278,3 +278,27 @@ export interface CommitDetail extends CommitSummary {
    */
   shallow?: true;
 }
+
+/**
+ * 分支列表里的一项。`name` 已剥掉 `refs/heads/` / `refs/remotes/` / `refs/tags/`，就是选中时复制
+ * 出去的那一串（远程分支是 `origin/foo`）。提交信息取自它指向的提交——附注标签取它剥到的那一条，
+ * 不是标签对象本身；指向树或 blob 的标签没有提交，`author` / `subject` 为空串、`time` 为 0。
+ * **`time` 是提交者时间**，与 `CommitSummary` 的作者时间刻意不同：它同时是排序键，而 rebase 过的
+ * 分支作者时间还停在当初，按它排会把刚推上去的分支沉到底。
+ */
+export interface RefEntry {
+  kind: 'local' | 'remote' | 'tag';
+  name: string;
+  sha: string;
+  author: string;
+  time: number;
+  subject: string;
+}
+
+/**
+ * `GET /api/refs` 的响应体。次序已排好：本地、远程、标签三组依次排列，组内按 `time` 降序。当前
+ * 分支不另标——`BranchState.head` 已经说了。
+ */
+export interface RefList {
+  refs: RefEntry[];
+}

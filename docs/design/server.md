@@ -78,6 +78,7 @@
 | `GET /api/commits?head=&skip=` | `CommitPage` | 提交列表，一页 50 条；`head` 缺省即「从 HEAD 起、并把 HEAD 的 oid 作为锚点回传」，之后的页都带着它 |
 | `GET /api/commit?sha=` | `CommitDetail` | 一次提交的元数据 + 改了哪些文件；`sha` 必填 |
 | `GET /api/commit-diff?sha=&path=&oldPath=` | `DiffPayload` | 一次提交里单个文件的补丁（相对第一父），三道闸与 `/api/diff` 同一套；`sha` / `path` 必填 |
+| `GET /api/refs` | `RefList` | 分支列表：本地分支、远程分支、标签，无参数；前端每次打开列表时取一次 |
 | `GET /api/events` | SSE | 事件 `change` / `heartbeat`；空闲退出以本端点的连接数判定 |
 | `GET /api/instance` | `{ repoRoot, pid }` | 探活复用**唯一**的消费者（不是给前端的） |
 

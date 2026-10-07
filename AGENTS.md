@@ -50,9 +50,9 @@
 
 | 改这块 | 动手前读 |
 |---|---|
-| git 封装层、status/diff 解析、二进制与体积闸、git 异常状态、目录树的 `ls-files`、只读读文件、提交历史的 `log` 与提交 diff | `docs/design/git.md` |
+| git 封装层、status/diff 解析、二进制与体积闸、git 异常状态、目录树的 `ls-files`、只读读文件、提交历史的 `log` 与提交 diff、分支列表的 `for-each-ref` | `docs/design/git.md` |
 | 文件监听、三档策略、自动刷新、轮询兜底 | `docs/design/watch.md` |
-| 前端组件与 signals、界面文案、页面骨架、变更列表、侧栏 tab、文件树、History tab、标签页标题、logo / favicon / 品牌资产 | `docs/design/web.md`；右侧面板、编辑器标签页（预览 / 固定 / 关闭 / SSE 收编 / commit tab）、文件视图读 `docs/design/editors.md` |
+| 前端组件与 signals、界面文案、页面骨架、变更列表、侧栏 tab、文件树、History tab、分支列表、标签页标题、logo / favicon / 品牌资产 | `docs/design/web.md`；右侧面板、编辑器标签页（预览 / 固定 / 关闭 / SSE 收编 / commit tab）、文件视图读 `docs/design/editors.md` |
 | diff2html 渲染、hljs 清单、版式切换、产物体积 | `docs/design/diff-render.md` |
 | Tailwind token、样式层叠与主题、`--d2h-*` 覆写 | `docs/design/style.md` |
 | CLI 入口与 Node 下限、进程生命周期与单实例、HTTP/SSE 协议、token 与 CSP | `docs/design/server.md` |
@@ -103,6 +103,7 @@
 - **冲突的判据是「这条来自 `u` 记录」而不是状态位**——`DD`/`AA` 里一个 `U` 都没有
 - **`log` 的 argv 整条是字面量、只许两种形态**（`--no-show-signature` + `-z` + 固定 `--format`，不带任何 diff 选项）——`log.showSignature` 会起 gpg、`-p` 会走外部 diff / textconv，而白名单只看子命令
 - **提交历史的 `sha` / `head` 只认完整十六进制对象名**——它们拼在 revision 位置，`GIT_LITERAL_PATHSPECS` 管不到，`--output=…` 在那里就是一次写文件
+- **`for-each-ref` 的 argv 整条是字面量**（固定 `--format` + 三个 ref 前缀）——`%(signature)` 一类 atom 会起 gpg，而白名单只看子命令；**禁用 `branch` / `tag` 列 ref**，那两个子命令本身会写
 - **提交历史只加了 `log` 一条白名单**：提交 diff 走 `diff <parent> <sha>`、父提交取 `%P`，禁引入 `show` / `diff-tree` / `rev-list`
 - **图片旧侧只许 `cat-file blob` / `cat-file -s` 两种字面参数**——`--filters` / `--textconv` 会跑 smudge / textconv 驱动（LFS 的写 `.git/lfs`）而白名单只看子命令、看不见参数；换成 `show` 则参数面大到钉不住
 
@@ -190,7 +191,7 @@
 **长期不做**是架构性承诺，破例等于变成另一个产品；**首版不做**是本版范围收窄。**两类在开发期同为硬约束——「首版不做」不等于「可以先做」。**
 
 - 长期：**任何仓库写操作**（不 stage/unstage、不 commit、不 discard、不 pull/push/sync、不建/切分支、不 stash；作用域见第 1 节）、代码编辑功能、账号体系与云同步、多用户协作交互
-- 首版：分支列表展示（只展示当前分支）、逐行 blame 等 GitLens 类深度追溯、界面语言切换
+- 首版：逐行 blame 等 GitLens 类深度追溯、界面语言切换
 
 ## 7. 发布与维护约定
 

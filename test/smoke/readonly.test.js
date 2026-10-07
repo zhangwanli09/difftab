@@ -21,7 +21,7 @@ import { cleanupOnExit, once, parseTrace, REPO_ROOT, runFullFlow } from './helpe
  * 只读白名单。加一条就要问一次「它真的不写仓库吗」——这张表的价值全在它短。
  * `version` 是 `git --version` 在 trace 里的形态。`cat-file` 是图片旧侧读对象库那一条（`blob` /
  * `-s` 两种参数，见下面那条参数断言——白名单只看子命令，`--filters` 那类会跑 smudge 的参数它看不见）。
- * `log` 是提交历史那一条，argv 同样整条钉死（见下面那条参数断言）。
+ * `log` 是提交历史那一条，`for-each-ref` 是分支列表那一条，argv 都整条钉死（见下面两条参数断言）。
  */
 const READ_ONLY = new Set([
   'version',
@@ -31,6 +31,7 @@ const READ_ONLY = new Set([
   'ls-files',
   'cat-file',
   'log',
+  'for-each-ref',
 ]);
 
 /** 本文件用得到的 fixture。生成全部 16 个要 1.5s 上下，其中一半这里根本不打开。 */
@@ -45,7 +46,8 @@ const NEEDED = [
   'ignoredTree',
   // `cat-file` 唯一的来处：图片旧侧。没有它白名单里那一条就是一条没人走过的路
   'images',
-  // `log` 唯一的来处：提交历史。两页、每条提交的文件清单、每个文件的提交 diff 与图片两侧
+  // `log` 唯一的来处：提交历史。两页、每条提交的文件清单、每个文件的提交 diff 与图片两侧；
+  // 它也带着分支、标签与远程 ref，`for-each-ref` 在那里才列得出东西
   'history',
 ];
 
@@ -174,6 +176,29 @@ test('log 的参数逐段等于两种字面量形态——gpg 与外部 diff 驱
       `log 的起点不是 HEAD 或完整对象名：${shown}`,
     );
     assert.equal(rest[1], '--', `log 没以 -- 收尾：${shown}`);
+  }
+});
+
+test('for-each-ref 的参数逐段等于那条字面量——%(signature) 一族会起 gpg', async () => {
+  const commands = await trace();
+  const refs = commands.filter((c) => c.subcommand === 'for-each-ref');
+  // 正面断言：每个仓库都取一次 `/api/refs`，一条都没有就是分支列表那条路没跑到
+  assert.ok(refs.length > 0, '完整流程里没有任何 for-each-ref 调用——分支列表那条路没跑到');
+  const unquote = (token) => token.replace(/^'(.*)'$/, '$1');
+  for (const cmd of refs) {
+    assert.deepEqual(
+      cmd.argv.map(unquote),
+      [
+        'for-each-ref',
+        '--format=%(refname)%00%(symref)%00%(objectname)%00%(authorname)%00%(committerdate:unix)%00' +
+          '%(subject)%00%(*objectname)%00%(*objecttype)%00%(*authorname)%00%(*committerdate:unix)%00' +
+          '%(*subject)%00',
+        'refs/heads',
+        'refs/remotes',
+        'refs/tags',
+      ],
+      `for-each-ref 的参数不是那条字面量：${cmd.argv.join(' ')}`,
+    );
   }
 });
 
