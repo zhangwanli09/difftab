@@ -173,7 +173,7 @@ export function TreeRow({
 }
 
 /** `Copied` 那一档停留多久。取 GitHub 代码块上那枚复制按钮的档位——够看清一眼、不至于挡住下一次。 */
-const COPIED_MS = 1500;
+export const COPIED_MS = 1500;
 
 /**
  * 行内动作里那枚复制按钮：把 `text` 写进剪贴板，`label` 是它静止时的名字。文件行复制路径、提交行
