@@ -16,6 +16,8 @@
 
 `FileView` 不走 diff2html，只用 hljs 高亮一次。**容器上不得加 `hljs` 类**：那条规则是 unlayered 的，会压过 `bg-editor-background`，症状只是「文件视图底色跟页面其余部分对不上」。
 
-`SidebarSash` 是左栏右边缘那条拖拽把手，绝对定位叠在 `<aside>` 的 `border-r` 上、不占布局宽度；宽度在 `state/sidebar.ts`。
+拖拽把手只有一个组件 `Sash`，两处用它：`SidebarSash` 是左栏右边缘那条（叠在 `<aside>` 的 `border-r` 上，单位是像素），`SourceControl` 里两个分区之间那条（叠在分隔线的 `border-t` 上，单位是百分比）。两把之间不同的只有轴向与单位，pointer capture、收尾、键盘、握把只写在 `Sash` 里。
+
+`SourceControl` 是 `Changes` 档的内容：上 `Changes`（变更列表）、下 `History`（`HistoryList`）两个可折叠分区，各自滚动；折起是隐藏不是卸载，滚动位置留着。补判提交列表的 effect 也挂在这里，不挂在 `App` 上——`App` 是整棵树。
 
 `Diff2HtmlUI.draw()` 内部是 `innerHTML` 赋值 + 命令式事件绑定，必须放在 Preact 的 ref/effect 之后，不与 vdom 争夺同一棵子树。

@@ -15,7 +15,7 @@ import type { BranchState } from '../../../src/server/shared/protocol';
 import { App } from '../../../src/web/components/App';
 import { BranchStatus } from '../../../src/web/components/BranchStatus';
 import { loadError, repoState } from '../../../src/web/state/store';
-import { resetEditors } from './helpers';
+import { hideHistory, resetEditors } from './helpers';
 
 const branch = (partial: Partial<BranchState> = {}): BranchState => ({
   head: 'main',
@@ -36,6 +36,8 @@ let container: HTMLElement;
 const waitFor = (assert: () => void) => vi.waitFor(assert, { interval: 5 });
 
 beforeEach(() => {
+  // 这里渲染 `App` 只为看状态条：折起 `History`，免得它拿着 state 去发一趟没打桩的 `/api/commits`
+  hideHistory();
   document.body.innerHTML = '';
   container = document.createElement('div');
   document.body.appendChild(container);

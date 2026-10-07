@@ -3,7 +3,7 @@
 // 收进来的判据是「第二份出现时就得记得另一份也在」：重置标签栏那四行贴在九个文件里，给
 // `editors.ts` 加一个 signal 就是九处 `afterEach` 要补，漏一处不报错、只是状态漏进下一个用例。
 
-import { expect, vi } from 'vitest';
+import { expect, onTestFinished, vi } from 'vitest';
 import type { FileEntry } from '../../../src/server/shared/protocol';
 import { STATUS_WIDTH } from '../../../src/web/components/tree-row';
 import {
@@ -22,6 +22,12 @@ import {
   loadingMore,
   moreError,
 } from '../../../src/web/state/history';
+import {
+  changesCollapsed,
+  historyCollapsed,
+  PANE_DEFAULT_PERCENT,
+  panePercent,
+} from '../../../src/web/state/sidebar';
 import { commitDiffStates, diffStates, fileStates } from '../../../src/web/state/store';
 
 /** 清空标签栏与三张缓存。用到右侧状态的用例都从这里起。 */
@@ -41,6 +47,23 @@ export function resetHistory(): void {
   moreError.value = null;
   commitDetails.value = new Map();
   expandedCommits.value = new Set();
+}
+
+/** 两个分区回到默认：都展开、对半分。 */
+export function resetPanes(): void {
+  changesCollapsed.value = false;
+  historyCollapsed.value = false;
+  panePercent.value = PANE_DEFAULT_PERCENT;
+}
+
+/**
+ * 折起 `History` 分区，用例结束时自己复原。给**测的不是提交历史**的那些用例：分区默认可见，不折起
+ * 时每次 `refresh` / 挂载 `App` 都多发一趟 `/api/commits`——桩回的是别的 payload，那一趟还可能挂着
+ * 不回来、把下一个用例的请求搭进 `singleFlight` 里。
+ */
+export function hideHistory(): void {
+  historyCollapsed.value = true;
+  onTestFinished(resetPanes);
 }
 
 /** 开一个固定 tab——产品里开出来的一律是预览，固定是双击那一下另做的，用例里合成一步。 */

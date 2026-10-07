@@ -13,11 +13,13 @@ import type { WatchState } from '../../../src/server/shared/protocol';
 import { App } from '../../../src/web/components/App';
 import { WatchBadge } from '../../../src/web/components/WatchBadge';
 import { loadError, repoState } from '../../../src/web/state/store';
-import { resetEditors } from './helpers';
+import { hideHistory, resetEditors } from './helpers';
 
 let container: HTMLElement;
 
 beforeEach(() => {
+  // 这里渲染 `App` 只为看状态条：折起 `History`，免得它拿着 state 去发一趟没打桩的 `/api/commits`
+  hideHistory();
   document.body.innerHTML = '';
   container = document.createElement('div');
   document.body.appendChild(container);

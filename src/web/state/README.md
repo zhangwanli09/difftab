@@ -13,6 +13,6 @@ SSE 刷新须在不丢失当前选中文件与滚动位置的前提下更新列�
 - `http.ts` 只装那一份 `getJson`：四个端点共用它，是为了「错误正文先当文本读」这条规矩不出现第二份（拷贝里被顺手简化成 `res.json()` 的那一份照样是绿的，只是错误条上显示的是解析错误而不是真正的原因）
 - `events.ts` 只管连接的开关：`change` → `refresh()`，标签重新激活 → **按静默时长**判连接死活（`readyState` 判不出半开的那种），死了才重连，**也只有重连了才补取**。档位与降级判定全在后端；心跳是前端唯一消费的监听知识，而它的周期定在 `shared/protocol.ts`，两边不各写一份
 - `layout.ts` 只有一件事：**diff 面板宽度 → 用哪种 diff2html 版式**。量的是面板自身的 border box 而非视口，阈值与两条「不能改成那样写」的理由都在文件里；`App.tsx` 那个 `ResizeObserver` 是它唯一的写入方
-- `sidebar.ts` 是左栏宽度：signal 里存用户选的宽度，**随视口收的上限交给 CSS 的 `max-width`**（总给 diff 面板留 320px），宽度以 signal 本身绑到 `style` 上，拖动时不重渲染任何组件。不跨会话记忆（端口随机，`localStorage` 跨不了实例）
+- `sidebar.ts` 是左栏宽度：signal 里存用户选的宽度，**随视口收的上限交给 CSS 的 `max-width`**（总给 diff 面板留 320px），宽度以 signal 本身绑到 `style` 上，拖动时不重渲染任何组件。不跨会话记忆（端口随机，`localStorage` 跨不了实例）。`Changes` 档两个分区的折叠态与高度百分比、哪一把把手正在拖（`sashDragging`，整页的拖动样式是它的 computed）也住在这里
 - `title.ts` 与 `theme.ts` 是这里**反方向**的两个：别的文件都是「外面 → 状态」的写入适配器，这两个是「状态 → DOM」的读出适配器。放在本目录是排除法的结果——它们既不是仓库状态（不进 `store.ts`）、也不是组件树的产出（不挂 `useEffect`，`document.title` 与 `<html>` 上的属性都不该跟着某个组件的生命周期走）；判据是只依赖 signals、除此之外与页面结构无关
 - 两者的差别在于**持有不持有 signal**：`title.ts` 纯派生（标签页标题从 `repoState` 算出来），`theme.ts` 自己持有 `themePreference`——它是仓库里第一份跨会话的用户偏好。上次的选择由 `syncDocumentTheme()` **在接线时**读进来，不在模块顶层读：import 期保持干净（与 `title.ts` 一致），首帧时机不受影响（`main.tsx` 在 `render()` 前调它）。读写各自 `try/catch`

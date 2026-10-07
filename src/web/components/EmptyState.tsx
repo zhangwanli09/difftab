@@ -37,7 +37,6 @@ export function SidebarPlaceholder({ children }: { children: ComponentChildren }
 const TAB_KIND: Record<typeof activeTab.value, EditorKind> = {
   changes: 'diff',
   files: 'file',
-  history: 'commit',
 };
 
 function EmptyState({ icon, children }: { icon: LucideIcon; children: ComponentChildren }) {
@@ -67,8 +66,7 @@ function EmptyState({ icon, children }: { icon: LucideIcon; children: ComponentC
  * - 其余一律 `Select a file on the left`：**`Files` 档下即使干净也走这句**，那一档列的是整棵
  *   目录树，「Working tree clean」对着一列能点的文件答非所问。图标跟着档走：`Changes` 是一份
  *   diff（`FileDiff`），`Files` 是一份全文（`FileCode`）——两档打开同一个文件看到的是两样东
- *   西，图标在空着时就把这一点说出来。`History` 档是一次提交里的一份 diff（`GitCommitHorizontal`，
- *   与 commit tab 上那枚同源）。
+ *   西，图标在空着时就把这一点说出来。`Changes` 档里那个 `History` 分区不是档位，不另起一句。
  * - 第一份 state 还没到（`repoState` 为 null）时走「还没选」那句——左栏此时写的正是
  *   `Loading…`，两栏说的是同一件事。
  */

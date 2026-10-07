@@ -4,36 +4,26 @@
 // 档位)，与右边看的是哪个文件无关，横跨等于在 diff 面板顶上切一条与 diff 无关的横杠。
 // 两侧的所有权是分开的：列表归 Preact 的 keyed reconcile，单文件 diff 容器归 `Diff2HtmlUI`。
 
-import {
-  ChevronsDownUp,
-  Folder,
-  GitBranch,
-  History,
-  List,
-  ListTree,
-  type LucideIcon,
-} from 'lucide-preact';
+import { ChevronsDownUp, Folder, GitBranch, List, ListTree, type LucideIcon } from 'lucide-preact';
 import { useEffect, useRef } from 'preact/hooks';
 import { type ChangeView, changeView, toggleChangeView } from '../state/change-tree';
 import { activeEditor, keyOf } from '../state/editors';
-import { ensureHistory } from '../state/history';
 import { observeDiffPanel } from '../state/layout';
-import { sidebarDragging, sidebarStyle } from '../state/sidebar';
+import { dragStyle, sidebarStyle } from '../state/sidebar';
 import { activeTab, loadError, repoState } from '../state/store';
 import { PRODUCT_NAME } from '../state/title';
 import { collapseAll, loadDir, ROOT, refreshTree, treeCache } from '../state/tree';
 import { BranchStatus } from './BranchStatus';
-import { ChangeList } from './ChangeList';
 import { CommitDiffView, DiffView } from './DiffView';
 import { EditorTabs } from './EditorTabs';
-import { PanelEmptyState, SidebarPlaceholder } from './EmptyState';
+import { PanelEmptyState } from './EmptyState';
 import { FileTree } from './FileTree';
 import { FileView } from './FileView';
-import { HistoryList } from './HistoryList';
 import { Icon } from './Icon';
 import { IconButton } from './IconButton';
 import { DifftabMark } from './Logo';
 import { SidebarSash } from './SidebarSash';
+import { SourceControl } from './SourceControl';
 import { ThemeToggle } from './ThemeToggle';
 import { WatchBadge } from './WatchBadge';
 
@@ -45,8 +35,8 @@ import { WatchBadge } from './WatchBadge';
  * `Changes` 那枚**与状态条上分支名前的是同一枚 `GitBranch`**（对应 VS Code activity bar 上的
  * Source Control）。两处 import 同一个具名组件，**「同一枚」这件事因此由编译器保证**——拼错标
  * 识符是编译错误，而共用一条 path 字符串的老做法里，两份漂开之后同一个概念在页面上就是两个
- * 图形，没有任何东西会响。`Files` 那枚是 `Folder`，`History` 那枚是 `History`（时钟加一支逆时针
- * 箭头，对应 VS Code 的 Timeline / Git Graph 一类视图）。
+ * 图形，没有任何东西会响。`Files` 那枚是 `Folder`。提交历史不另占一枚：它是 `Changes` 档里变更
+ * 列表下面的一个分区（`SourceControl`），照 VS Code 把 Graph 排在 Changes 底下。
  *
  * `label` 不再进 DOM 文本，改作 `aria-label` 与 tooltip：只画图标时它是这个按钮名字的**唯一**
  * 来源，掉了之后读屏里就是两个无名控件，而页面上什么都看不出来（同 `ThemeToggle`）。
@@ -54,7 +44,6 @@ import { WatchBadge } from './WatchBadge';
 const TABS = [
   { id: 'changes', label: 'Changes', icon: GitBranch },
   { id: 'files', label: 'Files', icon: Folder },
-  { id: 'history', label: 'History', icon: History },
 ] as const;
 
 // **不给 `flex-1`**：两枚各按自身宽度排、紧挨着靠左，平分整栏时选中那条下划线有半栏宽，看着
@@ -172,12 +161,6 @@ export function App() {
     refreshTree();
   }, [tab]);
 
-  // `History` 那一档同一个取向：没取过、上次没取到、或离开期间 HEAD 挪过，切过来才取第一页——不在
-  // 挂载时预取，多数会话根本不会点开它
-  useEffect(() => {
-    if (tab === 'history') void ensureHistory(repoState.peek());
-  }, [tab]);
-
   // diff 版式的**唯一**测量点。本组件只管「量哪个元素、什么时候开始和停」——量法与阈值都在
   // `state/layout.ts`，两者是一个取舍的两半。量的是这个 `<section>`，**既不是 DiffView 底下那
   // 个宿主 div、也不是两个视图里那层滚动容器**：这一层从挂载到卸载一直在，那两个各自会随换文
@@ -191,10 +174,9 @@ export function App() {
   // 配色一律走 VS Code token，不用 Tailwind 自带调色板：后者在深色下不会跟着
   // 翻，得给每个元素再写一遍 dark: 变体，而本项目的深浅切换发生在 token 层
   return (
-    // 拖左栏期间整页挂 `cursor-col-resize select-none`，理由在 `sidebarDragging` 上
-    <div
-      class={`flex h-screen bg-editor-background text-editor-foreground ${sidebarDragging.value ? 'cursor-col-resize select-none' : ''}`}
-    >
+    // 拖把手期间整页挂光标与 `user-select: none`，理由在 `sashDragging` 上；以 signal 本身交给
+    // `style`，本组件不订阅它
+    <div class="flex h-screen bg-editor-background text-editor-foreground" style={dragStyle}>
       {/* 左栏自己是一列：顶栏、错误条与状态条都 shrink-0 钉住，中间那层列表独自滚 */}
       {/* 宽度以 signal 本身交给 `style`（理由在 `sidebarStyle` 上）；`relative` 是把手绝对定位的锚 */}
       <aside
@@ -224,32 +206,19 @@ export function App() {
           </p>
         )}
 
-        {/* 两个视图**共用这一层滚动容器**：左右两栏各一个滚动容器是既有约定（SSE 刷新要留住
-            列表的滚动位置），tab 不是第三个。flex 的自动最小尺寸只在该轴 overflow:visible 时
-            才解析成 min-content，所以 `min-h-0` 与 `overflow-auto` 各自都足以把它归零——两个
-            都没有时列表会把整列撑高、把状态条挤出屏幕底部。
+        {/* `Files` 档**滚的是这一层**：左右两栏各一个滚动容器是既有约定（SSE 刷新要留住列表的
+            滚动位置）。`Changes` 档这一层不滚，滚的是 `SourceControl` 里两个分区各自那一层——共用
+            一个时历史一长就把变更列表滚出视野。flex 的自动最小尺寸只在该轴 overflow:visible 时
+            才解析成 min-content，所以 `min-h-0` 与 `overflow-auto` 各自都足以把它归零——不滚的那一
+            档靠 `min-h-0`；两个都没有时列表会把整列撑高、把状态条挤出屏幕底部。
             **字号与行高（`text-sm/6`，14px / 24px）给在这一层，底下的行、占位与空态全靠继承**
             （行是 <button>，preflight 的 `font: inherit` 让它连 line-height 一起继承）：行高由
             line-height 撑而不是各行自己 `py-*` 凑，「左栏所有行 24px」于是是容器的一条属性，不是
             每个元素各抄一遍的约定。24px 取 JetBrains / Zed 树行那档；VS Code 是 22px，但 Tailwind
             预设里没有 13px / 22px，不为 2px 另加 token。**分组标题是例外**：它自己写 `text-xs`，而
             Tailwind 的 `text-*` 会把 line-height 一并重设（`--tw-leading` 不继承），得自带 `/6` */}
-        <nav class="min-h-0 flex-1 overflow-auto text-sm/6">
-          {tab === 'files' ? (
-            <FileTree />
-          ) : tab === 'history' ? (
-            <HistoryList />
-          ) : state === null ? (
-            // 第一次就失败时不能继续说「读取中」——那份加载态永远不会结束，
-            // 页面看上去像卡住了，而错误条其实已经把原因写在上面了
-            <SidebarPlaceholder>
-              {error === null
-                ? 'Loading…'
-                : 'Could not load the change list. Reload the page to retry.'}
-            </SidebarPlaceholder>
-          ) : (
-            <ChangeList files={state.files} />
-          )}
+        <nav class={`min-h-0 flex-1 text-sm/6 ${tab === 'files' ? 'overflow-auto' : ''}`}>
+          {tab === 'files' ? <FileTree /> : <SourceControl />}
         </nav>
 
         {/* 分支状态与监听标注都只在拿到第一份 state 之后才画：没有它时整条状态条不画，而不是

@@ -9,7 +9,10 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { RepoState } from '../../../src/server/shared/protocol';
 import { connectEvents, MAX_RETRIES, RECONNECT_MS, STALE_MS } from '../../../src/web/state/events';
 import { loadError, repoState } from '../../../src/web/state/store';
-import { resetEditors } from './helpers';
+import { hideHistory, resetEditors } from './helpers';
+
+// 这里测的不是提交历史
+beforeEach(hideHistory);
 
 const CONNECTING = 0;
 const OPEN = 1;

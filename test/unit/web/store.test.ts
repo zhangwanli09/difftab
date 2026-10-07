@@ -34,7 +34,10 @@ import {
   selectFile,
 } from '../../../src/web/state/store';
 import { expandedDirs, loadDir, ROOT, treeCache } from '../../../src/web/state/tree';
-import { file, openPinned, resetEditors, stubJson } from './helpers';
+import { file, hideHistory, openPinned, resetEditors, stubJson } from './helpers';
+
+// 这里测的不是提交历史
+beforeEach(hideHistory);
 
 /** 栏里的 tab 键，按显示顺序。 */
 const tabs = () => editors.value.map(keyOf);

@@ -29,6 +29,7 @@ import {
   refreshHistory,
   toggleCommit,
 } from '../../../src/web/state/history';
+import { historyCollapsed } from '../../../src/web/state/sidebar';
 import {
   activateEditor,
   activeTab,
@@ -40,6 +41,7 @@ import {
 import {
   actionOf,
   expectStatusGap,
+  hideHistory,
   resetEditors,
   resetHistory,
   stubClipboard,
@@ -501,6 +503,8 @@ describe('refresh 对 History 那一半', () => {
   };
 
   test('commit tab 不收编、不重取——工作区变了与它无关', async () => {
+    // 提交列表不在这条的射程里：折起分区，`refresh` 就只剩 `/api/state` 一趟
+    hideHistory();
     openCommitEditor(sha(1), 'a.ts', undefined, true);
     commitDiffStates.value = new Map([
       [
@@ -516,6 +520,7 @@ describe('refresh 对 History 那一半', () => {
   });
 
   test('History 可见且 HEAD 挪了才重取第一页；HEAD 没挪、或不可见时一条都不发', async () => {
+    activeTab.value = 'files';
     let oid = sha(1);
     const calls = stubJsonBy((url) =>
       url.pathname === '/api/state'
@@ -525,8 +530,13 @@ describe('refresh 对 History 那一半', () => {
     const commitsCalls = () => calls.filter((url) => url.startsWith('/api/commits')).length;
     await refresh();
     expect(commitsCalls()).toBe(0);
+    // 回到 `Changes` 档但分区折着：同样看不见
+    activeTab.value = 'changes';
+    historyCollapsed.value = true;
+    await refresh();
+    expect(commitsCalls()).toBe(0);
 
-    activeTab.value = 'history';
+    historyCollapsed.value = false;
     await refresh();
     expect(commitsCalls()).toBe(1);
     // 工作区改动推来的 SSE：HEAD 没挪，不起 `git log`
@@ -550,7 +560,6 @@ describe('refresh 对 History 那一半', () => {
         ? { payload: { error: { code: 'internal', message: 'busy' } }, status: 500 }
         : { payload: page(1, 1, 1, false) };
     });
-    activeTab.value = 'history';
     await refresh();
     expect(historyError.value).toBe('busy');
     fail = false;
