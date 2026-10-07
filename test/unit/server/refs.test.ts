@@ -76,3 +76,11 @@ test('parseRefs：记录之间的换行不进名字，组内按时间降序', ()
     record('refs/notes/x', 9, 'ignored');
   expect(parseRefs(output).map((r) => r.name)).toEqual(['a', 'b', 'old']);
 });
+
+test('parseRefs：剥出来的不是提交（老 git 上的标签套标签）时只留对象名，不拿标签说明当主题', () => {
+  const inner = 'b'.repeat(40);
+  const output = `${['refs/tags/outer', '', 'c'.repeat(40), '', '', 'outer msg', inner, '', '', 'inner msg'].join('\0')}\0\n`;
+  expect(parseRefs(output)).toEqual([
+    { kind: 'tag', name: 'outer', sha: inner, author: '', time: 0, subject: '' },
+  ]);
+});

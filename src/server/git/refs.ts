@@ -54,15 +54,28 @@ export function parseRefs(output: string): RefEntry[] {
     const match = KINDS.find(([prefix]) => refname.startsWith(prefix));
     if (match === undefined) continue;
     const [prefix, kind] = match;
-    // 轻量标签与分支的解引用段全空，用本体；附注标签用它指向的那一条
-    const peeled = peeledSha !== '';
+    // 轻量标签与分支的解引用段全空，用本体；附注标签用它指向的那一条。**剥出来的未必是提交**：
+    // 附注标签可以指向树，标签套标签时较老的 git 只剥一层、剥到的是内层那个标签对象。两者的
+    // 提交者时间都为空——据此只留对象名，不把内层标签的说明当成提交主题画出去
+    if (peeledSha !== '') {
+      const commit = peeledTime !== '';
+      refs.push({
+        kind,
+        name: refname.slice(prefix.length),
+        sha: peeledSha,
+        author: commit ? peeledAuthor : '',
+        time: commit ? Number(peeledTime) || 0 : 0,
+        subject: commit ? peeledSubject : '',
+      });
+      continue;
+    }
     refs.push({
       kind,
       name: refname.slice(prefix.length),
-      sha: peeled ? peeledSha : sha,
-      author: peeled ? peeledAuthor : author,
-      time: Number(peeled ? peeledTime : time) || 0,
-      subject: peeled ? peeledSubject : subject,
+      sha,
+      author,
+      time: Number(time) || 0,
+      subject,
     });
   }
   const order = (kind: RefEntry['kind']) => KINDS.findIndex(([, k]) => k === kind);
