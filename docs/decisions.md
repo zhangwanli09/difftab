@@ -168,7 +168,7 @@
 | 变更列表按 git 的用词分四组（Conflicted / Staged / Unstaged / Untracked）、字母照 git 印（未跟踪 `?`、冲突两位） | 这一块的读者对照的是编辑器里的 Source Control，不是 `git status`：两边各说一种话时同一个 `U` 在 VS Code 里是未跟踪、在这里是冲突。改成 VS Code 默认的三组与 `U` / `!`；换字只在徽章的展示映射里，`StatusCode` 协议照旧是 git 的字母 |
 | 冲突照 VS Code 把 `DU` / `UD` 印成 `D`、其余印 `!` | `Files` 那档的文件树只拿得到归并后的 `ChangeCode`（冲突一律 `U`），跟了的话同一个文件在两档字母不一样。一律 `!`、tooltip 给原始 XY，`DD` 与 `UU` 的区分仍在，前端也不必写下七种组合的含义 |
 | `Changes` 组把已跟踪与未跟踪直接拼接，或整体再排一次 | 拼接时未跟踪全堆在组尾，与 VS Code 不符；整体重排则多一份排序意见、已跟踪那侧不再是 git 给的顺序。两侧各自有序，归并一次即可 |
-| 变更列表的版式开关写 `localStorage` | 后端 `listen(0)` 端口随机，`localStorage` 按 origin（含端口）隔离，写了也只活到同一实例的刷新（`difftab:theme` 已经这样，见 [`history.md`](history.md) 的「未完事项」）。为一份跨不了实例的偏好搭一套读写 try/catch 不划算，与 `activeTab` 同一形状的内存 signal 即可 |
+| 变更列表的版式开关、左栏宽度写 `localStorage` | 后端 `listen(0)` 端口随机，`localStorage` 按 origin（含端口）隔离，写了也只活到同一实例的刷新（`difftab:theme` 已经这样，见 [`history.md`](history.md) 的「未完事项」）。为一份跨不了实例的偏好搭一套读写 try/catch 不划算，与 `activeTab` 同一形状的内存 signal 即可 |
 | 变更列表行尾为 `Open file` 按钮常驻预留一个 20px 空位 | 每行永久少 26px 文字宽度（占位 + 间距），320px 侧栏里是一成，换来的只是「悬停时省略号不动」；VS Code 的 inline action 本就是悬停时才进流、文字跟着重排 |
 | `Open file` 按钮直接盖在文字尾巴上、外壳补一块与行底色相同的遮罩 | 遮罩色随选中态变（悬停底 / 选中底两档）、键盘焦点而未悬停时又是第三种；覆盖处没有省略号只有一道硬边。行按钮里放一个与按钮等宽、同一对变体显隐的占位，文字就真的重排了，遮罩整层不需要 |
 | `Open file` 按钮用透明度藏（照编辑器 tab 上那枚 ×） | × 那里透明是为了留住位置、悬停时 tab 宽度不跳；这里按钮悬在文字上方，透明就是一块看不见却能点的死区——点到目录段尾巴会误开文件。`display` 切换配 `group-has-focus-visible` 一样接得住键盘焦点 |

@@ -18,6 +18,7 @@ import { type ChangeView, changeView, toggleChangeView } from '../state/change-t
 import { activeEditor, keyOf } from '../state/editors';
 import { ensureHistory } from '../state/history';
 import { observeDiffPanel } from '../state/layout';
+import { sidebarDragging, sidebarStyle } from '../state/sidebar';
 import { activeTab, loadError, repoState } from '../state/store';
 import { PRODUCT_NAME } from '../state/title';
 import { collapseAll, loadDir, ROOT, refreshTree, treeCache } from '../state/tree';
@@ -32,6 +33,7 @@ import { HistoryList } from './HistoryList';
 import { Icon } from './Icon';
 import { IconButton } from './IconButton';
 import { DifftabMark } from './Logo';
+import { SidebarSash } from './SidebarSash';
 import { ThemeToggle } from './ThemeToggle';
 import { WatchBadge } from './WatchBadge';
 
@@ -189,9 +191,16 @@ export function App() {
   // 配色一律走 VS Code token，不用 Tailwind 自带调色板：后者在深色下不会跟着
   // 翻，得给每个元素再写一遍 dark: 变体，而本项目的深浅切换发生在 token 层
   return (
-    <div class="flex h-screen bg-editor-background text-editor-foreground">
+    // 拖左栏期间整页挂 `cursor-col-resize select-none`，理由在 `sidebarDragging` 上
+    <div
+      class={`flex h-screen bg-editor-background text-editor-foreground ${sidebarDragging.value ? 'cursor-col-resize select-none' : ''}`}
+    >
       {/* 左栏自己是一列：顶栏、错误条与状态条都 shrink-0 钉住，中间那层列表独自滚 */}
-      <aside class="flex w-80 shrink-0 flex-col border-r border-panel-border bg-side-bar-background">
+      {/* 宽度以 signal 本身交给 `style`（理由在 `sidebarStyle` 上）；`relative` 是把手绝对定位的锚 */}
+      <aside
+        class="relative flex shrink-0 flex-col border-r border-panel-border bg-side-bar-background"
+        style={sidebarStyle}
+      >
         {/* 顶栏最左是品牌符号（16px、`aria-hidden`，名字由标签页标题给），然后写的是项目名
             （工作区根目录名），不是产品名——这一栏回答的是「我在看哪个项目」。**`truncate` 落在装名字的那个 span 上，不是 header 上**：顶栏是 flex 容器，
             而 `truncate` 写在容器上不起作用，子项的自动最小尺寸照样把它撑开（长名漫过右边框
@@ -207,7 +216,7 @@ export function App() {
 
         <SideBarTabRow />
 
-        {/* break-words 是搬进 320px 之后才需要的：这条文案是 git 的原话，里面那截路径是一个
+        {/* break-words 是搬进左栏之后才需要的：这条文案是 git 的原话，里面那截路径是一个
             不带断点的长词，在这一列里会漫过右边框压到 diff 面板上——不报错，只是错位 */}
         {error !== null && (
           <p class="shrink-0 border-b border-warning-border bg-warning-background px-3 py-2 text-sm break-words">
@@ -253,6 +262,8 @@ export function App() {
             <WatchBadge watch={state.watch} />
           </footer>
         )}
+
+        <SidebarSash />
       </aside>
 
       {/* **面板这一层自己不滚**：滚动容器在两个视图内部（`DiffView` 导出的 `Panel`），标签栏

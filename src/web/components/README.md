@@ -16,4 +16,6 @@
 
 `FileView` 不走 diff2html，只用 hljs 高亮一次。**容器上不得加 `hljs` 类**：那条规则是 unlayered 的，会压过 `bg-editor-background`，症状只是「文件视图底色跟页面其余部分对不上」。
 
+`SidebarSash` 是左栏右边缘那条拖拽把手，绝对定位叠在 `<aside>` 的 `border-r` 上、不占布局宽度；宽度在 `state/sidebar.ts`。
+
 `Diff2HtmlUI.draw()` 内部是 `innerHTML` 赋值 + 命令式事件绑定，必须放在 Preact 的 ref/effect 之后，不与 vdom 争夺同一棵子树。
