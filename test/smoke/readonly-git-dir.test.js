@@ -254,10 +254,15 @@ test('A · 只读 .git 下，变更列表与每个文件的 diff 都照常返回
   const { skip, results } = await lockedRun();
   if (!ensureCovered(t, skip)) return;
 
-  for (const { cwd, state, diffs, commitPages, commitDiffs } of results) {
-    // 提交历史那三个端点同样只读：`log` 与提交 diff 在锁死的 `.git` 下也得照常返回
-    for (const res of [...commitPages, ...commitDiffs]) {
-      assert.equal(res.status, 200, `只读 .git 下提交历史返回了 ${res.status}:${res.body}`);
+  for (const { cwd, state, diffs, commitPages, commitDiffs, refs } of results) {
+    // 提交历史那三个端点与分支列表同样只读：`log`、提交 diff、`for-each-ref` 在锁死的 `.git`
+    // 下也得照常返回
+    for (const res of [...commitPages, ...commitDiffs, refs]) {
+      assert.equal(
+        res.status,
+        200,
+        `只读 .git 下提交历史或分支列表返回了 ${res.status}:${res.body}`,
+      );
     }
     assert.equal(state.status, 200, `${cwd} 的 /api/state 返回了 ${state.status}:${state.body}`);
     assert.ok(JSON.parse(state.body).files.length > 0, `${cwd} 的变更列表是空的——流程没跑到位`);

@@ -407,6 +407,9 @@ export async function runFullFlow(cwd, { env } = {}) {
       }
     }
 
+    /** 分支列表：无参数，一次就是那条 `for-each-ref` 的全部形态。 */
+    const refs = await authedGet(server.port, server.token, '/api/refs');
+
     return {
       cwd,
       state,
@@ -418,6 +421,7 @@ export async function runFullFlow(cwd, { env } = {}) {
       commitPages,
       commits,
       commitDiffs,
+      refs,
       stderr: server.stderr,
     };
   } finally {

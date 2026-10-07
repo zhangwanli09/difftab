@@ -10,6 +10,7 @@ import { readCommitDiff, readDiff } from '../git/diff.ts';
 import { readFileContent } from '../git/file.ts';
 import { listCommits, readCommit } from '../git/history.ts';
 import { readImageBytes } from '../git/image.ts';
+import { listRefs } from '../git/refs.ts';
 import { type RepoInfo, repoNameOf } from '../git/repo.ts';
 import { GitError } from '../git/run.ts';
 import { readStatus, readStatusRaw } from '../git/status.ts';
@@ -374,6 +375,12 @@ export async function startServer(
           200,
           await readCommitDiff(repo, sha, { path, ...(oldPath ? { oldPath } : {}) }),
         );
+        return;
+      }
+
+      /** 分支列表：本地、远程、标签。无参数，前端每次打开列表时取一次。 */
+      case '/api/refs': {
+        sendJson(res, 200, await listRefs(repo.root));
         return;
       }
 

@@ -680,6 +680,14 @@ export function makeFixtures(destDir, only) {
     for (let i = 1; i < 52; i += 1) {
       atNextTick('commit', '--quiet', '--allow-empty', '-m', `step ${i}`);
     }
+    // 分支列表那条 `for-each-ref` 的每种形态各一条：本地分支已有 `side`；附注标签（本体是标签
+    // 对象，提交信息要解引用才拿得到）、轻量标签、指向树的标签（两组字段都空）；远程 ref 不联网，
+    // 直接写 `origin/main` 与一条 symref `origin/HEAD`——克隆出来的仓库就长这样，后者要被滤掉
+    atNextTick('tag', '-a', 'v1.0', '-m', 'release 1.0', 'HEAD~1');
+    git(cwd, 'tag', 'light', 'side');
+    git(cwd, 'tag', 'tree-tag', 'HEAD^{tree}');
+    git(cwd, 'update-ref', 'refs/remotes/origin/main', 'HEAD~2');
+    git(cwd, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main');
     repos.history = cwd;
   }
 
