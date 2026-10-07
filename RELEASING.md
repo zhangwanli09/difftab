@@ -12,6 +12,18 @@ verified on real machines. The core promise of this tool is being
 read-only with zero side effects, and 1.0.0 should mean those promises are covered by the
 two read-only gates — not that the package looks official.
 
+**Within 0.x, a `feat` commit alone does not earn a minor bump.** Decide the number
+before step 1, against these criteria, not against commit types:
+
+- **Minor** when the release adds an HTTP endpoint (usually along with a new read-only
+  git subcommand), or changes the interaction model — what an existing action does, not
+  just a new way to reach it (0.3.0: single-click preview / double-click pin tabs).
+- **Patch** for everything else, however many `feat` commits it holds: a new toggle or
+  button on an existing surface, pure styling, fixes.
+
+The rule lived only in `docs/history.md` until 0.5.3, which shipped four new endpoints
+under a patch number because nobody read it at release time.
+
 GitHub Releases are the changelog. There is no `CHANGELOG.md`: a second place to write the
 same list is a second place to forget.
 
