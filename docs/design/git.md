@@ -76,6 +76,18 @@ History tab 的三样东西——提交列表、一次提交改了哪些文件�
 - **单个文件的补丁与工作区 diff 共用一套三道闸**：`diff --no-ext-diff --no-textconv <parent> <sha> --numstat -z [-M] -- <path> [<旧路径>]` 先判二进制与行数（按路径挑、按合计算，与工作区那条完全一样），再带 `maxStdoutBytes` 取补丁。两侧都在对象库里，没有未跟踪那条路、也不读磁盘；拒绝时的 `size` 用 `cat-file -s` 取新侧那个 blob（删除则取旧侧）——同一个文件在工作区 diff 里说「file is 6 MB」，这里也得说同一个数；只在要拒绝的那两条分支上才问。
 - **图片两侧都读对象库**：旧侧 `<parent>:<旧路径或路径>`、新侧 `<sha>:<路径>`，存在性与体积用 `cat-file -s`、字节用 `cat-file blob`，与工作区 diff 的旧侧同两条字面量。`version` 分别是 parent 与 sha 的对象名——提交不可变，这两个身份永远不会换内容。`/api/blob` 带 `commit=<sha>` 即走这一路。
 
+## 分支列表
+
+状态条上那个分支列表（本地分支、远程分支、标签）**只往只读白名单里加了 `for-each-ref` 一条**，代码在 `server/git/refs.ts`。不用 `branch --list` / `tag -l`：那两个子命令本身会写，白名单只看子命令（理由见 [`../decisions.md`](../decisions.md)）。
+
+- **argv 整条是字面量**：`for-each-ref --format=<十段> refs/heads refs/remotes refs/tags`，冒烟逐段钉着它。理由与 `log` 那条一样——`for-each-ref` 的 atom 里有 `%(signature)` 一族，用上就是每条 ref 起一次 gpg；没有任何来自请求的参数。
+- **十段，每段都以 `%00` 收尾**：`%(refname)` `%(symref)` `%(objectname)` `%(authorname)` `%(committerdate:unix)` `%(subject)`，再加后四样的 `%(*…)` 解引用形态。`for-each-ref` 没有 `-z`，记录之间是换行；最后一段也带 `%00`，于是整份输出按 NUL 切开后恰好十段一组，下一条的 refname 前面多一个换行、剥掉即可（与 `log -z` 同一个处理）。只用 git 2.11 已有的 atom——`refname:lstrip` 更晚，前缀在 JS 里剥。
+- **`%(symref)` 非空的跳过**：克隆出来的仓库有一条 `refs/remotes/origin/HEAD` → `origin/main`，画出来就是同一个提交的两行，VS Code 也不列它。
+- **附注标签取 `%(*…)` 那几段**：本体是标签对象，作者与时间为空、主题是标签说明；解引用那几段才是它指向的提交。轻量标签的 `%(*…)` 全空，用本体；指向树或 blob 的标签两组都空，照列、只是没有提交信息。
+- **排序在 JS 里做**：分三组（本地 / 远程 / 标签），组内按提交时间降序。不用 `--sort`——那是又一段要钉的参数面，而三组本来就要在 JS 里分。
+- **partial clone 不触发取对象**：它只读 ref 与它们指向的提交（附注标签再多一个标签对象），`blob:none` 与 `tree:0` 两种过滤都把提交留在本地；封装层的 `GIT_NO_LAZY_FETCH` 照常兜底。
+- 空仓库与没有任何 ref 时输出为空、exit 0，回一个空列表。
+
 ## 目录树的两条 `ls-files`
 
 文件浏览器的树**按目录懒加载**，与 diff 同一条取向：一次调用只回**一层**的直接子项，禁止一次性构造整棵树——`node_modules` 那种目录足以让一份「全量树」的 JSON 比整仓 diff 还大。
