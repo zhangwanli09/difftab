@@ -10,12 +10,12 @@
 
 import { useSignal } from '@preact/signals';
 import { Check, GitBranch } from 'lucide-preact';
-import { useEffect, useRef } from 'preact/hooks';
+import { useRef } from 'preact/hooks';
 import type { BranchState } from '../../server/shared/protocol';
 import { Badge } from './Badge';
 import { BranchPicker } from './BranchPicker';
 import { Icon } from './Icon';
-import { COPIED_MS } from './tree-row';
+import { useCopied } from './tree-row';
 
 /** 为 0 的那个减淡。模块作用域：每个 SSE 事件都会重画这里（同 `ChangeList` 的 `CODE_*`）。 */
 const dim = (n: number) => (n === 0 ? 'text-description-foreground' : '');
@@ -114,22 +114,8 @@ export function BranchStatus({ branch }: { branch: BranchState }) {
   const showsUpstream = branch.upstream !== null || !branch.detached;
   const picking = useSignal(false);
   /** 刚复制出去的名字；非空的 1.5s 里图标换成 `Check`。列表那时已经关了，反馈只能画在这里。 */
-  const copied = useSignal<string | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout>>();
+  const { copied, copy } = useCopied();
   const trigger = useRef<HTMLButtonElement>(null);
-  useEffect(() => () => clearTimeout(timer.current), []);
-  // 写失败静默，理由与 `CopyButton` 一字不差：loopback 是 secure context，失败只剩用户拒了权限
-  const copy = (name: string) =>
-    navigator.clipboard.writeText(name).then(
-      () => {
-        copied.value = name;
-        clearTimeout(timer.current);
-        timer.current = setTimeout(() => {
-          copied.value = null;
-        }, COPIED_MS);
-      },
-      () => {},
-    );
   return (
     <span class="flex min-w-0 items-baseline gap-2 text-xs">
       {/* 分支名连同图标是一枚按钮，点开分支列表；detached 与取不到名字时照样可点——列表回答的是
@@ -141,8 +127,9 @@ export function BranchStatus({ branch }: { branch: BranchState }) {
         class="flex min-w-0 items-baseline gap-2 rounded-sm hover:bg-toolbar-hover-background focus-visible:outline-2 focus-visible:outline-focus-border"
         title={copied.value === null ? title : `Copied ${copied.value}`}
         aria-haspopup="dialog"
+        // 开着时再点一次即关：外部点击那条监听把这枚按钮排除在外，按下与松开不会各算一次
         onClick={() => {
-          picking.value = true;
+          picking.value = !picking.value;
         }}
       >
         {/* 分支图标，位置对应 VS Code status bar 最左那枚；三种情况一律画，它标的是「这一栏说的
@@ -159,6 +146,7 @@ export function BranchStatus({ branch }: { branch: BranchState }) {
       {picking.value && (
         <BranchPicker
           current={branch.detached || branch.head === '' ? null : branch.head}
+          anchor={trigger}
           onPick={(name) => void copy(name)}
           onClose={() => {
             picking.value = false;

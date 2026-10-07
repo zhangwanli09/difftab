@@ -128,6 +128,42 @@ describe('BranchPicker', () => {
     expect(writeText).toHaveBeenCalledWith('v1.0');
   });
 
+  it('开着时再点一次分支名即关，不会关了又开', async () => {
+    const calls = await open();
+    const button = trigger();
+    button?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    button?.click();
+    await waitFor(() => expect(container.querySelector('[role="dialog"]')).toBe(null));
+    expect(calls).toEqual(['/api/refs']);
+  });
+
+  it('上一次取失败的错误不留到下一次，也不与旧列表并排', async () => {
+    await open();
+    trigger()?.click();
+    await waitFor(() => expect(container.querySelector('[role="dialog"]')).toBe(null));
+    stubJson({ error: { code: 'internal', message: 'git exploded' } }, 500);
+    trigger()?.click();
+    await waitFor(() => expect(container.textContent).toContain('git exploded'));
+    expect(options()).toHaveLength(0);
+
+    trigger()?.click();
+    await waitFor(() => expect(container.querySelector('[role="dialog"]')).toBe(null));
+    stubJson({ refs: REFS });
+    trigger()?.click();
+    expect(container.textContent).not.toContain('git exploded');
+    await waitFor(() => expect(options()).toHaveLength(4));
+  });
+
+  it('剪贴板不可用时同步抛错也照样关掉列表', async () => {
+    await open();
+    vi.spyOn(navigator.clipboard, 'writeText').mockImplementation(() => {
+      throw new TypeError('no clipboard');
+    });
+    press('Enter');
+    await waitFor(() => expect(container.querySelector('[role="dialog"]')).toBe(null));
+    expect(trigger()?.title).toBe('main');
+  });
+
   it('一条 ref 都没有时说一句话，而不是一块空白', async () => {
     stubJson({ refs: [] });
     render(<BranchStatus branch={branch} />, container);

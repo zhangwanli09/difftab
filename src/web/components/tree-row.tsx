@@ -173,38 +173,57 @@ export function TreeRow({
 }
 
 /** `Copied` 那一档停留多久。取 GitHub 代码块上那枚复制按钮的档位——够看清一眼、不至于挡住下一次。 */
-export const COPIED_MS = 1500;
+const COPIED_MS = 1500;
 
 /**
- * 行内动作里那枚复制按钮：把 `text` 写进剪贴板，`label` 是它静止时的名字。文件行复制路径、提交行
- * 复制哈希都是它——反馈、计时器与失败时静默这几条只此一份。
+ * 写剪贴板 + `Copied` 反馈的那一份：行内那枚 `CopyButton` 与状态条上的分支名共用，反馈、计时器与
+ * 失败时静默这几条只此一份。`copied` 是刚写进去的那一串，1.5s 后回到 `null`。
  *
- * **反馈画在按钮自己身上**：写成功后图标换 `Check`、名字换 `Copied`，1.5s 后复原；320px 侧栏里
- * 没地方放 toast，而反馈本就该出现在手指底下。写失败静默不换——服务绑定 `127.0.0.1`，loopback
- * 是 secure context，`navigator.clipboard` 一定在，失败只剩用户拒了权限这一种，一条错误在侧栏里
- * 没地方落。计时器随卸载清掉：SSE 刷新可能在 1.5s 内把这一行换掉，之后再写一个已卸载组件的
- * signal 虽不报错，但也不该留着。
+ * 写失败静默——服务绑定 `127.0.0.1`，loopback 是 secure context，失败只剩用户拒了权限这一种，一条
+ * 错误在侧栏里没地方落。**`navigator.clipboard` 不在时的同步抛错也收进同一条 rejection**：否则它
+ * 炸在调用方的事件处理里，后面的收尾（比如关掉分支列表）一并不跑。计时器随卸载清掉：SSE 刷新可能
+ * 在 1.5s 内把宿主换掉，之后再写一个已卸载组件的 signal 虽不报错，但也不该留着。
  */
-export function CopyButton({ text, label }: { text: string; label: string }) {
-  const copied = useSignal(false);
+export function useCopied() {
+  const copied = useSignal<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>();
   useEffect(() => () => clearTimeout(timer.current), []);
-  const copy = () =>
-    navigator.clipboard.writeText(text).then(
+  const copy = (text: string) => {
+    let write: Promise<void>;
+    try {
+      write = navigator.clipboard.writeText(text);
+    } catch (cause) {
+      write = Promise.reject(cause);
+    }
+    return write.then(
       () => {
-        copied.value = true;
+        copied.value = text;
         clearTimeout(timer.current);
         timer.current = setTimeout(() => {
-          copied.value = false;
+          copied.value = null;
         }, COPIED_MS);
       },
       () => {},
     );
+  };
+  return { copied, copy };
+}
+
+/**
+ * 行内动作里那枚复制按钮：把 `text` 写进剪贴板，`label` 是它静止时的名字。文件行复制路径、提交行
+ * 复制哈希都是它；写与反馈的规矩在 `useCopied`。
+ *
+ * **反馈画在按钮自己身上**：写成功后图标换 `Check`、名字换 `Copied`，1.5s 后复原；320px 侧栏里
+ * 没地方放 toast，而反馈本就该出现在手指底下。
+ */
+export function CopyButton({ text, label }: { text: string; label: string }) {
+  const { copied, copy } = useCopied();
+  const done = copied.value !== null;
   return (
     <IconButton
-      icon={copied.value ? Check : Copy}
-      label={copied.value ? 'Copied' : label}
-      onClick={copy}
+      icon={done ? Check : Copy}
+      label={done ? 'Copied' : label}
+      onClick={() => copy(text)}
     />
   );
 }

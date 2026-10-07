@@ -2,8 +2,9 @@
 // 输入框，下面本地分支、远程分支、标签三组。**选中即复制名字**：checkout 属仓库写操作，只读工具
 // 能给「选中」的含义只有这一种。复制本身与反馈归打开它的 `BranchStatus`：列表那时已经关了。
 
-import { useSignal } from '@preact/signals';
+import { useComputed, useSignal } from '@preact/signals';
 import { Check, Cloud, GitBranch, type LucideIcon, Tag } from 'lucide-preact';
+import type { RefObject } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
 import type { RefEntry } from '../../server/shared/protocol';
 import { shortSha } from '../state/history';
@@ -31,11 +32,14 @@ const LISTBOX_ID = 'branch-picker-listbox';
 
 export function BranchPicker({
   current,
+  anchor,
   onPick,
   onClose,
 }: {
   /** 当前所在的本地分支名；detached 或取不到时为 `null`。 */
   current: string | null;
+  /** 打开它的那枚按钮。按在它上面不算「外面」——开关归它自己的 click。 */
+  anchor: RefObject<HTMLElement>;
   onPick: (name: string) => void;
   onClose: () => void;
 }) {
@@ -43,6 +47,10 @@ export function BranchPicker({
   const active = useSignal(0);
   const input = useRef<HTMLInputElement>(null);
   const dialog = useRef<HTMLDivElement>(null);
+  // 宿主每次重画都给一个新的 `onClose`（agent 跑动时 SSE 每 150ms 一次）；放进 ref，下面那条
+  // document 监听就只挂一次，不随每次重画拆了又装
+  const close = useRef(onClose);
+  close.current = onClose;
 
   // 每次打开取一次；`autoFocus` 在 Preact 里不可靠（挂载时元素还不在文档里），这里手动给
   useEffect(() => {
@@ -54,14 +62,21 @@ export function BranchPicker({
   // 一个文件得点两次
   useEffect(() => {
     const away = (event: MouseEvent) => {
-      if (!dialog.current?.contains(event.target as Node)) onClose();
+      const target = event.target as Node;
+      if (dialog.current?.contains(target) || anchor.current?.contains(target)) return;
+      close.current();
     };
     document.addEventListener('mousedown', away);
     return () => document.removeEventListener('mousedown', away);
-  }, [onClose]);
+  }, [anchor]);
 
-  const refs = refList.value;
-  const matches = refs === null ? [] : filterRefs(refs, query.value);
+  // 取失败时不画上一份列表：错误与一份旧列表并排时，看不出哪一样才是现在的
+  const refs = refsError.value === null ? refList.value : null;
+  // 只随列表与输入框变：鼠标在行间移动每一步都重画，几千个标签时不该每步重新过滤一遍
+  const matches = useComputed(() => {
+    const list = refList.value;
+    return refsError.value !== null || list === null ? [] : filterRefs(list, query.value);
+  }).value;
   const shown = matches.slice(0, MAX_SHOWN);
   const activeIndex = Math.min(active.value, Math.max(shown.length - 1, 0));
 
@@ -72,8 +87,9 @@ export function BranchPicker({
 
   const pick = (ref: RefEntry | undefined) => {
     if (ref === undefined) return;
-    onPick(ref.name);
+    // 先关再复制：复制那一路万一抛错，列表也已经关了
     onClose();
+    onPick(ref.name);
   };
 
   const onKeyDown = (event: KeyboardEvent) => {

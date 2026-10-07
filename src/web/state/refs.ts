@@ -14,6 +14,8 @@ const tickets = latestWins();
 /** 取一次。两次打开的请求重叠时后发的说了算——先发的那份可能是 fetch 之前的。 */
 export async function loadRefs(): Promise<void> {
   const ticket = tickets.claim();
+  // 上一次的错误不留到这一次：否则再打开时先看到的是那句旧错误，而不是 `Loading…` 或上一份列表
+  refsError.value = null;
   try {
     const { refs } = await getJson<RefList>('/api/refs');
     if (!tickets.isCurrent(ticket)) return;
@@ -32,8 +34,8 @@ export async function loadRefs(): Promise<void> {
  */
 export const MAX_SHOWN = 200;
 
-/** 只按名字、不区分大小写的子串匹配。后端排好的次序原样保留。 */
-export function filterRefs(refs: readonly RefEntry[], query: string): RefEntry[] {
+/** 只按名字、不区分大小写的子串匹配。后端排好的次序原样保留；没有输入时原样返回，不复制。 */
+export function filterRefs(refs: readonly RefEntry[], query: string): readonly RefEntry[] {
   const needle = query.trim().toLowerCase();
-  return needle === '' ? [...refs] : refs.filter((ref) => ref.name.toLowerCase().includes(needle));
+  return needle === '' ? refs : refs.filter((ref) => ref.name.toLowerCase().includes(needle));
 }
