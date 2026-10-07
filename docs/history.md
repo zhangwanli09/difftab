@@ -17,6 +17,14 @@
 
 ## 发布日志
 
+### 0.5.3（2026-10-08）
+
+- **定号没先读口径，按那条口径本该是 0.6.0**：这版带了 History tab 与分支列表（#77–#81），新增 `/api/commits`、`/api/commit`、`/api/commit-diff`、`/api/refs` 四个端点和 `log`、`for-each-ref` 两条白名单——正是 0.5.0 那次用上的「新端点」判据。版本号由维护者直接指定为 0.5.3，发版时只提了一句「按惯例是 minor」就照发了，没回头核这里。0.x 下不算破坏承诺，但口径只住在本文、`RELEASING.md` 没有，这次就是它没被读到的样子。
+- **先建分支再提交第十一次走通**；但 `gh pr merge --rebase` **这次被 auto mode 分类器以「Merge Without Review」拦下**（0.5.2 两次都没拦），维护者明确说「合并」之后才放行。tag 打在远端那一份 b645476 上。
+- **registry 延迟第七次**：5 秒一轮，约 55 秒等到 0.5.3；`npm view` 第一次仍回 0.5.2，直接读 `registry.npmjs.org/difftab/0.5.3` 轮询到为止。
+- **`check:global` 前照例先 `npm rm -g difftab`**（上一版验收留下的全局 0.5.2），这次是先卸再跑，没被堵。
+- **发布后四条验收一次过**：`npm view` 回 0.5.3 且 `dist.tarball` 在 npmjs 上、全局装完底下没有传递依赖、临时仓库里 `DIFFTAB_IDLE_MS=3000 npx difftab@0.5.3 --no-open` 打印 URL 并自行退出（退出码 0）、Release 建在 tag `v0.5.3` 上。
+
 ### 0.5.2（2026-09-19）
 
 - **一个 fix 单独发一版**：0.5.1 发出当天，`main` 上一个纯文档提交的 CI 在 `smoke macos-latest · Node 26` 红了一次——`| head -1` 那条 98ms 就以 1 退出、重跑即绿。查下来是产品 bug 不是 flaky（macOS 上读端已走可能以 ECONNRESET 到达，监听器只咽 EPIPE；机制与实测在 `decisions.md`），用户在 macOS 上 `difftab --no-open | head -1` 就有概率撞上，所以不攒。
