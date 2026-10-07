@@ -34,6 +34,7 @@ import {
 import { ensureHistory } from './history';
 import { getJson, latestWins, type Tickets, toMessage } from './http';
 import { removeFrom, setIn } from './immutable';
+import { historyCollapsed } from './sidebar';
 import { ancestorDirs, refreshTree } from './tree';
 
 /** `GET /api/state` 的结果。null 表示还没拿到第一份。 */
@@ -348,8 +349,8 @@ export async function refresh(): Promise<void> {
 
   if (!(await loadState())) return;
   // 提交列表要等新列表：判据是新 state 里的 HEAD oid——HEAD 没挪就一条请求都不发。看不见时不判，
-  // 切过来时 `App` 那个 tab effect 拿当时的 state 再判一次
-  const history = activeTab.value === 'history' ? ensureHistory(repoState.value) : null;
+  // 变回看得见时 `SourceControl` 那个 effect 拿当时的 state 再判一次
+  const history = historyVisible.value ? ensureHistory(repoState.value) : null;
   const files = repoState.value?.files ?? [];
   /**
    * 对着**收编之前那份列表**走一遍（`editors.value` 在循环开始时就取定了，改名并入掉的 tab 不会
@@ -433,7 +434,18 @@ export function closeEditor(key: EditorKey): void {
  * 能做到的第二件事。**不进 `localStorage`**：跨会话保持的偏好目前只有主题一份，加第二份之前
  * 先想清楚它是不是也该有那一节（见 `theme.ts`）。
  */
-export const activeTab = signal<'changes' | 'files' | 'history'>('changes');
+export const activeTab = signal<'changes' | 'files'>('changes');
+
+/**
+ * 提交历史此刻该不该判：`Changes` 档、`History` 分区展开着、且第一份 state 已经到了。看不见时 SSE
+ * 不判 HEAD，变回看得见那一刻由 `SourceControl` 补判一次——与树「只给看得见的那一半付钱」同一条。
+ *
+ * **state 没到时不算**：分区默认可见，挂载那一刻 HEAD 未知、必判「对不上」而先发一趟；那趟还没回来
+ * 时 state 一到又判一次，`singleFlight` 补跑——每开一次页面两遍 `git log`。
+ */
+export const historyVisible = computed(
+  () => activeTab.value === 'changes' && !historyCollapsed.value && repoState.value !== null,
+);
 
 /**
  * 只读文件内容的请求状态。形状与 `DiffRequestState` 同构，理由也一样：三态显式建模而不是

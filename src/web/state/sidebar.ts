@@ -7,7 +7,7 @@ import { computed, signal } from '@preact/signals';
 
 export const SIDEBAR_DEFAULT_WIDTH = 320;
 
-/** 下限：tab 行三枚图标 + 右端按钮、顶栏符号 + 开关之后，名字还剩得下几个字。 */
+/** 下限：tab 行两枚图标 + 右端按钮、顶栏符号 + 开关之后，名字还剩得下几个字。 */
 export const SIDEBAR_MIN_WIDTH = 200;
 
 /** 上限：笔记本屏上再宽，diff 面板就只剩行号槽了。 */
@@ -57,8 +57,45 @@ export function shownSidebarWidth(): number {
 }
 
 /**
- * 正在拖。`App` 拿它给整页挂 `cursor-col-resize select-none`——不挂时指针一离开 4px 的把手光标
- * 就闪回箭头、沿途的 diff 文字被拖选成一片蓝；把手拿它保持握把常亮（capture 下指针会离开把手
- * 的盒子，单靠 `hover:` 那一刻就灭了）。一次拖动只翻两次，读它的组件重渲染两次无所谓。
+ * 哪一把把手正在拖（`x` 是左栏那把、`y` 是分区之间那把），`null` 即没在拖。把手拿它保持握把常亮
+ * （capture 下指针会离开把手的盒子，单靠 `hover:` 那一刻就灭了）；`App` 拿 `dragStyle` 给整页挂光标
+ * 与 `user-select: none`——不挂时指针一离开 4px 的把手光标就闪回箭头、沿途的 diff 文字被拖选成一片蓝。
+ * 两把不会同时在拖，所以是一个三态 signal 而不是两个布尔。
  */
-export const sidebarDragging = signal(false);
+export const sashDragging = signal<'x' | 'y' | null>(null);
+
+/**
+ * 整页的拖动样式，**以 signal 本身交给 `style`**：`App` 不订阅它，一次拖动不必把整棵树重渲染两遍。
+ * 光标写内联不写 `cursor-*` 类——那两条只有这里用，进产物就是两条新规则。
+ */
+export const dragStyle = computed(() => {
+  const axis = sashDragging.value;
+  return axis === null ? '' : `cursor:${axis === 'x' ? 'col' : 'row'}-resize;user-select:none`;
+});
+
+// ---- `Changes` 档里的两个分区（上 `Changes`、下 `History`）----
+
+/** 两个分区各自折没折。默认都展开：打开页面时两样都该一眼看得见。 */
+export const changesCollapsed = signal(false);
+export const historyCollapsed = signal(false);
+
+export const PANE_DEFAULT_PERCENT = 50;
+/** 上面那块占可用高度的百分比的上下界：再往外，另一块就只剩标题加一两行。 */
+export const PANE_MIN_PERCENT = 15;
+export const PANE_MAX_PERCENT = 85;
+
+/**
+ * 两块都展开时上面那块占多少（百分比）。**存比例不存像素**：窗口拉高拉矮时两块一起伸缩，不必监听
+ * `resize`，也不会出现「上面那块比整列还高」。单位就是百分比：`flex-basis` 与 `aria-valuenow`
+ * 直接用它，不必各自换算。
+ */
+export const panePercent = signal(PANE_DEFAULT_PERCENT);
+
+export function setPanePercent(percent: number): void {
+  // 取到一位小数：拖动要细（1% 在高屏上是七八个像素），读屏念出来的又不该是一长串小数
+  panePercent.value =
+    Math.round(Math.min(PANE_MAX_PERCENT, Math.max(PANE_MIN_PERCENT, percent)) * 10) / 10;
+}
+
+/** 上面那块的内联样式，同 `sidebarStyle` 以 signal 本身交给 `style`：拖动时一个组件都不重渲染。 */
+export const paneStyle = computed(() => `flex:0 0 ${panePercent.value}%`);

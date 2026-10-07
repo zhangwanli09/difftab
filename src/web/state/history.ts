@@ -87,14 +87,16 @@ async function fetchFirstPage(): Promise<void> {
  * agent 改工作区时每个文件事件都会推一次 SSE，而能让提交列表变的只有 HEAD 挪动——按事件重取等于
  * 每个事件一次 `rev-parse` + `log`。上一次取失败了（`historyError` 还在）也算对不上，切过来即重试。
  */
-function historyIsCurrent(state: RepoState | null): boolean {
+function historyIsCurrent(state: RepoState): boolean {
   const list = historyList.value;
-  if (list === null || historyError.value !== null || state === null) return false;
+  if (list === null || historyError.value !== null) return false;
   return list.head === (state.branch.oid ?? null);
 }
 
-/** 切到 `History` 那一档、或它可见时来了一次 SSE：对不上 HEAD 才取。 */
+/** `History` 分区变得可见、或它可见时来了一次 SSE：对不上 HEAD 才取。 */
 export function ensureHistory(state: RepoState | null): Promise<void> {
+  // HEAD 还不知道就无从比对：此刻去取，state 一到又判一次「对不上」，`singleFlight` 补跑成两遍 `git log`
+  if (state === null) return Promise.resolve();
   return historyIsCurrent(state) ? Promise.resolve() : refreshHistory();
 }
 

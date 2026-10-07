@@ -18,7 +18,7 @@ import { activeEditorKey, editors } from '../../../src/web/state/editors';
 import { activeTab, diffStates, fileStates, repoState } from '../../../src/web/state/store';
 import { PRODUCT_NAME } from '../../../src/web/state/title';
 import { expandedDirs, ROOT, treeCache, treeErrors } from '../../../src/web/state/tree';
-import { openPinned, resetEditors, waitFor } from './helpers';
+import { hideHistory, openPinned, resetEditors, waitFor } from './helpers';
 
 const stateWith = (repoName: string): RepoState => ({
   repoName,
@@ -33,6 +33,8 @@ beforeEach(() => {
   document.body.innerHTML = '';
   container = document.createElement('div');
   document.body.appendChild(container);
+  // 默认可见的 `History` 分区一挂载就要取提交列表；测分区的那一组自己展开它
+  hideHistory();
   // `Files` 那一档挂载时会去取根那一层——用例里不需要真发请求
   vi.stubGlobal(
     'fetch',
@@ -121,17 +123,13 @@ const tabOf = (label: string): HTMLButtonElement => {
   return found as HTMLButtonElement;
 };
 
-describe('侧栏那三个 tab', () => {
+describe('侧栏那两个 tab', () => {
   it('只画图标，名字由 aria-label 给——掉了它这几个就是无名控件，而页面上看不出来', () => {
     render(<App />, container);
     const tabs = [...container.querySelectorAll('[role="tab"]')];
-    expect(tabs.map((tab) => tab.getAttribute('aria-label'))).toEqual([
-      'Changes',
-      'Files',
-      'History',
-    ]);
+    expect(tabs.map((tab) => tab.getAttribute('aria-label'))).toEqual(['Changes', 'Files']);
     // 名字不在文本里、图标真的画出来了：两条一起才说明「换成图标」这件事成立
-    expect(tabs.map((tab) => tab.textContent)).toEqual(['', '', '']);
+    expect(tabs.map((tab) => tab.textContent)).toEqual(['', '']);
     expect(tabs.every((tab) => tab.querySelector('svg') !== null)).toBe(true);
   });
 
