@@ -188,14 +188,9 @@ export function useCopied() {
   const copied = useSignal<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>();
   useEffect(() => () => clearTimeout(timer.current), []);
-  const copy = (text: string) => {
-    let write: Promise<void>;
-    try {
-      write = navigator.clipboard.writeText(text);
-    } catch (cause) {
-      write = Promise.reject(cause);
-    }
-    return write.then(
+  // executor 同步执行：`writeText` 照样在这次事件里调，同步抛错落成 rejection
+  const copy = (text: string) =>
+    new Promise<void>((resolve) => resolve(navigator.clipboard.writeText(text))).then(
       () => {
         copied.value = text;
         clearTimeout(timer.current);
@@ -205,7 +200,6 @@ export function useCopied() {
       },
       () => {},
     );
-  };
   return { copied, copy };
 }
 

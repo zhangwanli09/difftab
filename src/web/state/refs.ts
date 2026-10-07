@@ -5,7 +5,10 @@ import { signal } from '@preact/signals';
 import type { RefEntry, RefList } from '../../server/shared/protocol';
 import { getJson, latestWins, toMessage } from './http';
 
-/** 上一次取到的列表；`null` 即还没取到过。再次打开时先画它、回来再换掉。 */
+/**
+ * 上一次取到的列表；`null` 即还没取到过、或上一次取失败了。再次打开时先画它、回来再换掉。**取失败
+ * 即清空**：错误与一份旧列表并排时看不出哪一样才是现在的，这一条在这里定一次，视图不必再判。
+ */
 export const refList = signal<RefEntry[] | null>(null);
 export const refsError = signal<string | null>(null);
 
@@ -20,9 +23,10 @@ export async function loadRefs(): Promise<void> {
     const { refs } = await getJson<RefList>('/api/refs');
     if (!tickets.isCurrent(ticket)) return;
     refList.value = refs;
-    refsError.value = null;
   } catch (cause) {
-    if (tickets.isCurrent(ticket)) refsError.value = toMessage(cause);
+    if (!tickets.isCurrent(ticket)) return;
+    refList.value = null;
+    refsError.value = toMessage(cause);
   } finally {
     tickets.release(ticket);
   }

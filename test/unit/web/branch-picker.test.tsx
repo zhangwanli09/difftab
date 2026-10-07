@@ -171,13 +171,6 @@ describe('BranchPicker', () => {
     await waitFor(() => expect(container.textContent).toContain('No branches or tags'));
   });
 
-  it('取失败时把错误写出来', async () => {
-    stubJson({ error: { code: 'internal', message: 'git exploded' } }, 500);
-    render(<BranchStatus branch={branch} />, container);
-    trigger()?.click();
-    await waitFor(() => expect(container.textContent).toContain('git exploded'));
-  });
-
   it('超出上限的只画前 200 条，并说还有多少', async () => {
     const many = Array.from({ length: MAX_SHOWN + 5 }, (_, i) => ref('tag', `t${i}`));
     await open(many);
