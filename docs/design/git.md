@@ -62,7 +62,7 @@
 
 ## 提交历史
 
-History tab 的三样东西——提交列表、一次提交改了哪些文件、其中一个文件的补丁——**只往只读白名单里加了 `log` 一条**，其余全部落在已有条目上：提交的 diff 就是 `diff <parent> <sha>`，图片两侧都是 `cat-file`，校验是 `rev-parse`。代码在 `server/git/history.ts`（列表、元数据、文件清单）与 `diff.ts`（单个文件的补丁，与工作区 diff 共用三道闸）。
+提交历史的三样东西——提交列表、一次提交改了哪些文件、其中一个文件的补丁——**只往只读白名单里加了 `log` 一条**，其余全部落在已有条目上：提交的 diff 就是 `diff <parent> <sha>`，图片两侧都是 `cat-file`，校验是 `rev-parse`。代码在 `server/git/history.ts`（列表、元数据、文件清单）与 `diff.ts`（单个文件的补丁，与工作区 diff 共用三道闸）。
 
 - **`log` 的 argv 整条是字面量**，只有两种形态：列表是 `log --no-show-signature --no-color -z --format=%H%x00%P%x00%an%x00%at%x00%s%x00%b --max-count=<n> --skip=<n> <起点> --`（起点是第一页的字面量 `HEAD`、或请求带来的完整对象名），单条提交是同一串去掉 `--skip`、`--max-count=1`。冒烟逐段钉着它（数值那两段只钉形状），理由与 `cat-file` 那条一样——白名单只看子命令，而 `log` 的参数面里有会拉起外部程序的开关：
   - **`--no-show-signature`**：用户配了 `log.showSignature` 时 `log` 会对每条提交起一次 gpg，挡它要显式关掉。git 下限 2.11 已有这个开关。

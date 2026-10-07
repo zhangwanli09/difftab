@@ -52,7 +52,7 @@
 |---|---|
 | git 封装层、status/diff 解析、二进制与体积闸、git 异常状态、目录树的 `ls-files`、只读读文件、提交历史的 `log` 与提交 diff、分支列表的 `for-each-ref` | `docs/design/git.md` |
 | 文件监听、三档策略、自动刷新、轮询兜底 | `docs/design/watch.md` |
-| 前端组件与 signals、界面文案、页面骨架、变更列表、侧栏 tab、文件树、History tab、分支列表、标签页标题、logo / favicon / 品牌资产 | `docs/design/web.md`；右侧面板、编辑器标签页（预览 / 固定 / 关闭 / SSE 收编 / commit tab）、文件视图读 `docs/design/editors.md` |
+| 前端组件与 signals、界面文案、页面骨架、变更列表、侧栏 tab、文件树、提交历史分区、分支列表、标签页标题、logo / favicon / 品牌资产 | `docs/design/web.md`；右侧面板、编辑器标签页（预览 / 固定 / 关闭 / SSE 收编 / commit tab）、文件视图读 `docs/design/editors.md` |
 | diff2html 渲染、hljs 清单、版式切换、产物体积 | `docs/design/diff-render.md` |
 | Tailwind token、样式层叠与主题、`--d2h-*` 覆写 | `docs/design/style.md` |
 | CLI 入口与 Node 下限、进程生命周期与单实例、HTTP/SSE 协议、token 与 CSP | `docs/design/server.md` |
