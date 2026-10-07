@@ -5,7 +5,7 @@
 import { useComputed, useSignal } from '@preact/signals';
 import { Check, Cloud, GitBranch, type LucideIcon, Tag } from 'lucide-preact';
 import { Component, type RefObject } from 'preact';
-import { useCallback, useEffect, useRef } from 'preact/hooks';
+import { useCallback, useEffect, useLayoutEffect, useRef } from 'preact/hooks';
 import type { RefEntry } from '../../server/shared/protocol';
 import { shortSha } from '../state/history';
 import { filterRefs, loadRefs, MAX_SHOWN, refList, refsError } from '../state/refs';
@@ -59,8 +59,9 @@ export function BranchPicker({
   }, []);
 
   // 按在浮层之外任何地方即关。挂在 document 上而不是垫一层透明遮罩：遮罩会吞掉那一下，用户点左栏
-  // 一个文件得点两次
-  useEffect(() => {
+  // 一个文件得点两次。**用 layout effect**：普通 effect 在绘制之后才挂，浮层画出来到监听生效之间
+  // 有一段空窗，那一下点在外面不会关
+  useLayoutEffect(() => {
     const away = (event: MouseEvent) => {
       const target = event.target as Node;
       if (dialog.current?.contains(target) || anchor.current?.contains(target)) return;
