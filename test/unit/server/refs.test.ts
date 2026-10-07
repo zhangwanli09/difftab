@@ -68,7 +68,7 @@ test('空仓库：一条 ref 都没有，回空列表而不是错误', async () 
 
 test('parseRefs：记录之间的换行不进名字，组内按时间降序', () => {
   const record = (name: string, time: number, subject: string) =>
-    `${[name, '', 'a'.repeat(40), 'A', String(time), subject, '', '', '', ''].join('\0')}\0\n`;
+    `${[name, '', 'a'.repeat(40), 'A', String(time), subject, '', '', '', '', ''].join('\0')}\0\n`;
   const output =
     record('refs/tags/old', 1, 't1') +
     record('refs/heads/b', 5, 'b') +
@@ -79,7 +79,7 @@ test('parseRefs：记录之间的换行不进名字，组内按时间降序', ()
 
 test('parseRefs：剥出来的不是提交（老 git 上的标签套标签）时只留对象名，不拿标签说明当主题', () => {
   const inner = 'b'.repeat(40);
-  const output = `${['refs/tags/outer', '', 'c'.repeat(40), '', '', 'outer msg', inner, '', '', 'inner msg'].join('\0')}\0\n`;
+  const output = `${['refs/tags/outer', '', 'c'.repeat(40), '', '', 'outer msg', inner, 'tag', '', '', 'inner msg'].join('\0')}\0\n`;
   expect(parseRefs(output)).toEqual([
     { kind: 'tag', name: 'outer', sha: inner, author: '', time: 0, subject: '' },
   ]);

@@ -191,7 +191,8 @@ test('for-each-ref 的参数逐段等于那条字面量——%(signature) 一族
       [
         'for-each-ref',
         '--format=%(refname)%00%(symref)%00%(objectname)%00%(authorname)%00%(committerdate:unix)%00' +
-          '%(subject)%00%(*objectname)%00%(*authorname)%00%(*committerdate:unix)%00%(*subject)%00',
+          '%(subject)%00%(*objectname)%00%(*objecttype)%00%(*authorname)%00%(*committerdate:unix)%00' +
+          '%(*subject)%00',
         'refs/heads',
         'refs/remotes',
         'refs/tags',
