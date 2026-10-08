@@ -89,6 +89,7 @@ diff2html **没有**关掉自带文件头（`.d2h-file-header`）的配置项（
 |---|---|---|
 | 前端 JS（明文） | ≤ 350 KB | 214.8 KB |
 | 前端 JS（gzip） | ≤ 120 KB | 72.0 KB |
-| 前端 CSS（明文，含 `diff2html.min.css` + 自建 hljs 主题 + Tailwind 产物） | ≤ 40 KB | 31.3 KB |
+| 前端 CSS（明文，含 `diff2html.min.css` + 自建 hljs 主题 + Tailwind 产物） | ≤ 48 KB | 38.6 KB |
+| 前端 CSS（gzip） | ≤ 10 KB | 7.5 KB |
 
-**CSS 是余量最紧的一行，且它对「多写几个工具类」最敏感**——加 token 时留意。
+**CSS 与 JS 一样明文、gzip 两道并卡**（理由见 [`../decisions.md` 的「前端渲染与体积」](../decisions.md#前端渲染与体积)）。整片拖进产物的那一类两道都响（`@import "tailwindcss" theme(static)` 实测明文 +24.2 KB、gzip +8.1 KB）；单独一次 `shadow-*` 那种明文 +2.2 KB 两道都够不着，要靠累积到明文那道先响，或 review 时看一眼 `dist/web/app.css` 的增量。
