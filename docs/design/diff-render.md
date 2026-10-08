@@ -87,8 +87,8 @@ diff2html **没有**关掉自带文件头（`.d2h-file-header`）的配置项（
 
 | 产物 | 门禁 | 当前实测 |
 |---|---|---|
-| 前端 JS（明文） | ≤ 350 KB | 214.8 KB |
-| 前端 JS（gzip） | ≤ 120 KB | 72.0 KB |
+| 前端 JS（明文） | ≤ 350 KB | 241.3 KB |
+| 前端 JS（gzip） | ≤ 120 KB | 81.0 KB |
 | 前端 CSS（明文，含 `diff2html.min.css` + 自建 hljs 主题 + Tailwind 产物） | ≤ 48 KB | 38.6 KB |
 | 前端 CSS（gzip） | ≤ 10 KB | 7.5 KB |
 
