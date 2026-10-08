@@ -17,7 +17,8 @@
 
 - **英文** + **Conventional Commits**：`<type>(<scope>): <description>`，type 取 `feat`/`fix`/`docs`/`refactor`/`perf`/`test`/`build`/`ci`/`chore`，破坏性加 `!`
 - 祈使语气，subject 不加句号，body 折 72 只写 what 与 why
-- 一个提交一件事，不混重构与功能改动
+- Agent 会话里用户要求提交时，把本会话自上次提交以来的改动合成**一个**提交、不按事项拆（版本号提交照 `RELEASING.md` 单独成一个；对外贡献者仍按 `CONTRIBUTING.md` 的「一个提交一件事」）
+- 合成的提交 subject 取其中影响最大那件的 type（`feat` > `fix` > 其余），任一件破坏性即加 `!`；body 逐条写每件的 what 与 why
 
 ## 3. 常用命令
 
