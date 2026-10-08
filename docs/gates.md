@@ -27,7 +27,7 @@
 | 只读**主门禁**（`readonly.test.js`） | 产品发出了白名单外的 git 子命令。**自带一条「确实记到了东西」的正面断言**——否则白名单会对着空数组通过。**白名单只看子命令，看不见参数**，所以另有两条按参数钉的断言：`diff` 不带 `--no-index` / `--ext-diff` / `--output` 且紧跟着 `--no-ext-diff --no-textconv`，`cat-file` 之后只能是 `blob` / `-s`（`--filters` / `--textconv` 会跑 smudge，LFS 的那个写 `.git/lfs`），`log` 的 argv 逐段等于那两种字面量形态（`--no-show-signature` 挡 gpg，不带任何 diff 选项挡外部 diff 驱动），`for-each-ref` 的 argv 逐段等于那一条字面量（`%(signature)` 一族会起 gpg）。**覆盖面等于 `runFullFlow` 打过的端点**：新增一个端点却不把它加进那条流程，门禁不会红，只是那条路上的 git 调用一次都没被看过 | matrix |
 | 只读**第二层**（`readonly-git-dir.test.js`） | `.git` 被写了。A 半锁死 `.git` 抓会报错的写，B 半逐字节比对抓**不报错**的那种（漏设 `GIT_OPTIONAL_LOCKS=0` 只有 B 半看得见）。两半各自带一条正面探针 | matrix |
 | 子进程单点断言 | git 子进程跑出了 `server/git`、或拉起浏览器跑出了 `server/cli`。**查的是相等而非「没有多余的」**——只查多出来的一半时，两处调用点双双改名会让白名单静默变成空表 | matrix |
-| `pnpm size` | 产物体积超预算。**不进 matrix**：同一份 `dist/` 再跑 9 遍不增加覆盖，反而因各 Node 自带 zlib 不同而引入方差 | build |
+| `pnpm size` | 产物体积超预算（JS 与 CSS 各卡明文 + gzip 两道；卡的是总量，单次增量只在吃光余量时才响）。**不进 matrix**：同一份 `dist/` 再跑 9 遍不增加覆盖，反而因各 Node 自带 zlib 不同而引入方差 | build |
 | `pnpm bench:startup` | 冷启动超 300ms。口径是「监听成功并打印 URL」，首次 `git status` 交由第一个 HTTP 请求惰性执行、不计入——否则指标会随被测仓库规模漂移 | matrix |
 | `pnpm check:css` | CSS 层叠与主题的静默失效：块进了 `@layer`、hljs 排到了 diff2html 之后、`--d2h-*` 覆写排到了 diff2html 之前或漏了几个、产物里有无定义的 `var()`、三条 `color-scheme` 规则丢了或值写错（开关点了没反应）、深色媒体条件里出现了我们自己的规则（`dark:` 变体、手写媒体查询、深色值写回去——手动档一律翻不动它）、双值 token 被塞进 `color-mix()`（不透明度修饰符，整条声明作废）、JS 写的 `data-theme` 与 CSS 读的漂开了、hljs 规则里出现硬编码颜色或有 `--hljs-*` 没被引用 | build |
 | `pnpm check:pack` | 发布产物混进了 `src/` / 配置 / 测试，或 `dependencies` 不再为空。**只查发布文件清单是查不出加依赖的**，所以它同时查 manifest 的三个依赖字段 | build |

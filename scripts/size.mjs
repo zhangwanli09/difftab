@@ -15,11 +15,17 @@ import { gzipSync } from 'node:zlib';
 const repoRoot = resolve(import.meta.dirname, '..');
 const webDir = join(repoRoot, 'dist', 'web');
 
+/** 超标时的第一刀。语言清单是 JS 的主导项，砍它对 CSS 一个字节都不省。 */
+const JS_HINT = '第一刀砍 hljs 语言清单。';
+const CSS_HINT =
+  '先看 dist/web/app.css 多出了哪一整片（Tailwind 默认主题、shadow / ring 那套变量）。';
+
 /** 门禁。 */
 const BUDGETS = [
-  { name: '前端 JS（明文）', match: /\.js$/, metric: 'plain', limit: 350 * 1024 },
-  { name: '前端 JS（gzip）', match: /\.js$/, metric: 'gzip', limit: 120 * 1024 },
-  { name: '前端 CSS（明文）', match: /\.css$/, metric: 'plain', limit: 40 * 1024 },
+  { name: '前端 JS（明文）', match: /\.js$/, metric: 'plain', limit: 350 * 1024, hint: JS_HINT },
+  { name: '前端 JS（gzip）', match: /\.js$/, metric: 'gzip', limit: 120 * 1024, hint: JS_HINT },
+  { name: '前端 CSS（明文）', match: /\.css$/, metric: 'plain', limit: 48 * 1024, hint: CSS_HINT },
+  { name: '前端 CSS（gzip）', match: /\.css$/, metric: 'gzip', limit: 10 * 1024, hint: CSS_HINT },
 ];
 
 /** 某个文件是否有任何门禁盯着它的 gzip 值——没有就别白压一遍。 */
@@ -78,7 +84,9 @@ if (process.argv.includes('--json')) {
   }
 }
 
-if (results.some((r) => !r.ok)) {
-  console.error('\nsize: 超出体积门禁。第一刀砍 hljs 语言清单。');
+const failed = results.filter((r) => !r.ok);
+if (failed.length > 0) {
+  const hints = [...new Set(failed.map((r) => r.hint))];
+  console.error(`\nsize: 超出体积门禁。\n${hints.join('\n')}`);
   process.exit(1);
 }
