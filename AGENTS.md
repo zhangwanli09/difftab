@@ -30,20 +30,16 @@
 |---|---|
 | 本地启动（构建产物） | `node bin/difftab.js`（在任意 git 仓库目录下；`--no-open` 只打印 URL） |
 | 开发模式（Vite dev server + 后端） | 先在另一个终端 `node bin/difftab.js --no-open`，再 `pnpm dev`；**后端重启后 dev server 也要跟着重启**。后端**空闲 45 秒无客户端就自己退**，来不及打开页面时用 `DIFFTAB_IDLE_MS` 顶大 |
-| 构建（前端 Vite + 后端 tsdown） | `pnpm build`（= `build:web` + `build:server`） |
-| 类型检查 | `pnpm typecheck`（`tsc --noEmit`，前后端各一份 tsconfig，严格性开关共用 `tsconfig.base.json`） |
-| 格式化 + lint | `pnpm lint`（`biome check`）/ CI 用 `biome ci` |
+| 构建（前端 Vite + 后端 tsdown） | `pnpm build` |
+| 类型检查 | `pnpm typecheck` |
+| 格式化 + lint | `pnpm lint` / CI 用 `biome ci` |
 | 单元/集成测试（Vitest，直接跑 TS 源码） | `pnpm test`。用例按被测代码分 `test/unit/server/` 与 `test/unit/web/`——**放错目录会静默不跑，判据见第 5 节「测试布局」** |
-| 冒烟测试（纯 JS，跑构建产物，含只读性两层验证） | **先 `pnpm build`**——它跑 `dist/`，产物比源码旧一轮时红的样子像「三道校验全坏了」。`pnpm test:smoke`（CI matrix 档不经 script：由 bash 把 `test/smoke/*.test.js` 展开成数组、点名两个只读性门禁文件，再 `node --test "${files[@]}"`） |
+| 冒烟测试（纯 JS，跑构建产物，含只读性两层验证） | **先 `pnpm build`**——它跑 `dist/`，产物比源码旧一轮时红的样子像「三道校验全坏了」。`pnpm test:smoke` |
 | 测试仓库 fixture 生成 | `pnpm fixtures`（默认写 `test/fixtures/repos/`；测试自己调 `makeFixtures()` 写临时目录） |
 | 其余门禁（冷启动 ≤300ms / 体积 / 样式层叠 / 发布产物 / bin mode） | `pnpm bench:startup`、`size`、`check:css`、`check:pack`、`check:bin`——各自挡什么见 `docs/gates.md` |
 | 全局安装验收（打包 → `npm i -g` → 用 PATH 上那个名字跑通 → 卸掉） | **先 `pnpm build`**，再 `pnpm check:global`；要求全局**尚未**装着 difftab，否则脚本直接拒跑 |
 | 重生成 logo 资产（`assets/*.svg`、社交预览 PNG、`index.html` 的 favicon） | `node scripts/logo.mjs`——不是 pnpm script；PNG 那两步要本机有 Chrome，没有就只写 SVG |
 | inotify 配额耗尽时降级为轮询（Linux + 免密 sudo） | **先 `pnpm build`**，再 `pnpm check:inotify`；**不进冒烟套件**，非 Linux 直接 SKIP |
-
-`fixtures` / `bench:startup` / `size` / `check:css` / `check:global` / `check:inotify` **只是别名**——脚本本体必须是零依赖纯 JS、可由 `node <路径>` 直接执行，因为它们要在没有 pnpm、没有 `node_modules` 的 CI matrix 机器上跑。`check:pack` / `check:bin` 需要 pnpm，只在 CI 的 build 作业跑。
-
-架构边界由 `biome.json` 的 `noRestrictedImports` overrides 承担，随 `pnpm lint` / `biome ci` 一起跑，不另设命令。
 
 ## 4. 动手前先读 docs 的哪份
 
@@ -126,13 +122,11 @@
 - **两个视图的语言判定必须同为 `languageOf(path)`，禁在 `render.ts` 另写一张映射**——两份漂开后同一个文件在 diff 里有色、在文件视图里没色；表里的值只能是已注册的那 22 个模块，映射到别的静默退回 plaintext
 - **`languageOf` 的第三道（diff2html 那张 `languagesToExt`）不能砍、也不许抄成自己的表**——它比前两道多认 88 个扩展名（`pyi`/`jsonl`/`rake`…），砍掉后那些文件静默变纯文本；它随 `diff2html-ui-base` 早就在产物里，体积是 0
 - **`plaintext` 必须与 22 个语言模块一起注册**——漏注册时炸的是**整个 diff 视图**不是那一个文件（diff 里出现 `LICENSE`/`Dockerfile`/`.txt` 即触发）
-- hljs 别名 `jsx`/`tsx`/`toml`/`html` 不是模块、不可单独 import
 - hljs 主题是**我们自己那份** `hljs-theme.css`（禁直接引上游两份——媒体条件切不出手动档）；必须排在 `diff2html.min.css` **之前**，两者保持 unlayered、禁入 `@layer`
 - **hljs 规则里禁硬编码颜色**，一律 `var(--hljs-*)`；漏一条的症状是另一档下那一处静默停在错的颜色上（`check:css` 拦）
 - 改 diff2html 配色只能覆写 `--d2h-*`，禁用 Tailwind 工具类去压
 - **我们自己那块 `--d2h-*` 映射同样禁入 `@layer`**——入层会被 diff2html 的 unlayered 默认值压回去，配色整片退回 GitHub 那套
 - **且必须排在 diff2html 之后**：特异性同为 (0,1,0)，胜出纯靠源码顺序，挪到前面会让 23 条覆写整片静默失效（两半都由 `check:css` 拦）
-- 并排视图那对 `--d2h-change-*` **刻意与纯增删同色**（VS Code 没有这一档区分），是取舍不是漏映射
 - **滚动容器内部必须有一个 positioned 祖先**（`DiffView` 宿主 div 上的 `relative`）——diff2html 行号列是 `position:absolute`，缺了它一滚代码行走了、整列行号原地钉死
 - **`outputFormat` 量的是 diff 面板那一层的 border box**（不是里面那层滚动容器、不是 content box；`observe` 与读值两处都得写）——否则滚动条进出让阈值附近两种版式来回重画；量法必须与阈值同住 `state/layout.ts`
 - **变更列表一行的文件名与目录必须同住一个 `truncate` span**（名在前、目录在后）——拆成平级 flex 子项会让两段按底边对齐，页面上只是「看着没对齐」
@@ -147,7 +141,7 @@
 - **深浅两套取值一律写成 `light-dark(浅, 深)` 的单条声明**；**禁**把任何 `--color-*` / `--hljs-*` 的深色值写回 `@media (prefers-color-scheme: dark)`——那样手动档对它无效，只是「切到 Light 时那一个颜色还是深的」（`check:css` 拦）
 - **双值 token 禁带不透明度修饰符**（`bg-editor-background/50`）——降级后的值不是合法 `<color>`，塞进 `color-mix()` 会让整条声明作废、属性静默变 unset
 - **`vscode-theme.css` 顶部那三条 `color-scheme` 规则是整个明暗开关的全部机制**，必须 unlayered 且进产物——丢了按钮照常有反应，只是页面不变（`check:css` 拦）
-- **「跟随系统」是 `data-theme` 属性不存在，不写 `"system"`**——写成 `"system"` 时页面看着正常，而 CSS 那两条属性选择器一条都不命中（`localStorage` 的 try/catch 不进红线：漏了是整页白屏，响得很大声，且 `theme.test.ts` 有断言）
+- **「跟随系统」是 `data-theme` 属性不存在，不写 `"system"`**——写成 `"system"` 时页面看着正常，而 CSS 那两条属性选择器一条都不命中
 
 ### 包管理器（pnpm 11，`design/build.md`）
 
@@ -180,7 +174,6 @@
 
 - `vitest.config.ts` 的 `projects` 分环境（`test/unit/server/`=node、`test/unit/web/`=happy-dom）。`environmentMatchGlobs` 在 Vitest 4 已被移除，**因此 include 是几条具体路径**
 - 放到 `test/unit/` 底下或第三个子目录里的用例**不属于任何 project、压根不会被跑，且套件照常全绿**
-- `test/unit/server/test-layout.test.ts` 钉着这条，它直接 import `vitest.config.ts` 把 include 编成正则，所以加 project 不必同步任何清单
 
 ### 文档与注释
 
