@@ -104,15 +104,23 @@ The full list is [`AGENTS.md`](AGENTS.md) §5, with the evidence behind each one
   `GIT_LITERAL_PATHSPECS=1` are set in the wrapper layer for reasons that each have a
   test. Removing one does not produce an error.
 
-## Commits
+## Commits and pull requests
 
 English, [Conventional Commits](https://www.conventionalcommits.org/):
 `<type>(<scope>): <description>`, where type is one of `feat` / `fix` / `docs` /
 `refactor` / `perf` / `test` / `build` / `ci` / `chore`, with `!` for breaking changes.
 
 Imperative mood, subject with no trailing period, body wrapped at 72 and covering what
-and why rather than how. One commit does one thing — don't mix a refactor into a feature
-change.
+and why rather than how.
+
+`main` takes squash merges only, so **a pull request lands as one commit**. One pull
+request does one thing — don't mix a refactor into a feature change. Two consequences:
+
+- **The PR title follows the same format.** For a PR with more than one commit, the title
+  becomes the subject of the commit on `main`.
+- **Branch commit messages end up in `main` too.** They are concatenated into the body of
+  the squashed commit, so a `wip` or `address review` stays in the history unless it is
+  tidied up at merge time.
 
 ## Reporting bugs
 
