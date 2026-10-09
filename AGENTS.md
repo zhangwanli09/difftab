@@ -15,9 +15,9 @@
 
 ## 2. 提交约定
 
-- **英文** + **Conventional Commits**：`<type>(<scope>): <description>`，type 取 `feat`/`fix`/`docs`/`refactor`/`perf`/`test`/`build`/`ci`/`chore`，破坏性加 `!`
+- **英文** + **Conventional Commits**：`<type>(<scope>): <description>`，type 取 `feat`/`fix`/`docs`/`refactor`/`perf`/`test`/`build`/`ci`/`chore`，破坏性加 `!`；PR 标题同此格式——main 只收 squash 合并，多提交 PR 的标题就是 main 上那个提交的 subject
 - 祈使语气，subject 不加句号，body 折 72 只写 what 与 why
-- Agent 会话里用户要求提交时，把本会话自上次提交以来的改动合成**一个**提交、不按事项拆（版本号提交照 `RELEASING.md` 单独成一个；对外贡献者仍按 `CONTRIBUTING.md` 的「一个提交一件事」）
+- Agent 会话里用户要求提交时，**先建分支**（main 只收 PR，在 main 上提交时推送被拒，且 squash 改写 SHA 后本地 main 分叉），再把本会话自上次提交以来的改动合成**一个**提交、不按事项拆（版本号照 `RELEASING.md` 单独一个 PR；对外贡献者按 `CONTRIBUTING.md` 的「一个 PR 一件事」）
 - 合成的提交 subject 取其中影响最大那件的 type（`feat` > `fix` > 其余），任一件破坏性即加 `!`；body 逐条写每件的 what 与 why
 
 ## 3. 常用命令
@@ -191,7 +191,7 @@
 
 项目已发布并进入维护阶段，License MIT，仓库公开。**会过期的东西一律不进本文件**——版本号、发布日期、进度、「某阶段已收口」：事实来源分别是 `package.json`、`git log`、`docs/history.md`，而常驻上下文里的过期叙述不会有人主动想起来删。
 
-- **发布步骤照 `RELEASING.md` 走，不凭记忆敲**——里面钉着七件会咬人的事（pnpm 要单独登录、2FA 的 OTP、镜像源、`publishBranch`、manifest obfuscation、`prepublishOnly`、别在本仓库目录里用 `npx` 验收），产物约定在 `docs/gates.md`，踩坑记录在 `docs/history.md`
+- **发布步骤照 `RELEASING.md` 走，不凭记忆敲**——里面钉着九件会咬人的事（pnpm 要单独登录、2FA 的 OTP、镜像源、先建分支再提交、合并方式以 ruleset 为准、`publishBranch`、manifest obfuscation、`prepublishOnly`、别在本仓库目录里用 `npx` 验收），产物约定在 `docs/gates.md`，踩坑记录在 `docs/history.md`
 - **semver：0.x 保留破坏性余地（尤其 CLI 参数与端口/token 行为），1.0.0 是结论不是起点**——等验收全通过且三端真机验过再发
 - **不建 `CHANGELOG.md`**：GitHub Releases 的 notes 就是变更日志
 - **README 的特性列表只收差异点，不是功能清单**——加了新功能默认**不动** README，除非它本身就是个卖点；功能的事实来源是 `docs/spec.md` 的功能范围表，机制在 `docs/design/`

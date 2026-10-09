@@ -58,17 +58,19 @@ same list is a second place to forget.
 ```bash
 # 1. Bump the version on a branch — main takes pull requests only, so a direct push
 #    is rejected with "Changes must be made through a pull request".
-#    One commit, nothing else in it; `npm version` would also create the tag, and
-#    --no-git-tag-version leaves that to step 4.
+#    One commit, nothing else on the branch: main takes squash merges only, so a README
+#    update riding along would be fused into the release commit — land it in its own
+#    PR first. `npm version` would also create the tag, and --no-git-tag-version leaves
+#    that to step 4.
 git checkout -b release/0.1.0
 npm version 0.1.0 --no-git-tag-version
 git commit -am "chore(release): 0.1.0"
 
-# 2. Open the PR, let CI go green on it, and merge. --rebase keeps a README commit
-#    and the version bump as two commits; squash would fuse them.
+# 2. Open the PR, let CI go green on it, and squash-merge it — the only method the
+#    ruleset allows.
 git push -u origin release/0.1.0
 gh pr create --base main --title "chore(release): 0.1.0" --body "…"
-gh pr merge --rebase --delete-branch
+gh pr merge --squash --delete-branch
 
 # 3. Sync main. Branching before committing (step 1) leaves nothing on your local main,
 #    so this fast-forwards — `gh pr merge --delete-branch` has usually done it already.
@@ -118,16 +120,17 @@ gh release create v0.1.0 --title "v0.1.0" --notes "…"
   and `git rev-parse origin/main^{tree}` print the same thing when the content is
   identical, and only then is `git reset --hard origin/main` safe. Tag the commit that is
   on the remote, never the local one you are about to discard.
-- **If `--rebase` is rejected, the repository settings are a red herring — read the
-  ruleset.** 0.2.1 hit `GraphQL: Rebase merges are not allowed on this repository.
-  (mergePullRequest)` while `gh api repos/<owner>/difftab` reported all three merge
-  methods as `true`: the restriction lives in the `Protect main` ruleset's
-  `allowed_merge_methods`, which listed `squash` alone. `gh api
-  repos/<owner>/difftab/rulesets/<id> --jq '.rules[] | select(.type=="pull_request")'`
-  prints it. Rebase is back in that list, so step 2 stands as written; **if it is ever
-  taken out again, the consequence lands on step 1, not step 2** — squash fuses
-  everything on the branch into one commit, so the release branch would have to carry
-  the version bump and nothing else, with a README update going in its own earlier PR.
+- **Which merge methods are allowed is set by the ruleset, and the repository settings
+  are a red herring.** `gh api repos/<owner>/difftab` reports all three merge methods as
+  `true`; the restriction lives in the `Protect main` ruleset's `allowed_merge_methods`,
+  and `gh api repos/<owner>/difftab/rulesets/<id> --jq '.rules[] |
+  select(.type=="pull_request")'` prints it. That list has flipped before: 0.2.1 hit
+  `GraphQL: Rebase merges are not allowed on this repository. (mergePullRequest)`, rebase
+  was then added back, and it is `squash` alone again. **The consequence lands on step 1,
+  not step 2** — squash fuses everything on the branch into one commit, so the release
+  branch carries the version bump and nothing else, with a README update going in its
+  own earlier PR. Should rebase ever come back, step 1 still stands: a single-commit
+  branch merges to the same content either way.
 - **Do not pass `--no-git-checks`.** pnpm refuses to publish from a dirty tree, from the
   wrong branch, or when the branch is behind its remote. Those checks are the reason steps
   2 and 3 come before step 5. The publish branch is `main`, set as `publishBranch` in
@@ -158,5 +161,5 @@ gh release create v0.1.0 --title "v0.1.0" --notes "…"
       then check `npm ls -g --depth=0` shows no transitive dependencies under it.
 - [ ] In some other git repository (again: not this one) `npx difftab@<version> --no-open`
       prints a URL and exits on its own once idle. Run from this repo it would silently
-      test your working tree instead — see the last of the seven above.
+      test your working tree instead — see the last of the nine above.
 - [ ] The GitHub Release exists and its notes match what actually changed.
