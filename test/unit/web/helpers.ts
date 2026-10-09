@@ -4,7 +4,12 @@
 // `editors.ts` 加一个 signal 就是九处 `afterEach` 要补，漏一处不报错、只是状态漏进下一个用例。
 
 import { expect, onTestFinished, vi } from 'vitest';
-import type { FileEntry } from '../../../src/server/shared/protocol';
+import type {
+  BranchState,
+  FileEntry,
+  RefEntry,
+  RepoState,
+} from '../../../src/server/shared/protocol';
 import { STATUS_WIDTH } from '../../../src/web/components/tree-row';
 import {
   activeEditorKey,
@@ -22,6 +27,7 @@ import {
   loadingMore,
   moreError,
 } from '../../../src/web/state/history';
+import { resetUpstreamRefs } from '../../../src/web/state/refs';
 import {
   changesCollapsed,
   historyCollapsed,
@@ -39,7 +45,7 @@ export function resetEditors(): void {
   commitDiffStates.value = new Map();
 }
 
-/** 清空 `History` 那一档：列表、详情缓存、展开集合。 */
+/** 清空 `History` 那一档：列表、详情缓存、展开集合，以及上游徽标那个 ref。 */
 export function resetHistory(): void {
   historyList.value = null;
   historyError.value = null;
@@ -47,6 +53,7 @@ export function resetHistory(): void {
   moreError.value = null;
   commitDetails.value = new Map();
   expandedCommits.value = new Set();
+  resetUpstreamRefs();
 }
 
 /** 两个分区回到默认：都展开、对半分。 */
@@ -84,6 +91,38 @@ export const file = (partial: Partial<FileEntry> & { path: string }): FileEntry 
   kind: 'tracked',
   staged: '.',
   unstaged: '.',
+  ...partial,
+});
+
+/** 一份分支状态：`main`、不 detached、无上游，字段按需覆盖。改 `BranchState` 的形状时只改这一处。 */
+export const branch = (partial: Partial<BranchState> = {}): BranchState => ({
+  head: 'main',
+  detached: false,
+  upstream: null,
+  ...partial,
+});
+
+/** 一份 `/api/state`：分支取 `branch()`、没有改动、原生监听，字段按需覆盖。 */
+export const repo = (partial: Partial<RepoState> = {}): RepoState => ({
+  repoName: 'demo',
+  branch: branch(),
+  files: [],
+  watch: { mode: 'native', tier: 'A' },
+  ...partial,
+});
+
+/** `/api/refs` 里的一条，字段按需覆盖。 */
+export const ref = (
+  kind: RefEntry['kind'],
+  name: string,
+  partial: Partial<RefEntry> = {},
+): RefEntry => ({
+  kind,
+  name,
+  sha: 'a'.repeat(40),
+  author: 'Ada',
+  time: 1_700_000_000,
+  subject: `tip of ${name}`,
   ...partial,
 });
 

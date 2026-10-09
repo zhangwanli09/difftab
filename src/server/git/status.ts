@@ -61,7 +61,8 @@ export function parseStatus(raw: string): StatusResult {
   const files: FileEntry[] = [];
   let head = '';
   let detached = false;
-  let upstream: BranchState['upstream'] = null;
+  let ab: { ahead: number; behind: number } | null = null;
+  let upstreamName = '';
   let oid: string | undefined;
 
   for (let i = 0; i < segments.length; i += 1) {
@@ -80,11 +81,15 @@ export function parseStatus(raw: string): StatusResult {
           head = value;
           // git 在 detached HEAD 下把这一行的值写成字面量 `(detached)`
           detached = value === '(detached)';
+        } else if (key === 'branch.upstream') {
+          // 配了上游就有这一行，远端分支被删掉（gone）时也有——那时没有 `# branch.ab`，名字只记下、
+          // 不单独成为 upstream：对不到任何 ref 的名字，前端也画不出什么
+          upstreamName = value;
         } else if (key === 'branch.ab') {
-          // `+3 -1`。**这一行在无上游时根本不输出**，因此 upstream 的初值是 null 而不是
+          // `+3 -1`。**这一行在无上游时根本不输出**，因此 ab 的初值是 null 而不是
           // { ahead: 0, behind: 0 }——「无上游」与「同步」合并成 0/0 就再也分不开了
           const m = /^\+(\d+)\s+-(\d+)$/.exec(value.trim());
-          if (m?.[1] && m[2]) upstream = { ahead: Number(m[1]), behind: Number(m[2]) };
+          if (m?.[1] && m[2]) ab = { ahead: Number(m[1]), behind: Number(m[2]) };
         }
         break;
       }
@@ -157,6 +162,8 @@ export function parseStatus(raw: string): StatusResult {
     }
   }
 
+  // 名字与计数在两行里，拼在最后：不靠 git 把 `# branch.upstream` 排在 `# branch.ab` 之前
+  const upstream: BranchState['upstream'] = ab === null ? null : { name: upstreamName, ...ab };
   return { branch: { head, detached, upstream, ...(oid === undefined ? {} : { oid }) }, files };
 }
 

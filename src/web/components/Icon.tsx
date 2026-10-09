@@ -13,7 +13,16 @@
 // import 同一个具名标识符，拼错是编译错误；而上一套共用的是一条导出的 path 字符串，两份漂开
 // 时同一个概念在页面上长成两个图形，没有任何东西会响。
 
-import { FileCode, FileDiff, GitCommitHorizontal, type LucideIcon } from 'lucide-preact';
+import {
+  Cloud,
+  FileCode,
+  FileDiff,
+  GitBranch,
+  GitCommitHorizontal,
+  type LucideIcon,
+  Tag,
+} from 'lucide-preact';
+import type { RefEntry } from '../../server/shared/protocol';
 import type { EditorKind } from '../state/editors';
 
 export function Icon({
@@ -43,4 +52,14 @@ export const KIND_ICON: Record<EditorKind, LucideIcon> = {
   diff: FileDiff,
   file: FileCode,
   commit: GitCommitHorizontal,
+};
+
+/**
+ * 三组 ref 的图标——分支列表的每一项与 History 行上的徽标**同一张表**，理由与上面那张一样。本地那
+ * 一枚与状态条上的是同一枚 `GitBranch`。
+ */
+export const REF_ICON: Record<RefEntry['kind'], LucideIcon> = {
+  local: GitBranch,
+  remote: Cloud,
+  tag: Tag,
 };

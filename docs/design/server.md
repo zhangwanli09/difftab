@@ -86,7 +86,7 @@
 
 - `FileEntry { path; oldPath?; kind: 'tracked' | 'untracked'; staged; unstaged; renameScore?; conflicted? }`——`staged` / `unstaged` 承载 `porcelain=v2` 的双状态位，`oldPath` + `renameScore` 来自 `2 ` 记录。
   - **`conflicted` 是「这条来自 `u` 记录」这一事实本身**，不是从状态位推出来的：`DD` / `AA` 两位都不是 `U`，而「未合并」恰恰是那三个分组谓词唯一无法从 XY 读出来的东西。归属留给前端等于让它自己重写一遍 porcelain 的记录类型。
-- `BranchState { head; detached; upstream: null | { ahead; behind }; oid?; operation? }`——**`oid` 是 HEAD 此刻指向的提交**（`# branch.oid`，缺省即 HEAD 未出生），前端拿它判提交列表要不要重取：能让提交列表变的只有 HEAD 挪动，而它本来就在那一次 status 输出里。**`upstream: null` 即「无上游」**，把它编码进类型而非留作约定，前端就不可能漏掉这条分支。`operation` 缺省即「没有进行中的多步操作」。
+- `BranchState { head; detached; upstream: null | { name; ahead; behind }; oid?; operation? }`——**`oid` 是 HEAD 此刻指向的提交**（`# branch.oid`，缺省即 HEAD 未出生），前端拿它判提交列表要不要重取：能让提交列表变的只有 HEAD 挪动，而它本来就在那一次 status 输出里。**`upstream: null` 即「无上游」**，把它编码进类型而非留作约定，前端就不可能漏掉这条分支；`name` 是 `# branch.upstream` 那行的值（`origin/main`），History 拿它在 `/api/refs` 里找上游指着哪条提交。`operation` 缺省即「没有进行中的多步操作」。
 - `DiffPayload` 为判别联合：`{ kind: 'text', patch }` / `{ kind: 'binary' }` / `{ kind: 'image', old, new }` / `{ kind: 'too-large', size, reason: 'size' | 'lines' }` / `{ kind: 'untracked-text', patch }`。
   - **`too-large` 必须带 `reason`**：它有**两个**触发口（体积超 5MB 与行数超 50,000）。只带 `size` 时，行数那一路的文件可能只有几百 KB，前端手里唯一的数字既解释不了为什么不预览、按 MB 取整还会显示「文件过大（0 MB）」这种自相矛盾的话。判别原因属后端知识。
   - **`size` 只用于展示，不是判定依据**，且**可以是 0**——已被删除的文件在工作区没有体积可取。前端据此不显示体积，而不是把 0 四舍五入成「1 KB」：编一个数出来比不说更糟。

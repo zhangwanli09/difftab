@@ -138,6 +138,12 @@
   --color-git-untracked: light-dark(#007100, #73c991);
   --color-git-conflicting: light-dark(#ad0707, #e4676b);
 
+  /* --- History 行上的 ref 徽标：色相照 VS Code Source Control Graph ---------- */
+  /* 两个都**深浅共用**，VS Code 的默认值也是。徽标只拿它们画图标、再以 20% 叠一层底色，不画实心
+   * ——实心块在侧栏里比主题还抢眼，白字压在这个蓝上也读不清 */
+  --color-scm-graph-history-item-ref: #59a4f9;
+  --color-scm-graph-history-item-remote-ref: #b180d7;
+
   /* --- diff 底色：由 vscode-theme.css 映射到 --d2h-* --------------------- */
   /* 下面六个**刻意深浅共用同一取值**：它们是半透明叠加，VS Code 自己的默认值也是深浅共用一
    * 套，底色一换观感自然跟着换。换成不透明取值就必须在深色那边再维护一份平行的硬编码。 */

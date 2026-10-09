@@ -3,22 +3,15 @@
 // 能给「选中」的含义只有这一种。复制本身与反馈归打开它的 `BranchStatus`：列表那时已经关了。
 
 import { useComputed, useSignal } from '@preact/signals';
-import { Check, Cloud, GitBranch, type LucideIcon, Tag } from 'lucide-preact';
+import { Check } from 'lucide-preact';
 import { Component, type RefObject } from 'preact';
 import { useCallback, useEffect, useLayoutEffect, useRef } from 'preact/hooks';
 import type { RefEntry } from '../../server/shared/protocol';
 import { shortSha } from '../state/history';
 import { filterRefs, loadRefs, MAX_SHOWN, refList, refsError } from '../state/refs';
 import { relativeTime } from './HistoryList';
-import { Icon } from './Icon';
+import { Icon, REF_ICON } from './Icon';
 import { SELECTED } from './tree-row';
-
-/** 本地那一枚与状态条上的是同一枚 `GitBranch`。`Record` 让加第四组时少填一格是编译错误。 */
-const KIND_ICON: Record<RefEntry['kind'], LucideIcon> = {
-  local: GitBranch,
-  remote: Cloud,
-  tag: Tag,
-};
 
 /** 组名画在每组第一项的右端，与 VS Code 那几条 separator 同一个形态。 */
 const GROUP_LABEL: Record<RefEntry['kind'], string> = {
@@ -220,7 +213,7 @@ class RefRow extends Component<RefRowProps> {
         onKeyDown={onKeyDown}
       >
         <div class="flex items-center gap-1.5">
-          <Icon icon={KIND_ICON[entry.kind]} size={14} class="shrink-0" />
+          <Icon icon={REF_ICON[entry.kind]} size={14} class="shrink-0" />
           <span class="truncate">{entry.name}</span>
           {entry.time > 0 && (
             <span class="shrink-0 text-xs text-description-foreground">

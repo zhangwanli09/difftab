@@ -89,9 +89,10 @@ export interface BranchState {
   detached: boolean;
   /**
    * `null` 即**无上游**：无上游分支不输出 `# branch.ab` 行，此时必须展示「无上游」而不是
-   * 0/0。把它编码进类型而非留作约定，前端就不可能漏掉这条分支。
+   * 0/0。把它编码进类型而非留作约定，前端就不可能漏掉这条分支。`name` 是 `# branch.upstream`
+   * 那行的值（`origin/main`）：status 不给上游指着哪个提交，History 拿这个名字去 `/api/refs` 里找。
    */
-  upstream: null | { ahead: number; behind: number };
+  upstream: null | { name: string; ahead: number; behind: number };
   /**
    * HEAD 此刻指向的提交（`# branch.oid`）；缺省即 HEAD 尚未出生（`(initial)`）。**前端拿它判
    * 「提交列表要不要重取」**：agent 改工作区时每个文件事件都会推一次 SSE，而能让提交列表变的只有

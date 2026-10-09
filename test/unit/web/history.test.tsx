@@ -10,6 +10,7 @@ import type {
   RepoState,
 } from '../../../src/server/shared/protocol';
 import { commitTooltip, HistoryList, relativeTime } from '../../../src/web/components/HistoryList';
+import { badgesBySha, findUpstream, refBadges } from '../../../src/web/state/badges';
 import {
   activeEditor,
   activeEditorPath,
@@ -29,6 +30,13 @@ import {
   refreshHistory,
   toggleCommit,
 } from '../../../src/web/state/history';
+import {
+  ensureUpstreamRefs,
+  loadRefs,
+  refList,
+  refsError,
+  upstreamRefs,
+} from '../../../src/web/state/refs';
 import { historyCollapsed } from '../../../src/web/state/sidebar';
 import {
   activateEditor,
@@ -40,8 +48,11 @@ import {
 } from '../../../src/web/state/store';
 import {
   actionOf,
+  branch,
   expectStatusGap,
   hideHistory,
+  ref,
+  repo,
   resetEditors,
   resetHistory,
   stubClipboard,
@@ -495,12 +506,7 @@ describe('commit tab', () => {
 });
 
 describe('refresh 对 History 那一半', () => {
-  const state: RepoState = {
-    repoName: 'demo',
-    branch: { head: 'main', detached: false, upstream: null },
-    files: [],
-    watch: { mode: 'native', tier: 'A' },
-  };
+  const state = repo();
 
   test('commit tab 不收编、不重取——工作区变了与它无关', async () => {
     // 提交列表不在这条的射程里：折起分区，`refresh` 就只剩 `/api/state` 一趟
@@ -577,4 +583,204 @@ test('relativeTime：一分钟以内是 now，其余取最大的那一档', () =
   expect(relativeTime(now / 1000 + 600, now)).toBe('now');
   expect(relativeTime(now / 1000 - 3 * 3600, now)).toBe('3 hours ago');
   expect(relativeTime(now / 1000 - 24 * 3600, now)).toBe('yesterday');
+});
+
+describe('ref 徽标', () => {
+  const tracking = (extra: Partial<RepoState['branch']> = {}) =>
+    branch({ upstream: { name: 'origin/main', ahead: 2, behind: 0 }, oid: sha(100), ...extra });
+  const remote = (n: number) => ref('remote', 'origin/main', { sha: sha(n) });
+
+  test('本地那枚画在 HEAD 上、不看 refs；上游那枚画在它指着的那条', () => {
+    const badges = refBadges('main', sha(100), remote(98));
+    expect(badges.get(sha(100))).toEqual([{ kind: 'local', name: 'main' }]);
+    expect(badges.get(sha(98))).toEqual([{ kind: 'remote', name: 'origin/main' }]);
+    expect(refBadges('main', sha(100), null).get(sha(100))).toEqual([
+      { kind: 'local', name: 'main' },
+    ]);
+  });
+
+  test('已同步时两枚落在同一条上，本地在前；没有分支（detached）时没有本地那枚', () => {
+    expect(
+      refBadges('main', sha(100), remote(100))
+        .get(sha(100))
+        ?.map((b) => b.kind),
+    ).toEqual(['local', 'remote']);
+    expect(refBadges('', sha(100), remote(100)).get(sha(100))).toEqual([
+      { kind: 'remote', name: 'origin/main' },
+    ]);
+  });
+
+  test('按 git 解析缩写 refname 的次序找上游：名字有歧义时 git 带的前缀照样对得上；标签不算', () => {
+    // 实测 2.54：有个标签也叫 `main` → `heads/main`；有个本地分支也叫 `origin/main` → `remotes/origin/main`
+    const refs = [
+      ref('tag', 'main', { sha: sha(97) }),
+      ref('local', 'main', { sha: sha(99) }),
+      ref('local', 'origin/main', { sha: sha(96) }),
+      remote(98),
+    ];
+    expect(findUpstream(refs, 'heads/main')?.sha).toBe(sha(99));
+    expect(findUpstream(refs, 'remotes/origin/main')?.sha).toBe(sha(98));
+    expect(findUpstream(refs, 'refs/remotes/origin/main')?.sha).toBe(sha(98));
+    expect(findUpstream(refs, 'refs/heads/origin/main')?.sha).toBe(sha(96));
+    // 没有歧义时是光名字：本地分支（上游可以是本地分支）与远程分支都认
+    expect(findUpstream([ref('local', 'base', { sha: sha(95) })], 'base')?.sha).toBe(sha(95));
+    expect(findUpstream([remote(98)], 'origin/main')?.sha).toBe(sha(98));
+    expect(findUpstream([ref('tag', 'base')], 'base')).toBeNull();
+  });
+
+  test('徽标排在 truncate span 之后，不在里面——省略号吃不到它', () => {
+    historyList.value = mergeFirstPage(null, page(100, 100, 3, false));
+    repoState.value = repo({ branch: tracking() });
+    upstreamRefs.value = [remote(98)];
+    render(<HistoryList />, container);
+    const rows = [...container.querySelectorAll('[aria-expanded]')] as HTMLElement[];
+    const badgeTexts = (row: HTMLElement) =>
+      [...row.querySelectorAll(':scope > [title]')].map((el) => el.textContent);
+    expect(rows.map(badgeTexts)).toEqual([['main'], [], ['origin/main']]);
+    const label = rows[0]?.querySelector('.truncate') as HTMLElement;
+    expect(label.textContent).toBe('commit 100Ann');
+    repoState.value = null;
+  });
+
+  test('上游名换了、新的 refs 还没回来：拿此刻的名字去推，不把上一个上游的位置画成这一个', () => {
+    upstreamRefs.value = [remote(98)];
+    repoState.value = repo({ branch: tracking() });
+    expect(badgesBySha.value.get(sha(98))).toEqual([{ kind: 'remote', name: 'origin/main' }]);
+    repoState.value = repo({
+      branch: tracking({ upstream: { name: 'origin/dev', ahead: 1, behind: 0 } }),
+    });
+    expect(badgesBySha.value.has(sha(98))).toBe(false);
+    repoState.value = null;
+  });
+
+  test('SSE 换了一份 repoState 而分支状态没变：徽标表不重建，带徽标的行就不重画', () => {
+    repoState.value = repo({ branch: tracking() });
+    const before = badgesBySha.value;
+    repoState.value = repo({ branch: tracking() });
+    expect(badgesBySha.value).toBe(before);
+    repoState.value = repo({ branch: tracking({ oid: sha(101) }) });
+    expect(badgesBySha.value).not.toBe(before);
+    repoState.value = null;
+  });
+
+  describe('refresh 对上游 refs 的取舍', () => {
+    let upstream: RepoState['branch']['upstream'];
+    let oid: string;
+    let failRefs: boolean;
+    let calls: string[];
+    const refsCalls = () => calls.filter((url) => url === '/api/refs').length;
+
+    beforeEach(() => {
+      upstream = { name: 'origin/main', ahead: 2, behind: 0 };
+      oid = sha(100);
+      failRefs = false;
+      calls = stubJsonBy((url) => {
+        if (url.pathname === '/api/state')
+          return { payload: repo({ branch: tracking({ upstream, oid }) }) };
+        if (url.pathname === '/api/refs')
+          return failRefs
+            ? { payload: { error: { code: 'internal', message: 'busy' } }, status: 500 }
+            : { payload: { refs: [remote(98)] } };
+        return { payload: page(Number.parseInt(oid, 16), Number.parseInt(oid, 16), 3, false) };
+      });
+    });
+    afterEach(() => {
+      repoState.value = null;
+      refList.value = null;
+      refsError.value = null;
+    });
+
+    test('分支状态没变就不重取；push 只挪了上游（HEAD 没动）也要重取', async () => {
+      await refresh();
+      expect(refsCalls()).toBe(1);
+      expect(badgesBySha.value.get(sha(98))).toEqual([{ kind: 'remote', name: 'origin/main' }]);
+      await refresh();
+      await refresh();
+      expect(refsCalls()).toBe(1);
+      upstream = { name: 'origin/main', ahead: 0, behind: 0 };
+      await refresh();
+      expect(refsCalls()).toBe(2);
+      oid = sha(101);
+      await refresh();
+      expect(refsCalls()).toBe(3);
+    });
+
+    test('看不见、或没有上游时一条都不发', async () => {
+      historyCollapsed.value = true;
+      await refresh();
+      expect(refsCalls()).toBe(0);
+      historyCollapsed.value = false;
+      upstream = null;
+      await refresh();
+      expect(refsCalls()).toBe(0);
+    });
+
+    test('上游被取消后再设回、四样与当初一字不差：照样重取', async () => {
+      await refresh();
+      expect(refsCalls()).toBe(1);
+      upstream = null;
+      await refresh();
+      upstream = { name: 'origin/main', ahead: 2, behind: 0 };
+      await refresh();
+      expect(refsCalls()).toBe(2);
+    });
+
+    test('上一次取失败了：分支状态没变也重试', async () => {
+      failRefs = true;
+      await refresh();
+      expect(upstreamRefs.value).toBeNull();
+      failRefs = false;
+      await refresh();
+      expect(refsCalls()).toBe(2);
+      expect(upstreamRefs.value).toHaveLength(1);
+    });
+
+    test('与分支列表不共用状态：徽标那次失败不碰列表，列表那次失败不碰徽标', async () => {
+      refList.value = [ref('local', 'main')];
+      failRefs = true;
+      await refresh();
+      expect(refList.value).toHaveLength(1);
+      expect(refsError.value).toBeNull();
+
+      failRefs = false;
+      await refresh();
+      expect(upstreamRefs.value).toHaveLength(1);
+      failRefs = true;
+      await loadRefs();
+      expect(refsError.value).toBe('busy');
+      expect(upstreamRefs.value).toHaveLength(1);
+    });
+
+    test('被后一次顶掉、而后一次失败了：仍按失败算，下一次判即重试', async () => {
+      // 第一次挂着不回，第二次（分支状态变了）失败——第一次回来时已经过期，什么都不改
+      let release: () => void = () => {};
+      let first = true;
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (url: string) => {
+          calls.push(url);
+          if (url === '/api/refs' && first) {
+            first = false;
+            await new Promise<void>((resolve) => {
+              release = resolve;
+            });
+            return new Response(JSON.stringify({ refs: [remote(97)] }));
+          }
+          if (url === '/api/refs')
+            return new Response(JSON.stringify({ error: { code: 'internal', message: 'busy' } }), {
+              status: 500,
+            });
+          return new Response(JSON.stringify(repo({ branch: tracking({ upstream, oid }) })));
+        }),
+      );
+      const pending = ensureUpstreamRefs(repo({ branch: tracking() }));
+      await ensureUpstreamRefs(repo({ branch: tracking({ oid: sha(101) }) }));
+      release();
+      await pending;
+      expect(upstreamRefs.value).toBeNull();
+      // 分支状态与失败那次相同，照样重取
+      await ensureUpstreamRefs(repo({ branch: tracking({ oid: sha(101) }) }));
+      expect(refsCalls()).toBe(3);
+    });
+  });
 });
