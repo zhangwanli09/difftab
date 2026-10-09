@@ -259,9 +259,9 @@ describe('分支状态', () => {
     expect(branch.upstream).toBe(null);
   });
 
-  test('有上游 → ahead / behind 与 git 一致', async () => {
+  test('有上游 → 名字与 ahead / behind 与 git 一致', async () => {
     const { branch } = await statusOf(repos.upstreamTracking);
-    expect(branch.upstream).toEqual({ ahead: 2, behind: 1 });
+    expect(branch.upstream).toEqual({ name: 'origin/main', ahead: 2, behind: 1 });
   });
 });
 

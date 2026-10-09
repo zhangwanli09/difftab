@@ -349,7 +349,7 @@ export async function refresh(): Promise<void> {
 
   if (!(await loadState())) return;
   // 提交列表要等新列表：判据是新 state 里的 HEAD oid——HEAD 没挪就一条请求都不发。看不见时不判，
-  // 变回看得见时 `SourceControl` 那个 effect 拿当时的 state 再判一次
+  // 变回看得见时 `SourceControl` 那个 effect 拿当时的 state 再判一次（上游徽标的 refs 同一个入口）
   const history = historyVisible.value ? ensureHistory(repoState.value) : null;
   const files = repoState.value?.files ?? [];
   /**

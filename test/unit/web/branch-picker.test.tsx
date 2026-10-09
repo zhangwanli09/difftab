@@ -6,18 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BranchState, RefEntry } from '../../../src/server/shared/protocol';
 import { BranchStatus } from '../../../src/web/components/BranchStatus';
 import { filterRefs, MAX_SHOWN, refList, refsError } from '../../../src/web/state/refs';
-import { stubClipboard, stubJson, waitFor } from './helpers';
+import { ref, stubClipboard, stubJson, waitFor } from './helpers';
 
 const branch: BranchState = { head: 'main', detached: false, upstream: null };
-
-const ref = (kind: RefEntry['kind'], name: string, subject = `tip of ${name}`): RefEntry => ({
-  kind,
-  name,
-  sha: 'a'.repeat(40),
-  author: 'Ada',
-  time: 1_700_000_000,
-  subject,
-});
 
 const REFS: RefEntry[] = [
   ref('local', 'main'),

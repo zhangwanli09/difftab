@@ -11,18 +11,10 @@
 
 import { render } from 'preact';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { BranchState } from '../../../src/server/shared/protocol';
 import { App } from '../../../src/web/components/App';
 import { BranchStatus } from '../../../src/web/components/BranchStatus';
 import { loadError, repoState } from '../../../src/web/state/store';
-import { hideHistory, resetEditors } from './helpers';
-
-const branch = (partial: Partial<BranchState> = {}): BranchState => ({
-  head: 'main',
-  detached: false,
-  upstream: null,
-  ...partial,
-});
+import { branch, hideHistory, resetEditors } from './helpers';
 
 let container: HTMLElement;
 
@@ -70,7 +62,10 @@ describe('BranchStatus', () => {
   });
 
   it('有上游时 ahead/behind 与 `git status` 的 `# branch.ab +2 -1` 一致', () => {
-    render(<BranchStatus branch={branch({ upstream: { ahead: 2, behind: 1 } })} />, container);
+    render(
+      <BranchStatus branch={branch({ upstream: { name: 'origin/main', ahead: 2, behind: 1 } })} />,
+      container,
+    );
     const text = textOf(container);
 
     expect(text).toContain('main');
@@ -83,7 +78,10 @@ describe('BranchStatus', () => {
   });
 
   it('有上游且已同步时展示 0↓ 0↑，两个 0 都不省', () => {
-    render(<BranchStatus branch={branch({ upstream: { ahead: 0, behind: 0 } })} />, container);
+    render(
+      <BranchStatus branch={branch({ upstream: { name: 'origin/main', ahead: 0, behind: 0 } })} />,
+      container,
+    );
     const text = textOf(container);
 
     // 这一条与第一条合起来才是那条验收项：两种状态画成同一个样子(都成 0/0、
@@ -140,7 +138,11 @@ describe('BranchStatus 的降级标注', () => {
     // 个名字——只按 `detached` 藏计数的写法会让那个分支的 ahead/behind 静默消失
     render(
       <BranchStatus
-        branch={branch({ head: '(detached)', detached: true, upstream: { ahead: 1, behind: 2 } })}
+        branch={branch({
+          head: '(detached)',
+          detached: true,
+          upstream: { name: 'origin/main', ahead: 1, behind: 2 },
+        })}
       />,
       container,
     );
@@ -202,7 +204,10 @@ describe('App 的状态条', () => {
 
     repoState.value = {
       repoName: 'demo',
-      branch: branch({ head: 'release/1.0', upstream: { ahead: 3, behind: 0 } }),
+      branch: branch({
+        head: 'release/1.0',
+        upstream: { name: 'origin/main', ahead: 3, behind: 0 },
+      }),
       files: [],
       watch: { mode: 'native', tier: 'A' },
     };

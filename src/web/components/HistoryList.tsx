@@ -7,6 +7,7 @@
 import { useComputed } from '@preact/signals';
 import { useEffect, useRef } from 'preact/hooks';
 import type { CommitFileEntry, CommitSummary } from '../../server/shared/protocol';
+import { badgesBySha, type RefBadge } from '../state/badges';
 import { activeEditorKey, editorKey, pinEditor } from '../state/editors';
 import {
   commitDetails,
@@ -23,6 +24,7 @@ import {
 import { selectCommitFile } from '../state/store';
 import { StatusBadge, splitForDisplay } from './ChangeList';
 import { SidebarPlaceholder } from './EmptyState';
+import { Icon, REF_ICON } from './Icon';
 import {
   ChevronPlaceholder,
   CopyButton,
@@ -76,6 +78,40 @@ export function commitTooltip(commit: CommitSummary, now = Date.now()): string {
   ]
     .filter((part) => part !== '')
     .join('\n\n');
+}
+
+/**
+ * 徽标的色相，照 VS Code 的 `scmGraph.historyItemRefColor` / `historyItemRemoteRefColor`：**只给图标
+ * 上色、底色是同一色相的 20%**，文字跟着行走。实心底 + 白字是 VS Code 的画法，在这一栏里它比主题
+ * 还抢眼，而徽标是附带的那一样。两个 token 都是单值，`/20` 修饰符在这里是合法的 `<color>`。
+ */
+const BADGE_COLOR: Record<RefBadge['kind'], { bg: string; icon: string }> = {
+  local: { bg: 'bg-scm-graph-history-item-ref/20', icon: 'text-scm-graph-history-item-ref' },
+  remote: {
+    bg: 'bg-scm-graph-history-item-remote-ref/20',
+    icon: 'text-scm-graph-history-item-remote-ref',
+  },
+};
+
+/**
+ * 一枚 ref 徽标：图标 + 名字。`shrink-0` 排在 `truncate` span 之后——省略号先吃作者、再吃主题，徽标
+ * 不被裁；名字太长时它自己 `max-w` 截断，完整名进 `title`。`text-xs/4` 让它比 24px 行盒矮一截，
+ * 底色不顶满整行。
+ */
+function RefBadgeLabel({ badge }: { badge: RefBadge }) {
+  return (
+    <span
+      class={`flex max-w-32 shrink-0 items-center gap-0.5 rounded-sm px-1 text-xs/4 ${BADGE_COLOR[badge.kind].bg}`}
+      title={badge.name}
+    >
+      <Icon
+        icon={REF_ICON[badge.kind]}
+        size={12}
+        class={`shrink-0 ${BADGE_COLOR[badge.kind].icon}`}
+      />
+      <span class="truncate">{badge.name}</span>
+    </span>
+  );
 }
 
 /** 一条提交展开后的一个文件。单击开预览 tab、双击固定，与另两栏同一条惯例。 */
@@ -140,9 +176,11 @@ function CommitFiles({ sha }: { sha: string }) {
  * 前、作者作它的行内子元素），与变更列表「文件名 + 目录」同一个结构：省略号在右端先吃掉作者，主题
  * 留到最后；拆成两个平级 flex 子项会让两段按底边对齐。短哈希与时间不上行（320px 里放不下），进
  * `title`——短哈希是拿去与终端里 `git log --oneline` 对照的那把钥匙；要拿去用的是行内那枚复制按钮。
+ * 当前分支与上游指着这条时，主题之后跟着它们的徽标（见 `RefBadgeLabel`）。
  */
 function CommitRow({ commit }: { commit: CommitSummary }) {
   const expanded = useComputed(() => expandedCommits.value.has(commit.sha)).value;
+  const badges = useComputed(() => badgesBySha.value.get(commit.sha)).value;
   return (
     <TreeRow
       onClick={() => toggleCommit(commit.sha)}
@@ -159,6 +197,9 @@ function CommitRow({ commit }: { commit: CommitSummary }) {
         {commit.subject}
         <span class="ml-2 text-xs text-description-foreground">{commit.author}</span>
       </span>
+      {badges?.map((badge) => (
+        <RefBadgeLabel key={`${badge.kind}:${badge.name}`} badge={badge} />
+      ))}
     </TreeRow>
   );
 }

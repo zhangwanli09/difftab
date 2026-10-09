@@ -45,14 +45,19 @@ describe('parseStatus', () => {
     });
   });
 
-  test('有上游时解出 ahead / behind', () => {
+  test('有上游时解出名字与 ahead / behind', () => {
     const raw = z(
       '# branch.oid a6650872',
       '# branch.head main',
       '# branch.upstream origin/main',
       '# branch.ab +2 -1',
     );
-    expect(parseStatus(raw).branch.upstream).toEqual({ ahead: 2, behind: 1 });
+    expect(parseStatus(raw).branch.upstream).toEqual({ name: 'origin/main', ahead: 2, behind: 1 });
+  });
+
+  test('远端分支已删（gone）：只有 `# branch.upstream`、没有 `# branch.ab` → 仍为 null', () => {
+    const raw = z('# branch.oid a6650872', '# branch.head main', '# branch.upstream origin/gone');
+    expect(parseStatus(raw).branch.upstream).toBe(null);
   });
 
   test('detached HEAD 由字面量 `(detached)` 判定', () => {
