@@ -40,7 +40,9 @@ same list is a second place to forget.
       **`--commit` matches `head_sha` exactly, so keep the `$(git rev-parse HEAD)`** — hand
       it the short SHA you read off `git log` and it answers `[]` while the run is going,
       which looks exactly like "CI did not trigger". `gh run watch <run-id> --exit-status`
-      then blocks until the run lands.
+      then blocks until the run lands — unless jobs sit in `queued` with no runner
+      assigned (0.3.0: 68 minutes, all three platforms, status page all green);
+      `gh run cancel` then `gh run rerun` unsticks it.
 - [ ] Every gate in `docs/gates.md` is green, and anything left unverified is written
       down in `docs/history.md` under the open items.
 - [ ] `pnpm check:pack` — the tarball is `bin/`, `dist/`, both READMEs, LICENSE and
@@ -157,6 +159,9 @@ gh release create v0.1.0 --title "v0.1.0" --notes "…"
 ## After publishing
 
 - [ ] `npm view difftab` shows the new version, and `dist.tarball` is on npmjs.org.
+      The registry lags: right after `pnpm publish` it can still answer the previous
+      version or `No match found for version` for up to about two minutes. Poll
+      `--registry=https://registry.npmjs.org`; do not republish.
 - [ ] In a directory that is not this repo: `npm i -g difftab && difftab --version`,
       then check `npm ls -g --depth=0` shows no transitive dependencies under it.
 - [ ] In some other git repository (again: not this one) `npx difftab@<version> --no-open`

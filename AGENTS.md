@@ -57,7 +57,7 @@
 | 门禁挡什么、fixture 契约、发布产物约定 | `docs/gates.md` |
 | 产品范围、Non-goals、分发口径 | `docs/spec.md` |
 | 「为什么不那样做」、实测输出与源码核对 | `docs/decisions.md` **的对应小节**（按域分节，链锚点、别整份读） |
-| 发布踩过的坑、真机验收结论、未完事项 | `docs/history.md` |
+| 真机验收结论、被推翻的结论、未完事项 | `docs/history.md` |
 | 改 `docs/` 里任何文件、改 AGENTS.md 本身 | `docs/README.md`（写作约定 + 内容落哪份） |
 
 ## 5. 红线
@@ -191,7 +191,7 @@
 
 项目已发布并进入维护阶段，License MIT，仓库公开。**会过期的东西一律不进本文件**——版本号、发布日期、进度、「某阶段已收口」：事实来源分别是 `package.json`、`git log`、`docs/history.md`，而常驻上下文里的过期叙述不会有人主动想起来删。
 
-- **发布步骤照 `RELEASING.md` 走，不凭记忆敲**——里面钉着九件会咬人的事（pnpm 要单独登录、2FA 的 OTP、镜像源、先建分支再提交、合并方式以 ruleset 为准、`publishBranch`、manifest obfuscation、`prepublishOnly`、别在本仓库目录里用 `npx` 验收），产物约定在 `docs/gates.md`，踩坑记录在 `docs/history.md`
+- **发布步骤照 `RELEASING.md` 走，不凭记忆敲**——里面钉着九件会咬人的事（pnpm 要单独登录、2FA 的 OTP、镜像源、先建分支再提交、合并方式以 ruleset 为准、`publishBranch`、manifest obfuscation、`prepublishOnly`、别在本仓库目录里用 `npx` 验收），产物约定在 `docs/gates.md`
 - **semver：0.x 保留破坏性余地（尤其 CLI 参数与端口/token 行为），1.0.0 是结论不是起点**——等验收全通过且三端真机验过再发
 - **不建 `CHANGELOG.md`**：GitHub Releases 的 notes 就是变更日志
 - **README 的特性列表只收差异点，不是功能清单**——加了新功能默认**不动** README，除非它本身就是个卖点；功能的事实来源是 `docs/spec.md` 的功能范围表，机制在 `docs/design/`
