@@ -118,6 +118,8 @@ request does one thing — don't mix a refactor into a feature change. Two conse
 
 - **The PR title follows the same format.** For a PR with more than one commit, the title
   becomes the subject of the commit on `main`.
+  That subject is also what lands in `CHANGELOG.md`, and its type decides the next
+  version, so write it for users.
 - **Branch commit messages end up in `main` too.** They are concatenated into the body of
   the squashed commit, so a `wip` or `address review` stays in the history unless it is
   tidied up at merge time.

@@ -36,6 +36,7 @@
 | `pnpm check:inotify` | Linux 上压低 `fs.inotify.max_user_watches` 至 ENOSPC 后没能降级。**不进冒烟套件**，非 Linux 直接 SKIP | 专用作业（ubuntu，需免密 sudo） |
 | old-node-guard | 低于下限的 Node 上拿到的是 `SyntaxError` 而不是友好提示。**单列一档**，因为 build 与 matrix 都跑在 ≥22 上，解析期失败那条路径在那里永远测不到。**只跑 ubuntu + windows**：那句提示丢不丢只在 Windows 上看得见，macOS 与 ubuntu 同属 POSIX 的同一种行为 | 专用作业（Node 20 × 两平台） |
 | 只读性门禁确实进了调用参数 | `readonly.test.js` / `readonly-git-dir.test.js` 被改名、搬走、误删，或那条 glob 在某个平台上没展开到它们——两种都让「只读承诺的唯一自动化保护」变成一个什么都没跑的绿勾（`node --test` 一个文件都没匹配上时是 0 用例、exit 0）。**判据是 bash 自己把 `test/smoke/*.test.js` 展开成数组、点名检查、再把同一个数组原样传给 node**，与 node 版本、reporter 能力无关（为什么不数用例数、不按 junit 属性点名，见 `design/build.md` 的「CI 分层」） | matrix |
+| 发布前复跑整份 CI（`release.yml` 的 `gates` 作业） | 发出去的那个 commit 从没跑过三平台冒烟：release PR 由 `GITHUB_TOKEN` 创建，GitHub 不为它触发 `pull_request` CI，PR 上一个检查都没有。`publish` 依赖它，红了不发 | 发布 workflow（`workflow_call` 调 `ci.yml`） |
 | 后端产物 import 检查 | 后端引了标准库以外的模块（断言 `dist/server/main.js` 的 import 说明符全部以 `node:` 开头） | matrix |
 | 前端产物 CJK 计数为 0 | 界面文案漏了中文。**后端那侧拦不到**（产物按约定保留注释），它的用户可见文案是 `sendError` 与各 `*Error` 的字面量，归 `test/unit/server/` | matrix |
 
@@ -78,11 +79,9 @@
 - **注意 `files` 不是一份完整的白名单**：npm / pnpm 无条件把根目录下所有 `README*` 打进 tarball，与 `files` 无关。门禁查的是 pack 的实际输出而不是 `files` 字段，所以这类偏差抓得到。
 - **`assets/`（logo、社交预览）刻意不进 `files`**：它只给 GitHub 与 README 用，README 里的相对路径由 npm 改写到 GitHub raw，不需要随包发。
 - **`dependencies` 为空。** 前端依赖在构建期即被打进 `dist/web/app.js`，后端只用 Node 标准库——用户 `npm i -g` 时零传递依赖安装。
-- **`publishConfig.registry` 钉住 `registry.npmjs.org`**：开发机的全局 `~/.npmrc` 可能指向镜像源，不钉住就会发错地方。判据是 `pnpm publish` 打印的 `📦 name@version → <registry>` 那一行。这是 npm 的 manifest 字段，不受「pnpm 设置只写 `pnpm-workspace.yaml`」约束。
-- **`publishBranch: main` 写在 `pnpm-workspace.yaml`**——pnpm 自己的默认值是 `master`。
-- **pnpm 打包时默认做 manifest obfuscation**，会从发布出去的 `package.json` 里剥掉 `packageManager` 字段与 publish 生命周期脚本。这对本项目是想要的（用户侧不该看到我们的开发期工具链），**不要用 `--skip-manifest-obfuscation` 关掉**，但核对产物时要知道打出来的 `package.json` 本就与仓库里的不同。
-- **pnpm 默认会做 git 检查**（工作区必须干净、分支需匹配），这层检查有价值，**不要用 `--no-git-checks` 关掉**。
-- **不建 `CHANGELOG.md`**：GitHub Releases 的 notes 就是变更日志。两处写同一份清单，等于多一个会忘的地方。
+- **`publishConfig.registry` 钉住 `registry.npmjs.org`**：CI 里本来就是它；钉在 manifest 里，是让发布目标不取决于运行环境的 `~/.npmrc`。
+- **发布由 CI 完成**（release-please + npm trusted publishing，见 `../RELEASING.md`），用的是 `npm publish`，所以发出去的 `package.json` 里带着 `packageManager` 与 `prepublishOnly`——无害。
+- **`CHANGELOG.md` 由 release-please 生成**，条目取自合入 main 的 PR 标题，禁手改。
 - **semver：0.x 保留破坏性余地**（尤其 CLI 参数与端口/token 行为）。**1.0.0 是结论不是起点**——本工具的核心承诺是只读与零副作用，1.0.0 应当是这些承诺被两层验证覆盖、且三端真机验过之后的结果。
 
 发布的**步骤**照 [`../RELEASING.md`](../RELEASING.md) 走，不凭记忆敲。

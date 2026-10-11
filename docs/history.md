@@ -1,6 +1,6 @@
 # 记录：未完事项、真机验收与被推翻的结论
 
-> **本文是记录，不是约束。** 约束在 `AGENTS.md` 第 5 节（红线）与 [`decisions.md`](decisions.md)（被排除的做法）；需求与设计见 [`README.md`](README.md) 的索引。已收口的 0→1 开发阶段记录不在这里，在 git history。**发布不逐版记录**：变更日志是 GitHub Releases，发版时新撞上的坑直接补进 [`../RELEASING.md`](../RELEASING.md)；0.1.0–0.5.3 的逐版日志已删，要查翻 git history。
+> **本文是记录，不是约束。** 约束在 `AGENTS.md` 第 5 节（红线）与 [`decisions.md`](decisions.md)（被排除的做法）；需求与设计见 [`README.md`](README.md) 的索引。已收口的 0→1 开发阶段记录不在这里，在 git history。**发布不逐版记录**：变更日志是 release-please 生成的 `CHANGELOG.md`，发版时新撞上的坑直接补进 [`../RELEASING.md`](../RELEASING.md)；0.1.0–0.5.3 的逐版日志已删，要查翻 git history。
 
 ## 未完事项
 
