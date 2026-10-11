@@ -106,7 +106,7 @@ export function FileView({ path }: { path: string }) {
    * **但它只能给正文那一路**（`NEEDS_WIDE_BOX`）：`max-content` 下文本一律不折行，而提示行那
    * 几路是散文——套进去之后整句排成一行横着跑出面板，要横向滚才看得全。symlink 那句里的目标路
    * 径带着 `break-all` 也救不了：`break-all` 只把 min-content 降到一个字符，max-content 仍是整
-   * 句不断。实测读数在 `docs/decisions.md` 的「前端渲染与体积」。
+   * 句不断。
    */
   const wide = state.status === 'ready' && NEEDS_WIDE_BOX[state.payload.kind];
 

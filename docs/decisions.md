@@ -2,7 +2,7 @@
 
 > [`design/`](design/) 写规则与它失效时的机制，**本文只回答「为什么是当前这套、为什么不能换成别的」**——每条按「决策 → 理由 → 最小证据」写，机制不在这里复述第二遍。索引见 [`README.md`](README.md)。
 >
-> **按域分节，每节末尾自带本域那张「被排除的做法」分表。**`design/` 一律以锚点链进对应小节——任一个域只占全文的十分之一到五分之一。**但读取的最小单位是文件，锚点只保证一眼落到那一节、并不减少读进来的量**，因此每节必须能被单独读懂，别写成前后互相参照的长链。新增内容先认域，别在文件末尾另起一摊。
+> **按域分节，每节末尾自带本域那张「被排除的做法」分表。**`design/` 一律以锚点链进对应小节，因此每节必须能被单独读懂。新增内容先认域，别在文件末尾另起一摊。**`design/` 里已经写明理由的被排除做法，不在这里再列一行**——这张表只收 `design/` 放不下的论证与实测。
 >
 > **一条记录留下来的唯一理由，是「将来有人会重新提出那个做法、或重新踩那个坑，而它不会报错」。** 三类不满足的写了也要删：事实源在别处且会过期的（版本号、发布日程），复述 `design/` / `gates.md` / `RELEASING.md` 已有规则的，以及不改变任何未来判断的一次性叙事——那类进 [`history.md`](history.md)。
 >
@@ -30,38 +30,24 @@
 
 | 做法 | 排除原因 |
 |---|---|
-| 未跟踪文件用 `git diff --no-index` | 依赖 `/dev/null` 作对比端，Windows 上不可移植 |
-| 空树哈希用 `git hash-object -t tree /dev/null` | 同上，`/dev/null` 不可移植；`git mktree` 则会写对象库，违反只读承诺 |
-| 只靠 `-z` 解决路径转义 | `-z` 管不到 `git diff` 补丁正文的头部行，非 ASCII 路径仍会显示为 `\351\234\200` 转义串 |
-| 重命名文件按单路径取 diff | git 只看到一侧无法配对，重命名会退化成全新增文件，「重命名识别并标注」落空 |
 | 目录树整体以 `readdir` 遍历工作区 | 要把「仓库边界 + 不跟随符号链接 + `.gitignore` 语义」三件事全部重写一遍——最后那件等于在产品里塞进第二份 git 知识，而它不受只读门禁覆盖；`.git/` 与 `node_modules` 也得自己滤。`ls-files` 已在只读白名单里，三件事一次都不用写。**被排除的是「整体这么做」**：`--directory` 折叠掉的那一层 git 答不出内容，那一处读一层磁盘是唯一的兜底，而它落在「整棵子树已被 git 判为同一档」之后，一条 `.gitignore` 语义都不需要重写 |
 | 目录树一次性返回整棵树 | 与「禁止一次性取全仓 diff」同一条理由，且更糟：`node_modules` 让一份全量树的 JSON 比整仓 diff 还大，而它每次 SSE 刷新都要重发一遍 |
-| 目录树两条 `--others` **无条件**把 pathspec 放宽到本层第一段 | 那样确实绕开了上面那条 fatal，但**静默改掉另外两件事的答案**：被忽略的一片嵌在未跟踪目录里时 `--ignored` 那条一条都不回（`-- untracked/ig` 回 `untracked/ig/`，`-- untracked` 回空），那一片于是不再灰显；而未跟踪目录里的一个文件被折叠进 `a/`、`selfKind` 认不出坏请求，`?path=<那个文件>` 从 400 变成兜底 `readdir` 的 `ENOTDIR` 500。放宽只能当**非零退出后的兜底**，代价范围因此限死在「本来就是个 500」的那一层 |
-| 被忽略的文件那条 `ls-files` 不带 `--directory` | 一个装着 30,000 个文件的 `node_modules` 会原样吐出 30,000 条路径，**git 照常 exit 0**——症状只是这一层慢得离谱、内存里凭空多出几 MB 字符串，没有任何东西会报错 |
-| 仓库边界只做字面量判断（`resolve` + `relative`） | 挡得住 `../`，挡不住**中间某一段是符号链接**：`linkdir/secret.txt` 在字面上待在仓库内，而 `readFile` 顺着它走出去。`lstat` 只保护最后一段，救不了这条。三个端点实测全中，必须补一道 `realpath` |
 | 目录树那处兜底把 `readdir` 的错误一律咽成「空目录」 | 「读不了」会伪装成「里面是空的」。只对 `ENOENT` / `ENOTDIR` 回空（目录刚被删是 agent 跑动期间的常态），`EACCES` 一类照抛 |
 | 只读读文件走 `git show` / `git cat-file` | 树上点得到的路径包含未跟踪与被忽略的文件，它们在对象库里根本没有对应的对象；而已跟踪文件要看的也是**工作区**那一份，不是 index 或 HEAD 那一份 |
 | 图片旧侧用 `git show <base>:<path>` 取字节 | 字节上两者一样——实测（`*.bin diff=conv` + `diff.conv.textconv`）`show HEAD:x.bin` 与 `cat-file blob HEAD:x.bin` 都给原文、只有 `cat-file --textconv` 给转换结果，textconv 在两者上都是显式开关。差别在 `show` 是 porcelain：带整套 log / diff / pretty 参数面，冒烟里那条「子命令之后只能是 `blob` / `-s`」的字面量断言在它身上钉不住；`cat-file` 是专门读对象的 plumbing，参数面就那几个 |
-| `cat-file` 带 `--filters` / `--textconv`，或按 `.gitattributes` 走 smudge | 那会让 git 跑 clean / smudge / textconv 驱动，而 LFS 的 smudge 会往 `.git/lfs/objects` 写、缺对象时还会联网——**白名单只看子命令，看不见参数**，这是它唯一漏得过的形态，所以参数字面量在冒烟里单独钉一条 |
 | 提交历史继续留在「首版不做」 | 实际使用里暴露的痛点：agent 跑完常常自己 commit，工作区一干净 difftab 就什么都看不到，想回顾「刚才这几步改了什么」只能回终端敲 `git log -p`。这是「瞥一眼」的同一个诉求换了个时刻，不是 GitLens 式的深度追溯——blame 因此仍留在原处（分支列表后来另有理由移出，见下） |
 | 分支列表继续留在「首版不做」 | 原先的理由是「切换属写操作范畴」——那说的是**切换**，不是**看**。列表本身是纯读，而真实诉求是「agent 开了哪些分支、远端有什么、最近一个 tag 叫什么」，回答它不需要动仓库一个字节。选中之后**复制名字**而不是做任何事：checkout 仍属长期不做，用户拿着名字去终端里自己切 |
-| 列 ref 用 `git branch --list` / `git tag -l` | `branch` 与 `tag` 两个子命令本身就会写（建、删、改名、打标签），**白名单只看子命令**，放进去等于对着整个写操作面开了一道只靠参数把守的门。`for-each-ref` 是只读的 plumbing，一条就能同时列三组 |
 | 选中一项在 History 里打开那个 ref 的提交 | History 的锚点、自动刷新判据（HEAD 挪没挪）都是围着「HEAD 可达」这一件事建的；换成任意 ref 要给它再加一层「当前看的是谁」的状态与回到 HEAD 的入口。复制名字零状态，且是用户确认过的取舍 |
 | 提交里单个文件的补丁用 `git show <sha> -- <path>` | 与图片旧侧不用 `show` 同一条理由：带整套 log / diff / pretty 参数面，「argv 只能是这几个字面量」那条断言钉不住；而 `diff <parent> <sha>` 本就在白名单里，三道闸、按路径挑 numstat、重命名传两个路径全部原样复用 |
 | 一次提交的文件清单用 `git diff-tree` | 又一条白名单，换来的东西 `diff <parent> <sha> --name-status` 都给得出；且 `diff-tree` 对合并提交默认什么都不输出，要另配 `-m` / `--first-parent` 才说得出话，多一个要钉的参数面 |
 | 父提交用 `rev-list --parents` / `rev-parse <sha>^` 取 | 前者是第二条新白名单；后者对根提交非零退出，要把「没有父」与「坏请求」从退出码里分开。单条提交那次 `log` 本来就要取元数据，`%P` 顺手带回全部父提交，零额外进程 |
-| 提交列表按 `HEAD` + `--skip` 翻页 | agent 在两次翻页之间提交一次，第二页就重复第一页的最后一条——而「边跑边看」正是这个工具最常见的时刻。锚在第一页那次的 HEAD oid 上，翻页与新提交互不干扰；新提交由 SSE 后重取第一页长出来 |
 | 只读承诺只靠「子命令白名单 + 只读 `.git` 跑一遍」来证 | 两个陷阱都穿得过去：partial clone 的 lazy fetch 与 textconv 的 `cachetextconv` 都发生在白名单里的 `diff` / `cat-file` 之内，不让命令失败、不改输出；锁死的 `.git` 下 git 把写入当 best-effort，取不回来、写不进去也照常 exit 0。实测（git 2.54）：`blob:none` 克隆里 `git diff <旧> <旧>` 让 in-pack 从 7 变 9，`GIT_NO_LAZY_FETCH=1` 下以 128 退出、一个对象都不多；补丁形态的 `git diff`（工作区与提交都是）写出 `refs/notes/textconv/<驱动>`，`--numstat` / `--name-status` 不写，带 `--no-textconv` 一条都不写。所以第二层 B 半另有一个专门布了这两个陷阱的仓库，并带一条默认环境下确实写了库的正面对照 |
 | 提交列表末尾放一枚 `Load more` 按钮，不自动取 | 第一版的做法，理由是「滚到底自动取会在不经意间把列表拉到几百条」。实际用起来是多一次点击、且与 VS Code Source Control Graph 不一致；而自动取同样要有人滚到底才发生，DOM 的增长仍由用户驱动，agent 跑动时列表不会自己变长 |
 | 提交说明正文（`%b`）按需另取——展开或悬停时再问 | 悬停提示是原生 `title`，没有「悬停时异步填进去」这回事，要么自绘卡片、要么提前备好。列表那次 `log` 加一段 `%b` 是零额外进程，一页 50 条正文的体积可以忽略 |
-| 提交列表在每个 SSE 事件上重取第一页 | agent 改工作区时每个文件事件都推一次 SSE，开着 `History` 改 300 个文件就是 300 次 `rev-parse` + `log`，只为确认 HEAD 没动。HEAD 的 oid 本来就在每次 `/api/state` 那条 status 输出里（`# branch.oid`），比对它一条请求都不用多发 |
 | HEAD 一挪就以新的第一页整体替换列表 | 翻到 200 条之后 agent 提交一次，列表缩回 50 条、滚动位置跳走，而那正是「边跑边看」最常见的时刻。新 HEAD 只是在旧 HEAD 之上多长了几条时接在顶上即可；锚点不动、只记新长出来几条（`offset`），翻页照旧从原锚点数 |
 | History 的 ref 徽标从 `log` 的 `%D` 取 | 徽标会跟着列表一起缓存，而列表只在 HEAD 挪了时重取：`git push` 只挪 `origin/main`、不挪 HEAD，徽标就停在推送前那一行，页面不报错、只是「还没推送」的界线画错了地方。`log` 那条字面量 argv 也得为它多钉一段。上游的 oid 用已在白名单里的 `for-each-ref` 取、按分支状态变没变来判，push 之后 ahead 归零那一刻就重取 |
 | 按 `ahead` 计数把列表顶上 N 条标成「未推送」，不取 ref | 只在线性历史上成立：`log` 默认按提交时间排而不是按拓扑，HEAD 侧有合并时，从别的分支并进来的、早已推送的提交会与未推送的交错排列，顶上 N 条就不是那 N 条。上游那枚徽标落在它真正指着的那一行，不需要推断 |
 | History 画全部分支与标签的徽标 | VS Code 的默认档（`filter`）也只画图里那几条 ref；320px 一行里多一枚徽标就从主题上再扣一截，而「瞥一眼」要回答的只是「哪些还没推」。要看别的 ref 有分支列表 |
-| 合并提交展示组合 diff（`--cc`） | 补丁格式是多列前缀（`++` / ` -`），diff2html 解析不了；对第一父求 diff 是 GitHub 提交页与 VS Code Timeline 的同一口径，且只需要一个父 |
-| 单看扩展名判图片（不要求二进制） | 一个内容是文本的 `.png`（占位符、被 LFS 换成指针的图）会被送去 `<img>` 里画成一张破图，而它本来有一份能看的文本 diff；且已跟踪侧 git 的二进制判定含 `.gitattributes`，扩展名不含 |
-| 图片字节内联成 base64 放进 `DiffPayload` | 两张 5MB 的图进一份 JSON 多 33%，且两侧不能分别懒加载；CSP 的 `img-src 'self'` 让同源 `<img src>` 零成本可用，独立端点就是最短的路 |
 
 ## 文件监听
 
@@ -78,14 +64,9 @@
 
 | 做法 | 排除原因 |
 |---|---|
-| Linux 上直接用不带 `ignore` 的 `fs.watch({recursive:true})` | Node 在 Linux 是用户态实现，逐条目（含普通文件）注册 inotify 且不做排除，会耗尽 `max_user_watches` 并波及用户机器上的其他工具。**这正是 C 档在低版本 Linux 上宁可退回轮询、也不建递归 watch 的原因** |
 | Linux 上自行遍历目录树逐个注册 watch（手写一份递归监听） | Node 24.14.0 的 `ignore` 在 Linux 上即为注册前跳过，官方能力已覆盖。**被排除的是「手写 Linux 递归注册」，不是「按平台/版本选策略」**——后者正是三档方案本身 |
 | 用 try/catch 或传入选项后观察行为来探测 `ignore` 是否可用 | 探测要成立得依赖「不支持的版本上非法 `ignore` 因选项被忽略而不抛」这一**未文档化的内部细节**，一次校验时机调整就会让它把 A 档误判成 C 档、或把 C 档误判成 A 档。`process.versions.node` 的 semver 比对无此风险 |
-| B 档把 `isIgnored` 过滤放在 debounce 之后 | 放其后则 `node_modules` 的写入噪声照样顶开 debounce 窗口、刷新照旧触发，过滤形同虚设 |
 | 用「一口气写 50 个文件」那一路来验过滤（曾经有，已删） | **在能断言的地方冗余，在不冗余的地方断言不了。** macOS / Linux 上合并窗口把整批压成**一个**事件，过滤失效时它只漏出 1 个而间隔写入逐个漏出 6 个——它是同一条断言的更弱形式，没有独有的覆盖；Windows 上「缓冲区溢出」与「过滤失效」给出同一个信号，只能带一个放宽的上限，而那个上限正是它唯一稳定的产出（实测溢出过 2 次，超过原定的 1）。调大上限只是让它更晚一点再骗人一次 |
-| `ignore` 模式写成 `node_modules/**` 等含斜杠形式 | 含斜杠会使 `matchBase` 失效：既匹配不到目录自身，也匹配不到 monorepo 里嵌套的 `packages/*/node_modules`，两头落空 |
-| `ignore` 传不含斜杠的字符串 basename 模式 | macOS / Windows 的原生 watcher 交给匹配器的是事件的**相对路径**，basename 对不上模式，过滤在这两个平台上完全失效。必须传逐段匹配函数，三档共用 |
-| 降级轮询用裁剪过参数的 `git status`（省掉 `-uall` / `--branch`） | 省掉 `-uall` 后 git 把未跟踪目录折叠成一行 `dir/`，**在一个已存在的未跟踪目录里新增文件不改变输出**，轮询判「无变化」——而这正是 agent 边跑边生成文件时最常见的形态；省掉 `--branch` 则丢掉提交与切分支的检测 |
 | 无订阅者时暂停降级轮询、有订阅者时恢复 | 省下的是 45 秒宽限期内至多约 30 次 `git status`，换来一个「恢复」分支——漏掉时的症状是**页面连上了却永远不刷新**，既不报错也没有门禁看得见 |
 
 ## Node 运行时与进程
@@ -102,8 +83,6 @@
 
 | 做法 | 排除原因 |
 |---|---|
-| 单实例注册表写进 `.git/` 或工作区 | 污染 `git status`，实质违背零写操作承诺 |
-| 陈旧实例用 pid 存活判断 | pid 会被系统复用，误判会把用户带到指向别人进程的页面 |
 | 空闲宽限期「等第一个客户端连上之后才开始计」 | 把「浏览器压根没拉起来」整类情形变成永久常驻的后台进程；从启动即开始计，再由「任何请求都重置计时」补住误退的一侧 |
 
 ## 前端渲染与体积
@@ -117,15 +96,15 @@
 - **`synchronisedScroll` 是并排两侧唯一的联动机制，且没有回声抑制**（就 3.4.56 的 `diff2html-ui-base` 源码逐行核对）：`draw()` 里按 `.d2h-file-wrapper` 取出那对 `.d2h-file-side-diff`，两侧的 `scroll` 事件**无条件**互相回写 `scrollLeft` / `scrollTop`——回写引起的那次事件与用户自己滚出来的那次分不开。两侧滚动上限由各自最长行决定、通常不等，于是越过窄侧上限的那一下，窄侧被夹住后仍冒出一次事件，把宽侧回写到窄侧的上限：**表现为边界处顿一下，不是卡死**，之后继续正常滚（Chrome 实测，拿本仓库对 `docs/decisions.md` 的工作区改动、视口 1600 走并排：两侧横向上限分别是 **3765 / 4839**；把宽的那侧写到 4200，两侧一起落在 3765，再写 4500 则停在 **3765 / 4500**——窄侧饱和之后不再冒事件，宽侧照常滚到底）。上限为 0 的那一侧（新增文件的左半边全是空占位）反而不受影响——写不动就不产生事件。CSS 那侧没有替代品：`.d2h-file-side-diff{overflow-x:scroll;overflow-y:hidden;width:50%}` 让两半各自成为滚动容器，而把滚动收到共同祖先上得先给这两半 `overflow-x: visible`——两半各占 50% 宽，溢出的正文不再被裁，随即互相压盖。
 - **1024 这个阈值是算出来的，不是断点抄来的**（就 `diff2html.min.css` 实测）：`.d2h-diff-table` 的字体是 `Menlo,Consolas,monospace` 13px，并排的 `.d2h-code-side-line{padding:0 4.5em;width:calc(100% - 9em)}`、逐行的 `.d2h-code-line{padding:0 8em}`——即 13px 下并排每侧固定吃掉 **117px**、逐行吃掉 **104px** 的行号槽，按 Menlo 13px 每字符约 **7.8px** 折算。**与 Tailwind 的 `lg`（1024px）数值相同是巧合**：那是视口断点，这里量的是面板。
 - **`ResizeObserver` 要 `observe(el, { box: 'border-box' })`，只在读值那侧取 `borderBoxSize` 不够**：`observe(el)` 默认按 **content box** 判「有没有变」，于是滚动条每次进出都推一次回调，哪怕 border box 一动没动——读值那侧滤的是**已经产生的**回调，指定观察 box 才是从源头不投递。另：`borderBoxSize` 读的是观察阶段已算好的值，且**不带 transform 缩放**——对「还剩多少地方排版」这个问题，未缩放的排版宽度才是想要的那个。
-- **`position: sticky` 的滑动余量来自包含块，不是滚动容器**（Chrome 实测）：文件视图的行号槽`sticky left-0` 长期不生效，因为它的包含块只有面板那么宽（960px），而横向滚动发生在外面那个`<section>` 上、内容实测宽 9446px——**余量为 0 时 sticky 与 static 在页面上完全一样**，没有任何东西会响。给那一层 `w-max` 之后包含块与内容齐宽，行号槽的 `left` 实测从 -266 回到 320（= 面板左缘）。同一次改动顺带修好标题栏：它的宽度同样来自那一层，从前只画到 960px，滚过去之后顶上是一条秃的（**标题栏这半条后来随「横杠排到滚动区域之外」一起消失**，它不再从这一层拿宽度，`min-w-full` 因此也去掉；行号槽那半条一字未变）。**代价是这个类只能给正文那一路**：`max-content` 下 `break-all` 不再起作用（它只降 min-content），一条 60 层的相对路径实测把提示行撑到 **1977px**、而面板 960px——去掉 `w-max` 后同一条回到 960px 正常折行。
+- **`position: sticky` 的滑动余量来自包含块，不是滚动容器**（Chrome 实测）：文件视图的行号槽`sticky left-0` 长期不生效，因为它的包含块只有面板那么宽（960px），而横向滚动发生在外面那个`<section>` 上、内容实测宽 9446px——**余量为 0 时 sticky 与 static 在页面上完全一样**，没有任何东西会响。给那一层 `w-max` 之后包含块与内容齐宽，行号槽的 `left` 实测从 -266 回到 320（= 面板左缘）。**代价是这个类只能给正文那一路**：`max-content` 下 `break-all` 不再起作用（它只降 min-content），一条 60 层的相对路径实测把提示行撑到 **1977px**、而面板 960px——去掉 `w-max` 后同一条回到 960px 正常折行。
 - **happy-dom 盖不到的两处**（20.11.2）：其一，`Attr.nodeName` 返回空字符串（同一属性上 `name` / `localName` 都正常），而 diff2html 的 `mergeStreams.open()` 恰好用它重新序列化属性，于是凡走过 `mergeStreams` 的行——带 `<del>` / `<ins>` 词级标记的增删行——**类名丢失**（真机实测 177 个 hljs span / 12 类，故只影响 DOM 测试环境），`test/unit/web/` 里「高亮出颜色」的断言只能压在**上下文行**上。其二，它的 `ResizeObserver` 三个方法体都只有一句 `// TODO: Not implemented`，也没有布局引擎，故「`ResizeObserver` → 宽度 signal」这一段归肉眼项，阈值映射与「格式进了 effect 依赖数组」则靠**直接写那个 signal** 断言。
 
 - **`<img src>` 字串不变时 Preact 不改属性、浏览器不重新请求**：SSE 刷新后 `loadDiff` 落进来的是新 payload 对象，两侧 `path` / `side` 一字不变——`v=` 不随内容变时右图停在旧的那张，控制台一条都不报。第一版把 `v=` 做成 `useMemo(() => Date.now(), [payload])`，图确实换了，代价是每一次无关文件的 SSE（`refresh()` 对活动 tab 无条件重取）都重挂两张图、重下最多 10MB 外加一次 `cat-file blob`，且依赖「`getJson` 永远给新对象、缓存永不去重」这条没写下来的契约。现在 `v=` 是后端给的内容身份（`ImageSide.version`）。
 - **图片视图的棋盘复用 `--color-diff-diagonal-fill`**：那个 token 本就是「叠在编辑器底色上、明暗两档都成立」的 6% 半透明，`repeating-conic-gradient` 两格交替即成棋盘，不为它新开颜色（`@theme` 里没人引用的 token 会被裁，多开一个就多一处要被 `check:css` 看着的地方）。
 
-- **界面图标统一到 Lucide，装包由构建期 tree-shake，不再手抄 path**：原先那 6 枚抄自两个上游、两种版式（Octicons 的 16 + `fill` 两枚，Heroicons v2 的 24 + `stroke` 四枚），同一个界面里两种质感并存，`stroke-width` 还在两处不一致（1.5 / 2）。统一时**连「复制 path 而不装包」一起翻掉**，是因为那条的理由在 Lucide 下不再成立：它的 `git-branch`（5 个子元素）、`sun`（4）、`monitor`（4）**不是单条 path**，手抄意味着把「一个常量字符串」升级成「一段 JSX 子树」，而那正是装包本该省掉的东西。**体积实测反而更省**：`lucide-preact@1.41.0`（ISC，零运行时依赖，`sideEffects: false`）在 barrel 入口下由 Rollup tree-shake，6 枚组件连同 `createLucideIcon` 运行时合计 **+1.4 KB 明文 / +0.5 KB gzip**（211.4 → 212.8 KB，门禁 350 KB），与原先六条 path 的 **1,335 B** 基本持平（343 + 326 + 25 + 268 + 193 + 180），CSS 一字未增——「装包会把体积顶上去」这半条顾虑实测不成立。换来的还有一处**静态可查的增强**：状态条与侧栏 `Changes` 那个 tab 共用同一枚分支图标，从前靠共用一条导出的 path 字符串（两份漂开时静默画成两个图形），现在是两处 import 同一个具名组件，拼错即编译错误。
+- **界面图标统一到 Lucide，装包由构建期 tree-shake，不再手抄 path**：原先 6 枚抄自 Octicons 与 Heroicons 两套、两种版式（16 + `fill` / 24 + `stroke`），同一界面两种质感并存。「复制 path 而不装包」那条理由在 Lucide 下不成立：它的 `git-branch` / `sun` / `monitor` 都不是单条 path，手抄就是手抄一段 JSX 子树。**体积实测反而持平**：`lucide-preact@1.41.0`（ISC，零运行时依赖，`sideEffects: false`）tree-shake 后 6 枚连同 `createLucideIcon` 合计 **+1.4 KB 明文 / +0.5 KB gzip**，与原先六条 path 的 1,335 B 基本持平，CSS 一字未增。顺带让状态条与 `Changes` tab 的分支图标从「共用一条 path 字符串」变成「import 同一个具名组件」，拼错即编译错误。
 
-- **logo 的几版是画出来看过才定的，不是推出来的**（headless Chrome 渲 16 / 24 / 32 / 64 / 160 px，亮暗两档并列）：第一版照 Lucide 的圆头 + 3 单位圆角画一个拱形标签页、里面放 `±`，**读出来是墓碑**（拱形外框 + 顶上一个十字），宽扁一点像游戏手柄，换成方框加 `+` 又像急救箱；里面换成 `≠` 能把语义救回来，但圆头 + 圆角 + 正圆 bowl 三样叠起来整套仍软。改方头 + 直角之后 `+`/`−` 与两行横线都成立，`≠` 反倒多余。那一版定稿是「直角标签页 + 一短一长两行」——两行是 diff 最省的画法，语义靠标签页外形给。favicon 的两条 data URI 实测合计约 1 KB，进 `index.html` 不进任何体积门禁的匹配范围。**第二轮换成「三条 hunk」，同样是四个方向并排渲出来才定的**（实心负形方块 / 三条 hunk / 圆润并排视图 / 半空半实方框，各带 64 / 32 / 16 px 与标签页、顶栏的模拟）：去掉外框之后语义直接由红绿给，不再靠剪影解释「这是一个标签页」，而 16px 下三条色块比 2 单位描边稳得多。颜色试了六套：直接读 `--color-git-deleted` / `--color-git-added` 亮档偏泥、暗档偏粉——那两个 token 是给文件名文字调的，铺成色块饱和度不够；GitHub 那对红绿、橙青、低饱和、单色加一枚蓝各有取舍，定的是**一套固定色明暗不切**（`#e5484d` / `#30a46c`），省掉整层「两档描边色」的机制，只让上下文那条跟 `currentColor`。**字标一并退役**：界面里本来只用符号，README 与 npm 页面本就是文字，社交预览的名字由 Chrome 用系统字体渲进 PNG——那几十行几何字标唯一的读者是 README 头图。
+- **logo 是画出来看过才定的，不是推出来的**（headless Chrome 渲 16 / 24 / 32 / 64 / 160 px，亮暗并列）：带外框的「标签页」系列在小尺寸下读成墓碑、手柄或急救箱；最终换成无外框的「三条 hunk」，语义直接由红绿给，16px 下三条色块比 2 单位描边稳得多。颜色试了六套：直接读 `--color-git-deleted` / `--color-git-added` 亮档偏泥、暗档偏粉（那两个 token 是给文字调的），定的是**一套固定色明暗不切**（`#e5484d` / `#30a46c`），只让上下文那条跟 `currentColor`。favicon 的两条 data URI 合计约 1 KB，不在体积门禁的匹配范围内。**字标一并退役**：界面只用符号，README 与 npm 页面本就是文字，社交预览的名字由 Chrome 用系统字体渲进 PNG。
 
 ### 被排除的做法
 
@@ -138,61 +117,34 @@
 | 自研一份带回声抑制的两侧联动，替掉 `synchronisedScroll` | 换回来的只有「两侧滚动上限不等时边界处那一次顿挫」，而代价是一段自研的滚动同步代码（要拿「这一侧已经停在它自己够得着的位置」把回声认出来）、一条决策记录，以及一个只有在 happy-dom 里手工模拟 clamp 才跑得起来的单测 |
 | 单独 import `highlight.js/lib/languages/{jsx,tsx,toml}` | 这三个模块不存在（实测 404），它们是 `javascript` / `typescript` / `ini` 的**别名**，注册主模块时自动生效；写了会在构建期 resolve 失败 |
 | 为 `.vue` / `.env` 引第三方语言包（highlightjs-vue 之类）或新增模块 | 上游 highlight.js **没有** vue / svelte / env 模块，第三方包意味着一份不受 hljs 版本约束的额外依赖；而实测把它们映射到已注册的模块已经够用——SFC 的模板段按 `xml` 上色，`<script>` / `<style>` 那两段由逐行判定器换成 javascript / css（**不是**靠 xml 的子语言：那要整块正文一次高亮才成立，diff 视图是逐行的，见 [`design/diff-render.md`](design/diff-render.md) 的「单文件组件的区块高亮」），`.env` 走 `ini` 后 `KEY` 是 `hljs-attr`、`#` 是注释。补一张映射表的体积是 0，而语言清单是 JS 预算的主导项 |
-| `outputFormat` 按**视口**宽度判（`matchMedia`） | 面板宽度恒等于「视口 − 320」，按视口判等于把侧栏宽度这个常数在 CSS 之外再写一遍；侧栏一改阈值就静默错位 |
-| 量里面那层滚动容器，或按 content box（`contentRect` / `contentBoxSize`）判阈值 | **滚动条是从 content box 里扣的**：换格式改变内容高度 → 滚动条进出 → 那一层的 content box 宽度抖十几像素，阈值落在抖动区间里时两种格式来回重画。标题栏搬出滚动区之后面板自己不滚，量它的 border box 从源头没有这份抖动 |
 | 右侧标题栏用滚动容器内的 `sticky top-0` 钉住 | 要靠 `z-10` 与实心底色去躲 diff2html 那列 `position:absolute` 的行号（宿主 div 的 `relative` 是它们的包含块，两者都排在横杠之后）；文件视图那侧还得靠外层 `w-max min-w-full` 与一个 `sticky left-0` 的 span 才铺得满、留得住，`px-4` 与 `left-4` 两个数字从此绑死。把横杠排到滚动容器之外，这几处一起消失——越界的盒子被容器的 `overflow` 裁掉，够不着它 |
 | 选中文件从列表里消失后仍留着最后那份 diff | 把「用户刚才在读的东西还在」摆在了「左栏刚断言过这些改动不存在」之前，工作区变干净时两栏直接互相矛盾；且那份 diff 此后再也不会被刷新（`refresh` 走不到 `loadDiff`），留得越久越旧 |
 | 给用户加一个 side-by-side / line-by-line 手动开关 | 自动判据已覆盖「放不放得下」这个唯一的真实诉求。**「要引入一份跨会话偏好」这半条已经不成立**——明暗开关把那套机制建起来了（`state/theme.ts`），别拿它当反例；剩下的理由只有前半条。首版不做，不是长期不做 |
 | 明暗开关只做「亮 / 暗」两档 | 点过一次就再也回不到「跟随系统」，而跟随系统恰恰是加开关之前唯一的行为——不该被一次点击永久换掉。三档的代价只是循环里多一格 |
 | 文件内容构造成「全新增 diff」交给 diff2html 渲染 | 省下一个渲染路径，代价是每一行前面都挂着 `+`、整片底色是新增绿——读起来像在审一份补丁而不是读一个文件，而「看项目整体面貌」正是要摆脱补丁视角 |
-| 文件视图的行号靠按行切分高亮输出 | hljs 的 span 跨行，切开要自己重开标签补齐——那正是上面「自行重写 diff2html 高亮切分逻辑」被排除的同一件事，换个地方做不会变得更容易。兄弟元素做行号槽只要两个 `<pre>` 同 `line-height` |
-| 给「显示被忽略的文件」做一个开关 | 换来的是一个多数人只会拨一次的按钮，外加一档状态、一份端点参数与一组测试；灰显本身已经把「这不是你的代码」说清楚了 |
 | 目录树同一层「已经在取就直接不取」 | 一次 `change` 引出的刷新会在上一次还没回来时被整个丢掉；若它正是 agent 那一串写入的最后一个事件，这一层就一直停在旧内容上，直到用户手动收起再展开。改用按目录的请求序号决胜负，与 `loadState` / `loadDiff` 同一套判据 |
 | 目录树某一层出错就画那句话（不看手上有没有缓存） | 刷新途中失败是常态（后端重启、dev 代理抖一下），而 `loadDir` 失败只写 `treeErrors`、不动 `treeCache`。先看错误的写法会让一个已经画出来的目录连同它底下展开的一切被一行红字换掉——陈旧的内容比消失的内容有用得多，且下一拍就会被换新 |
-| 两栏的高亮各认自己那一种 tab（变更列表只认 diff、目录树只认全文） | 曾是既定做法，理由是「那一行说的是这份补丁，而此刻在读的是全文」。加上行内 `Open file` 之后它的症状露出来：用户刚从那一行出发、右侧正显示着这个文件，那一行却熄了。VS Code 的列表选中态不随编辑器种类变。现在两栏同按 `activeEditorPath`（活动 tab 的路径）判——它仍从 `activeEditor` 派生，不新增状态，也不必记「这次是从哪点进来的」 |
 | 目录树的「滚进视野」写成 `Row` 里的 `useEffect([selected])` | 要在组件体里读选中态，等于这一行订阅了 `activeEditorPath`——换一次活动 tab 整棵展开的树重渲染，正是 `rowClass` 包成 computed 刻意避开的事。改成每行一份 signal effect：只做一次相等比较，不引起渲染 |
 | 树上的「滚进视野」另设一个「待滚动」信号，由 `revealPath` 登记、行滚完清掉 | 一份只为一个组件存在的状态层信号、一条「消费后必须清」的不变量、一个「没人消费就留到下次覆盖」的边角，外加每个用例的 `beforeEach` 多一行重置。换来的只有「收起再展开含选中文件的目录时不再滚一次」，而 `nearest` 让那一下在已经看得见时是零像素。行直接按 `activeEditorPath` 判，与编辑器 tab 同一条 |
-| `revealPath` 内部对 `expandedDirs` 用 `peek()`，以免调用它的 effect 订阅展开态 | 被调的函数得知道调用方是个 effect，此后从那个 effect 可达的每个函数都得记得 `peek()`，且它读展开态的写法与 `toggleDir` / `collapseAll` / `refreshTree` 不一致。依赖集该在 effect 那里声明：`untracked(() => revealPath(path))` |
-| 树跟随活动 tab 的 effect 写成 `main.tsx` 里的全局 `effect()`、自己判 `activeTab === 'files'` | `activeTab` 在 `store.ts`，`tree.ts` 得反向 import 它（既有方向是 `store → tree`）；而树本来只在 `Files` 档挂载，effect 挂在 `FileTree` 组件上，「树可见才 reveal、切过来补一次」两条都是白得的 |
-| 编辑器标签页全部常驻挂载、切 tab 只切显示 | diff2html 的 DOM 每份都是 MB 级，N 个 tab 常驻等于 N 份 DOM 常驻；`outputFormat` 一变每份都要重画一遍。切回来卸载重挂、滚动位置丢，是刻意的代价 |
-| 每次 SSE 重取栏里全部打开的 tab | agent 跑动期间事件密集，挂着 10 个 diff tab 时每个事件就是 10 趟 `git diff`。只重取活动那个，其余切过去时再取——缓存的正文照常显示、新的回来再换掉 |
 | 后台 tab 用一个 stale 标记记「SSE 后没重取」，激活时按标记决定取不取 | 多一份要在收编、改名、关闭各处维护的状态，而它省下的只是「切过去时内容没变也发一趟」那一次请求。`activateEditor` 每次都真的去取，与目录树的 `loadDir` 同一取向 |
 | 关掉活动 tab 后按最近使用顺序（MRU）选下一个 | 要多维护一份访问序列，换来的只是关掉一个刚从别处切过来的 tab 时少切一次。右邻居优先、否则左邻居，一眼能预期 |
-| 同一路径的 diff 与全文共用一个 tab、从哪边点开就切成哪种 | 要多记一份「这个 tab 此刻显示哪种」，切换时另一种的滚动位置也跟着丢；VS Code 里 diff editor 与普通 editor 本来就是两个 tab |
-| 仿 VS Code 用 `::-webkit-scrollbar` 自绘滚动条（10px、半透明滑块、无轨道） | 一旦出现 `::-webkit-scrollbar` 规则，macOS 上的 overlay 滚动条就被强制成经典滚动条——常显、占布局宽度；Chrome 121+ 在设了 `scrollbar-width` / `scrollbar-color` 之后本就忽略 webkit 伪元素，两套写法只有旧 Safari 一处能看到差别，却要同步维护。一条 `scrollbar-width: thin` 保留原生外观与 overlay 行为，粗细由浏览器定 |
 | 编辑器标签栏用 `overflow-x-hidden` 去掉滚动条 | `scrollIntoView` 照样能把活动 tab 滚进来，但用户自己滚不了——溢出之后前面的 tab 只能靠关掉后面的才够得着。`scrollbar-width: none` 只是不画滚动条，滚动能力一样不少 |
 | 编辑器标签栏外面再套一层 wrapper，栏留 `border-b`、tab 留 `-mb-px` | 多一层 div，且 tablist 不再是面板 `<section>` 的直接子项（`app.test.tsx` 钉着这条）。栏自己画一条 inset 阴影当分隔线，tab 的 `border-b` 落在 padding box 最后 1px 上盖过它，一层就够（`divider-b`） |
-| 侧栏那行 tab 保留「行 `border-b` + tab `-mb-px`」的教科书写法，只有编辑器标签栏改 inset 阴影 | 同一种视觉（下划线盖在通栏分隔线上）两套机制、两段互相矛盾的注释与两段文档，动其中一行的人得同时记住两套；两行都走 `divider-b` 后 `-mb-px` 在仓库里一处都不剩 |
 | 分隔线写成内联的 `shadow-[inset_0_-1px_var(--color-panel-border)]` | Tailwind 的 `shadow-*` 会把整套 shadow / ring 变量机制拖进产物：实测 CSS +2.2 KB（14 条 `@property` 注册、`@layer properties` 兜底块翻倍、五段式 `box-shadow` 里四段是 `0 0 #0000` 空转），为一条 1px 分隔线付整套机制；一条 `@utility divider-b { box-shadow: … }` 是 200 字节，测试也能钉一个名字而不是一段任意值的拼写 |
 | 标签栏底下再留一行完整路径（面包屑） | 每个文件的名字在栏里与栏下各写一遍；完整路径挂在 tab 的 `title` 上已经够用，而多一行就少一行正文 |
-| `DiffView` / `FileView` 用 `useComputed(() => diffStates.value.get(path))` 按 prop 取缓存 | `@preact/signals` 的 `useComputed` 只在 signal 依赖变了时重算，`path` prop 换了而 map 没写时它停在上一个 tab 的正文上——页面上就是「切了 tab 标题变了正文没变」。视图只是一个订阅者，在渲染体里直接读 |
-| 变更列表的树视图把折叠态记成 expanded 集合 | 默认全展开时每个新目录都得在建树时补登记一次，漏了就默认收起——SSE 刷新新冒出来的目录在页面上只是「刚改的那几个文件没显示出来」，而 agent 跑动期间新目录是常态。记 collapsed 集合则空集即全展开，新目录零登记 |
-| 变更列表的树视图复用 `state/tree.ts` 的 `expandedDirs` | 那份默认收起、键是仓库路径、`refreshTree` 按它发请求——混进去每折一个变更目录就多一趟 `ls-files`；且同一个目录在 Staged Changes 与 Changes 两组里是两棵子树，键不带分组 id 时折一处连带折另一处 |
 | 变更列表按 git 的用词分四组（Conflicted / Staged / Unstaged / Untracked）、字母照 git 印（未跟踪 `?`、冲突两位） | 这一块的读者对照的是编辑器里的 Source Control，不是 `git status`：两边各说一种话时同一个 `U` 在 VS Code 里是未跟踪、在这里是冲突。改成 VS Code 默认的三组与 `U` / `!`；换字只在徽章的展示映射里，`StatusCode` 协议照旧是 git 的字母 |
-| 冲突照 VS Code 把 `DU` / `UD` 印成 `D`、其余印 `!` | `Files` 那档的文件树只拿得到归并后的 `ChangeCode`（冲突一律 `U`），跟了的话同一个文件在两档字母不一样。一律 `!`、tooltip 给原始 XY，`DD` 与 `UU` 的区分仍在，前端也不必写下七种组合的含义 |
-| `Changes` 组把已跟踪与未跟踪直接拼接，或整体再排一次 | 拼接时未跟踪全堆在组尾，与 VS Code 不符；整体重排则多一份排序意见、已跟踪那侧不再是 git 给的顺序。两侧各自有序，归并一次即可 |
-| 变更列表的版式开关、左栏宽度写 `localStorage` | 后端 `listen(0)` 端口随机，`localStorage` 按 origin（含端口）隔离，写了也只活到同一实例的刷新（`difftab:theme` 已经这样，见 [`history.md`](history.md) 的「未完事项」）。为一份跨不了实例的偏好搭一套读写 try/catch 不划算，与 `activeTab` 同一形状的内存 signal 即可 |
 | 变更列表行尾为 `Open file` 按钮常驻预留一个 20px 空位 | 每行永久少 26px 文字宽度（占位 + 间距），320px 侧栏里是一成，换来的只是「悬停时省略号不动」；VS Code 的 inline action 本就是悬停时才进流、文字跟着重排 |
 | `Open file` 按钮直接盖在文字尾巴上、外壳补一块与行底色相同的遮罩 | 遮罩色随选中态变（悬停底 / 选中底两档）、键盘焦点而未悬停时又是第三种；覆盖处没有省略号只有一道硬边。行按钮里放一个与按钮等宽、同一对变体显隐的占位，文字就真的重排了，遮罩整层不需要 |
 | `Open file` 按钮用透明度藏（照编辑器 tab 上那枚 ×） | × 那里透明是为了留住位置、悬停时 tab 宽度不跳；这里按钮悬在文字上方，透明就是一块看不见却能点的死区——点到目录段尾巴会误开文件。`display` 切换配 `group-has-focus-visible` 一样接得住键盘焦点 |
-| 已删除的条目照 VS Code 也画 `Open file` | 工作区里没有这个文件，点了只有一条 `Could not load this file`；VS Code 那边同样是报错。判据 `isAbsentFromWorktree` 放 `shared/protocol.ts`——`UD`（deleted by them）工作区留着我们这一方的版本，只看 `unstaged === 'D'` 会把它误判成不在 |
 | `Copy path` 放右键上下文菜单（VS Code 的 `Copy Path` 住在那里） | 仓库里没有任何菜单先例，为一项功能起整套定位、Escape、点外关闭、键盘导航；一项的菜单打开后还得再点一次。行内动作的机制上一版已为 `Open file` 铺好，第二枚只是往里再站一个，键盘可达性也一并继承（触屏靠 `pointer-coarse:flex` 常驻显示，见 `web.md`） |
 | `Copy path` 复制绝对路径，或两种路径各一枚（照 VS Code 的 Copy Path / Copy Relative Path） | 贴给 agent 与 `git` 子命令要的都是仓库相对路径，而它就是页面上现成的 `path`；绝对路径要给 `RepoState` 加 `root`（协议、冒烟断言各补一处）。再多一枚按钮时悬停要退 60px，320px 侧栏里近两成 |
 | `Copy path` 点后弹一条 toast 说「Copied」 | 320px 侧栏里没有地方放，且反馈该出现在手指底下：图标换 `Check`、label 换 `Copied` 1.5s，照 GitHub 代码块上那枚复制按钮。写失败（`writeText` reject）静默不换——服务绑定 `127.0.0.1`，loopback 是 secure context，失败只剩用户拒了权限这一种 |
-| 行内动作的键盘那半条用 `group-focus-within`（照编辑器 tab 上那枚 ×） | 鼠标点一下按钮，Chrome / Firefox 把焦点留在它身上，`:focus-within` 一直成立，鼠标移开后按钮钉在行上直到点别处。× 那里没这个问题只是因为活动 tab 本来就常亮着 ×。`:has(:focus-visible)` 只认键盘来的焦点，鼠标走了就收；点击后 `blur()` 也能收，但键盘用户按 Enter 之后焦点就没了 |
-| 行内动作的 `group` 挂在 `<li>` 上（文件行沿用、目录行不画按钮） | 目录行的 `<li>` 里套着子 `<ul>`，group 挂在它上面时悬停任一后代整棵子树的目录行都会亮出按钮、底色一起变；文件行与目录行各一种形状则两棵树的用例与文档各要说两遍。收到行按钮与外壳同住的内层 `<div>` 上，四种行一个形状，目录行也就能有 `Copy path` |
 | 行内动作静止淡一档做成 `IconButton` 的一个 `muted` 档，或在它上面开放 `class` | 「与旁边的状态字母同档」是 `TreeRow` 那个动作槽位的不变量——凡站进来的都得如此、站在别处的都不该如此；写成按钮的 prop 时第三枚动作忘传不报错，只是比邻居重一档，共享组件也从「构造上相等」退成「有一个开关」。画在外壳上按子选择器变体逐枚生效（`[&>*:hover]` 恢复的是悬停的那一枚），`IconButton` 一个字不改。另造一枚更淡的颜色 token 同样排除：一个固定的淡色要在静止 / 悬停 / 选中三种底上各自核对对比度、深浅再翻一倍，`opacity-75` 一个值三种底都跟着 |
-| `<img>` 的 `v=` 戳随 payload 身份变（`Date.now()` 挂在 `useMemo` 依赖上） | 见上一节那条事实：每次无关的 SSE 都重下两张图，且靠一条没写下来的「缓存永远给新对象」契约撑着。内容身份由后端顺手就有——旧侧的 oid 来自 `resolveDiffBase` 那次 `rev-parse`，新侧的体积 + mtime 来自本就要做的 `lstat`，前端零成本 |
-| 图片用 `fetch` 拿字节再 `URL.createObjectURL` 交给 `<img>` | CSP 的 `img-src` 要加 `blob:`，`security.ts` 与冒烟里那条 CSP 断言都得放宽，换来的只是把同一份字节多走一遍 JS；同源 `<img src="/api/blob?…">` 自动带 cookie、`img-src 'self'` 现成放行 |
-| 前端按扩展名自己判「这是图片」再决定画不画 `<img>` | 与后端那张表是两份事实来源，漂开时后端说是图、前端按二进制画一句提示；`payload.kind === 'image'` 已经把判断带过来了 |
 | 图片视图做缩放、滑块、洋葱皮、像素 diff | 首版只回答「改成了什么样」，新旧并排已够；那几样各要一段交互状态，而它们对「瞥一眼」没有增量 |
 | 图片 tab 做成第三种 `EditorKind` | tab 的身份是「视图种类 + 路径」，图片不是新的视图种类，只是 diff / 全文两种视图的正文换成了图；加一种要连累 `EditorTabs` 图标、`cacheOf`、`refresh`、空态四处 |
 | 监听 `storage` 事件做多标签页同步 | difftab 一个仓库只跑一个实例、正常只有一个标签页，为此接一条跨标签通道是给一个不存在的场景付代价 |
 | logo 带字标（几何拼字，或 SVG `<text>`、Google Fonts、转曲入库） | 界面只用符号，README 与 npm 页面本就是文字，字标唯一的读者是 README 头图——为它养几十行几何不值。用字体的几条各自也不成立：`<text>` 在 GitHub 的 `<img>` 沙箱里拿不到网页字体，各端各画各的；转曲要一份字体工具链，而仓库连 devDependencies 里都没有；Google Fonts 是外链。于是 `assets/mark.svg` 里一个字都没有；社交预览的 `<text>` 只在 Chrome 截成的 PNG 里定型，不受那条沙箱限制 |
 | README 头图用 `<picture>` 配亮暗两份 SVG | 同一组坐标要养两份文件，只为让 GitHub 的手动主题也能命中；单文件内嵌 `prefers-color-scheme` 已覆盖跟随系统的多数人，npm 包页面也照常认 |
-| 品牌红绿进 `app.css` 当 token（`--color-brand-*`） | 它们在 CSS 里没有引用处（组件的 `fill` 写在 IconNode 上，脚本用正则读文件），而 `@theme` 里没人引用的 token 会被 Tailwind 裁掉，脚本读到的与产物里的从此是两回事；两个不进 CSS 的常量与几何同住 `geometry.mjs` 就够，脚本与组件都从那里读 |
-| favicon 走静态文件（`/favicon.svg` 进 `assets.ts` 白名单） | 白名单 Map、冒烟里的 `WEB_ASSETS`、Vite 的产物拷贝各补一处，而 CSP 早已放行 `img-src data:`，两条 data URI 合计约 1 KB、连 `size` 门禁的匹配范围都不在 |
-| 只给 SVG favicon 不给 PNG 兜底 | Safari 不认 `<link rel="icon" type="image/svg+xml">`，标签页上是默认地球；32×32 的 PNG 几百字节 |
 | 统一到 Heroicons v2 或 Codicons | **Heroicons 整套没有任何 git 图标**（就 Iconify 的 316 枚清单逐条核对），而分支图标是这个产品最核心的语义——统一到它等于把唯一一枚不可替代的图标永久留在混用状态。Codicons 是 VS Code 自家那套、视觉取向最贴，但**没有 sun / moon / desktop**（651 枚里只有一枚 `color-mode`），三档主题开关画不出来；它还是 CC BY 4.0 而非 MIT / ISC，是本仓库唯一一处要求署名的依赖。Tabler（6184 枚，MIT）全覆盖、也够格，落选只因 Lucide 的线性观感更接近 VS Code，两者差别不构成理由 |
 | 前端 CSS 只卡明文、上限停在 40 KB | 那道在 2026-10-08 实测到 38.6 KB（文档里那个 31.3 KB 停在 2026-09-09，其间的增长全来自功能 PR），只剩 1.4 KB，加一个工具类都要先争余量，挡住的是正常改动而不是缺陷。现改为与 JS 同形的两道：明文 48 KB、gzip 10 KB（实测 39,559 / 7,649 B，各余约 9.4 KB / 2.5 KB）。**后端不压缩响应，明文才是浏览器实收的字节**，主力是明文那道——按现值它只容 24% 的增长、gzip 那道容 34%，寻常的规则累积总是它先响。gzip 那道补的是**压不动的内容**：内联进 CSS 的 base64 图片或字体压缩率远低于规则文本，同样的明文增量在 gzip 下涨得更多，会在明文那道响之前先响 |
 
@@ -216,8 +168,6 @@
 | 为消除首帧闪烁在 `index.html` 里放 pre-paint 内联脚本 | CSP 是 `script-src 'self'`，要么开 `'unsafe-inline'`、要么维护一份脚本 hash。代价侧只是**显式选过档且与系统相反**的人看到一帧底色 |
 | 用 Tailwind 的 `dark:` 变体 / `@custom-variant dark` 做明暗 | 这是 Tailwind v4 最主流的答案，但比 `light-dark()` **更浅**：分叉点从 token 挪到每一个使用点，每个元素都要再写一遍；而且它只作用于我们自己写的类名，**对 diff2html 与 hljs 渲染出的那两片 DOM 完全无效**——而那两片恰恰是页面主体 |
 | 把 `--hljs-bg` 映射到 `--color-editor-background` | 代码区底色会从 GitHub 的 `#0d1117` 变成 VS Code 的 `#1f1f1f`。合并两份上游主题这件事本身应当零行为差，而这是一次观感改动；想让代码区底色跟编辑器底色走是另一个决定，该单独提 |
-| 用 Tailwind 工具类覆盖 diff2html 渲染出的内部元素 | diff2html 的 CSS 是 unlayered，在层叠中胜过 `@layer utilities`，工具类写了不生效；改配色只能覆写 `--d2h-*` |
-| 把 hljs 主题或 `diff2html.min.css` 放进 `@layer` | 一旦入层就与 preflight 同处层叠体系，「无层胜有层」这层结构性保障随即失效，退回逐条比特异性的脆弱状态 |
 
 ## 只读性验证与本地安全
 
@@ -233,8 +183,6 @@
 |---|---|
 | 仅用 token 防 DNS rebinding | token 挡不住同源判定本身，正面防御是校验 `Host` 头 |
 | 用「前后 `git status` 比对」验证只读性 | 发现不了写进 `.git/` 但不改变 status 输出的操作（`GIT_OPTIONAL_LOCKS=0` 挡的正是这类） |
-| 只读性主门禁用 PATH 上的 fake git wrapper | Windows 上落不了地：`.cmd` / `.bat` 被 Node ≥ 20.12 的 spawn 直接拒绝，`node.exe` 复制成 `git.exe` 则被 node 自己的 CLI 解析吃掉参数。改用 `GIT_TRACE`，三端同一套写法 |
-| 为本地开发在后端加放宽 Host / Origin / token 校验的环境变量或分支 | 等于把正面防御做成一个可被误开的开关。dev server 的跨源问题应在代理层改写请求头解决，后端零 dev 分支 |
 
 ## 工具链与发布
 
@@ -254,12 +202,8 @@
 | 做法 | 排除原因 |
 |---|---|
 | 用 tarball 里的 bin mode（`check:pack` / `check:global` 那两道）来保证可执行位 | pnpm pack 无条件把 bin 归一成 0755，查它等于查一个恒真命题；真正会丢的是**仓库自己记的 mode**，而它不经过 tarball。**只查 index 同样不够**：`--chmod=+x` 只写暂存区，而 fresh clone 与 CI 拿的都是 HEAD——只查 index 的版本恰好在它唯一要保护的地方（开发者本机）最弱 |
-| 让 `bin/difftab.js` 参与 TS 编译或作为打包入口 | 可能被注入超出 Node 22 的语法、或被合并进主模块，低于下限的用户拿到解析期 SyntaxError，版本守卫随之失效 |
 | 依赖 Node 原生 type stripping 直接运行 `.ts` 产品代码 | 会把运行时下限从 22.0.0 顶到 22.18，且每次启动都要付一次转换开销，挤占 300ms 冷启动预算 |
 | pnpm 开 `shamefullyHoist: true` 或 `nodeLinker: hoisted` | 用扁平化掩盖 phantom dependency：本机构建通过，换到别人机器、CI 或改依赖版本后才 resolve 失败。深导入 diff2html 内部模块的方案更需要这层校验 |
-| 把 pnpm 设置写进 `package.json` 的 `pnpm` 字段或 `.npmrc` | pnpm 11 两处都不再读取，**且是静默忽略、无 deprecation 警告**：`allowBuilds` 写错位置即等同于没写，禁止扁平化的设置写错位置即等同于没禁 |
-| matrix 作业用 `pnpm install --prod` 之类的「装一点点」代替完全不装 | 仍会建 `node_modules`，而该作业的全部意义是只跑用户真正拿到的 `dist/`；一旦装了东西，测的就不再是那个东西 |
-| 靠 `corepack enable` 在 CI 里准备 pnpm | Corepack 已不再随 Node 25+ 发行版分发而 CI 矩阵含 Node 26；哪天基础镜像不再自带，这一步就从「能用」变成失败或静默走到系统里的另一个 pnpm 版本 |
 | 手工把 `"dependencies": {}` 加回 `package.json` | `pnpm add` 会把空对象当空值规范化掉，而 `check:pack` 的判据是 `Object.keys(manifest[field] ?? {})`——**字段缺失与空对象在门禁眼里完全等价**，加回来一个字节的保护力度也不多。换来的是一行没有任何门禁看着、下一次装依赖时又被静默删掉的装饰，以及「承诺写在明面上」的错觉。「后端只用标准库」由 `check:pack`（查发布 manifest 的三个依赖字段）与冒烟（查 `dist/server/main.js` 的 import 说明符）两侧承载，不靠那行字面量 |
 
 ## 外部参考
