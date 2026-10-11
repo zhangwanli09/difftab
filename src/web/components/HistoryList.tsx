@@ -95,21 +95,27 @@ const BADGE_COLOR: Record<RefBadge['kind'], { bg: string; icon: string }> = {
 
 /**
  * 一枚 ref 徽标：图标 + 名字。`shrink-0` 排在 `truncate` span 之后——省略号先吃作者、再吃主题，徽标
- * 不被裁；名字太长时它自己 `max-w` 截断，完整名进 `title`。`text-xs/4` 让它比 24px 行盒矮一截，
- * 底色不顶满整行。
+ * 不被裁；名字太长时它自己 `max-w` 截断，完整名进 `title`。`h-4` 让它比 24px 行盒矮一截、底色不
+ * 顶满整行；高度钉死而不靠行高撑，只剩图标的那枚才不会矮成 12px。
+ *
+ * **上游那枚只画图标、名字只进 `title`**：它回答的是「哪几条还没推送」，要的只是位置——名字多半
+ * 还是 `<remote>/<本地分支名>`，印出来只是把主题挤成省略号。读屏器那侧两枚一律 `role="img"` +
+ * `aria-label`：`title` 读屏器不一定念，无 role 的 `span` 又不许挂 `aria-label`。
  */
 function RefBadgeLabel({ badge }: { badge: RefBadge }) {
   return (
     <span
-      class={`flex max-w-32 shrink-0 items-center gap-0.5 rounded-sm px-1 text-xs/4 ${BADGE_COLOR[badge.kind].bg}`}
+      class={`flex h-4 max-w-32 shrink-0 items-center gap-0.5 rounded-sm px-1 text-xs ${BADGE_COLOR[badge.kind].bg}`}
       title={badge.name}
+      role="img"
+      aria-label={badge.name}
     >
       <Icon
         icon={REF_ICON[badge.kind]}
         size={12}
         class={`shrink-0 ${BADGE_COLOR[badge.kind].icon}`}
       />
-      <span class="truncate">{badge.name}</span>
+      {!badge.upstream && <span class="truncate">{badge.name}</span>}
     </span>
   );
 }

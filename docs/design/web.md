@@ -129,7 +129,7 @@
 - **一行 = 展开箭头 + 主题 + 作者**，作者次要色小一号，**两段同住一个 `truncate` span**，理由与变更列表「文件名 + 目录」相同。**短哈希与时间不上行**，进原生 `title`，次序照 VS Code 的悬停卡片：`作者 · 相对时间 (绝对时间)`、主题、正文、短哈希（7 位，对照 `git log --oneline`）；完整 sha 不进提示。不自绘卡片：改动统计要每条多一次 diff，`Open on GitHub` 要读 remote（白名单之外）。body 随列表那次 `log` 一起回来。相对时间用 `Intl.RelativeTimeFormat('en')`，不挂计时器自己跳。
 - **提交行悬停露出 `Copy commit hash`，复制完整 sha**（短哈希在大仓库里可能有歧义）。与 `Copy path` 是同一个 `CopyButton`，站在 `TreeRow` 的动作外壳里——点它不会顺带展开这条提交。
 - **当前分支与它的上游在各自指着的那条提交上各画一枚徽标**，照 VS Code `scm.graph.badges` 的默认档：只画这两枚，要回答的只有一件事——**上游那枚之上的几条就是还没推送的**（状态条上的 `↑3` 对不到具体是哪三条）。指着同一条时并排，本地在前。
-  - **徽标排在 `truncate` span 之后、`shrink-0`**，自身过长时独立 `truncate`。图标同分支列表（本地 `GitBranch`、远程 `Cloud`），色相照 VS Code 的 `scmGraph.historyItem*RefColor`，**但只给图标上色、底色是同色相淡底**——实心底 + 白字在这一栏里比主题还抢眼、对比度也不够。
+  - **徽标排在 `truncate` span 之后、`shrink-0`**，本地那枚自身过长时独立 `truncate`。**上游那枚只画图标、不印名字**，完整名进原生 `title`：它要回答的「哪几条还没推送」只需要位置，而名字多半还是 `<remote>/<本地分支名>`，印出来只是把主题挤成省略号。判据是角色不是 `kind`——上游是本地分支时照样只画图标。图标同分支列表（本地 `GitBranch`、远程 `Cloud`），色相照 VS Code 的 `scmGraph.historyItem*RefColor`，**但只给图标上色、底色是同色相淡底**——实心底 + 白字在这一栏里比主题还抢眼、对比度也不够。
   - **本地那枚不用取**，画在 `BranchState.oid` 那一行，detached 时不画。**上游那枚要取**：status 不给上游的 oid，按 `BranchState.upstream.name` 在 `/api/refs` 的列表里按 git 的解析次序找（见 [`git.md`](git.md)）。无上游时不画，**并忘掉上一次的判据**——`--unset-upstream` 后再设回同一个时，判据可能一字不差而上游已挪过。
   - **取的时机：看得见才判，判据是「HEAD oid / 上游名 / ahead / behind 四样对不对得上」，不是「来过 SSE」**。**不能只看 HEAD**：push 只挪上游，ahead 那一项是它在 status 里看得见的地方。失败也算对不上（下次判即重试），失败本身不报。
   - **上游指的提交不在已加载的页里就不画**，不为它多翻页。

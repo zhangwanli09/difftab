@@ -7,10 +7,14 @@ import type { RefEntry } from '../../server/shared/protocol';
 import { upstreamRefs } from './refs';
 import { repoState } from './store';
 
-/** 一枚徽标。标签不画，所以只有两种。 */
+/**
+ * 一枚徽标。标签不画，所以只有两种 `kind`。`upstream` 区分的是角色而不是 `kind`：上游可以是本地
+ * 分支（`git branch -u base`），那时它的 `kind` 也是 `local`。
+ */
 export interface RefBadge {
   kind: Exclude<RefEntry['kind'], 'tag'>;
   name: string;
+  upstream: boolean;
 }
 
 /** `/api/refs` 剥掉的前缀，拼回去就是完整的 refname。 */
@@ -49,9 +53,10 @@ export function refBadges(
   upstream: RefEntry | null,
 ): ReadonlyMap<string, readonly RefBadge[]> {
   const badges = new Map<string, RefBadge[]>();
-  if (branch !== '' && oid !== '') badges.set(oid, [{ kind: 'local', name: branch }]);
+  if (branch !== '' && oid !== '')
+    badges.set(oid, [{ kind: 'local', name: branch, upstream: false }]);
   if (upstream !== null && upstream.kind !== 'tag') {
-    const badge: RefBadge = { kind: upstream.kind, name: upstream.name };
+    const badge: RefBadge = { kind: upstream.kind, name: upstream.name, upstream: true };
     badges.set(upstream.sha, [...(badges.get(upstream.sha) ?? []), badge]);
   }
   return badges;

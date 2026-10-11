@@ -592,11 +592,15 @@ describe('ref 徽标', () => {
 
   test('本地那枚画在 HEAD 上、不看 refs；上游那枚画在它指着的那条', () => {
     const badges = refBadges('main', sha(100), remote(98));
-    expect(badges.get(sha(100))).toEqual([{ kind: 'local', name: 'main' }]);
-    expect(badges.get(sha(98))).toEqual([{ kind: 'remote', name: 'origin/main' }]);
+    expect(badges.get(sha(100))).toEqual([{ kind: 'local', name: 'main', upstream: false }]);
+    expect(badges.get(sha(98))).toEqual([{ kind: 'remote', name: 'origin/main', upstream: true }]);
     expect(refBadges('main', sha(100), null).get(sha(100))).toEqual([
-      { kind: 'local', name: 'main' },
+      { kind: 'local', name: 'main', upstream: false },
     ]);
+    // 上游是本地分支时 kind 也是 local，靠 upstream 那一位认出它是上游（只画图标的是它）
+    expect(
+      refBadges('main', sha(100), ref('local', 'base', { sha: sha(95) })).get(sha(95)),
+    ).toEqual([{ kind: 'local', name: 'base', upstream: true }]);
   });
 
   test('已同步时两枚落在同一条上，本地在前；没有分支（detached）时没有本地那枚', () => {
@@ -606,7 +610,7 @@ describe('ref 徽标', () => {
         ?.map((b) => b.kind),
     ).toEqual(['local', 'remote']);
     expect(refBadges('', sha(100), remote(100)).get(sha(100))).toEqual([
-      { kind: 'remote', name: 'origin/main' },
+      { kind: 'remote', name: 'origin/main', upstream: true },
     ]);
   });
 
@@ -634,9 +638,18 @@ describe('ref 徽标', () => {
     upstreamRefs.value = [remote(98)];
     render(<HistoryList />, container);
     const rows = [...container.querySelectorAll('[aria-expanded]')] as HTMLElement[];
-    const badgeTexts = (row: HTMLElement) =>
-      [...row.querySelectorAll(':scope > [title]')].map((el) => el.textContent);
-    expect(rows.map(badgeTexts)).toEqual([['main'], [], ['origin/main']]);
+    // [title, aria-label, 印出来的字]：上游那枚只画图标，名字只在 title 与 aria-label 里
+    const badges = (row: HTMLElement) =>
+      [...row.querySelectorAll(':scope > [role="img"]')].map((el) => [
+        el.getAttribute('title'),
+        el.getAttribute('aria-label'),
+        el.textContent,
+      ]);
+    expect(rows.map(badges)).toEqual([
+      [['main', 'main', 'main']],
+      [],
+      [['origin/main', 'origin/main', '']],
+    ]);
     const label = rows[0]?.querySelector('.truncate') as HTMLElement;
     expect(label.textContent).toBe('commit 100Ann');
     repoState.value = null;
@@ -645,7 +658,9 @@ describe('ref 徽标', () => {
   test('上游名换了、新的 refs 还没回来：拿此刻的名字去推，不把上一个上游的位置画成这一个', () => {
     upstreamRefs.value = [remote(98)];
     repoState.value = repo({ branch: tracking() });
-    expect(badgesBySha.value.get(sha(98))).toEqual([{ kind: 'remote', name: 'origin/main' }]);
+    expect(badgesBySha.value.get(sha(98))).toEqual([
+      { kind: 'remote', name: 'origin/main', upstream: true },
+    ]);
     repoState.value = repo({
       branch: tracking({ upstream: { name: 'origin/dev', ahead: 1, behind: 0 } }),
     });
@@ -693,7 +708,9 @@ describe('ref 徽标', () => {
     test('分支状态没变就不重取；push 只挪了上游（HEAD 没动）也要重取', async () => {
       await refresh();
       expect(refsCalls()).toBe(1);
-      expect(badgesBySha.value.get(sha(98))).toEqual([{ kind: 'remote', name: 'origin/main' }]);
+      expect(badgesBySha.value.get(sha(98))).toEqual([
+        { kind: 'remote', name: 'origin/main', upstream: true },
+      ]);
       await refresh();
       await refresh();
       expect(refsCalls()).toBe(1);
