@@ -8,6 +8,12 @@ on:
   # 发布 workflow 在 release commit 上复跑整份门禁。被调用时 github.workflow 是调用方
   # 的名字，下面的 concurrency 组与 CI 自己的不相撞；调用方自身串行，也不会互相取消
   workflow_call:
+    inputs:
+      # 发布 workflow 传 release commit 的 SHA。为空（push / PR / 手动触发）时 checkout
+      # 取默认 ref；不传的话复跑的是触发那次 push 的 HEAD，未必是被打 tag 的那个提交
+      ref:
+        type: string
+        default: ''
 
 # CI 分两层：
 #   build——tsdown 要求 Node ^22.18 || >=24.11、Vite 8 要求 >=22.12，均高于
@@ -25,6 +31,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
 
       # pnpm/action-setup 必须排在 actions/setup-node 之前，
       # 否则后者的 cache: 'pnpm' 找不到 pnpm 可执行文件，缓存步骤直接失败。
@@ -116,6 +124,8 @@ jobs:
         node: ['22.0.x', '24', '26']
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
 
       - uses: actions/setup-node@v7
         with:
@@ -189,6 +199,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
 
       - uses: actions/setup-node@v7
         with:
@@ -220,6 +232,8 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
 
       - uses: actions/setup-node@v7
         with:
@@ -259,6 +273,8 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
 
       - uses: actions/setup-node@v7
         with:

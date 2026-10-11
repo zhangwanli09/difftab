@@ -79,7 +79,7 @@
 - **注意 `files` 不是一份完整的白名单**：npm / pnpm 无条件把根目录下所有 `README*` 打进 tarball，与 `files` 无关。门禁查的是 pack 的实际输出而不是 `files` 字段，所以这类偏差抓得到。
 - **`assets/`（logo、社交预览）刻意不进 `files`**：它只给 GitHub 与 README 用，README 里的相对路径由 npm 改写到 GitHub raw，不需要随包发。
 - **`dependencies` 为空。** 前端依赖在构建期即被打进 `dist/web/app.js`，后端只用 Node 标准库——用户 `npm i -g` 时零传递依赖安装。
-- **`publishConfig.registry` 钉住 `registry.npmjs.org`**：CI 里本来就是它，钉住是防有人在本机手工兜底时发到 `~/.npmrc` 指的镜像源。
+- **`publishConfig.registry` 钉住 `registry.npmjs.org`**：CI 里本来就是它；钉在 manifest 里，是让发布目标不取决于运行环境的 `~/.npmrc`。
 - **发布由 CI 完成**（release-please + npm trusted publishing，见 `../RELEASING.md`），用的是 `npm publish`，所以发出去的 `package.json` 里带着 `packageManager` 与 `prepublishOnly`——无害。
 - **`CHANGELOG.md` 由 release-please 生成**，条目取自合入 main 的 PR 标题，禁手改。
 - **semver：0.x 保留破坏性余地**（尤其 CLI 参数与端口/token 行为）。**1.0.0 是结论不是起点**——本工具的核心承诺是只读与零副作用，1.0.0 应当是这些承诺被两层验证覆盖、且三端真机验过之后的结果。
