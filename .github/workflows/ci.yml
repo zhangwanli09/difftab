@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  # 发布 workflow 在 release commit 上复跑整份门禁。被调用时 github.workflow 是调用方
+  # 的名字，下面的 concurrency 组与 CI 自己的不相撞；调用方自身串行，也不会互相取消
+  workflow_call:
 
 # CI 分两层：
 #   build——tsdown 要求 Node ^22.18 || >=24.11、Vite 8 要求 >=22.12，均高于

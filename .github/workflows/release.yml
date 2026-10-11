@@ -1,0 +1,62 @@
+name: Release
+
+# 合并 release-please 开出的 release PR 即发版：本 workflow 打 tag、建 GitHub Release、
+# 更新 CHANGELOG.md，再在 release commit 上复跑整份 CI，全绿才发 npm。
+#
+# 复跑那一步不能省：release PR 由 GITHUB_TOKEN 创建，GitHub 不为它触发 pull_request
+# workflow，于是那份 PR 上一个检查都没有；三平台冒烟矩阵只在这里才会对发出去的那个
+# commit 跑一遍。
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+    steps:
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        id: release
+
+  gates:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  publish:
+    needs: [release-please, gates]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm trusted publishing (OIDC)
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: pnpm
+
+      # trusted publishing 要求 npm >= 11.5.1，不依赖 Node 自带的那一版
+      - run: npm install -g npm@11
+
+      - run: pnpm install --frozen-lockfile
+
+      # 用 npm 而不是 pnpm 发：OIDC 鉴权走的是 npm CLI。prepublishOnly 先跑完整构建
+      - run: npm publish
