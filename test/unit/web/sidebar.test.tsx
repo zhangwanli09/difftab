@@ -36,7 +36,7 @@ describe('宽度', () => {
     setSidebarWidth(480);
     // 少了 max-width 时窄窗口里面板被挤到 0；少了 min-width 时视口极窄时左栏也跟着缩到 200 以下
     expect(sidebarStyle.value).toBe(
-      'width:480px;min-width:200px;max-width:min(640px,calc(100vw - 320px))',
+      'width:480px;min-width:200px;max-width:min(960px,calc(100vw - 320px))',
     );
   });
 });
