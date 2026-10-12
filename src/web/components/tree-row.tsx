@@ -93,10 +93,10 @@ export const REVEAL = 'hidden group-hover:flex group-has-focus-visible:flex poin
 export const ROW_GROUP = 'group relative hover:bg-list-hover-background';
 
 /**
- * 行内动作的外壳：绝对定位在状态位左侧（那道 `right-9.5` 的加法见 `TreeRow`），**并把站进来的每一枚
- * 按钮静止时淡到 `opacity-75`、指针悬到或键盘焦点落到那一枚上时恢复满色**。lucide 2px 描边在
- * 16px 下比同色文字看着重，满色时比旁边那枚同样 `opacity-75` 的状态字母（`STATUS_SLOT`）抢眼；
- * 同值同机制，一行里的从属记号于是只有一档淡。
+ * 行内动作的外壳：绝对定位，横向锚点按有无状态记号二选一（`SHELL_AFTER_BADGE` / `SHELL_AT_EDGE`，
+ * 由 `TreeRow` 追加），**并把站进来的每一枚按钮静止时淡到 `opacity-75`、指针悬到或键盘焦点落到
+ * 那一枚上时恢复满色**。lucide 2px 描边在 16px 下比同色文字看着重，满色时比旁边那枚同样
+ * `opacity-75` 的状态字母（`STATUS_SLOT`）抢眼；同值同机制，一行里的从属记号于是只有一档淡。
  *
  * **淡化画在外壳上、按子选择器逐枚生效，不做成 `IconButton` 的一档**：「与状态字母同档」是这个
  * 槽位的不变量——凡站进来的都得如此、站在别处的（顶栏开关、`Collapse all`、编辑器 tab 的 ×）都
@@ -104,7 +104,15 @@ export const ROW_GROUP = 'group relative hover:bg-list-hover-background';
  * （`[&>*:hover]` 而不是外壳自己的 `hover:`）：两枚并排时悬停的那一枚亮、旁边那枚仍淡。
  * **是 `opacity` 不是 token 的 `/75` 修饰符**，理由与 `STATUS_SLOT` 那处一字不差。导出只为让用例钉住。
  */
-export const ACTION_SHELL = `${REVEAL} absolute inset-y-0 right-9.5 items-center [&>*]:opacity-75 [&>*:hover]:opacity-100 [&>*:focus-visible]:opacity-100`;
+export const ACTION_SHELL = `${REVEAL} absolute inset-y-0 items-center [&>*]:opacity-75 [&>*:hover]:opacity-100 [&>*:focus-visible]:opacity-100`;
+
+/**
+ * 外壳的两种横向锚点（加法见 `TreeRow`），都从 `ROW_BASE` 的 `pr-3` 算起——改那道内边距时这两个
+ * 跟着改。写成两个完整的字面量：Tailwind 只产出源码里出现过的类名。导出只为让用例钉住哪种行取
+ * 哪一个。
+ */
+export const SHELL_AFTER_BADGE = 'right-9.5';
+export const SHELL_AT_EDGE = 'right-3';
 
 /**
  * 行按钮里、状态位之前的占位宽度，按外壳里真画的枚数取（`IconButton` 是 p-0.5 + 16px 图标 = 20px
@@ -115,8 +123,8 @@ export const ACTION_SHELL = `${REVEAL} absolute inset-y-0 right-9.5 items-center
 const SPACER_WIDTH = ['', 'w-5', 'w-10'];
 
 /**
- * 行尾状态位的宽度，**只此一份**：记号外壳（`ChangeList` 的 `STATUS_SLOT`）与没有记号的行悬停时补的
- * 空槽都取它（为什么要补见 `TreeRow`）。
+ * 行尾状态位的宽度，**只此一份**：记号外壳（`ChangeList` 的 `STATUS_SLOT`）取它，外壳锚在状态位
+ * 左侧时那道 `right-9.5` 的加法也算的是它。
  */
 export const STATUS_WIDTH = 'w-5';
 
@@ -129,14 +137,15 @@ export const STATUS_WIDTH = 'w-5';
  * 只是省略号多退或少退 20px；由同一个组件从同一份列表画两处，这一条就不需要有人记得了。
  *
  * 外壳是行按钮的**兄弟**，不套在里面：按钮里不能套按钮，理由与编辑器 tab 上那枚 × 一字不差；它的
- * 事件压根不经过行按钮，点它不会顺带开一个 tab、也不会折叠目录。绝对定位在状态位左侧：
- * `right-9.5`（38px）= ROW_BASE 的 `pr-3`（12）+ 状态位 `STATUS_WIDTH`（20）+ `gap-1.5`（6），与枚数无关。
- * 文字被截断的行里占位正好在它底下；短行里占位贴着文字、按钮悬在空白上，两种情况都盖不到字
- * ——改行骨架的间距或状态位宽度时这道加法要跟着改，症状只是与字母挨着或错开几像素。几枚之间
- * 不加 gap：各自的 `p-0.5` 已隔出 4px，照 VS Code 的 action bar。**没有状态记号的行（没改动的文件、
- * 目录、提交行）在悬停时补一个状态位宽的空槽**：外壳锚在状态位左侧不随记号有无变（一列按钮才对得
- * 齐），少了这一槽时占位落在外壳右侧 26px 处，文字被截断的行里末尾那 20px 正好压在按钮底下——
- * 不报错，只是字和图标叠在一起。空槽与占位同一对显隐变体，静止时不占文字宽度。
+ * 事件压根不经过行按钮，点它不会顺带开一个 tab、也不会折叠目录。横向锚点按有无状态记号二选一，
+ * 与枚数无关：有记号时锚在状态位左侧，`right-9.5`（38px）= ROW_BASE 的 `pr-3`（12）+ 状态位
+ * `STATUS_WIDTH`（20）+ `gap-1.5`（6）；**没有记号的行（没改动的文件、目录、提交行）贴 `pr-3`
+ * （`right-3`）**——锚在状态位左侧时按钮右边空着 26px，看着像没右对齐。两种行里占位的右缘都正好
+ * 落在外壳右缘（无记号时它是行按钮的最后一个在流项，有记号时其后只剩间距与状态位）：文字被截断的
+ * 行里占位就在按钮底下，短行里占位贴着文字、按钮悬在空白上，两种情况都盖不到字——改行骨架的
+ * 间距或状态位宽度时这道加法要跟着改，症状只是与字母挨着或错开几像素。几枚之间不加 gap：各自的
+ * `p-0.5` 已隔出 4px，照 VS Code 的 action bar。
+ * `badge` 按真假判：调用方传进来的可能是 `false`（`code !== null && …`）。
  */
 export function TreeRow({
   actions,
@@ -157,15 +166,16 @@ export function TreeRow({
   children: ComponentChildren;
 } & Omit<JSX.ButtonHTMLAttributes<HTMLButtonElement>, 'type' | 'children'>) {
   const list = toChildArray(actions);
+  const anchor = badge ? SHELL_AFTER_BADGE : SHELL_AT_EDGE;
   return (
     <li>
       <div class={ROW_GROUP}>
         <button type="button" ref={buttonRef} {...button}>
           {children}
           {list.length > 0 && <span class={`${REVEAL} shrink-0 ${SPACER_WIDTH[list.length]}`} />}
-          {badge || (list.length > 0 && <span class={`${REVEAL} ${STATUS_WIDTH} shrink-0`} />)}
+          {badge}
         </button>
-        <span class={ACTION_SHELL}>{list}</span>
+        <span class={`${ACTION_SHELL} ${anchor}`}>{list}</span>
       </div>
       {sublevel}
     </li>
