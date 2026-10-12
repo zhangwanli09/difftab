@@ -6,8 +6,8 @@ things that are easy to get wrong here and hard to catch in review.
 > Requirements and design live in [`docs/`](docs/README.md) and are currently written in
 > Chinese. They are the single source of truth: **a requirement change lands in `docs/`
 > before it lands in code.** [`AGENTS.md`](AGENTS.md) is the short version — a summary,
-> a routing table, and the list of "violating this doesn't error, it just silently
-> misbehaves" rules.
+> a routing table, and the cross-cutting "violating this doesn't error, it just silently
+> misbehaves" rules; the directory-scoped ones live in the `docs/design/` file it routes to.
 
 ## Before you open a pull request
 
@@ -87,8 +87,9 @@ like three separate gates broke at once. Build first.
 
 ## Things that fail silently
 
-The full list is [`AGENTS.md`](AGENTS.md) §5, with the evidence behind each one in
-[`docs/decisions.md`](docs/decisions.md). The four that bite most often:
+Cross-cutting ones are listed in [`AGENTS.md`](AGENTS.md) §5; directory-scoped ones
+live in the `docs/design/` file that §4 routes to, with the evidence in
+[`docs/decisions/`](docs/decisions/). The four that bite most often:
 
 - **Architecture boundaries.** git subprocesses may only appear in `server/git`; launching
   a browser only in `server/cli`; `src/web` must not import `src/server` (except

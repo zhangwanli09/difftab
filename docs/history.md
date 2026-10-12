@@ -1,6 +1,6 @@
 # 记录：未完事项、真机验收与被推翻的结论
 
-> **本文是记录，不是约束。** 约束在 `AGENTS.md` 第 5 节（红线）与 [`decisions.md`](decisions.md)（被排除的做法）；需求与设计见 [`README.md`](README.md) 的索引。已收口的 0→1 开发阶段记录不在这里，在 git history。**发布不逐版记录**：变更日志是 release-please 生成的 `CHANGELOG.md`，发版时新撞上的坑直接补进 [`../RELEASING.md`](../RELEASING.md)；0.1.0–0.5.3 的逐版日志已删，要查翻 git history。
+> **本文是记录，不是约束。** 约束在 `AGENTS.md`（红线与必读路由）、[`design/`](design/) 与 [`decisions/`](decisions/)（被排除的做法）；需求与设计见 [`README.md`](README.md) 的索引。已收口的 0→1 开发阶段记录不在这里，在 git history。**发布不逐版记录**：变更日志是 release-please 生成的 `CHANGELOG.md`，发版时新撞上的坑直接补进 [`../RELEASING.md`](../RELEASING.md)；0.1.0–0.5.3 的逐版日志已删，要查翻 git history。
 
 ## 未完事项
 
@@ -23,7 +23,7 @@
 
 ## 改名 gitglance → difftab（2026-08-20）
 
-**不是重构，是一条被推翻的结论。** 文档从 2026-07-28 起记着「`gitglance` npm 未被占用」，两次复核也确实都返回 404，而那个判据从头到尾是错的——重名要按归一化后的名字查，依据见 [`decisions.md`](decisions.md)。**它不会在任何门禁里响，只会在第一次 `npm publish` 那一刻响**，而那时改名的成本比事先高得多。
+**不是重构，是一条被推翻的结论。** 文档从 2026-07-28 起记着「`gitglance` npm 未被占用」，两次复核也确实都返回 404，而那个判据从头到尾是错的——重名要按归一化后的名字查，依据见 [`decisions/toolchain.md`](decisions/toolchain.md)。**它不会在任何门禁里响，只会在第一次 `npm publish` 那一刻响**，而那时改名的成本比事先高得多。
 
 改名面 242 处 / 62 个文件，其中只有三类不是机械替换：两条结论本身要重写、围绕旧名写的英文双关文案（换名后是病句）、以及 `README.zh-CN.md`（**它不是自动生成的**，只改英文那份不会有任何门禁变红）。产品行为零变化。
 
@@ -33,5 +33,5 @@
 
 - **真正被替换掉的是深色的表达方式**，不是加了个按钮：`@media (prefers-color-scheme: dark)` 里那份 19 条的 delta 整块没了，深浅合进 `@theme` 的单条 `light-dark()`。旧写法在有手动档之后必然双写，而双写的两份漏一处不报错。
 - **`check:css` 的两条断言跟着反转**：原先查「深色媒体条件里声明的 token 在浅色侧都得有」，现在查「任何 `--color-*` / `--hljs-*` 都不许声明在深色媒体条件里」。**门禁改的是同一处静默故障的新形状，不是放松**。
-- **实现期唯一的意外来自 Lightning CSS**：它把 `light-dark()` 降级成 space-toggle 变量对，产物里搜不到那个函数名——好消息是它**逐选择器**跟踪 `color-scheme`，`[data-theme]` 那两条照样被翻译，手动档在老浏览器上也成立；坏消息是双值 token 从此不能套不透明度修饰符。两件都记在 [`decisions.md`](decisions.md) 的「样式层叠」。
+- **实现期唯一的意外来自 Lightning CSS**：它把 `light-dark()` 降级成 space-toggle 变量对，产物里搜不到那个函数名——好消息是它**逐选择器**跟踪 `color-scheme`，`[data-theme]` 那两条照样被翻译，手动档在老浏览器上也成立；坏消息是双值 token 从此不能套不透明度修饰符。两件都记在 [`decisions/style.md`](decisions/style.md)。
 - **hljs 那 15 个 token 的色值是抄进仓库的**，此后不随 highlight.js 升级。门禁只证明「都走了 `var()`」，色值抄没抄对只能靠人逐条对——这是这次改动里唯一没有自动化兜底的地方。
