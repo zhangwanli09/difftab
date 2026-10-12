@@ -1,6 +1,6 @@
 # 前端：右侧面板、编辑器标签页与文件视图
 
-> 右侧面板是 [`web.md`](web.md) 那副骨架的右半边：一条标签栏 + 一个视图（diff 或全文）。diff 怎么渲染在 [`diff-render.md`](diff-render.md)。被排除的做法见 [`../decisions/web.md`](../decisions/web.md)。标「有断言」的条目由 `test/unit/web/` 钉住、不进红线。
+> 右侧面板是 [`web.md`](web.md) 那副骨架的右半边：一条标签栏 + 一个视图（diff 或全文）。diff 怎么渲染在 [`diff-render.md`](diff-render.md)。被排除的做法见 [`../decisions/web.md`](../decisions/web.md)。
 
 ## 编辑器标签页
 
@@ -14,7 +14,7 @@
 - **关掉活动 tab 切到右邻居、没有才切左邻居**，不维护 MRU 序列。
 - **两栏的高亮同按活动 tab 的路径判（`activeEditorPath`），不看 diff 还是全文**：按种类各认各的时，点了行内 `Open file` 那一行就熄了——用户刚从这一行出发，左栏却说「你没在看它」。
 - **切侧栏 tab、切列表 / 树版式、全部折叠，都不动 `activeEditor`**（症状见 [`web.md`](web.md) 的「页面骨架」）。**反方向有联动**：活动 tab 的路径一变，`Files` 树展开并定位那一行（机制在 [`sidebar.md`](sidebar.md) 的「文件浏览器」），但不切侧栏档位。
-- **不进 `localStorage`**：端口随机，写了也活不过一次重启。
+- **不进 `localStorage`**（跨不了实例，见 [`web.md`](web.md) 的「主题开关」）。
 
 ### 自动刷新怎么收编这些 tab
 

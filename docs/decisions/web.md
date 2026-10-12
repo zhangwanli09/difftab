@@ -33,11 +33,8 @@
 | 单独 import `highlight.js/lib/languages/{jsx,tsx,toml}` | 这三个模块不存在（实测 404），它们是 `javascript` / `typescript` / `ini` 的**别名**，注册主模块时自动生效；写了会在构建期 resolve 失败 |
 | 为 `.vue` / `.env` 引第三方语言包（highlightjs-vue 之类）或新增模块 | 上游 highlight.js **没有** vue / svelte / env 模块，第三方包意味着一份不受 hljs 版本约束的额外依赖；而实测把它们映射到已注册的模块已经够用——SFC 的模板段按 `xml` 上色，`<script>` / `<style>` 那两段由逐行判定器换成 javascript / css（**不是**靠 xml 的子语言：那要整块正文一次高亮才成立，diff 视图是逐行的，见 [`design/diff-render.md`](../design/diff-render.md) 的「单文件组件的区块高亮」），`.env` 走 `ini` 后 `KEY` 是 `hljs-attr`、`#` 是注释。补一张映射表的体积是 0，而语言清单是 JS 预算的主导项 |
 | 右侧标题栏用滚动容器内的 `sticky top-0` 钉住 | 要靠 `z-10` 与实心底色去躲 diff2html 那列 `position:absolute` 的行号（宿主 div 的 `relative` 是它们的包含块，两者都排在横杠之后）；文件视图那侧还得靠外层 `w-max min-w-full` 与一个 `sticky left-0` 的 span 才铺得满、留得住，`px-4` 与 `left-4` 两个数字从此绑死。把横杠排到滚动容器之外，这几处一起消失——越界的盒子被容器的 `overflow` 裁掉，够不着它 |
-| 选中文件从列表里消失后仍留着最后那份 diff | 把「用户刚才在读的东西还在」摆在了「左栏刚断言过这些改动不存在」之前，工作区变干净时两栏直接互相矛盾；且那份 diff 此后再也不会被刷新（`refresh` 走不到 `loadDiff`），留得越久越旧 |
-| 给用户加一个 side-by-side / line-by-line 手动开关 | 自动判据已覆盖「放不放得下」这个唯一的真实诉求。**「要引入一份跨会话偏好」这半条已经不成立**——明暗开关把那套机制建起来了（`state/theme.ts`），别拿它当反例；剩下的理由只有前半条。首版不做，不是长期不做 |
 | 明暗开关只做「亮 / 暗」两档 | 点过一次就再也回不到「跟随系统」，而跟随系统恰恰是加开关之前唯一的行为——不该被一次点击永久换掉。三档的代价只是循环里多一格 |
 | 文件内容构造成「全新增 diff」交给 diff2html 渲染 | 省下一个渲染路径，代价是每一行前面都挂着 `+`、整片底色是新增绿——读起来像在审一份补丁而不是读一个文件，而「看项目整体面貌」正是要摆脱补丁视角 |
-| 目录树同一层「已经在取就直接不取」 | 一次 `change` 引出的刷新会在上一次还没回来时被整个丢掉；若它正是 agent 那一串写入的最后一个事件，这一层就一直停在旧内容上，直到用户手动收起再展开。改用按目录的请求序号决胜负，与 `loadState` / `loadDiff` 同一套判据 |
 | 目录树某一层出错就画那句话（不看手上有没有缓存） | 刷新途中失败是常态（后端重启、dev 代理抖一下），而 `loadDir` 失败只写 `treeErrors`、不动 `treeCache`。先看错误的写法会让一个已经画出来的目录连同它底下展开的一切被一行红字换掉——陈旧的内容比消失的内容有用得多，且下一拍就会被换新 |
 | 目录树的「滚进视野」写成 `Row` 里的 `useEffect([selected])` | 要在组件体里读选中态，等于这一行订阅了 `activeEditorPath`——换一次活动 tab 整棵展开的树重渲染，正是 `rowClass` 包成 computed 刻意避开的事。改成每行一份 signal effect：只做一次相等比较，不引起渲染 |
 | 树上的「滚进视野」另设一个「待滚动」信号，由 `revealPath` 登记、行滚完清掉 | 一份只为一个组件存在的状态层信号、一条「消费后必须清」的不变量、一个「没人消费就留到下次覆盖」的边角，外加每个用例的 `beforeEach` 多一行重置。换来的只有「收起再展开含选中文件的目录时不再滚一次」，而 `nearest` 让那一下在已经看得见时是零像素。行直接按 `activeEditorPath` 判，与编辑器 tab 同一条 |
@@ -46,11 +43,6 @@
 | 编辑器标签栏用 `overflow-x-hidden` 去掉滚动条 | `scrollIntoView` 照样能把活动 tab 滚进来，但用户自己滚不了——溢出之后前面的 tab 只能靠关掉后面的才够得着。`scrollbar-width: none` 只是不画滚动条，滚动能力一样不少 |
 | 编辑器标签栏外面再套一层 wrapper，栏留 `border-b`、tab 留 `-mb-px` | 多一层 div，且 tablist 不再是面板 `<section>` 的直接子项（`app.test.tsx` 钉着这条）。栏自己画一条 inset 阴影当分隔线，tab 的 `border-b` 落在 padding box 最后 1px 上盖过它，一层就够（`divider-b`） |
 | 分隔线写成内联的 `shadow-[inset_0_-1px_var(--color-panel-border)]` | Tailwind 的 `shadow-*` 会把整套 shadow / ring 变量机制拖进产物：实测 CSS +2.2 KB（14 条 `@property` 注册、`@layer properties` 兜底块翻倍、五段式 `box-shadow` 里四段是 `0 0 #0000` 空转），为一条 1px 分隔线付整套机制；一条 `@utility divider-b { box-shadow: … }` 是 200 字节，测试也能钉一个名字而不是一段任意值的拼写 |
-| 标签栏底下再留一行完整路径（面包屑） | 每个文件的名字在栏里与栏下各写一遍；完整路径挂在 tab 的 `title` 上已经够用，而多一行就少一行正文 |
-| 变更列表按 git 的用词分四组（Conflicted / Staged / Unstaged / Untracked）、字母照 git 印（未跟踪 `?`、冲突两位） | 这一块的读者对照的是编辑器里的 Source Control，不是 `git status`：两边各说一种话时同一个 `U` 在 VS Code 里是未跟踪、在这里是冲突。改成 VS Code 默认的三组与 `U` / `!`；换字只在徽章的展示映射里，`StatusCode` 协议照旧是 git 的字母 |
-| 变更列表行尾为 `Open file` 按钮常驻预留一个 20px 空位 | 每行永久少 26px 文字宽度（占位 + 间距），320px 侧栏里是一成，换来的只是「悬停时省略号不动」；VS Code 的 inline action 本就是悬停时才进流、文字跟着重排 |
-| `Open file` 按钮直接盖在文字尾巴上、外壳补一块与行底色相同的遮罩 | 遮罩色随选中态变（悬停底 / 选中底两档）、键盘焦点而未悬停时又是第三种；覆盖处没有省略号只有一道硬边。行按钮里放一个与按钮等宽、同一对变体显隐的占位，文字就真的重排了，遮罩整层不需要 |
-| `Open file` 按钮用透明度藏（照编辑器 tab 上那枚 ×） | × 那里透明是为了留住位置、悬停时 tab 宽度不跳；这里按钮悬在文字上方，透明就是一块看不见却能点的死区——点到目录段尾巴会误开文件。`display` 切换配 `group-has-focus-visible` 一样接得住键盘焦点 |
 | `Copy path` 放右键上下文菜单（VS Code 的 `Copy Path` 住在那里） | 仓库里没有任何菜单先例，为一项功能起整套定位、Escape、点外关闭、键盘导航；一项的菜单打开后还得再点一次。行内动作的机制上一版已为 `Open file` 铺好，第二枚只是往里再站一个，键盘可达性也一并继承（触屏靠 `pointer-coarse:flex` 常驻显示，见 [`../design/web.md`](../design/web.md)） |
 | `Copy path` 复制绝对路径，或两种路径各一枚（照 VS Code 的 Copy Path / Copy Relative Path） | 贴给 agent 与 `git` 子命令要的都是仓库相对路径，而它就是页面上现成的 `path`；绝对路径要给 `RepoState` 加 `root`（协议、冒烟断言各补一处）。再多一枚按钮时悬停要退 60px，320px 侧栏里近两成 |
 | `Copy path` 点后弹一条 toast 说「Copied」 | 320px 侧栏里没有地方放，且反馈该出现在手指底下：图标换 `Check`、label 换 `Copied` 1.5s，照 GitHub 代码块上那枚复制按钮。写失败（`writeText` reject）静默不换——服务绑定 `127.0.0.1`，loopback 是 secure context，失败只剩用户拒了权限这一种 |
@@ -61,4 +53,4 @@
 | logo 带字标（几何拼字，或 SVG `<text>`、Google Fonts、转曲入库） | 界面只用符号，README 与 npm 页面本就是文字，字标唯一的读者是 README 头图——为它养几十行几何不值。用字体的几条各自也不成立：`<text>` 在 GitHub 的 `<img>` 沙箱里拿不到网页字体，各端各画各的；转曲要一份字体工具链，而仓库连 devDependencies 里都没有；Google Fonts 是外链。于是 `assets/mark.svg` 里一个字都没有；社交预览的 `<text>` 只在 Chrome 截成的 PNG 里定型，不受那条沙箱限制 |
 | README 头图用 `<picture>` 配亮暗两份 SVG | 同一组坐标要养两份文件，只为让 GitHub 的手动主题也能命中；单文件内嵌 `prefers-color-scheme` 已覆盖跟随系统的多数人，npm 包页面也照常认 |
 | 统一到 Heroicons v2 或 Codicons | **Heroicons 整套没有任何 git 图标**（就 Iconify 的 316 枚清单逐条核对），而分支图标是这个产品最核心的语义——统一到它等于把唯一一枚不可替代的图标永久留在混用状态。Codicons 是 VS Code 自家那套、视觉取向最贴，但**没有 sun / moon / desktop**（651 枚里只有一枚 `color-mode`），三档主题开关画不出来；它还是 CC BY 4.0 而非 MIT / ISC，是本仓库唯一一处要求署名的依赖。Tabler（6184 枚，MIT）全覆盖、也够格，落选只因 Lucide 的线性观感更接近 VS Code，两者差别不构成理由 |
-| 前端 CSS 只卡明文、上限停在 40 KB | 那道在 2026-10-08 实测到 38.6 KB（文档里那个 31.3 KB 停在 2026-09-09，其间的增长全来自功能 PR），只剩 1.4 KB，加一个工具类都要先争余量，挡住的是正常改动而不是缺陷。现改为与 JS 同形的两道：明文 48 KB、gzip 10 KB（实测 39,559 / 7,649 B，各余约 9.4 KB / 2.5 KB）。**后端不压缩响应，明文才是浏览器实收的字节**，主力是明文那道——按现值它只容 24% 的增长、gzip 那道容 34%，寻常的规则累积总是它先响。gzip 那道补的是**压不动的内容**：内联进 CSS 的 base64 图片或字体压缩率远低于规则文本，同样的明文增量在 gzip 下涨得更多，会在明文那道响之前先响 |
+| 前端 CSS 只卡明文一道 | 只卡明文时，功能 PR 的正常累积会把余量吃到贴边，此后加一个工具类都要先争余量，挡住的是正常改动而不是缺陷。现与 JS 同形卡明文 + gzip 两道（上限以 `scripts/size.mjs` 为准）。**后端不压缩响应，明文才是浏览器实收的字节**，主力是明文那道，寻常的规则累积总是它先响。gzip 那道补的是**压不动的内容**：内联进 CSS 的 base64 图片或字体压缩率远低于规则文本，同样的明文增量在 gzip 下涨得更多，会在明文那道响之前先响 |
