@@ -94,7 +94,7 @@
 - **「跟随系统」是属性不存在，不是 `data-theme="system"`**：CSS 不必为它写第三条规则，`localStorage` 里也只有两个合法值。
 - 接线在 `state/theme.ts`：一个模块级 signal + 一个 `effect` 接到 `document.documentElement`。**同一个 effect 顺带写 `localStorage`**——拆开就会出现「切了但没记住」，只在刷新后才看得见。
 - **`localStorage` 的读与写各自 `try/catch`**：Safari 隐私模式下取值就会抛。抛了只在内存里生效；脏值退回跟随系统。
-- **这是仓库里唯一一份进 `localStorage` 的偏好**，key 为 `difftab:theme`。**但「跨会话」目前只到同一实例的刷新为止**：后端 `listen(0)` 端口随机，而 `localStorage` 按 origin（含端口）隔离，换一次启动就归零（修法与代价记在 [`../history.md`](../history.md) 的「未完事项」）。**其余页面状态——列表版式、左栏宽度、分区比例与折叠态、标签栏——因此一律不进 `localStorage`**：不是不值得记，是记了也存不住。
+- **这是仓库里唯一一份进 `localStorage` 的偏好**，key 为 `difftab:theme`。**但「跨会话」目前只到同一实例的刷新为止**：后端 `listen(0)` 端口随机，而 `localStorage` 按 origin（含端口）隔离，换一次启动就归零。**没有任何门禁看得见**（`theme.test.ts` 跑在同一个 happy-dom origin 里）；被排除的修法见 [`../decisions/web.md`](../decisions/web.md)。**其余页面状态——列表版式、左栏宽度、分区比例与折叠态、标签栏——因此一律不进 `localStorage`**：不是不值得记，是记了也存不住。
 - **在 `render()` 之前接线**，但**首帧仍可能闪一下系统色**：CSP 是 `script-src 'self'`，塞不了惯用的 pre-paint 内联脚本。代价只落在选了与系统相反档的人身上、闪一帧，为它开 `unsafe-inline` 或维护脚本 hash 不划算。
 - 控件只画图标，`title` 与 `aria-label` 分别是 `Follow system` / `Light` / `Dark`——三个词会跟项目名抢宽度。图标是 Lucide `Monitor` / `Sun` / `Moon`；`lucide-preact` 只进 `devDependencies`、构建期 tree-shake。
 

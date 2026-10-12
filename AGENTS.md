@@ -57,10 +57,9 @@
 | `src/web/diff/`、`DiffView.tsx`、`state/layout.ts`：diff2html 渲染、hljs 清单、版式切换、产物体积 | `docs/design/diff-render.md` |
 | `src/web/styles/`，以及任何组件里的颜色与层叠：Tailwind token、主题、`--d2h-*` 覆写 | `docs/design/style.md` |
 | `test/`、`scripts/`、`biome.json`、`*.config.ts`、CI、`package.json`：模块与目录归属、依赖方向、只读性验证、构建与 CI 分层、pnpm 设置 | `docs/design/build.md` |
-| 门禁挡什么、fixture 契约、发布产物约定 | `docs/gates.md` |
+| 门禁挡什么、fixture 契约、发布产物约定、真机验收状态与未完事项 | `docs/gates.md` |
 | 产品范围、Non-goals、分发口径 | `docs/spec.md` |
 | 「为什么不那样做」、实测输出与源码核对 | `docs/decisions/` **下对应那个域的文件**（一域一份，别整目录读） |
-| 真机验收结论、被推翻的结论、未完事项 | `docs/history.md` |
 | 改 `docs/` 里任何文件、改 AGENTS.md 本身 | `docs/README.md`（写作约定 + 内容落哪份） |
 
 ## 5. 红线
@@ -113,7 +112,7 @@
 
 ## 7. 发布与维护约定
 
-项目已发布并进入维护阶段，License MIT，仓库公开。**会过期的东西一律不进本文件**——版本号、发布日期、进度、「某阶段已收口」：事实来源分别是 `package.json`、`git log`、`docs/history.md`，而常驻上下文里的过期叙述不会有人主动想起来删。
+项目已发布并进入维护阶段，License MIT，仓库公开。**会过期的东西一律不进本文件**——版本号、发布日期、进度、「某阶段已收口」：事实来源分别是 `package.json`、`git log`、`docs/gates.md` 的「真机验收状态」，而常驻上下文里的过期叙述不会有人主动想起来删。
 
 - **发布全自动**：合并 release-please 开的 release PR 即发版，`release.yml` 在 release commit 上复跑整份 CI 后经 npm trusted publishing 发布；`CHANGELOG.md` 也由它生成；失败处理与发布后验收见 `RELEASING.md`，产物约定在 `docs/gates.md`
 - **semver：0.x 保留破坏性余地（尤其 CLI 参数与端口/token 行为），1.0.0 是结论不是起点**——等验收全通过且三端真机验过再发
