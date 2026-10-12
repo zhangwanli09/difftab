@@ -5,7 +5,8 @@ import { render } from 'preact';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BranchState, RefEntry } from '../../../src/server/shared/protocol';
 import { BranchStatus } from '../../../src/web/components/BranchStatus';
-import { filterRefs, MAX_SHOWN, refList, refsError } from '../../../src/web/state/refs';
+import { MAX_SHOWN } from '../../../src/web/components/QuickPick';
+import { filterRefs, refList, refsError } from '../../../src/web/state/refs';
 import { ref, stubClipboard, stubJson, waitFor } from './helpers';
 
 const branch: BranchState = { head: 'main', detached: false, upstream: null };

@@ -126,6 +126,17 @@
   --color-list-active-selection-background: light-dark(#e4e6f1, #04395e);
   --color-list-active-selection-foreground: light-dark(#000000, #ffffff);
 
+  /* --- 搜索与跳行 -------------------------------------------------------- */
+  /* 搜索结果里命中那一段的底色（VS Code 的 editor.findMatchHighlightBackground）。**深浅共用**，
+   * VS Code 的默认值也是：半透明的橙叠在哪种底色上都分得出来 */
+  --color-editor-find-match-highlight-background: rgb(234 92 0 / 0.33);
+  /* 跳到的那一行整行垫一层（VS Code 的 editor.rangeHighlightBackground）。叠的是「比周围亮一点」，
+   * 深色下得换成白色叠加，所以是双值的 */
+  --color-editor-range-highlight-background: light-dark(
+    rgb(253 255 0 / 0.2),
+    rgb(255 255 255 / 0.05)
+  );
+
   /* --- 告警条（取不到状态时那一条） -------------------------------------- */
   /* 底色深浅各一份；边框那个**深浅共用**：同一个偏暗的黄在两种底色上都够分明 */
   --color-warning-background: light-dark(#fdf6d3, #352a05);

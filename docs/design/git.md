@@ -87,6 +87,42 @@
 - partial clone 下只读 ref 与提交，不触发取对象。空仓库输出为空、回空列表。
 - **History 的上游徽标复用这一条**按名字找 oid，不另起 `rev-parse @{u}`（又一种要钉的 argv）。
 
+## 全仓内容搜索
+
+侧栏 `Search` 档**只往白名单里加了 `grep` 一条**，代码在 `server/git/search.ts`。搜的是**工作区此刻**的内容（已跟踪文件读工作区那一份，不是 index 或 HEAD），agent 刚写下的字节立刻搜得到。
+
+```
+git -c core.quotePath=false -c grep.column=false -c submodule.recurse=false \
+    grep --no-color --no-textconv -I -z -n -F --untracked [-i] [-w] -e <查询> --
+```
+
+- **argv 除 `-i` / `-w` 两个可选位与 `-e` 后那一个值外整条是字面量**，冒烟逐段钉着。两个 `-c` 由 `run.ts` 按子命令注入（与 `diff` 那两道开关同一处），调用点只写 `grep …`。
+- **`-c grep.column=false`**：用户配了 `grep.column` 时每条记录多出一段列号，`-z` 切分整体错位、不报错。`--no-column` 要 git 2.19，而 `-c` 一个老 git 不认的键是静默忽略——下限 2.11 上也成立。
+- **`-c submodule.recurse=false`**：配了它时 `--untracked` 直接 fatal（`--untracked not supported with --recurse-submodules`，exit 128），症状是「这台机器上搜索永远报错」。`--no-recurse-submodules` 要 2.12，理由同上。
+- **`-I` 不能省**：不带时二进制文件吐的是一行 `Binary file <路径> matches`，没有 NUL 段，解析器会把它与下一条粘成一条。
+- **`--no-textconv`**：与 `diff` 同一道外部程序闸。**禁 `-O`（起 pager）、`-f <文件>`（读文件当模式）、`--no-index`（搜仓库外）、`--textconv`**——白名单只看子命令。
+- **`-F -e <查询>`**：字面量，`grep.patternType` 被命令行的 `-F` 盖过；`-e` 让以 `-` 开头的查询不被当成选项。查询里的换行会被 git 拆成多个模式，HTTP 层因此拒绝含 `\n` / `\r` / `\0` 的查询（400）。
+- **`--untracked`** 让 agent 新建、还没 add 的文件也搜得到，仍尊重 `.gitignore`——被忽略的不搜（`node_modules` 会淹没结果）。工作区已删的已跟踪文件被静默跳过，不报错。
+- **退出码 1 是「没有命中」，不是错误**；`runGit` 不抛非零，按码分流，其余非零照常是错误。
+- **`-z` 记录是 `<路径>\0<行号>\0<内容>\n`**，按「读到 NUL → 读到 NUL → 读到换行」顺序解析：路径可以含换行；`-I` 只看前 8000 字节，之后的内容里可能有 NUL。
+- **体积两道上限，任一触发即 `truncated`**：stdout 8MB 时掐断 git、**收下已到的字节**（`runGit` 的 `truncate` 档，与 diff 那条「超限即 `overflow`」相反——这里要的是前 N 条，不是全有或全无），丢掉最后一条不完整的记录；再按 2,000 行截。git 2.38 才有 `-m`，靠不住。
+- **命中区间由后端算**（UTF-16 下标，前端只切段着色）：同一个字面量在 JS 里以 `RegExp` 重找一次，`-i` 对 `i` 标志、`-w` 对 `(?<![A-Za-z0-9_])…(?![A-Za-z0-9_])`——与 git 的字词集一致。找不出区间的行照常返回、只是不高亮。**超过 300 字符的行裁成首个命中前后各一截**、两端补 `…`、区间随之平移：一份压缩过的 JS 一行就是整个文件。
+- 搜索不写 `.git`：实测把一个已跟踪文件 stat 弄旧后跑 `grep`，`.git/index` 不变（同一状态下的默认 `git status` 会重写它）。
+
+## 全量文件列表
+
+Quick Open 要一份全仓文件路径，**复用 `ls-files`、不扩白名单**，代码在 `server/git/tree.ts`（与目录树共用 `--stage` 那条的常量与 gitlink 判据）：
+
+```
+git ls-files -z --stage --cached
+git ls-files -z --others --exclude-standard
+```
+
+- **已跟踪那条带 `--stage`、滤掉 `160000`**：submodule 打不开，列出来只会以「不是普通文件」告终。两条不能合一，理由同目录树。
+- **未跟踪那条不带 `--directory`**：这里要的是文件，折叠成 `dir/` 就打不开了。被忽略的不列，`node_modules` 因此进不来；代价是未跟踪又未忽略的大目录会整片展开，与 `status -uall` 同一量级。
+- **未跟踪那条里以 `/` 结尾的条目丢掉**：未跟踪的内嵌 git 仓库（agent 刚 clone 进来的）即便不带 `--directory` 也只列成一条 `sub/`，它不是文件，列出来是一行名字为空、点开必然失败的条目。
+- 去重、按路径排序后整份返回；上限由封装层 64MB 兜底。**工作区已删但仍在 index 里的文件仍会列出**，与目录树同一个已知偏差。
+
 ## 目录树的两条 `ls-files`
 
 文件浏览器的树**按目录懒加载**，一次只回**一层**的直接子项——全量树的 JSON 光 `node_modules` 就能比整仓 diff 还大。

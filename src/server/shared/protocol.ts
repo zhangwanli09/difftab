@@ -303,3 +303,44 @@ export interface RefEntry {
 export interface RefList {
   refs: RefEntry[];
 }
+
+/**
+ * `GET /api/files` 的响应体：Quick Open 用的全仓文件路径——已跟踪 + 未跟踪，不含被忽略的与
+ * submodule（打不开）。已去重、按路径排序；模糊匹配与排序归前端。
+ */
+export interface FileList {
+  paths: string[];
+}
+
+/**
+ * 全仓搜索命中的一行。**`ranges` 是 `[起, 止)` 的 UTF-16 下标，相对 `text`**：前端只切段着色，
+ * 不自己再找一遍——大小写与全词的口径只在后端一份。`text` 可能已被裁过（长行两端带 `…`、行首
+ * 空白已剥），`ranges` 已随之平移；找不出区间的行 `ranges` 为空，照常展示、只是不高亮。
+ */
+export interface SearchMatch {
+  /** 从 1 起。 */
+  line: number;
+  text: string;
+  ranges: [start: number, end: number][];
+}
+
+/** 一个文件里的全部命中行，按行号升序。 */
+export interface SearchFile {
+  path: string;
+  matches: SearchMatch[];
+}
+
+/**
+ * 一次搜索最多回多少行命中，到了即 `truncated`。**放在协议里**：前端的截断提示要说出这个数，各写
+ * 一份时改了一边，页面上说的就不是真的。
+ */
+export const MAX_SEARCH_LINES = 2000;
+
+/**
+ * `GET /api/search` 的响应体。**`truncated` 即「后面还有，没给全」**：stdout 或行数上限任一触发，
+ * 前端据此提示收窄查询——不带它时截断与「就这么多」长得一模一样。
+ */
+export interface SearchPayload {
+  files: SearchFile[];
+  truncated: boolean;
+}

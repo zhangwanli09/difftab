@@ -48,11 +48,11 @@
 
 | 改这块 | 动手前必读 |
 |---|---|
-| `src/server/git/`：git 封装层、status/diff 解析、二进制与体积闸、git 异常状态、目录树的 `ls-files`、只读读文件、提交历史的 `log` 与提交 diff、分支列表的 `for-each-ref` | `docs/design/git.md` |
+| `src/server/git/`：git 封装层、status/diff 解析、二进制与体积闸、git 异常状态、目录树与 Quick Open 的 `ls-files`、全仓搜索的 `grep`、只读读文件、提交历史的 `log` 与提交 diff、分支列表的 `for-each-ref` | `docs/design/git.md` |
 | `src/server/watch/`：文件监听、三档策略、自动刷新、轮询兜底 | `docs/design/watch.md` |
 | `src/server/{cli,http,shared}/`、`src/server/main.ts`、`bin/`：CLI 入口与 Node 下限、进程生命周期与单实例、HTTP/SSE 协议、token 与 CSP | `docs/design/server.md` |
-| `src/web/` 左栏：界面文案、页面骨架、变更列表、侧栏 tab、主题开关、标签页标题、logo / favicon / 品牌资产 | `docs/design/web.md` |
-| `src/web/` 左栏：文件树、提交历史分区、分支列表 | `docs/design/sidebar.md` |
+| `src/web/` 左栏：界面文案、页面骨架、变更列表、侧栏 tab、主题开关、Quick Open 与全局快捷键、标签页标题、logo / favicon / 品牌资产 | `docs/design/web.md` |
+| `src/web/` 左栏：文件树、`Search` 档、提交历史分区、分支列表与 quick pick 外壳 | `docs/design/sidebar.md` |
 | `src/web/` 右侧：编辑器标签页（预览 / 固定 / 关闭 / SSE 收编 / commit tab）、文件视图、图片视图 | `docs/design/editors.md` |
 | `src/web/diff/`、`DiffView.tsx`、`state/layout.ts`：diff2html 渲染、hljs 清单、版式切换、产物体积 | `docs/design/diff-render.md` |
 | `src/web/styles/`，以及任何组件里的颜色与层叠：Tailwind token、主题、`--d2h-*` 覆写 | `docs/design/style.md` |

@@ -30,10 +30,12 @@ import {
   openEditor,
   removeEditor,
   renameEditor,
+  setReveal,
 } from './editors';
 import { ensureHistory } from './history';
 import { getJson, latestWins, type Tickets, toMessage } from './http';
 import { removeFrom, setIn } from './immutable';
+import { refreshSearch } from './search';
 import { historyCollapsed } from './sidebar';
 import { ancestorDirs, refreshTree } from './tree';
 
@@ -342,6 +344,8 @@ export async function refresh(): Promise<void> {
    * `App` 那个 tab effect 补一次，而后台的 file tab 切过去时 `activateEditor` 自己就取。
    */
   if (activeTab.value === 'files') refreshTree();
+  // 搜索同理：看得见才重搜，看不见只记一笔、切回来时补（`App` 那个 tab effect）。它也不依赖新列表
+  const search = refreshSearch(activeTab.value === 'search');
   const before = activeEditor.value;
   // **活动的文件也要重取**，与「活动的 diff 也要重取」同源：内容变了而树没变是最常见的
   // 形态，只刷树的话右侧停在旧内容上，而页面看不出任何异样
@@ -383,7 +387,7 @@ export async function refresh(): Promise<void> {
   const after = activeEditor.value;
   const editor =
     after === null || (after.kind === 'file' && before?.kind === 'file') ? null : refetch(after);
-  await Promise.all([history, editor]);
+  await Promise.all([history, editor, search]);
 }
 
 /**
@@ -434,7 +438,7 @@ export function closeEditor(key: EditorKey): void {
  * 能做到的第二件事。**不进 `localStorage`**：跨会话保持的偏好目前只有主题一份，加第二份之前
  * 先想清楚它是不是也该有那一节（见 `theme.ts`）。
  */
-export const activeTab = signal<'changes' | 'files'>('changes');
+export const activeTab = signal<'changes' | 'files' | 'search'>('changes');
 
 /**
  * 提交历史此刻该不该判：`Changes` 档、`History` 分区展开着、且第一份 state 已经到了。看不见时 SSE
@@ -493,9 +497,13 @@ export async function loadFile(path: string): Promise<void> {
  * 在栏里是两个 tab；合成一个就得再补一条「这次是从哪点进来的」，而那与 tab 的 `kind` 是同一个
  * 信息的两处实现。
  */
-export function openFile(path: string, { pinned = false } = {}): void {
+export function openFile(
+  path: string,
+  { pinned = false, line }: { pinned?: boolean; line?: number } = {},
+): void {
   const replaced = openEditor('file', path, pinned);
   if (replaced !== null) forget(replaced);
+  setReveal(path, line);
   void loadFile(path);
 }
 

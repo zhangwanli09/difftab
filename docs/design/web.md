@@ -18,11 +18,11 @@
 
 **外壳是行向 flex：左栏一列（顶栏 → tab 行 → 错误条 → 列表区 → 状态条），右边是编辑器面板（见 [`editors.md`](editors.md)），面板自屏幕顶端满高到底。** 顶栏不横跨全屏——它归左栏。
 
-- **顶栏里是品牌符号 + 项目名 + 主题开关**。高度与右侧编辑器标签栏钉同一个值，两条底边落在同一条水平线上（有断言）。项目名是 `RepoState.repoName`，对应 VS Code 侧栏顶端的文件夹名——这一栏回答「我在看哪个项目」，产品名答不了。拿不到时退回 `difftab`（共用 `state/title.ts` 导出的 `PRODUCT_NAME`）。
+- **顶栏里是品牌符号 + 项目名 + `Go to File` + 主题开关**。高度与右侧编辑器标签栏钉同一个值，两条底边落在同一条水平线上（有断言）。项目名是 `RepoState.repoName`，对应 VS Code 侧栏顶端的文件夹名——这一栏回答「我在看哪个项目」，产品名答不了。拿不到时退回 `difftab`（共用 `state/title.ts` 导出的 `PRODUCT_NAME`）。
 - **`truncate` 必须落在装项目名的那个 `span` 上，不是顶栏本身**：顶栏是 flex 容器，`truncate` 留在容器上不起作用（子项的自动最小尺寸会把它撑开），长目录名漫过右边框或折成第二行，而 `truncate` 字样还在原地，看上去像已经处理过了。符号与开关 `shrink-0`，被裁的永远是名字。
 - **分支状态放在左栏底部的状态条**（对应 VS Code 的 status bar），不与项目名挤在顶栏：挤在一行时先被裁掉的恰恰是分支名。状态条随第一份 state 一起出现，拿不到时整条不画。
-- **顶栏之下是一行两个 tab（`Changes` / `Files`）**，对应 VS Code 的 activity bar，**画成两枚靠左的图标、横排一行**——竖排要再占一列宽，而那一列是从文件名身上扣的。默认档是 `Changes`。提交历史不另占 tab，是 `Changes` 档里的一个分区（见 [`sidebar.md`](sidebar.md) 的「提交历史」）：「还没提交的」与「刚提交的」是同一个问题的两半。
-  - **这一行本身不是 tablist**：`role="tablist"` 只挂在装两枚 tab 的那个 div 上，行的右端按当前档站一枚按钮（`Changes` 下是列表 / 树切换，`Files` 下是 `Collapse all`）。按钮写成 tablist 的孩子时读屏会把它报成第三个 tab，页面上看不出来（有断言）。
+- **顶栏之下是一行三个 tab（`Changes` / `Files` / `Search`）**，对应 VS Code 的 activity bar，**画成三枚靠左的图标、横排一行**——竖排要再占一列宽，而那一列是从文件名身上扣的。默认档是 `Changes`。提交历史不另占 tab，是 `Changes` 档里的一个分区（见 [`sidebar.md`](sidebar.md) 的「提交历史」）：「还没提交的」与「刚提交的」是同一个问题的两半。
+  - **这一行本身不是 tablist**：`role="tablist"` 只挂在装 tab 的那个 div 上，行的右端按当前档站一枚按钮（`Changes` 下是列表 / 树切换，`Files` 下是 `Collapse all`，`Search` 下没有）。按钮写成 tablist 的孩子时读屏会把它报成又一个 tab，页面上看不出来（有断言）。
   - **通栏那条细线必须是行自己的 inset 阴影（`divider-b`），不是 `border-b`**：tab 选中的下划线要盖在它上面，`border` 画在 padding box 之外够不着，选中那一段就成了双线。这套机制与编辑器标签栏共用，全仓库只此一种。下划线用前景色而不是 `focus-border`——后者是键盘焦点的颜色，同色时两件事化成同一种蓝。
   - 行的右内边距与顶栏一致，两处的 `IconButton` 落在同一条竖线上（有断言）。
 - **`Changes` 那枚图标与状态条上分支名前的是同一个 import（Lucide `GitBranch`）**，同一概念由编译器保证是同一个图形。所有 `<svg>` 走共用的 `Icon` 外壳，`size` 与 `aria-hidden` 只写一次。
@@ -42,6 +42,17 @@
   - **拖动时一个组件都不重渲染**：宽度以 signal 本身交给 `style`，由 `@preact/signals` 直接改 DOM；在 `App` 里读 `.value` 等于每个 pointermove 重渲整棵树。
   - **宽度不跨会话记忆**（`localStorage` 跨不了实例，见「主题开关」）。
   - 拖宽左栏可能让 diff 面板跨过并排阈值而换版式：**不为此做任何事**，`outputFormat` 量的本来就是面板自身的 border box（见 [`diff-render.md`](diff-render.md) 的「版式按面板宽度自动切」）。
+
+## Quick Open 与全局快捷键
+
+**`⌘P` / `Ctrl+P` 或顶栏那枚 `Go to File`（Lucide `FileSearch`）弹出 Quick Open：照 VS Code，一个 quick pick，按文件名模糊匹配全仓文件，选中即以固定 tab 打开全文。** 状态在 `state/quick-open.ts`，组件是 `QuickOpen.tsx`，外壳与分支列表共用 `QuickPick.tsx`（见 [`sidebar.md`](sidebar.md)）；数据是 `/api/files`（见 [`git.md`](git.md) 的「全量文件列表」）。
+
+- **每次打开取一次文件列表，不随 SSE 重取**；取到过就先用旧的、回来再换（`latestWins`），与分支列表同一套。
+- **模糊匹配是子序列匹配，不分大小写**（`matchPath`）：查询的每个字符按序出现在路径里即命中。打分偏好 basename 里的命中、连续命中与段首命中，同分时短路径在前；命中下标交给行去加粗。一次最多画 200 条，规则同分支列表。
+- **空输入列当前的变更文件**（`repoState.files`；工作区里已不存在的不列——它唯一能打开的是一条错误，判据同 `Open file` 的 `isAbsentFromWorktree`）。VS Code 在这里列「最近打开」，本工具最常要跳的是 agent 刚改过的那批。
+- **一行 = 文件名 + 目录**，两段同住一个 `truncate` span（理由同变更列表），`title` 是完整路径。
+- **选中走 `openFile` 的固定档**（照 VS Code `workbench.editor.enablePreviewFromQuickOpen` 的默认 `false`），不切侧栏档位。关闭后焦点交还给打开前那个元素。
+- **全局快捷键挂在 `document` 的 `keydown` 上，只有两条**：`⌘P` / `Ctrl+P` 开 Quick Open（`preventDefault` 拦下浏览器打印），`⌘⇧F` / `Ctrl+Shift+F` 切到 `Search` 档并聚焦、全选输入框。Mac 判 `metaKey`、其余判 `ctrlKey`——两个都认时会吃掉 macOS 输入框里 `Ctrl+P`（光标上移一行）这条系统级 Emacs 键位。按钮的 `title` 按平台写 `⌘P` 或 `Ctrl+P`。
 
 ## 变更列表
 

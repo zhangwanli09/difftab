@@ -34,12 +34,6 @@ export async function loadRefs(): Promise<void> {
   }
 }
 
-/**
- * 一次最多画多少条。几千个标签的仓库里整份列表同时挂进 DOM 是一次可感知的卡顿，而这份列表本来
- * 就是拿来搜的。
- */
-export const MAX_SHOWN = 200;
-
 /** 只按名字、不区分大小写的子串匹配。后端排好的次序原样保留；没有输入时原样返回，不复制。 */
 export function filterRefs(refs: readonly RefEntry[], query: string): readonly RefEntry[] {
   const needle = query.trim().toLowerCase();

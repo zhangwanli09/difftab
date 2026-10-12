@@ -410,6 +410,28 @@ test('/api/file 与 /api/tree 上的路径同样是字面量，且走不出仓�
   assert.equal((await onIgnoredTree('/api/file')).status, 400);
 });
 
+test('/api/files 与 /api/search：被忽略的不列也不搜，查询坏了一律 400', async () => {
+  await setup();
+  const { paths } = JSON.parse((await onIgnoredTree('/api/files')).body);
+  assert.ok(paths.includes('src/app.ts') && paths.includes('src/new.ts'), paths.join(', '));
+  assert.ok(!paths.some((p) => p.startsWith('vendor/') || p === '.env'), paths.join(', '));
+
+  const search = async (params) => onIgnoredTree(`/api/search?${new URLSearchParams(params)}`);
+  const hits = JSON.parse((await search({ q: 'module.exports' })).body);
+  assert.deepEqual(hits, { files: [], truncated: false }, '被忽略的 vendor/ 被搜到了');
+  const fresh = JSON.parse((await search({ q: 'FRESH' })).body);
+  // 默认不分大小写，且未跟踪的文件也搜得到
+  assert.deepEqual(
+    fresh.files.map((f) => f.path),
+    ['src/new.ts'],
+  );
+
+  for (const q of ['', 'a\nb', 'a\rb', 'x'.repeat(1001)]) {
+    const res = await search({ q });
+    assert.equal(res.status, 400, `q=${JSON.stringify(q.slice(0, 20))} 回了 ${res.status}`);
+  }
+});
+
 test('图片：payload 只带两侧元数据，字节由 /api/blob 以精确 MIME 逐字节给', async () => {
   await setup();
   const onImages = (path) => authedGet(images.port, images.token, path);

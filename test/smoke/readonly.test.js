@@ -22,6 +22,7 @@ import { cleanupOnExit, once, parseTrace, REPO_ROOT, runFullFlow } from './helpe
  * `version` 是 `git --version` 在 trace 里的形态。`cat-file` 是图片旧侧读对象库那一条（`blob` /
  * `-s` 两种参数，见下面那条参数断言——白名单只看子命令，`--filters` 那类会跑 smudge 的参数它看不见）。
  * `log` 是提交历史那一条，`for-each-ref` 是分支列表那一条，argv 都整条钉死（见下面两条参数断言）。
+ * `grep` 是全仓搜索那一条，除两个可选开关与查询本身外同样钉死——`-O` 会起 pager、`-f` 会读文件。
  */
 const READ_ONLY = new Set([
   'version',
@@ -32,6 +33,7 @@ const READ_ONLY = new Set([
   'cat-file',
   'log',
   'for-each-ref',
+  'grep',
 ]);
 
 /** 本文件用得到的 fixture。生成全部 16 个要 1.5s 上下，其中一半这里根本不打开。 */
@@ -85,7 +87,7 @@ test('劫持真的生效——日志里确实记到了东西', async () => {
   assert.ok(commands.length >= 8, `只记到 ${commands.length} 条 git 调用，劫持多半没生效`);
 
   const seen = new Set(commands.map((c) => c.subcommand));
-  for (const expected of ['status', 'diff', 'rev-parse', 'ls-files', 'cat-file', 'log']) {
+  for (const expected of ['status', 'diff', 'rev-parse', 'ls-files', 'cat-file', 'log', 'grep']) {
     assert.ok(seen.has(expected), `完整流程里没看到 git ${expected}——流程没跑到位`);
   }
 });
@@ -200,6 +202,30 @@ test('for-each-ref 的参数逐段等于那条字面量——%(signature) 一族
       `for-each-ref 的参数不是那条字面量：${cmd.argv.join(' ')}`,
     );
   }
+});
+
+test('grep 的参数除 -i / -w 与查询外逐段等于字面量——-O 起 pager、-f 读文件、--no-index 搜仓库外', async () => {
+  const commands = await trace();
+  const greps = commands.filter((c) => c.subcommand === 'grep');
+  // 正面断言：每个仓库都搜四次，一条都没有就是搜索那条路没跑到
+  assert.ok(greps.length > 0, '完整流程里没有任何 grep 调用——全仓搜索那条路没跑到');
+  const unquote = (token) => token.replace(/^'(.*)'$/, '$1');
+  const head = ['grep', '--no-color', '--no-textconv', '-I', '-z', '-n', '-F', '--untracked'];
+  for (const cmd of greps) {
+    const argv = cmd.argv.map(unquote);
+    const flags = argv.slice(head.length, -3).join(' ');
+    const ok =
+      head.every((token, i) => argv[i] === token) &&
+      ['', '-i', '-w', '-i -w'].includes(flags) &&
+      argv.at(-3) === '-e' &&
+      argv.at(-1) === '--';
+    assert.ok(ok, `grep 的参数不是那条字面量：${cmd.argv.join(' ')}`);
+  }
+  // 以 `-` 开头的查询必须落在 `-e` 之后——漏了 `-e` 时 `-n` 会被当成选项吃掉
+  assert.ok(
+    greps.some((c) => c.argv.map(unquote).at(-2) === '-n'),
+    '没看到以 - 开头的那次查询落在 -e 之后',
+  );
 });
 
 test('status 的参数逐字固定——降级轮询将来要复用同一条', async () => {

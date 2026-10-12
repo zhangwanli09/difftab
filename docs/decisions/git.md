@@ -17,6 +17,7 @@
 - **`for-each-ref` 的实测形态**（`refs.ts` 解析器判据的来源，git 2.54）：没有 `-z`，记录之间是换行；格式里每个字段（含最后一个）都以 `%00` 收尾，于是按 NUL 切开后每条恰好十一段、下一条的 refname 前面带一个换行——与 `log -z` 剥前导换行同一个处理。`%(subject)` 把首段多行用空格连成一行（`line one\nline two` → `line one line two`），不会把换行带进记录。克隆出来的仓库有一条 `refs/remotes/origin/HEAD`，`%(symref)` 为 `refs/remotes/origin/main`，其余条目这一段为空——据此滤掉。附注标签的本体字段是标签对象（`%(authorname)` 与 `%(committerdate:unix)` 都为空、`%(subject)` 是标签说明），`%(*…)` 那几段才是它指向的提交；轻量标签的 `%(*…)` 全空；指向树的标签两组都空。
 - **只读 `.git` 挡不住 index 回写，只是让它静默失败**：`touch` 一个内容未变的已跟踪文件后，默认 `git status` 把 `.git/index` 重写一遍，设 `GIT_OPTIONAL_LOCKS=0` 则不变；而把 `.git` 整棵 `chmod -R a-w` 之后再跑同一条默认 `git status`，它 **exit 0、stderr 全空**，只是没写成——所以收紧权限既替代不了那个环境变量，也不能拿来验只读性。
 - **超限掐断 git 之后，Windows 上先到的是 `'error'` 而不是 `'close'`**：`maxStdoutBytes` 触发后 `child.kill()`，**windows × Node 22.0.x 那一档**随即走进 `'error'` 分支，`GitError.kind` 因此是 `exit` 而不是 `overflow`、`/api/diff` 回 500 而不是 `too-large`（另外八档不触发）。
+- **`git grep` 的几种实测形态**（git 2.54）：配了 `grep.column=true` 时 `-z` 记录变成 `<路径>\0<行>\0<列>\0<内容>`，命令行再给一次 `-c grep.column=false` 即回到三段；配了 `submodule.recurse=true` 时 `grep --untracked` 报 `fatal: --untracked not supported with --recurse-submodules` 并以 128 退出，再给 `-c submodule.recurse=false` 即正常；`grep.patternType=perl` 被命令行的 `-F` 盖过（`h.llo` 不命中 `hello`）；不带 `-I` 时二进制文件输出一行 `Binary file bin.dat matches`、不带任何 NUL；工作区已删的已跟踪文件被静默跳过、exit 0；没有命中时 exit 1。把一个已跟踪文件的 stat 弄旧后跑 `grep`，`.git/index` 逐字节不变，同一状态下默认 `git status` 重写了它。
 
 ## 被排除的做法
 
@@ -40,3 +41,7 @@
 | History 的 ref 徽标从 `log` 的 `%D` 取 | 徽标会跟着列表一起缓存，而列表只在 HEAD 挪了时重取：`git push` 只挪 `origin/main`、不挪 HEAD，徽标就停在推送前那一行，页面不报错、只是「还没推送」的界线画错了地方。`log` 那条字面量 argv 也得为它多钉一段。上游的 oid 用已在白名单里的 `for-each-ref` 取、按分支状态变没变来判，push 之后 ahead 归零那一刻就重取 |
 | 按 `ahead` 计数把列表顶上 N 条标成「未推送」，不取 ref | 只在线性历史上成立：`log` 默认按提交时间排而不是按拓扑，HEAD 侧有合并时，从别的分支并进来的、早已推送的提交会与未推送的交错排列，顶上 N 条就不是那 N 条。上游那枚徽标落在它真正指着的那一行，不需要推断 |
 | History 画全部分支与标签的徽标 | VS Code 的默认档（`filter`）也只画图里那几条 ref；320px 一行里多一枚徽标就从主题上再扣一截，而「瞥一眼」要回答的只是「哪些还没推」。要看别的 ref 有分支列表 |
+| 全仓搜索支持正则（照 VS Code 的第三枚开关） | git 下限 2.11 上能用的只有 POSIX ERE（`-P` 要 git 编进了 PCRE，各发行版不一），而命中区间要在 JS 里重找一次：ERE 与 JS `RegExp` 的语义差（字符类、反向引用、`\b`）会让高亮静默漂开。字面量在两边是同一件事 |
+| 用 `--column` 拿命中列、`-m` 限每个文件的命中数 | 分别要 git 2.19 / 2.38，下限是 2.11。列由后端拿同一个字面量在 JS 里找（区间本来就要算），数量上限靠 stdout 截断 + 行数上限 |
+| 全仓搜索也搜被忽略的文件（`--no-exclude-standard`） | `node_modules`、`dist/` 会淹没结果，且一次就把整棵依赖树读一遍；VS Code 的默认档同样不搜。要搜依赖里的东西回编辑器 |
+| Quick Open 的文件列表复用目录树那条 `--others --directory` | `--directory` 把未跟踪目录折叠成一条 `dir/`，Quick Open 要的是文件，折叠了就打不开；被忽略的那条更不能要 |

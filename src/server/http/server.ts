@@ -13,8 +13,9 @@ import { readImageBytes } from '../git/image.ts';
 import { listRefs } from '../git/refs.ts';
 import { type RepoInfo, repoNameOf } from '../git/repo.ts';
 import { GitError } from '../git/run.ts';
+import { MAX_QUERY_LENGTH, searchRepo } from '../git/search.ts';
 import { readStatus, readStatusRaw } from '../git/status.ts';
-import { readTree } from '../git/tree.ts';
+import { listFiles, readTree } from '../git/tree.ts';
 import { WorktreeError } from '../git/worktree.ts';
 import type { ErrorPayload, RepoState, WatchState } from '../shared/protocol.ts';
 import { forcedTierWarning, initialMode, resolveTier } from '../watch/tier.ts';
@@ -381,6 +382,43 @@ export async function startServer(
       /** 分支列表：本地、远程、标签。无参数，前端每次打开列表时取一次。 */
       case '/api/refs': {
         sendJson(res, 200, await listRefs(repo.root));
+        return;
+      }
+
+      /** Quick Open 的全仓文件列表。无参数，前端每次打开 Quick Open 时取一次。 */
+      case '/api/files': {
+        sendJson(res, 200, await listFiles(repo.root));
+        return;
+      }
+
+      /**
+       * 全仓字面量搜索。**查询整条进 argv（`-e` 之后）**，所以这里先卡住两件事：长度，以及换行与
+       * NUL——git 会把含换行的模式拆成几个模式各自去搜，页面上的高亮与命中就对不上了。
+       */
+      case '/api/search': {
+        const query = url.searchParams.get('q') ?? '';
+        if (query === '') {
+          sendError(res, 400, 'bad-request', 'q is required');
+          return;
+        }
+        if (query.length > MAX_QUERY_LENGTH || /[\n\r\0]/.test(query)) {
+          sendError(
+            res,
+            400,
+            'bad-request',
+            `q must be a single line of at most ${MAX_QUERY_LENGTH} characters`,
+          );
+          return;
+        }
+        sendJson(
+          res,
+          200,
+          await searchRepo(repo.root, {
+            query,
+            matchCase: url.searchParams.get('case') === '1',
+            wholeWord: url.searchParams.get('word') === '1',
+          }),
+        );
         return;
       }
 

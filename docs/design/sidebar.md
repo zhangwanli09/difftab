@@ -1,6 +1,6 @@
-# 前端：文件浏览器、提交历史与分支列表
+# 前端：文件浏览器、全仓搜索、提交历史与分支列表
 
-> 左栏里除变更列表之外的三块视图。页面骨架、变更列表与两棵树共用的行骨架（`TreeRow`、行内动作）在 [`web.md`](web.md)，右侧面板在 [`editors.md`](editors.md)。被排除的做法见 [`../decisions/web.md`](../decisions/web.md)，门禁见 [`../gates.md`](../gates.md)。标「有断言」的条目由 `test/unit/web/` 钉住、不进红线。
+> 左栏里除变更列表之外的四块视图。页面骨架、变更列表与两棵树共用的行骨架（`TreeRow`、行内动作）在 [`web.md`](web.md)，右侧面板在 [`editors.md`](editors.md)。被排除的做法见 [`../decisions/web.md`](../decisions/web.md)，门禁见 [`../gates.md`](../gates.md)。标「有断言」的条目由 `test/unit/web/` 钉住、不进红线。
 
 ## 文件浏览器
 
@@ -28,6 +28,20 @@
   - 不另起组件，直接写在 `App` 那一行；动作的唯一实现是 `state/tree.ts` 的 `collapseAll`。
   - **只清展开态、不清 `treeCache`**：再展开时不该又空一拍。一个目录都没展开时照常可点（真的无操作，不做禁用态）。
   - **不动右侧面板**，也不引出一次自动展开（活动 tab 的路径没变）。
+
+## 全仓搜索
+
+**`Search` 是侧栏第三档，照 VS Code Search 视图：顶上一个输入框带两枚切换钮，下面按文件分组列命中的行。** 状态在 `state/search.ts`，组件是 `SearchView.tsx`；git 那侧（`grep` 的字面量 argv、截断、命中区间）见 [`git.md`](git.md) 的「全仓内容搜索」。
+
+- **只做字面量**，两枚切换钮 `Match Case`（Lucide `CaseSensitive`）、`Match Whole Word`（`WholeWord`），`aria-pressed` 表态，默认都关（照 VS Code）。不做正则，理由见 [`../decisions/git.md`](../decisions/git.md)。
+- **输入 300ms 防抖再发**；切换钮一变立即重发。空输入清空结果、不发请求。
+- **查询、两枚开关、结果与折叠态都是模块级 signal**：切去别的档再回来，输入与结果原样都在。不进 `localStorage`（见 [`web.md`](web.md) 的「主题开关」）。
+- **自动刷新：档位可见且有查询时每个 SSE 重搜一次；看不见时只记一笔「过期了」，切回来补搜一次**——照 History 的「看不见不判，切过来补判」。不可见时也按事件重搜，等于 agent 每写一个文件就把全仓 `grep` 一遍。**同一时刻只有一次在途、在途期间又被叫过就回来后补跑一次**（`singleFlight`）；新查询作废旧请求的结果（`latestWins`）——慢的旧查询晚到时不得盖掉新的。
+- **汇总行**：`3 results in 2 files`（单复数照英文）、`No results`；`truncated` 时另起一行 `Showing the first 2,000 results — refine your search`。在取时写 `Searching…`，但**有旧结果时先留着旧的**，回来再换，不闪。出错走引导句 + 原因两行（见 [`web.md`](web.md)）。
+- **文件行走 `TreeRow`**：展开三角 + 文件名 + 目录（同住一个 `truncate` span，理由同变更列表）+ 行尾命中数。点它折叠 / 展开，悬停露出 `Copy path`。**折叠态记 collapsed 集合**：默认全展开，重搜后新冒出来的文件不用登记就是展开的。**活动高亮同按 `activeEditorPath`**。
+- **命中行缩进一层**：预览文本按 `ranges` 切成普通段与高亮段，高亮底色是 `find-match` token（照 VS Code `editor.findMatchHighlightBackground`）；行号不上行，`title` 是 `<路径>:<行号>`。**行首空白剥掉**，`ranges` 随之平移——缩进深的代码否则在 320px 里只剩一截空白。
+- **单击命中行 = 预览打开该文件并跳到那一行，双击固定**（同其余列表）。打开的是 file tab 而不是 diff：搜到的是工作区此刻的全文，那一行在 diff 里未必出现。跳行机制在 [`editors.md`](editors.md) 的「文件视图」。
+- **tab 行右端在 `Search` 档不站按钮**：行高由 tab 定，空着不抖。
 
 ## 提交历史
 
@@ -60,7 +74,7 @@
 
 ## 分支列表
 
-**点状态条上的分支名，窗口顶部居中弹出一个列表，照 VS Code 的 quick pick：顶上一个输入框，下面本地分支、远程分支、标签三组。选中一项即把名字复制进剪贴板**——checkout 属仓库写操作，只读工具能给「选中」的含义只有这一种（为什么不是「在 History 里打开」见 [`../decisions/git.md`](../decisions/git.md)）。状态在 `state/refs.ts`，组件是 `BranchPicker.tsx`；git 那侧见 [`git.md`](git.md) 的「分支列表」。
+**点状态条上的分支名，窗口顶部居中弹出一个列表，照 VS Code 的 quick pick：顶上一个输入框，下面本地分支、远程分支、标签三组。选中一项即把名字复制进剪贴板**——checkout 属仓库写操作，只读工具能给「选中」的含义只有这一种（为什么不是「在 History 里打开」见 [`../decisions/git.md`](../decisions/git.md)）。状态在 `state/refs.ts`，组件是 `BranchPicker.tsx`；git 那侧见 [`git.md`](git.md) 的「分支列表」。**quick pick 的外壳（弹层、`combobox` / `listbox`、键盘、外部点击、200 条上限、焦点交还）在 `QuickPick.tsx` 只写一份**，与 Quick Open（见 [`web.md`](web.md)）共用——理由同 `Sash.tsx`：易漏的机制两份副本时修了一份、另一份静默坏着。
 
 - **一项两行，照 VS Code**：图标 + 名字 + 相对时间；`作者 • 短哈希 • 主题`。三组图标：本地 `GitBranch`、远程 `Cloud`、标签 `Tag`。相对时间与短哈希复用 History 的 `relativeTime` / `shortSha`。指向树的标签只画第一行。
 - **组名画在每组第一项的右端**，第二组起顶上一条分隔线，不另起组标题行。

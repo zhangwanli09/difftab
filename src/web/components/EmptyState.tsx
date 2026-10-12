@@ -37,6 +37,8 @@ export function SidebarPlaceholder({ children }: { children: ComponentChildren }
 const TAB_KIND: Record<typeof activeTab.value, EditorKind> = {
   changes: 'diff',
   files: 'file',
+  // 搜索的命中行打开的是全文
+  search: 'file',
 };
 
 function EmptyState({ icon, children }: { icon: LucideIcon; children: ComponentChildren }) {

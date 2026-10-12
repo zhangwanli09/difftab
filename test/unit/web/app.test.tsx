@@ -98,19 +98,21 @@ describe('顶栏的形状', () => {
     expect(header()?.classList.contains('truncate')).toBe(false);
   });
 
-  it('右端有一个带无障碍名的主题开关——它是顶栏里唯一的另一样东西', () => {
+  it('右端是 Go to File 与主题开关两枚按钮，各带无障碍名', () => {
     repoState.value = stateWith('my-app');
     render(<App />, container);
 
-    const buttons = header()?.querySelectorAll('button') ?? [];
-    expect(buttons).toHaveLength(1);
+    const buttons = [...(header()?.querySelectorAll('button') ?? [])];
     // 只画图标，名字只能由 aria-label 给——掉了它这个按钮在读屏里就是一个无名控件
-    expect(buttons[0]?.getAttribute('aria-label')).toBe('Follow system');
+    expect(buttons.map((button) => button.getAttribute('aria-label'))).toEqual([
+      'Go to File',
+      'Follow system',
+    ]);
   });
 
-  it('第一份 state 还没到时开关也在——它不依赖仓库状态', () => {
+  it('第一份 state 还没到时两枚按钮也在——它们不依赖仓库状态', () => {
     render(<App />, container);
-    expect(header()?.querySelectorAll('button')).toHaveLength(1);
+    expect(header()?.querySelectorAll('button')).toHaveLength(2);
   });
 });
 
@@ -123,13 +125,17 @@ const tabOf = (label: string): HTMLButtonElement => {
   return found as HTMLButtonElement;
 };
 
-describe('侧栏那两个 tab', () => {
+describe('侧栏那三个 tab', () => {
   it('只画图标，名字由 aria-label 给——掉了它这几个就是无名控件，而页面上看不出来', () => {
     render(<App />, container);
     const tabs = [...container.querySelectorAll('[role="tab"]')];
-    expect(tabs.map((tab) => tab.getAttribute('aria-label'))).toEqual(['Changes', 'Files']);
+    expect(tabs.map((tab) => tab.getAttribute('aria-label'))).toEqual([
+      'Changes',
+      'Files',
+      'Search',
+    ]);
     // 名字不在文本里、图标真的画出来了：两条一起才说明「换成图标」这件事成立
-    expect(tabs.map((tab) => tab.textContent)).toEqual(['', '']);
+    expect(tabs.map((tab) => tab.textContent)).toEqual(['', '', '']);
     expect(tabs.every((tab) => tab.querySelector('svg') !== null)).toBe(true);
   });
 

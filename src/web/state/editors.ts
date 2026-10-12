@@ -90,6 +90,23 @@ export const activeEditorPath = computed<string | null>(() => {
 });
 
 /**
+ * 文件视图要跳到的那一行（全仓搜索点了一条命中）。**单独一份 signal，不挂在 `Editor` 上**：tab 的
+ * 身份、预览与固定都与「此刻要看哪一行」无关，挂上去时改名、并入、顶掉预览各处都得学会搬它。
+ * **每次请求都是一个新对象**，`FileView` 的跳行 effect 就依赖它的身份——再点同一行也重新滚一次；
+ * `FileView` 只认路径对得上的那一份。
+ */
+export const revealRequest = signal<{ readonly path: string; readonly line: number } | null>(null);
+
+/**
+ * 带 `line` 即请求跳到那一行；不带即「不带行号地打开了这个文件」，清掉它上一次的跳行与高亮——否则
+ * 从树上再点开它时又滚回、又高亮那一行。
+ */
+export function setReveal(path: string, line?: number): void {
+  if (line !== undefined) revealRequest.value = { path, line };
+  else if (revealRequest.value?.path === path) revealRequest.value = null;
+}
+
+/**
  * 打开（或切到）一个 tab。缺省开出来的是预览 tab，固定归双击那一路的 `pinEditor`。返回**被顶掉的
  * 预览 tab**（没有则 null）：调用方要作废它的在途请求与缓存，而「这次会不会顶掉预览」只该在这里判
  * 一次——让调用方自己再推一遍，两处的判据会漂开。

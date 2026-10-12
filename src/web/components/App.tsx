@@ -4,11 +4,23 @@
 // 档位)，与右边看的是哪个文件无关，横跨等于在 diff 面板顶上切一条与 diff 无关的横杠。
 // 两侧的所有权是分开的：列表归 Preact 的 keyed reconcile，单文件 diff 容器归 `Diff2HtmlUI`。
 
-import { ChevronsDownUp, Folder, GitBranch, List, ListTree, type LucideIcon } from 'lucide-preact';
+import {
+  ChevronsDownUp,
+  FileSearch,
+  Folder,
+  GitBranch,
+  List,
+  ListTree,
+  type LucideIcon,
+  Search,
+} from 'lucide-preact';
 import { useEffect, useRef } from 'preact/hooks';
 import { type ChangeView, changeView, toggleChangeView } from '../state/change-tree';
 import { activeEditor, keyOf } from '../state/editors';
 import { observeDiffPanel } from '../state/layout';
+import { quickOpenVisible } from '../state/quick-open';
+import { ensureSearchFresh } from '../state/search';
+import { handleGlobalKey, shortcutLabel } from '../state/shortcuts';
 import { dragStyle, sidebarStyle } from '../state/sidebar';
 import { activeTab, loadError, repoState } from '../state/store';
 import { PRODUCT_NAME } from '../state/title';
@@ -22,31 +34,40 @@ import { FileView } from './FileView';
 import { Icon } from './Icon';
 import { IconButton } from './IconButton';
 import { DifftabMark } from './Logo';
+import { QuickOpen } from './QuickOpen';
+import { SearchView } from './SearchView';
 import { SidebarSash } from './SidebarSash';
 import { SourceControl } from './SourceControl';
 import { ThemeToggle } from './ThemeToggle';
 import { WatchBadge } from './WatchBadge';
 
 /**
- * 侧栏那两个 tab。位置对应 VS Code 的 activity bar，**画成两枚紧挨着靠左的图标，但仍是横排
- * 一行、不切一列竖排**：竖排要再占一列宽，而 320px 里那一列是从文件名身上扣的，两个视图也用
+ * 侧栏那三个 tab。位置对应 VS Code 的 activity bar，**画成三枚紧挨着靠左的图标，但仍是横排
+ * 一行、不切一列竖排**：竖排要再占一列宽，而 320px 里那一列是从文件名身上扣的，三个视图也用
  * 不着一整列。
  *
  * `Changes` 那枚**与状态条上分支名前的是同一枚 `GitBranch`**（对应 VS Code activity bar 上的
  * Source Control）。两处 import 同一个具名组件，**「同一枚」这件事因此由编译器保证**——拼错标
  * 识符是编译错误，而共用一条 path 字符串的老做法里，两份漂开之后同一个概念在页面上就是两个
- * 图形，没有任何东西会响。`Files` 那枚是 `Folder`。提交历史不另占一枚：它是 `Changes` 档里变更
+ * 图形，没有任何东西会响。`Files` 那枚是 `Folder`，`Search` 那枚是 `Search`。提交历史不另占一枚：它是 `Changes` 档里变更
  * 列表下面的一个分区（`SourceControl`），照 VS Code 把 Graph 排在 Changes 底下。
  *
  * `label` 不再进 DOM 文本，改作 `aria-label` 与 tooltip：只画图标时它是这个按钮名字的**唯一**
  * 来源，掉了之后读屏里就是两个无名控件，而页面上什么都看不出来（同 `ThemeToggle`）。
  */
 const TABS = [
-  { id: 'changes', label: 'Changes', icon: GitBranch },
-  { id: 'files', label: 'Files', icon: Folder },
+  { id: 'changes', label: 'Changes', title: 'Changes', icon: GitBranch },
+  { id: 'files', label: 'Files', title: 'Files', icon: Folder },
+  // 快捷键只进 tooltip，不进 `aria-label`：读屏念的是控件名，`⌘⇧F` 念出来是一串符号
+  {
+    id: 'search',
+    label: 'Search',
+    title: `Search (${shortcutLabel('F', { shift: true })})`,
+    icon: Search,
+  },
 ] as const;
 
-// **不给 `flex-1`**：两枚各按自身宽度排、紧挨着靠左，平分整栏时选中那条下划线有半栏宽，看着
+// **不给 `flex-1`**：每枚各按自身宽度排、紧挨着靠左，平分整栏时选中那条下划线有半栏宽，看着
 // 不像指示器像第二条分隔线。`px-3 py-1.5` 留着当点击热区（约 40×28px 一枚）。`flex` 只为把图标
 // 从行内排版里摘出来（免掉替换元素在基线下方那点空隙），**不写居中类**：按钮的两个方向都由内容
 // 精确撑满，没有多余空间可分，写了只会让人以为这里在补偿什么。
@@ -80,10 +101,10 @@ function SideBarTabRow() {
   return (
     // **这一层不是 tablist，里面那层才是**：这一行的右端按当前档各站一枚按钮（`Changes` 下是
     // 列表 / 树切换，`Files` 下是「全部折叠」），而 `role="tablist"` 里躺一个非 tab 元素时读屏会
-    // 把它当成第三个 tab 报出来——按钮做成 tablist 的兄弟，两件事就不冲突了。写成孩子时页面上
+    // 把它当成又一个 tab 报出来——按钮做成 tablist 的兄弟，两件事就不冲突了。写成孩子时页面上
     // 完全看不出来，只有读屏里多一个无名控件。
     //
-    // 这一串类名逐条是：**通栏那条线（`divider-b`）归这一层**（留在 tablist 上时它只有两枚 tab
+    // 这一串类名逐条是：**通栏那条线（`divider-b`）归这一层**（留在 tablist 上时它只有几枚 tab
     // 那么宽）；**不给纵向内边距**——tab 的 `border-b` 要落在这一行的最后 1px 上才盖得住那条线，
     // 中间垫上 padding 就错开成双线了；`items-center` 是给那枚矮按钮的（tab 连图标带 `py-1.5` 有 28px，`IconButton` 只有
     // 20px），行高因此仍由 tab 定，按钮进出时这一行一个像素都不动；**`pr-3` 而不是 `px-3`**——tab
@@ -100,7 +121,7 @@ function SideBarTabRow() {
             role="tab"
             aria-selected={active === tab.id}
             aria-label={tab.label}
-            title={tab.label}
+            title={tab.title}
             /**
              * **只改 `activeTab`，绝不碰 `activeEditor`**：换的是左栏在列什么，不是用户此刻在读
              * 什么——写成「切到 Files 就清空右侧」时页面看着完全正常，只是每瞄一眼目录树就丢掉
@@ -156,10 +177,20 @@ export function App() {
    *   上是一份停在离开那一刻的旧目录。
    */
   useEffect(() => {
+    // 搜索同一条「切回来补上」：不看这一档时 SSE 只记了一笔，这里补搜
+    if (tab === 'search') ensureSearchFresh();
     if (tab !== 'files') return;
     if (!treeCache.value.has(ROOT)) void loadDir(ROOT);
     refreshTree();
   }, [tab]);
+
+  // 全局快捷键（`⌘P` / `⌘⇧F`），判据与动作都在 `state/shortcuts.ts`
+  useEffect(() => {
+    document.addEventListener('keydown', handleGlobalKey);
+    return () => document.removeEventListener('keydown', handleGlobalKey);
+  }, []);
+  // Quick Open 的外部点击要排除顶栏那枚按钮：否则按下时关、松开又被 click 打开
+  const goToFile = useRef<HTMLButtonElement>(null);
 
   // diff 版式的**唯一**测量点。本组件只管「量哪个元素、什么时候开始和停」——量法与阈值都在
   // `state/layout.ts`，两者是一个取舍的两半。量的是这个 `<section>`，**既不是 DiffView 底下那
@@ -193,6 +224,17 @@ export function App() {
         <header class="flex h-9 shrink-0 items-center gap-2 border-b border-panel-border bg-title-bar-background px-3 text-sm font-medium">
           <Icon icon={DifftabMark} class="shrink-0" />
           <span class="min-w-0 flex-1 truncate">{state?.repoName || PRODUCT_NAME}</span>
+          {/* Quick Open 的可见入口（快捷键之外），开着时再点一次即关 */}
+          <IconButton
+            icon={FileSearch}
+            label="Go to File"
+            shortcut={shortcutLabel('P')}
+            popup
+            buttonRef={goToFile}
+            onClick={() => {
+              quickOpenVisible.value = !quickOpenVisible.value;
+            }}
+          />
           <ThemeToggle />
         </header>
 
@@ -218,7 +260,7 @@ export function App() {
             预设里没有 13px / 22px，不为 2px 另加 token。**分组标题是例外**：它自己写 `text-xs`，而
             Tailwind 的 `text-*` 会把 line-height 一并重设（`--tw-leading` 不继承），得自带 `/6` */}
         <nav class={`min-h-0 flex-1 text-sm/6 ${tab === 'files' ? 'overflow-auto' : ''}`}>
-          {tab === 'files' ? <FileTree /> : <SourceControl />}
+          {tab === 'files' ? <FileTree /> : tab === 'search' ? <SearchView /> : <SourceControl />}
         </nav>
 
         {/* 分支状态与监听标注都只在拿到第一份 state 之后才画：没有它时整条状态条不画，而不是
@@ -260,6 +302,8 @@ export function App() {
           </>
         )}
       </section>
+
+      {quickOpenVisible.value && <QuickOpen anchor={goToFile} />}
     </div>
   );
 }

@@ -5,9 +5,10 @@
 // 未知扩展名没退回 `plaintext` 时 `hljs.highlight` 直接抛，炸掉的是整个文件视图。
 
 import { render } from 'preact';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FilePayload } from '../../../src/server/shared/protocol';
 import { FileView } from '../../../src/web/components/FileView';
+import { revealRequest, setReveal } from '../../../src/web/state/editors';
 import { type FileRequestState, fileStates } from '../../../src/web/state/store';
 import { waitFor } from './helpers';
 
@@ -139,5 +140,54 @@ describe('FileView', () => {
     ready('b.ts', { kind: 'text', content: 'const second = 2;\n' });
     await waitFor(() => expect(container.textContent).toContain('const second'));
     expect(container.textContent).not.toContain('const first');
+  });
+});
+
+describe('跳到行', () => {
+  const band = () => container.querySelector<HTMLElement>('[data-reveal-line]');
+
+  const original = HTMLElement.prototype.scrollIntoView;
+
+  afterEach(() => {
+    revealRequest.value = null;
+    HTMLElement.prototype.scrollIntoView = original;
+  });
+
+  it('键对得上时按行号 × 行高画一条高亮带，并把它滚进视野', async () => {
+    const scrolled = vi.fn();
+    HTMLElement.prototype.scrollIntoView = scrolled;
+    setReveal('src/app.ts', 5);
+    ready('src/app.ts', { kind: 'text', content: 'a\nb\nc\nd\ne\nf\n' });
+    await waitFor(() => expect(band()).not.toBeNull());
+    // 第 5 行：上内边距 8px + 4 × 20px
+    expect(band()?.style.top).toBe('88px');
+    expect(band()?.style.height).toBe('20px');
+    expect(scrolled).toHaveBeenCalledTimes(1);
+
+    // 再点同一行（新的请求对象）要重滚一次
+    setReveal('src/app.ts', 5);
+    await waitFor(() => expect(scrolled).toHaveBeenCalledTimes(2));
+  });
+
+  // 高亮带的位置是按 `leading-5`（20px）与 `py-2`（8px）手算的：改了这两个类而没改 `LINE_HEIGHT` /
+  // `PAD_TOP` 时，高亮静默落到别的行上——这条把两头钉在一起
+  it('正文那一层仍是 leading-5、正文 <pre> 仍是 py-2——跳行位置的算法依赖这两个值', async () => {
+    ready('src/app.ts', { kind: 'text', content: 'a\n' });
+    await waitFor(() => expect(container.querySelectorAll('pre')).toHaveLength(2));
+    const [gutter, text] = [...container.querySelectorAll('pre')];
+    expect(gutter?.parentElement?.classList.contains('leading-5')).toBe(true);
+    expect(text?.classList.contains('py-2')).toBe(true);
+  });
+
+  it('别的文件的跳行与这里无关；不带行号地重开即清掉', async () => {
+    setReveal('other.ts', 2);
+    ready('src/app.ts', { kind: 'text', content: 'a\n' });
+    await waitFor(() => expect(container.textContent).toContain('a'));
+    expect(band()).toBeNull();
+
+    setReveal('src/app.ts', 1);
+    await waitFor(() => expect(band()).not.toBeNull());
+    setReveal('src/app.ts');
+    await waitFor(() => expect(band()).toBeNull());
   });
 });
