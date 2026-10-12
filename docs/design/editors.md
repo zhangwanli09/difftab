@@ -1,6 +1,6 @@
 # 前端：右侧面板、编辑器标签页与文件视图
 
-> 右侧面板是 [`web.md`](web.md) 那副骨架的右半边：一条标签栏 + 一个视图（diff 或全文）。diff 怎么渲染在 [`diff-render.md`](diff-render.md)。被排除的做法见 [`../decisions.md` 的「前端渲染与体积」](../decisions.md#前端渲染与体积)。标「有断言」的条目由 `test/unit/web/` 钉住、不进红线。
+> 右侧面板是 [`web.md`](web.md) 那副骨架的右半边：一条标签栏 + 一个视图（diff 或全文）。diff 怎么渲染在 [`diff-render.md`](diff-render.md)。被排除的做法见 [`../decisions/web.md`](../decisions/web.md)。标「有断言」的条目由 `test/unit/web/` 钉住、不进红线。
 
 ## 编辑器标签页
 
@@ -13,7 +13,7 @@
 - **第三种 tab 是 `commit`，身份是 `commit:<sha>:<path>`**：`Editor` 多带一个 `sha`，`path` 仍是文件路径，其余读 `path` 的地方照旧。tab 上文件名后跟短哈希，图标 `GitCommitHorizontal`。**它活动时 `activeEditorPath` 是 `null`**：左栏同名那一行说的是工作区那一份，照亮它是在说一件不成立的事——这是「高亮不看种类」唯一的例外，判据是「左栏那一行与右侧是不是同一份内容」。
 - **关掉活动 tab 切到右邻居、没有才切左邻居**，不维护 MRU 序列。
 - **两栏的高亮同按活动 tab 的路径判（`activeEditorPath`），不看 diff 还是全文**：按种类各认各的时，点了行内 `Open file` 那一行就熄了——用户刚从这一行出发，左栏却说「你没在看它」。
-- **切侧栏 tab、切列表 / 树版式、全部折叠，都不动 `activeEditor`**（症状见 [`web.md`](web.md) 的「页面骨架」）。**反方向有联动**：活动 tab 的路径一变，`Files` 树展开并定位那一行（机制在 [`web.md`](web.md) 的「文件浏览器」），但不切侧栏档位。
+- **切侧栏 tab、切列表 / 树版式、全部折叠，都不动 `activeEditor`**（症状见 [`web.md`](web.md) 的「页面骨架」）。**反方向有联动**：活动 tab 的路径一变，`Files` 树展开并定位那一行（机制在 [`sidebar.md`](sidebar.md) 的「文件浏览器」），但不切侧栏档位。
 - **不进 `localStorage`**：端口随机，写了也活不过一次重启。
 
 ### 自动刷新怎么收编这些 tab
@@ -51,7 +51,7 @@
 - **容器上不得加 `hljs` 类**（理由在 [`style.md`](style.md) 的「文件视图与 `.hljs`」）。
 - **行号做成兄弟元素，不按行切高亮输出**：hljs 的 span 会跨行，切开就是在重写被禁止的高亮切分逻辑。行号槽 `sticky left-0`。
 - **`sticky left-0` 要成立，正文那一层必须是 `w-max`**：普通块盒只有面板宽，行号槽没有滑动余量，横向一滚整列行号跟着滑出视口，而 `sticky left-0` 字样还在原地。
-- **但 `w-max` 只能给正文那一路**，判据是按 `kind` 穷举的 `NEEDS_WIDE_BOX` 表（`Record` 漏键是编译错误，写成 `kind === 'text'` 一句则是第二处独立判定）：`max-content` 下提示行那几句散文会排成一行跑出面板，`break-all` 也救不了（实测读数见 [`../decisions.md`](../decisions.md#前端渲染与体积)）。以上有断言。
+- **但 `w-max` 只能给正文那一路**，判据是按 `kind` 穷举的 `NEEDS_WIDE_BOX` 表（`Record` 漏键是编译错误，写成 `kind === 'text'` 一句则是第二处独立判定）：`max-content` 下提示行那几句散文会排成一行跑出面板，`break-all` 也救不了（实测读数见 [`../decisions/web.md`](../decisions/web.md)）。以上有断言。
 - 标签栏在滚动容器之外，不参与横向滚动。
 
 ## 图片视图

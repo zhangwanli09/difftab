@@ -1,6 +1,6 @@
 # 样式：Tailwind v4 + 层叠隔离
 
-> 设计 token、diff2html 配色覆写，以及「谁压得过谁」这件事的全部机制。组件与骨架在 [`web.md`](web.md)，diff 渲染在 [`diff-render.md`](diff-render.md)，选型与被排除的做法见 [`../decisions.md` 的「样式层叠」](../decisions.md#样式层叠)，门禁见 [`../gates.md`](../gates.md)。
+> 设计 token、diff2html 配色覆写，以及「谁压得过谁」这件事的全部机制。组件与骨架在 [`web.md`](web.md)，diff 渲染在 [`diff-render.md`](diff-render.md)，选型与被排除的做法见 [`../decisions/style.md`](../decisions/style.md)，门禁见 [`../gates.md`](../gates.md)。
 
 **Tailwind v4（CSS-first，`@tailwindcss/vite`）。** 设计 token 写进 `@theme`，命名与数值参照 VS Code 颜色 token（如 `editor.background`），复刻 Dark+/Light+ 观感，轻量优先于还原度。引入完整 preflight——与 diff2html 的冲突面实测几乎为零，diff2html 的类选择器稳压 preflight 的通配重置。
 
@@ -40,7 +40,7 @@
 
 **上游 `github.css` / `github-dark.css` 切不出手动档**：两份都是无条件的 `.hljs` 规则，旧方案靠给深色那份的 `@import` 加媒体条件——而媒体条件切不出手动档；要跟着 `data-theme` 走只能在构建期给选择器加作用域前缀。
 
-于是收进与 `--d2h-*` **相同**的机制：15 个 `--hljs-*` token 各写一条 `light-dark()`，15 条规则的选择器与顺序逐条照抄上游，颜色一律 `var(--hljs-…)`。没抄的 3 条：一条空规则，以及 `code.hljs` / `pre code.hljs`——diff2html 整包没有 `<code>` 元素。
+于是收进与 `--d2h-*` **相同**的机制：15 个 `--hljs-*` token 各写一条 `light-dark()`，15 条规则的选择器与顺序逐条照抄上游，颜色一律 `var(--hljs-…)`——漏一条写成硬编码时，另一档下那一处静默停在错的颜色上（`check:css` 拦）。没抄的 3 条：一条空规则，以及 `code.hljs` / `pre code.hljs`——diff2html 整包没有 `<code>` 元素。
 
 - **代价是色值抄进了仓库**，不随 highlight.js 升级。体积小幅净增（Lightning CSS 降级后的 token 流更长）。
 - **两个 token 浅色下与别的同值、深色下才分叉**（`markup-heading`、`markup-inserted`），**必须各自独立**——就近复用时深色悄悄错色，浅色下看不出。
@@ -83,7 +83,7 @@
 
 - **被架空的变量仍要留在映射块里**（`--d2h-file-header-*`、`--d2h-border-color`）：覆盖率断言从 diff2html 那块推导全部变量名，删掉即红。
 - **补丁外框与底下留白一起去掉**：文件头藏掉后外框只剩副作用（与标签栏下沿画出第二条平行线），留白是为「一次画多个文件」准备的。**不写成 `--d2h-border-color: transparent`**：透明边框仍占 1px，那个变量还被别的规则读到，且等于把版式决定藏在颜色映射里。
-- **最左那列行号的左边框不画**：它与侧栏 `border-r` 同色贴在一起叠成 2px，同一条分隔线上粗下细（实测见 [`../decisions.md` 的「样式层叠」](../decisions.md#样式层叠)）。**只关最左那一列**：右边框与并排第二栏的左边框仍有分隔作用，所以不能动 `--d2h-line-border-color`。行号列是 `border-box` + 固定宽度 + 右对齐，去掉左边框零位移。
+- **最左那列行号的左边框不画**：它与侧栏 `border-r` 同色贴在一起叠成 2px，同一条分隔线上粗下细（实测见 [`../decisions/style.md`](../decisions/style.md)）。**只关最左那一列**：右边框与并排第二栏的左边框仍有分隔作用，所以不能动 `--d2h-line-border-color`。行号列是 `border-box` + 固定宽度 + 右对齐，去掉左边框零位移。
 - **四条都不加断言**：失效症状肉眼可见，不属于门禁要防的静默故障。
 
 ## 按钮的手型光标只写一条

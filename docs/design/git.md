@@ -1,6 +1,6 @@
 # git 交互与异常状态
 
-> 产品运行时在**用户仓库**里执行的 git 命令，全程只读。门禁见 [`../gates.md`](../gates.md)，实测证据见 [`../decisions.md` 的「git 行为」](../decisions.md#git-行为)。
+> 产品运行时在**用户仓库**里执行的 git 命令，全程只读。门禁见 [`../gates.md`](../gates.md)，实测证据见 [`../decisions/git.md`](../decisions/git.md)。
 
 ## 基准与数据源
 
@@ -106,7 +106,7 @@ git ls-files -z --others --ignored --exclude-standard --directory --no-empty-dir
 - **`--directory` 与 `--no-empty-directory` 必须同时带**：否则 `node_modules` 底下几万条路径全数返回，**git 照常 exit 0**，症状只是慢得离谱。
 - **`--ignored` 必须与 `--exclude-standard` 同用**（否则 fatal，会响，记在这里免得被「顺手精简」）。
 - `--` 后那段受 `GIT_LITERAL_PATHSPECS=1` 约束，字面量 pathspec 仍保留前导目录匹配。根那一层不带 `--`。
-- **两条 `--others` 非零退出时，pathspec 退到本层第一段重问一次**：被忽略的那一片里深度 ≥ 3 的层，`--ignored` 那条会直接 fatal（`directory entry not superset of prefix`，判据是层数、不是特殊字符，实测与源码分析见 [`../decisions.md`](../decisions.md#git-行为)）。第一段不含 `/`，于是恒安全。
+- **两条 `--others` 非零退出时，pathspec 退到本层第一段重问一次**：被忽略的那一片里深度 ≥ 3 的层，`--ignored` 那条会直接 fatal（`directory entry not superset of prefix`，判据是层数、不是特殊字符，实测与源码分析见 [`../decisions/git.md`](../decisions/git.md)）。第一段不含 `/`，于是恒安全。
 - **但第一段只能当兜底，不能当默认**——无条件放宽会静默改掉两件事：被忽略的一片嵌在未跟踪目录里时，`--ignored` 那条一条都不回（那一层不再灰显）；`?path=<未跟踪目录里的一个文件>` 从 400 变 500（文件被折叠进父目录，没人认出这是坏请求）。所以只在 git 已经答不出的那一刻退让；判据是**非零退出**而不是 fatal 消息的字面量；重问再失败就抛原来那个错误。
 
 **收敛成直接子项的判据是「相对本层的第一段」**：后面还有 `/` 的、或 `--directory` 折叠出的以 `/` 结尾的，都是目录。去重后目录在前、各按名字排序（照 VS Code）。

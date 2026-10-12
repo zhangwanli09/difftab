@@ -1,6 +1,6 @@
 # 运行时、进程生命周期、本地安全与接口契约
 
-> 描述**产品运行时**的约束（用户机器上实际执行的东西）。工具链见 [`build.md`](build.md)，被排除的做法见 `../decisions.md` 的[「Node 运行时与进程」](../decisions.md#node-运行时与进程)与[「只读性验证与本地安全」](../decisions.md#只读性验证与本地安全)两节。
+> 描述**产品运行时**的约束（用户机器上实际执行的东西）。工具链见 [`build.md`](build.md)，被排除的做法见 [`../decisions/runtime.md`](../decisions/runtime.md) 与 [`security.md`](../decisions/security.md)。
 
 ## 运行时与后端
 

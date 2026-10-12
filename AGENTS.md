@@ -2,7 +2,7 @@
 
 一眼看懂 AI 编码 Agent 改了哪些代码。CLI 在仓库目录启动 → 拉起本地网页 → 只读展示当前工作区的 diff 与分支状态 → 关掉标签页后进程自动退出。
 
-**需求唯一事实来源：`docs/`，索引与写作约定见 [`docs/README.md`](docs/README.md)。需求要变，先改 docs 再改代码**，不要在实现里就地「顺手扩展」。本文件只承载摘要与路由（预算 ≤ 200 行，一条规则占一行）：论证与实测证据在 `docs/decisions.md`，怎么验在 `docs/gates.md`。
+**需求唯一事实来源：`docs/`，索引与写作约定见 [`docs/README.md`](docs/README.md)。需求要变，先改 docs 再改代码**，不要在实现里就地「顺手扩展」。本文件只承载摘要与路由（预算 ≤ 200 行，一条规则占一行）：论证与实测证据在 `docs/decisions/`，怎么验在 `docs/gates.md`。
 
 ## 1. 两个 git 作用域（别搞混）
 
@@ -42,28 +42,30 @@
 | 重生成 logo 资产（`assets/*.svg`、社交预览 PNG、`index.html` 的 favicon） | `node scripts/logo.mjs`——不是 pnpm script；PNG 那两步要本机有 Chrome，没有就只写 SVG |
 | inotify 配额耗尽时降级为轮询（Linux + 免密 sudo） | **先 `pnpm build`**，再 `pnpm check:inotify`；**不进冒烟套件**，非 Linux 直接 SKIP |
 
-## 4. 动手前先读 docs 的哪份
+## 4. 动手前必读 docs 的哪份
 
-**只读用得着的那份是省上下文的手段，不是豁免**——第 5 节红线全程有效，与本会话读没读对应文件无关。
+**按路径必读，不是建议**：改动落在左列所说的位置时，动手前读完右列那份。**目录作用域的红线只写在那里**（第 5 节只收横切的），所以这张表本身就是红线，不参与裁剪。只读用得着的那份是省上下文的手段，不是豁免。
 
-| 改这块 | 动手前读 |
+| 改这块 | 动手前必读 |
 |---|---|
-| git 封装层、status/diff 解析、二进制与体积闸、git 异常状态、目录树的 `ls-files`、只读读文件、提交历史的 `log` 与提交 diff、分支列表的 `for-each-ref` | `docs/design/git.md` |
-| 文件监听、三档策略、自动刷新、轮询兜底 | `docs/design/watch.md` |
-| 前端组件与 signals、界面文案、页面骨架、变更列表、侧栏 tab、文件树、提交历史分区、分支列表、标签页标题、logo / favicon / 品牌资产 | `docs/design/web.md`；右侧面板、编辑器标签页（预览 / 固定 / 关闭 / SSE 收编 / commit tab）、文件视图读 `docs/design/editors.md` |
-| diff2html 渲染、hljs 清单、版式切换、产物体积 | `docs/design/diff-render.md` |
-| Tailwind token、样式层叠与主题、`--d2h-*` 覆写 | `docs/design/style.md` |
-| CLI 入口与 Node 下限、进程生命周期与单实例、HTTP/SSE 协议、token 与 CSP | `docs/design/server.md` |
-| 新增模块与目录归属、依赖方向、只读性验证、构建与 CI 分层、pnpm 设置 | `docs/design/build.md` |
+| `src/server/git/`：git 封装层、status/diff 解析、二进制与体积闸、git 异常状态、目录树的 `ls-files`、只读读文件、提交历史的 `log` 与提交 diff、分支列表的 `for-each-ref` | `docs/design/git.md` |
+| `src/server/watch/`：文件监听、三档策略、自动刷新、轮询兜底 | `docs/design/watch.md` |
+| `src/server/{cli,http,shared}/`、`src/server/main.ts`、`bin/`：CLI 入口与 Node 下限、进程生命周期与单实例、HTTP/SSE 协议、token 与 CSP | `docs/design/server.md` |
+| `src/web/` 左栏：界面文案、页面骨架、变更列表、侧栏 tab、主题开关、标签页标题、logo / favicon / 品牌资产 | `docs/design/web.md` |
+| `src/web/` 左栏：文件树、提交历史分区、分支列表 | `docs/design/sidebar.md` |
+| `src/web/` 右侧：编辑器标签页（预览 / 固定 / 关闭 / SSE 收编 / commit tab）、文件视图、图片视图 | `docs/design/editors.md` |
+| `src/web/diff/`、`DiffView.tsx`、`state/layout.ts`：diff2html 渲染、hljs 清单、版式切换、产物体积 | `docs/design/diff-render.md` |
+| `src/web/styles/`，以及任何组件里的颜色与层叠：Tailwind token、主题、`--d2h-*` 覆写 | `docs/design/style.md` |
+| `test/`、`scripts/`、`biome.json`、`*.config.ts`、CI、`package.json`：模块与目录归属、依赖方向、只读性验证、构建与 CI 分层、pnpm 设置 | `docs/design/build.md` |
 | 门禁挡什么、fixture 契约、发布产物约定 | `docs/gates.md` |
 | 产品范围、Non-goals、分发口径 | `docs/spec.md` |
-| 「为什么不那样做」、实测输出与源码核对 | `docs/decisions.md` **的对应小节**（按域分节，链锚点、别整份读） |
+| 「为什么不那样做」、实测输出与源码核对 | `docs/decisions/` **下对应那个域的文件**（一域一份，别整目录读） |
 | 真机验收结论、被推翻的结论、未完事项 | `docs/history.md` |
 | 改 `docs/` 里任何文件、改 AGENTS.md 本身 | `docs/README.md`（写作约定 + 内容落哪份） |
 
 ## 5. 红线
 
-违反后**不报错、只是静默出错**的条目，一条规则一行。括号里是**该条完整机制**的去处；实测证据一律在 `docs/decisions.md`。
+违反后**不报错、只是静默出错**的条目，一条规则一行。**本节只收横切的**：违反时可能根本没碰某个特定目录，或者落在根级文件上。只在改某个目录时才会违反的（git 调用、文件监听、前端与样式、进程生命周期与本地安全、只读门禁的写法）写在第 4 节那份必读文档里。括号里是该条完整机制的去处；实测证据一律在 `docs/decisions/`。
 
 ### 架构边界
 
@@ -73,76 +75,9 @@
 - 每个受限目录的 patterns 必须**自带全部条目**——Biome 的 overrides 是替换不是合并，靠后一条会让前一条整个失效
 - `scripts/` 与 `test/` 不在管辖范围内——它们本来就要起子进程
 
-### git 调用（`design/git.md`）
+### 界面文案（`design/web.md`）
 
-- 基准是 `git diff HEAD` 不是 `git diff`；列表类调用一律 `-z`
-- 封装层统一注入 `-c core.quotePath=false`——`-z` 管不到补丁正文，漏了界面上直接显示 `\351\234\200`
-- 封装层统一设 `GIT_OPTIONAL_LOCKS=0`——否则 `git status` 写回 `.git/index`，只有逐字节比对与「读 `/api/state` 不引出刷新事件」两处看得见
-- 封装层统一设 `GIT_LITERAL_PATHSPECS=1`——pathspec 默认是通配模式，`path=*` 会回一份整仓 diff
-- 封装层统一设 `GIT_NO_LAZY_FETCH=1`——partial clone 里读一个不在本地的 blob 就会从远端取回来写进 `.git/objects`；git < 2.44 不认这个变量，提交历史在那一档 partial clone 下整个拒绝
-- **每一条 `git diff` 紧跟子命令带 `--no-ext-diff --no-textconv`**（`run.ts` 按子命令注入，调用点不写）——补丁形态会跑 textconv 驱动，配了 `cachetextconv` 时写 `refs/notes/textconv/*`；两条都只有 `.git` 逐字节比对看得见
-- `porcelain=v2 -z` 的重命名记录占**两个** NUL 段；无上游时不输出 `# branch.ab` 行
-- `diff --numstat -z` 的重命名记录占**三**段（空路径 + 旧 + 新，顺序与 porcelain 相反）——平铺切分会把路径当成记录
-- 重命名取 diff 必须传新旧两个路径（`-M -- <新> <旧>`），否则退化成全新增
-- numstat 一次可回不止一条记录：**按路径挑、按合计算**，取 `[0]` 会放 6 万行补丁过闸
-- 二进制与行数两道判定在**取补丁之前**；5MB 那道对已跟踪文件卡的是**补丁字节**（取补丁时带 `maxStdoutBytes`），未跟踪那侧才按文件体积
-- diff 按文件懒加载，禁止一次性取全仓 diff
-- **目录树取未跟踪那两条 `ls-files` 必须带 `--directory --no-empty-directory`**——漏了之后被忽略的那条会把 `node_modules` 底下几万条路径全数返回，而 git 照常 exit 0
-- **那两条的 pathspec 退到「本层第一段」只能是非零退出后的重问**——无条件放宽时，被忽略的一片嵌在未跟踪目录里就不再灰显（`--ignored` 那条一条都不回）
-- **折叠是折在最高那一层**：兜底判据须为「折叠记录是本层自己**或祖先**」，写成「正好等于本层」时深一层就是个展开后写着 Empty 的目录；兜底读磁盘那条要自己滤掉 `.git`
-- 目录树按目录懒加载（一次一层），只读读文件复用 `diff.ts` 导出的 `MAX_BYTES` / `MAX_LINES`，**禁另写字面量**——两份阈值漂开后同一个文件在两个视图里一个说太大、一个照常渲染
-- 空树哈希硬编码（禁 `hash-object /dev/null`、禁 `mktree`）；`--show-object-format` 非零退出即按 SHA-1
-- 未跟踪文件手工构造 unified diff，禁 `--no-index`
-- **「已跟踪」的判据是 HEAD ∪ index，不是 index**——只查 `ls-files` 会把已暂存的删除误判成未跟踪
-- **未跟踪那条路读磁盘必须 `lstat` 不得 `stat`**——否则一个指向仓库外的符号链接就能把外部文件当作新增文件返回
-- **但 `lstat` 只保护最后一段**：凡是真要落磁盘的路径，字面量校验之外还必须过 `realpath` 那道，否则 `linkdir/secret.txt` 穿过中间那段链接读到仓库外；列目录那侧连最后一段也要展开
-- **进行中的操作在 porcelain 里一行都没有**：判据是 git 目录下的状态文件、按序取第一个命中，rebase 必须先于 merge 判
-- **状态文件一律按 `rev-parse --git-dir` 找，禁拼 `<root>/.git`**——linked worktree 与 submodule 下永远读不到，于是永远标不出操作
-- **冲突的判据是「这条来自 `u` 记录」而不是状态位**——`DD`/`AA` 里一个 `U` 都没有
-- **`log` 的 argv 整条是字面量、只许两种形态**（`--no-show-signature` + `-z` + 固定 `--format`，不带任何 diff 选项）——`log.showSignature` 会起 gpg、`-p` 会走外部 diff / textconv，而白名单只看子命令
-- **提交历史的 `sha` / `head` 只认完整十六进制对象名**——它们拼在 revision 位置，`GIT_LITERAL_PATHSPECS` 管不到，`--output=…` 在那里就是一次写文件
-- **`for-each-ref` 的 argv 整条是字面量**（固定 `--format` + 三个 ref 前缀）——`%(signature)` 一类 atom 会起 gpg，而白名单只看子命令；**禁用 `branch` / `tag` 列 ref**，那两个子命令本身会写
-- **提交历史只加了 `log` 一条白名单**：提交 diff 走 `diff <parent> <sha>`、父提交取 `%P`，禁引入 `show` / `diff-tree` / `rev-list`
-- **图片旧侧只许 `cat-file blob` / `cat-file -s` 两种字面参数**——`--filters` / `--textconv` 会跑 smudge / textconv 驱动（LFS 的写 `.git/lfs`）而白名单只看子命令、看不见参数；换成 `show` 则参数面大到钉不住
-
-### 文件监听（`design/watch.md`）
-
-- 档位按 `process.versions.node` 做 semver 比对，禁用特性探测
-- `ignore` 传逐段匹配函数，禁字符串模式（含斜杠与不含斜杠的都禁）
-- Linux 低版本不建递归 watch；B 档过滤必须在 debounce 之前
-- **原生档（A/B）必须同时跑 30s 的低频安全轮询**——遍历途中耗尽 inotify 配额时 Node 一次都不 emit，且不翻 `mode`、不上报降级
-- 降级轮询必须复用**逐字相同**的那条 `git status --porcelain=v2 --branch -uall -z`，禁裁剪参数——漏 `-uall` 让已有目录里的新增文件静默不刷新
-- 绝不对单个文件建 watch
-
-### 前端与样式（`design/` 下 `web.md` / `diff-render.md` / `style.md`）
-
-- 禁用三个 diff2html 预构建 UI bundle（深导入 `diff2html/lib-esm/ui/js/diff2html-ui-base.js` 是允许且推荐的）；禁止自行重写它的高亮切分逻辑
-- **高亮只做一遍**：`highlight: false` + `draw()` 之后走我们自己那个逐行循环（`highlightLines`），禁再开 `highlight` 或调 `highlightCode()`——两遍时第二遍产生嵌套重复的 span，开销也翻倍
-- **自研的只有「这一行用哪个语言」，`closeTags`/`nodeStream`/`mergeStreams` 必须原样用上游的**——那三个才是禁止重写的切分逻辑
-- **SFC（`.vue`/`.svelte`/`.astro`）的 `<script>`/`<style>` 靠逐行区块状态机，不靠 xml 的子语言**——子语言要整块正文一次高亮才成立，而 diff 是逐行；写错的症状是那两段整块白、模板段照常有色
-- **两个视图的语言判定必须同为 `languageOf(path)`，禁在 `render.ts` 另写一张映射**——两份漂开后同一个文件在 diff 里有色、在文件视图里没色；表里的值只能是已注册的那 22 个模块，映射到别的静默退回 plaintext
-- **`languageOf` 的第三道（diff2html 那张 `languagesToExt`）不能砍、也不许抄成自己的表**——它比前两道多认 88 个扩展名（`pyi`/`jsonl`/`rake`…），砍掉后那些文件静默变纯文本；它随 `diff2html-ui-base` 早就在产物里，体积是 0
-- **`plaintext` 必须与 22 个语言模块一起注册**——漏注册时炸的是**整个 diff 视图**不是那一个文件（diff 里出现 `LICENSE`/`Dockerfile`/`.txt` 即触发）
-- hljs 主题是**我们自己那份** `hljs-theme.css`（禁直接引上游两份——媒体条件切不出手动档）；必须排在 `diff2html.min.css` **之前**，两者保持 unlayered、禁入 `@layer`
-- **hljs 规则里禁硬编码颜色**，一律 `var(--hljs-*)`；漏一条的症状是另一档下那一处静默停在错的颜色上（`check:css` 拦）
-- 改 diff2html 配色只能覆写 `--d2h-*`，禁用 Tailwind 工具类去压
-- **我们自己那块 `--d2h-*` 映射同样禁入 `@layer`**——入层会被 diff2html 的 unlayered 默认值压回去，配色整片退回 GitHub 那套
-- **且必须排在 diff2html 之后**：特异性同为 (0,1,0)，胜出纯靠源码顺序，挪到前面会让 23 条覆写整片静默失效（两半都由 `check:css` 拦）
-- **滚动容器内部必须有一个 positioned 祖先**（`DiffView` 宿主 div 上的 `relative`）——diff2html 行号列是 `position:absolute`，缺了它一滚代码行走了、整列行号原地钉死
-- **`outputFormat` 量的是 diff 面板那一层的 border box**（不是里面那层滚动容器、不是 content box；`observe` 与读值两处都得写）——否则滚动条进出让阈值附近两种版式来回重画；量法必须与阈值同住 `state/layout.ts`
-- **变更列表一行的文件名与目录必须同住一个 `truncate` span**（名在前、目录在后）——拆成平级 flex 子项会让两段按底边对齐，页面上只是「看着没对齐」
-- **文件视图的容器不得加 `hljs` 类**——那条规则是 unlayered 的，会压过 Tailwind 的 `bg-editor-background`，症状只是「文件视图底色跟页面对不上」；15 条 token 规则不挂容器类照样生效
-- **变更列表树视图的折叠态记 collapsed 集合、键带分组 id**——记 expanded 时 SSE 新冒出来的目录默认收起，不带分组时折 Staged Changes 里的 `src` 连 Changes 里的一起没了
-- **切侧栏 tab / 切版式 / 全部折叠都不得改 `activeEditor`**——写成「切到 Files 就清空右侧」时页面看着正常，只是每瞄一眼目录树就丢掉正在读的 diff
-- **SSE 后的收编要过一遍栏里全部 diff tab，不只活动那一个**——只看活动 tab 时后台 tab 里被撤销的改动照样留着，切过去看到的是一份左栏已断言不存在的补丁，且它再也不会被刷新
-- **图片 `<img src>` 的 `v=` 与 `key` 必须是后端给的内容身份 `ImageSide.version`，禁用时间戳或 payload 身份**——URL 不变时浏览器不重取（停在旧图上），而按「取过一次」换戳则每次无关 SSE 都重下两张图，两种都不报错
-- **`Diff2HtmlUI` 的 `colorScheme` 必须传 `'light'`**——传 `'auto'` 会让深色一条都不生效，而页面只是「深色不太像 VS Code」
 - **界面文案一律英文**（`docs/`、代码注释、测试名仍中文）——冒烟里那条「前端产物 CJK 计数为 0」拦得住，但**后端那侧拦不到**（`sendError` 与各 `*Error` 的字面量）
-- **`@theme` 里没人引用的 token 会被 Tailwind 裁掉**，引用名写错则产物里留下无定义的 `var()`、属性静默变 unset（两者都由 `check:css` 拦）
-- **深浅两套取值一律写成 `light-dark(浅, 深)` 的单条声明**；**禁**把任何 `--color-*` / `--hljs-*` 的深色值写回 `@media (prefers-color-scheme: dark)`——那样手动档对它无效，只是「切到 Light 时那一个颜色还是深的」（`check:css` 拦）
-- **双值 token 禁带不透明度修饰符**（`bg-editor-background/50`）——降级后的值不是合法 `<color>`，塞进 `color-mix()` 会让整条声明作废、属性静默变 unset
-- **`vscode-theme.css` 顶部那三条 `color-scheme` 规则是整个明暗开关的全部机制**，必须 unlayered 且进产物——丢了按钮照常有反应，只是页面不变（`check:css` 拦）
-- **「跟随系统」是 `data-theme` 属性不存在，不写 `"system"`**——写成 `"system"` 时页面看着正常，而 CSS 那两条属性选择器一条都不命中
 
 ### 包管理器（pnpm 11，`design/build.md`）
 
@@ -153,23 +88,11 @@
 - CI matrix 档完全不装依赖、冒烟直接 `node --test`，禁止改成经 `pnpm` script 跑或「装一点点」
 - CI 用 `pnpm/action-setup` 读 `packageManager` 字段，禁 `corepack enable`
 
-### 运行时与安全（`design/server.md`、`design/build.md`）
+### 运行时依赖与入口（`design/server.md`、`design/build.md`）
 
 - `dependencies` 保持为空、后端只用标准库。两侧都有门禁：`check:pack` 查 manifest 的三个依赖字段，冒烟查 `dist/server/main.js` 的 import 说明符——**只查发布文件清单是查不出加依赖的**
 - `bin/difftab.js` 手写、不参与 TS 编译、不作打包入口；禁止依赖 Node 原生 type stripping 直接跑 `.ts` 产品代码
 - **`bin/difftab.js` 必须以 `100755` 入库**（`check:bin` 查 HEAD 与 index 两侧）——丢了可执行位的症状是一个内容零差异的幽灵变更，discard 掉下一次执行就是 `Permission denied`
-- 校验 `Host` 头才是 DNS rebinding 的正面防御，禁止只靠 token
-- **后端零 dev 分支**：禁为本地开发加放宽 Host / Origin / token 校验的环境变量或分支
-- 单实例注册表写 `os.tmpdir()`（禁写 `.git/` 或工作区），`0o600` + `O_EXCL` 创建
-- 陈旧实例用 HTTP 探活而非 pid，**命中要「200」与「repo 路径归一后相等」两条同时成立**，探活自己也带 token 与合规 Host
-- **注册表的键必须归一化后再 hash**（Windows 的 `/` vs `\`、macOS 的 `/var` 符号链接）；清理时**解析失败不等于是自己的**
-- **空闲计时从启动那一刻就起**，不等第一个客户端——否则浏览器没拉起来就留常驻进程
-- **重新武装接在 SSE 通道的 `onChange` 上而非端点**——端点各记一次时漏掉断连那侧不报错，只是关完标签也不退
-- **退出前的报错一律 `writeSync(2, …)`，禁 `process.stderr.write` + `process.exit`**——后者写管道时在 Windows 上是异步的，整条消息会被丢掉
-- **读端可能先走**（`| head -1`）：`writeSync` 裹 try/catch，入口再给 stdout / stderr 各挂一个只咽 EPIPE **与 ECONNRESET** 的 `'error'` 监听器——后者是 macOS 上读端已走的第二种拼法，漏了它 `| head -1` 偶发以 1 退出
-- **探活这类拿到响应头之后的 `req.destroy()` 也要自己 `resolve`**——那之后错误只落在 `res` 上而 `IncomingMessage` 会把它吞掉，启动整个吊死
-- 只读性验证**禁用「前后 `git status` 比对」**，主门禁的记录手段是 `GIT_TRACE=<绝对路径>`（禁在 PATH 上放 fake git wrapper）
-- 门禁里必须有**「确实记到了东西」的正面断言**，否则白名单会对着空数组通过；第二层的 A / B 两半同理各需一条正面探针
 
 ### 测试布局（`design/build.md`）
 

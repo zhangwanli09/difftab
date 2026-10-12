@@ -1,6 +1,6 @@
 # 架构边界、工具链与只读性验证
 
-> 本文的工具链部分为**开发期依赖**，不进 `dependencies`、不随 npm 包分发给用户，不改变「运行时只用 Node 标准库」这条约束（见 [`server.md`](server.md)）。被排除的做法与实测证据见 `../decisions.md` 的[「只读性验证与本地安全」](../decisions.md#只读性验证与本地安全)与[「工具链与发布」](../decisions.md#工具链与发布)两节，门禁见 [`../gates.md`](../gates.md)。
+> 本文的工具链部分为**开发期依赖**，不进 `dependencies`、不随 npm 包分发给用户，不改变「运行时只用 Node 标准库」这条约束（见 [`server.md`](server.md)）。被排除的做法与实测证据见 [`../decisions/security.md`](../decisions/security.md) 与 [`toolchain.md`](../decisions/toolchain.md)，门禁见 [`../gates.md`](../gates.md)。
 
 ## 架构总览
 

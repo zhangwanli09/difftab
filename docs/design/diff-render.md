@@ -1,6 +1,6 @@
 # diff 渲染：diff2html 与语法高亮
 
-> 一份 unified diff 文本怎么变成页面上那块带高亮的 HTML。组件与骨架在 [`web.md`](web.md)，配色与层叠隔离在 [`style.md`](style.md)，选型与被排除的做法见 [`../decisions.md` 的「前端渲染与体积」](../decisions.md#前端渲染与体积)，门禁见 [`../gates.md`](../gates.md)。
+> 一份 unified diff 文本怎么变成页面上那块带高亮的 HTML。组件与骨架在 [`web.md`](web.md)，配色与层叠隔离在 [`style.md`](style.md)，选型与被排除的做法见 [`../decisions/web.md`](../decisions/web.md)，门禁见 [`../gates.md`](../gates.md)。
 
 [diff2html](https://github.com/rtfpessoa/diff2html) 解析 `git diff` 的 unified diff 文本渲染为 HTML，[highlight.js](https://highlightjs.org/) 做语法高亮。所有资源随包本地分发，**不走 CDN**——工具必须离线可用。
 
@@ -8,8 +8,9 @@
 
 - **高亮是一行一次 `hljs.highlight()`**：`highlight.js-helpers` 的 `closeTags` / `nodeStream` / `mergeStreams` 把高亮结果与行内已有的 `<del>` / `<ins>` 词级标记交织回同一行、补齐被切断的标签。**跨行的语法状态一律不保留。** 禁止自行重写这三个切分函数。
 - `draw()` 是 `innerHTML` 赋值 + 命令式绑定事件，**必须放在 Preact 的 ref/effect 之后**，不与 vdom 争同一棵子树。
+- **交给 `Diff2HtmlUI` 的宿主 div 必须带 `relative`**：diff2html 的行号列是 `position: absolute`，滚动容器内部缺了 positioned 祖先时，一滚代码行走了、整列行号原地钉死（机制见 [`style.md`](style.md) 的「行号列需要一个 positioned 祖先」）。
 - 用不到的开关一律关掉：`fileListToggle` / `fileContentToggle` / `stickyFileHeaders` / `highlight` 全部 `false`，打开的只有 `synchronisedScroll`。
-- **`synchronisedScroll: true` 管的是并排两侧的横向联动**：两半各是一个独立的横向滚动容器，不联动时横滚一侧看长行，同一行的新旧内容错开——并排存在的理由正好在需要横滚时失效。逐行版式下它是空操作，两种版式共用一份配置。监听器绑在每次 `draw()` 新写出的节点上，重画不叠加。**已知取舍**：两侧滚动上限不等时边界处顿一下；换掉它要自研一份带回声抑制的联动，排除理由见 [`../decisions.md` 的「前端渲染与体积」](../decisions.md#前端渲染与体积)。
+- **`synchronisedScroll: true` 管的是并排两侧的横向联动**：两半各是一个独立的横向滚动容器，不联动时横滚一侧看长行，同一行的新旧内容错开——并排存在的理由正好在需要横滚时失效。逐行版式下它是空操作，两种版式共用一份配置。监听器绑在每次 `draw()` 新写出的节点上，重画不叠加。**已知取舍**：两侧滚动上限不等时边界处顿一下；换掉它要自研一份带回声抑制的联动，排除理由见 [`../decisions/web.md`](../decisions/web.md)。
 - **`highlight: false`，高亮整个归我们自己那个循环（`render.ts` 的 `highlightLines()`）**：上游的 `highlightCode()` 对一个文件只认一个语言，而单文件组件一份文件里有三种。
 - **高亮只做一遍**：两条同时开时第二遍的 `nodeStream` 拿到的已是第一遍的 `hljs-*` span，结果是嵌套重复的 span，开销也翻倍。禁再开 `highlight` 或调 `highlightCode()`。
 - **自研的只有「这一行用哪个语言」**（`hljs.ts` 的 `createLineLanguage()`），切分仍是上游那三个导出原样调用。
@@ -86,4 +87,4 @@ diff2html **没有**关掉文件头（`.d2h-file-header`）的配置项，只能
 | 前端 CSS（明文，含 `diff2html.min.css` + 自建 hljs 主题 + Tailwind 产物） | ≤ 48 KB | 38.6 KB |
 | 前端 CSS（gzip） | ≤ 10 KB | 7.5 KB |
 
-**CSS 与 JS 一样明文、gzip 两道并卡**（理由见 [`../decisions.md` 的「前端渲染与体积」](../decisions.md#前端渲染与体积)）。单次小幅增量两道都够不着，review 时看一眼 `dist/web/app.css` 的增量。
+**CSS 与 JS 一样明文、gzip 两道并卡**（理由见 [`../decisions/web.md`](../decisions/web.md)）。单次小幅增量两道都够不着，review 时看一眼 `dist/web/app.css` 的增量。
