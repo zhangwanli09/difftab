@@ -6,6 +6,7 @@
 
 import { signal } from '@preact/signals';
 import type { FileEntry } from '../../server/shared/protocol';
+import { toggleIn } from './immutable';
 import type { ChangeGroupId } from './store';
 
 /**
@@ -43,10 +44,7 @@ export const isChangeDirCollapsed = (group: ChangeGroupId, path: string): boolea
   collapsedChangeDirs.value.has(collapseKey(group, path));
 
 export function toggleChangeDir(group: ChangeGroupId, path: string): void {
-  const key = collapseKey(group, path);
-  const next = new Set(collapsedChangeDirs.value);
-  if (!next.delete(key)) next.add(key);
-  collapsedChangeDirs.value = next;
+  collapsedChangeDirs.value = toggleIn(collapsedChangeDirs.value, collapseKey(group, path));
 }
 
 export interface ChangeDirNode {

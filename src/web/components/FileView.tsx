@@ -5,9 +5,10 @@
 //
 // 五个 `kind` 全部在这里分支，提示行与 DiffView 共用同一个 `Notice`，图片与它共用 `ImageView`。
 
-import { useMemo } from 'preact/hooks';
+import { useLayoutEffect, useMemo, useRef } from 'preact/hooks';
 import type { FilePayload } from '../../server/shared/protocol';
 import { getHljs, languageOf } from '../diff/hljs';
+import { revealRequest } from '../state/editors';
 import { fileStates } from '../state/store';
 import { ErrorDetail, Notice, Panel, tooLargeNotice } from './DiffView';
 import { ImageFile } from './ImageView';
@@ -23,7 +24,24 @@ import { ImageFile } from './ImageView';
  * 的，会压过 `bg-editor-background`，症状只是「文件视图底色跟页面其余部分对不上」。15 条
  * token 规则（`.hljs-keyword` 之类）是独立选择器，不挂容器类照样命中。
  */
-function Content({ path, content }: { path: string; content: string }) {
+/**
+ * 正文与行号共用的行高（px），即 `leading-5`。跳到第 N 行按 `(N - 1) × 行高` 算位置：正文是一整块 hljs
+ * 输出、不按行切（理由见下），没有「第 N 行」这个元素可找。改 `leading-*` 或 `py-*` 时这里跟着改（`file-view.test.tsx` 钉着两头）。
+ */
+const LINE_HEIGHT = 20;
+/** 正文那层的上内边距（px），即 `py-2`：第 1 行从它下面起排。 */
+const PAD_TOP = 8;
+
+function Content({
+  path,
+  content,
+  reveal,
+}: {
+  path: string;
+  content: string;
+  /** 要跳到并高亮的那一行（全仓搜索点进来的）；每次请求一个新对象，再点同一行也重新滚一次。 */
+  reveal: { readonly line: number } | null;
+}) {
   /**
    * 高亮一份 5MB 的正文不便宜，而每次重渲染（换主题、换选中）都会走到这里。**行号槽也在同
    * 一个 memo 里**：它同样要按 `\n` 切一遍整份正文，留在 memo 外的话 SSE 刷新时正文逐字节
@@ -39,8 +57,31 @@ function Content({ path, content }: { path: string; content: string }) {
     };
   }, [path, content]);
 
+  /**
+   * 跳行：把高亮带滚到面板竖直居中。**只随请求本身跑**，不随正文：SSE 刷新换了内容时不该又把用户
+   * 拽回那一行。`scrollIntoView` 滚的是最近的滚动祖先（`Panel`），`inline: 'nearest'` 不动横向。
+   */
+  const band = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (reveal !== null) band.current?.scrollIntoView?.({ block: 'center', inline: 'nearest' });
+  }, [reveal]);
+
   return (
-    <div class="flex font-mono text-xs leading-5">
+    // `relative isolate`：高亮带以这一层为包含块；`isolate` 起一个层叠上下文，带子的 `-z-10` 才落在
+    // 正文之下而不是落到页面底色之下——绝对定位的元素默认画在在流内容之上，会把字盖淡
+    <div class="relative isolate flex font-mono text-xs leading-5">
+      {reveal !== null && (
+        <div
+          ref={band}
+          aria-hidden="true"
+          data-reveal-line={reveal.line}
+          class="pointer-events-none absolute inset-x-0 -z-10 bg-editor-range-highlight-background"
+          style={{
+            top: `${PAD_TOP + (reveal.line - 1) * LINE_HEIGHT}px`,
+            height: `${LINE_HEIGHT}px`,
+          }}
+        />
+      )}
       {/* select-none：拖选正文时不该把行号一起选进剪贴板 */}
       <pre class="sticky left-0 shrink-0 bg-editor-background px-3 py-2 text-right text-description-foreground select-none">
         {gutter}
@@ -71,8 +112,12 @@ const NEEDS_WIDE_BOX: Record<FilePayload['kind'], boolean> = {
 
 function Payload({ path, payload }: { path: string; payload: FilePayload }) {
   switch (payload.kind) {
-    case 'text':
-      return <Content path={path} content={payload.content} />;
+    case 'text': {
+      // 只认路径对得上的那一份：别的文件的跳行与这里无关
+      const request = revealRequest.value;
+      const reveal = request?.path === path ? request : null;
+      return <Content path={path} content={payload.content} reveal={reveal} />;
+    }
     case 'symlink':
       // 说的是「这是一个指向 X 的链接」而不是「这是 X 的内容」——我们刻意没有跟随它
       return (

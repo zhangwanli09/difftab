@@ -5,7 +5,7 @@
 // 都要重发一遍。
 
 import { readdir } from 'node:fs/promises';
-import type { TreeEntry, TreePayload } from '../shared/protocol.ts';
+import type { FileList, TreeEntry, TreePayload } from '../shared/protocol.ts';
 import { GitError, runGitStrict } from './run.ts';
 import { resolveInRepo, WorktreeError } from './worktree.ts';
 
@@ -41,6 +41,18 @@ const CACHED_ARGS = ['ls-files', '-z', '--stage', '--cached'] as const;
  * 各跑一次，而要的只是「\t 后面那截」与「开头六个字符」。
  */
 const GITLINK_MODE = '160000';
+
+/** `CACHED_ARGS` 的输出逐条拆成路径与「是不是 gitlink」。目录树与全量文件列表共用这一份。 */
+function parseStaged(output: string): { path: string; gitlink: boolean }[] {
+  const entries: { path: string; gitlink: boolean }[] = [];
+  for (const segment of output.split('\0')) {
+    const tab = segment.indexOf('\t');
+    if (tab !== -1) {
+      entries.push({ path: segment.slice(tab + 1), gitlink: segment.startsWith(GITLINK_MODE) });
+    }
+  }
+  return entries;
+}
 
 /**
  * 一层的直接子项。
@@ -148,11 +160,7 @@ export async function readTree(root: string, dir: string): Promise<TreePayload> 
    */
   let selfKind: 'file' | 'gitlink' | null = null;
 
-  for (const segment of cached.split('\0')) {
-    const tab = segment.indexOf('\t');
-    if (tab === -1) continue;
-    const entryPath = segment.slice(tab + 1);
-    const gitlink = segment.startsWith(GITLINK_MODE);
+  for (const { path: entryPath, gitlink } of parseStaged(cached)) {
     if (entryPath === path) {
       selfKind = gitlink ? 'gitlink' : 'file';
       continue;
@@ -227,4 +235,31 @@ export async function readTree(root: string, dir: string): Promise<TreePayload> 
    * 这件事没有 owner。
    */
   return { path, entries };
+}
+
+/**
+ * Quick Open 用的全仓文件列表：**两条 `ls-files`、不扩白名单**。
+ *
+ * - 已跟踪那条与目录树共用 `CACHED_ARGS`（带 `--stage`），经同一份 `parseStaged` 滤掉
+ *   submodule——它打不开，列出来只会以「不是普通文件」告终；
+ * - 未跟踪那条**不带 `--directory`**：这里要的是文件，折叠成 `dir/` 就打不开了。被忽略的不列，
+ *   `node_modules` 因此进不来；未跟踪又未忽略的大目录会整片展开，与 `status -uall` 同一量级。
+ *
+ * 工作区已删但仍在 index 里的文件照列，与目录树同一个已知偏差（点开得到「文件已不在」）。
+ */
+export async function listFiles(root: string): Promise<FileList> {
+  const [cached, others] = await Promise.all([
+    runGitStrict(CACHED_ARGS, root),
+    runGitStrict(['ls-files', '-z', '--others', '--exclude-standard'], root),
+  ]);
+  const paths = new Set<string>();
+  for (const { path, gitlink } of parseStaged(cached)) {
+    if (!gitlink) paths.add(path);
+  }
+  // 未跟踪的内嵌仓库即便不带 `--directory` 也只列成一条 `sub/`：它不是文件，打不开，名字一栏还是空的
+  for (const path of others.split('\0')) {
+    if (path !== '' && !path.endsWith('/')) paths.add(path);
+  }
+  // 按 UTF-16 码元排、不用 `localeCompare`：只求稳定，几万条路径上 locale 比较慢一个量级
+  return { paths: [...paths].sort() };
 }

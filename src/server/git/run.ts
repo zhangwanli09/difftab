@@ -55,12 +55,23 @@ const GIT_ENV = {
  */
 const DIFF_GUARDS = ['--no-ext-diff', '--no-textconv'] as const;
 
+/**
+ * **每一条 `git grep` 都在子命令之前多带这两条 `-c`**，同样由这里注入：
+ * - `grep.column=false`：用户配了 `grep.column` 时 `-z` 记录多出一段列号，解析整体错位、不报错；
+ * - `submodule.recurse=false`：配了它时 `grep --untracked` 直接 fatal（`--untracked not supported
+ *   with --recurse-submodules`），这台机器上的搜索于是永远报错。
+ *
+ * 写成 `-c` 而不是 `--no-column` / `--no-recurse-submodules`：后两者分别要 git 2.19 / 2.12，而
+ * 老 git 对不认识的配置键是静默忽略——下限 2.11 上也成立。
+ */
+const GREP_CONFIG = ['-c', 'grep.column=false', '-c', 'submodule.recurse=false'] as const;
+
 /** `-c` 全局选项排在子命令之前，`diff` 的两道外部程序开关紧跟在子命令之后。 */
 function argvOf(args: readonly string[]): string[] {
   const [subcommand, ...rest] = args;
-  return subcommand === 'diff'
-    ? [...GLOBAL_CONFIG, subcommand, ...DIFF_GUARDS, ...rest]
-    : [...GLOBAL_CONFIG, ...args];
+  if (subcommand === 'diff') return [...GLOBAL_CONFIG, subcommand, ...DIFF_GUARDS, ...rest];
+  if (subcommand === 'grep') return [...GLOBAL_CONFIG, ...GREP_CONFIG, ...args];
+  return [...GLOBAL_CONFIG, ...args];
 }
 
 /**
@@ -84,6 +95,12 @@ export interface RunOptions {
    * 而这件事在读完之前无从判断——numstat 给得出行数，给不出字节。
    */
   maxStdoutBytes?: number;
+  /**
+   * 超限时**收下已到的字节**而不是以 `overflow` 失败，结果带 `truncated: true`。全仓搜索要的是
+   * 「前 N 条」，不是全有或全无；补丁那一路则正好相反，不带它。只收超限之前那些完整的 chunk，
+   * 最后一条记录多半是半截，由调用方丢弃。
+   */
+  truncate?: true;
 }
 
 /** `Out` 是 stdout 的形态：文本类调用是 `string`，`cat-file blob` 那一路是原始 `Buffer`。 */
@@ -92,6 +109,8 @@ export interface GitResult<Out = string> {
   stderr: string;
   /** 退出码。`null` 表示被信号杀掉。 */
   code: number | null;
+  /** 带 `truncate` 调用时超了上限、git 已被掐断，`stdout` 只是前一截。 */
+  truncated?: true;
 }
 
 /**
@@ -165,7 +184,13 @@ export function runGitRaw(
      * 之后，任何错误都是我们自己动手的结果，一律以 `overflow` 收尾。流上的 `'error'` 同样
      * 咽掉——一个没人监听的流错误会以未捕获异常掀掉整个服务。
      */
-    const settleOverflow = () => rejectPromise(new GitError('overflow', argv, '', null));
+    const settleOverflow = (stderr = '', code: number | null = null) => {
+      if (options.truncate) {
+        resolvePromise({ stdout: Buffer.concat(out), stderr, code, truncated: true });
+        return;
+      }
+      rejectPromise(new GitError('overflow', argv, stderr, code));
+    };
     for (const stream of [child.stdout, child.stderr]) {
       stream.on('error', () => {
         if (overflowed) settleOverflow();
@@ -192,7 +217,7 @@ export function runGitRaw(
     child.on('close', (code) => {
       const stderr = Buffer.concat(err).toString('utf8');
       if (overflowed) {
-        rejectPromise(new GitError('overflow', argv, stderr, code));
+        settleOverflow(stderr, code);
         return;
       }
       if (code !== 0 && MISSING_OBJECT.test(stderr)) {
@@ -211,7 +236,7 @@ export async function runGit(
   options: RunOptions = {},
 ): Promise<GitResult> {
   const result = await runGitRaw(args, cwd, options);
-  return { stdout: result.stdout.toString('utf8'), stderr: result.stderr, code: result.code };
+  return { ...result, stdout: result.stdout.toString('utf8') };
 }
 
 /** 同上，但非零退出即抛。用于「失败没有第二种解释」的调用点。 */

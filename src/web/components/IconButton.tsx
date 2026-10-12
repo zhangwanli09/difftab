@@ -11,17 +11,27 @@
 // 只抽外观与命名，不抽语义：画哪一枚、点了做什么，仍归调用方。
 
 import type { LucideIcon } from 'lucide-preact';
+import type { Ref } from 'preact';
 import { useMemo } from 'preact/hooks';
 import { Icon } from './Icon';
 
 export function IconButton({
   icon,
   label,
+  shortcut,
+  popup = false,
+  buttonRef = null,
   onClick,
 }: {
   icon: LucideIcon;
   /** 同时用作 tooltip 与无障碍名。 */
   label: string;
+  /** 快捷键（`⌘P`），只进 tooltip、不进无障碍名：读屏念的是控件名，一串符号念出来没有意义。 */
+  shortcut?: string;
+  /** 点它弹出一个对话框（`aria-haspopup="dialog"`）。 */
+  popup?: boolean;
+  /** 按钮的 ref。显式命名：Preact 会把 `ref` 从 props 里剥掉（同 `TreeRow`）。 */
+  buttonRef?: Ref<HTMLButtonElement>;
   onClick: () => void;
 }) {
   // preflight 清掉了 UA 默认焦点环，键盘可达性得自己画回来。用的 token 与变更列表那行
@@ -38,10 +48,12 @@ export function IconButton({
   return (
     <button
       type="button"
+      ref={buttonRef}
       onClick={onClick}
       class="shrink-0 rounded-sm p-0.5 text-description-foreground hover:bg-toolbar-hover-background focus-visible:outline-2 focus-visible:outline-focus-border"
-      title={label}
+      title={shortcut === undefined ? label : `${label} (${shortcut})`}
       aria-label={label}
+      aria-haspopup={popup ? 'dialog' : undefined}
     >
       {glyph}
     </button>

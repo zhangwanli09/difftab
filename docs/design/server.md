@@ -79,6 +79,8 @@
 | `GET /api/commit?sha=` | `CommitDetail` | 一次提交的元数据 + 改了哪些文件 |
 | `GET /api/commit-diff?sha=&path=&oldPath=` | `DiffPayload` | 相对第一父，三道闸与 `/api/diff` 同一套 |
 | `GET /api/refs` | `RefList` | 本地分支、远程分支、标签，无参数 |
+| `GET /api/files` | `FileList` | Quick Open 用的全仓文件路径（已跟踪 + 未跟踪，不含被忽略的与 submodule），无参数 |
+| `GET /api/search?q=&case=1&word=1` | `SearchPayload` | 全仓字面量搜索；`q` 必填、≤ 1,000 字符、不得含 `\n` / `\r` / `\0`，否则 400 |
 | `GET /api/events` | SSE | 事件 `change` / `heartbeat`；空闲退出以本端点的连接数判定 |
 | `GET /api/instance` | `{ repoRoot, pid }` | 探活复用**唯一**的消费者 |
 
@@ -100,6 +102,11 @@
   - **`time` 是作者时间的 Unix 秒**，只带作者不带提交者——回答的是「谁写的、什么时候写的」。
   - **`CommitFileEntry` 不复用 `FileEntry`**：一次提交只有一个状态字母，硬塞进双状态位会让前端分组逻辑面对永远不该出现的组合。
   - **非法 `sha` 与不存在的提交都回 400**（`invalid-path` / `not-found`），与其余端点的 `WorktreeError` 同一张映射。partial clone 里内容不在本地是 `unsupported`。
+- `FileList { paths }`——仓库相对路径，已去重、按路径排序。
+- `SearchPayload { files; truncated }`、`SearchFile { path; matches }`、`SearchMatch { line; text; ranges }`：
+  - **`ranges` 是 `[起, 止)` 的 UTF-16 下标，相对 `text`**——前端只切段着色，不自己再找一遍：大小写与全词的口径归后端一份。
+  - **`text` 可能已被裁过**（长行两端带 `…`），`ranges` 已随之平移。`line` 从 1 起。
+  - **`truncated` 即「后面还有，没给全」**（stdout 或行数上限任一触发），前端据此提示收窄查询。
 - `WatchState { mode: 'native' | 'polling'; tier: 'A' | 'B' | 'C' }`——降级可能是 C 档的既定形态、也可能是运行中落到轮询兜底，**前端无从推断，必须由后端告知**。
   - **`onDegrade` 里要推一个 `change`，且 `watch` 字段每次请求现算**（`http/server.ts`）：`mode` 只在 `/api/state` 里，不推事件时前端要等到下一次真的有文件变更才重取；启动时算一次存起来的那份不报错，只是从此永远说「原生监听」。
 

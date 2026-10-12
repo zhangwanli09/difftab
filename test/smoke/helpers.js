@@ -410,6 +410,21 @@ export async function runFullFlow(cwd, { env } = {}) {
     /** 分支列表：无参数，一次就是那条 `for-each-ref` 的全部形态。 */
     const refs = await authedGet(server.port, server.token, '/api/refs');
 
+    /**
+     * Quick Open 的文件列表与全仓搜索。搜索把 argv 的每种形态各走一遍：默认（带 `-i`）、
+     * `case=1`（不带）、`word=1`（带 `-w`），外加一个**以 `-` 开头、恰好是 grep 自己选项名**
+     * 的查询——`-e` 漏了时它会被 git 当成 `-n` 吃掉，argv 那条字面量断言随之对不上。
+     */
+    const fileList = await authedGet(server.port, server.token, '/api/files');
+    const searches = [];
+    for (const extra of [{}, { case: '1' }, { word: '1' }]) {
+      const query = new URLSearchParams({ q: 'a', ...extra });
+      searches.push(await authedGet(server.port, server.token, `/api/search?${query}`));
+    }
+    searches.push(
+      await authedGet(server.port, server.token, `/api/search?${new URLSearchParams({ q: '-n' })}`),
+    );
+
     return {
       cwd,
       state,
@@ -422,6 +437,8 @@ export async function runFullFlow(cwd, { env } = {}) {
       commits,
       commitDiffs,
       refs,
+      fileList,
+      searches,
       stderr: server.stderr,
     };
   } finally {
