@@ -10,7 +10,7 @@ import type {
   RefEntry,
   RepoState,
 } from '../../../src/server/shared/protocol';
-import { STATUS_WIDTH } from '../../../src/web/components/tree-row';
+import { ACTION_SHELL, SHELL_AT_EDGE } from '../../../src/web/components/tree-row';
 import {
   activeEditorKey,
   type EditorKind,
@@ -173,9 +173,11 @@ export const groupOf = (node: Element | null | undefined) => node?.closest('.gro
 export const actionOf = (row: Element | null | undefined, label: string) =>
   groupOf(row)?.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`) ?? null;
 
-/**
- * 行按钮里只在悬停时进流的空 span：先是行内动作的占位，没有状态记号的行再跟一个状态位宽的空槽。
- */
+/** 某一行的行内动作外壳：group div 里行按钮之外的那个 span。 */
+export const shellOf = (row: Element | null | undefined) =>
+  groupOf(row)?.querySelector(':scope > span') ?? null;
+
+/** 行按钮里只在悬停时进流的空 span，即行内动作的占位。 */
 export const revealSlotsIn = (row: Element | null | undefined) =>
   [...(row?.querySelectorAll('span') ?? [])].filter(
     (node) => node.classList.contains('hidden') && node.textContent === '',
@@ -184,9 +186,11 @@ export const revealSlotsIn = (row: Element | null | undefined) =>
 /** 行按钮里行内动作的占位：空 span 里的第一个。 */
 export const spacerIn = (row: Element | null | undefined) => revealSlotsIn(row)[0];
 
-/** 断言这一行悬停时补了状态位宽的空槽：占位之后紧跟一个 `STATUS_WIDTH`。 */
-export function expectStatusGap(row: Element | null | undefined) {
-  const slots = revealSlotsIn(row);
-  expect(slots).toHaveLength(2);
-  expect(slots[1]?.classList.contains(STATUS_WIDTH)).toBe(true);
+/**
+ * 断言没有状态记号的这一行，行内动作贴行骨架的右内边距：外壳取 `SHELL_AT_EDGE`，
+ * 行按钮里只有占位、不补状态位宽的空槽。
+ */
+export function expectEdgeAnchored(row: Element | null | undefined) {
+  expect(revealSlotsIn(row)).toHaveLength(1);
+  expect(shellOf(row)?.className).toBe(`${ACTION_SHELL} ${SHELL_AT_EDGE}`);
 }

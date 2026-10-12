@@ -8,12 +8,17 @@
 import { render } from 'preact';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChangeList, STATUS_SLOT } from '../../../src/web/components/ChangeList';
-import { ACTION_SHELL, ROW_BASE, ROW_GROUP } from '../../../src/web/components/tree-row';
+import {
+  ACTION_SHELL,
+  ROW_BASE,
+  ROW_GROUP,
+  SHELL_AFTER_BADGE,
+} from '../../../src/web/components/tree-row';
 import { changeView, collapsedChangeDirs } from '../../../src/web/state/change-tree';
 import { editors } from '../../../src/web/state/editors';
 import {
   actionOf,
-  expectStatusGap,
+  expectEdgeAnchored,
   file,
   groupOf,
   openPinned,
@@ -421,7 +426,8 @@ describe('ChangeList 的 Open file 行内动作', () => {
     render(<ChangeList files={[file({ path: 'src/a.ts', staged: 'M' })]} />, container);
     const shell = openButtonOf('src/a.ts')?.parentElement;
 
-    expect(shell?.className).toBe(ACTION_SHELL);
+    // 有状态字母的行：外壳锚在字母左侧
+    expect(shell?.className).toBe(`${ACTION_SHELL} ${SHELL_AFTER_BADGE}`);
     // 「同值」钉在两个常量之间：一处改成 60 另一处还是 75 时页面只是「两枚比字母淡（或重）一档」
     const dim = /(?:^|\s)opacity-\d+/;
     expect(ACTION_SHELL).toMatch(/\[&>\*\]:opacity-75/);
@@ -554,8 +560,8 @@ describe('ChangeList 的 Copy path 行内动作', () => {
     // 目录行的 group 里只有它自己那一行：子层 `<ul>` 在外面，悬停后代不会把它一起点亮
     expect(groupOf(dirRow)?.contains(rowByTitle('src/web/a.ts') ?? null)).toBe(false);
     expect(groupOf(dirRow)?.className).toBe(ROW_GROUP);
-    // 目录行没有状态记号：悬停时补一个状态位宽的空槽；文件行有字母，不补
-    expectStatusGap(dirRow);
+    // 目录行没有状态记号：按钮贴行的右内边距；文件行有字母，按钮锚在字母左侧，同样只有占位
+    expectEdgeAnchored(dirRow);
     expect(revealSlotsIn(rowByTitle('src/web/a.ts'))).toHaveLength(1);
 
     copyButtonOf('src/web')?.click();

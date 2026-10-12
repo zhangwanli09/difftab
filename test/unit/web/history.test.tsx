@@ -49,7 +49,7 @@ import {
 import {
   actionOf,
   branch,
-  expectStatusGap,
+  expectEdgeAnchored,
   hideHistory,
   ref,
   repo,
@@ -357,8 +357,8 @@ describe('HistoryList 组件', () => {
     const row = container.querySelector('[aria-expanded]') as HTMLElement;
     const copy = actionOf(row, 'Copy commit hash');
     expect(copy).not.toBeNull();
-    // 提交行没有状态记号
-    expectStatusGap(row);
+    // 提交行没有状态记号：按钮贴行的右内边距
+    expectEdgeAnchored(row);
 
     copy?.click();
     expect(writeText).toHaveBeenCalledWith(sha(100));
