@@ -1,6 +1,6 @@
 # 前端：右侧面板、编辑器标签页与文件视图
 
-> 右侧面板是 [`web.md`](web.md) 那副骨架的右半边：一条标签栏 + 一个视图（diff 或全文）。diff 怎么渲染在 [`diff-render.md`](diff-render.md)。被排除的做法见 [`../decisions/web.md`](../decisions/web.md)。
+> 右侧面板是 [`web.md`](web.md) 那副骨架的右半边：一条标签栏 + 一个视图（diff 或全文）。diff 怎么渲染在 [`diff-render.md`](diff-render.md)。被排除的做法见 [`../decisions/web.md`](../decisions/web.md)。标「有断言」的条目由 `test/unit/web/` 钉住、不进红线。
 
 ## 编辑器标签页
 

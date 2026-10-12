@@ -1,6 +1,6 @@
 # 前端：文件浏览器、提交历史与分支列表
 
-> 左栏里除变更列表之外的三块视图。页面骨架、变更列表与两棵树共用的行骨架（`TreeRow`、行内动作）在 [`web.md`](web.md)，右侧面板在 [`editors.md`](editors.md)。被排除的做法见 [`../decisions/web.md`](../decisions/web.md)，门禁见 [`../gates.md`](../gates.md)。
+> 左栏里除变更列表之外的三块视图。页面骨架、变更列表与两棵树共用的行骨架（`TreeRow`、行内动作）在 [`web.md`](web.md)，右侧面板在 [`editors.md`](editors.md)。被排除的做法见 [`../decisions/web.md`](../decisions/web.md)，门禁见 [`../gates.md`](../gates.md)。标「有断言」的条目由 `test/unit/web/` 钉住、不进红线。
 
 ## 文件浏览器
 
@@ -15,7 +15,7 @@
 - 整行挂 `title={entry.path}`。文件行与目录行悬停都露出 `Copy path`，机制与 [`web.md`](web.md) 的「行内动作」相同。
 - **展开态与树的缓存活在组件树之外**（`state/tree.ts`），SSE 刷新才能不丢展开态与滚动位置。**刷新只重取「根 + 当前展开着且真的取过的那几层」**——否则从没点开过 `Files` 的会话每个 `change` 都白跑一趟 `ls-files`。
   - **这条收窄不欠债，因为 `loadDir` 每次调用都真的去取**：收起期间那一层不在刷新范围里，再展开时 `toggleDir` 会取一份新的。若把「缓存里有就不发」当成默认，症状是展开后看到一份陈旧目录，一直旧到下一个 `change`。
-  - **`force` 只有一个意思：连「已经在飞」也再发一趟**，刷新专用——「已经在取就不取」会把一次 `change` 引出的刷新整个丢掉：若它正是 agent 那一串写入的最后一个事件，这一层就停在旧内容上。展开不传它。
+  - **`force` 只有一个意思：连「已经在飞」也再发一趟**，刷新专用——「已经在取就不取」会把一次 `change` 引出的刷新整个丢掉：若它正是 agent 那一串写入的最后一个事件，这一层就停在旧内容上。重叠的请求改由按目录的请求序号（`latestWins`）决胜负，与 `loadState` / `loadDiff` 同一套。展开不传它。
   - **根那一层是切到这一档才取**，不在挂载时预取；「取过就不再取」的判据写在 `App` 那个 effect 里。
 - **树上的选中态与变更列表是同一份 `activeEditorPath`**（活动 tab 的路径，不看种类）：高亮只回答「右侧此刻是哪个文件」。
 - **树跟着活动 tab 展开并定位**（照 VS Code 的 `explorer.autoReveal`）：活动 tab 的路径一变，树把每一级祖先展开、再把那一行 `scrollIntoView({ block: 'nearest' })`。少了它，高亮行躺在没展开的层里，用户看不见「你正在读的是这个」。`state/tree.ts` 的 `revealPath` 只管展开（未展开的祖先加进集合并 `loadDir`），滚动由那一行自己按 `activeEditorPath` 做，不另设「待滚动」信号。三条不显然的判据：

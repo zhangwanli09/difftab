@@ -101,6 +101,7 @@
   - **`CommitFileEntry` 不复用 `FileEntry`**：一次提交只有一个状态字母，硬塞进双状态位会让前端分组逻辑面对永远不该出现的组合。
   - **非法 `sha` 与不存在的提交都回 400**（`invalid-path` / `not-found`），与其余端点的 `WorktreeError` 同一张映射。partial clone 里内容不在本地是 `unsupported`。
 - `WatchState { mode: 'native' | 'polling'; tier: 'A' | 'B' | 'C' }`——降级可能是 C 档的既定形态、也可能是运行中落到轮询兜底，**前端无从推断，必须由后端告知**。
+  - **`onDegrade` 里要推一个 `change`，且 `watch` 字段每次请求现算**（`http/server.ts`）：`mode` 只在 `/api/state` 里，不推事件时前端要等到下一次真的有文件变更才重取；启动时算一次存起来的那份不报错，只是从此永远说「原生监听」。
 
 **错误约定**：`{ error: { code, message } }`，`message` **不含绝对路径**。
 
