@@ -1,8 +1,6 @@
 # 前端：文件浏览器、提交历史与分支列表
 
-> 左栏里除变更列表之外的三块视图。页面骨架、变更列表与两棵树共用的行骨架（`TreeRow`、行内动作）在 [`web.md`](web.md)，右侧面板在 [`editors.md`](editors.md)。被排除的做法见 [`../decisions/web.md`](../decisions/web.md)，门禁见 [`../gates.md`](../gates.md)。
->
-> 本文件只写规则、判据与失效时的症状。类名、像素值与它们之间的加法以代码为准，标「有断言」的条目由 `test/unit/web/` 钉住、不进红线。
+> 左栏里除变更列表之外的三块视图。页面骨架、变更列表与两棵树共用的行骨架（`TreeRow`、行内动作）在 [`web.md`](web.md)，右侧面板在 [`editors.md`](editors.md)。被排除的做法见 [`../decisions/web.md`](../decisions/web.md)，门禁见 [`../gates.md`](../gates.md)。标「有断言」的条目由 `test/unit/web/` 钉住、不进红线。
 
 ## 文件浏览器
 
@@ -17,7 +15,7 @@
 - 整行挂 `title={entry.path}`。文件行与目录行悬停都露出 `Copy path`，机制与 [`web.md`](web.md) 的「行内动作」相同。
 - **展开态与树的缓存活在组件树之外**（`state/tree.ts`），SSE 刷新才能不丢展开态与滚动位置。**刷新只重取「根 + 当前展开着且真的取过的那几层」**——否则从没点开过 `Files` 的会话每个 `change` 都白跑一趟 `ls-files`。
   - **这条收窄不欠债，因为 `loadDir` 每次调用都真的去取**：收起期间那一层不在刷新范围里，再展开时 `toggleDir` 会取一份新的。若把「缓存里有就不发」当成默认，症状是展开后看到一份陈旧目录，一直旧到下一个 `change`。
-  - **`force` 只有一个意思：连「已经在飞」也再发一趟**，刷新专用——「已经在取就不取」会把一次 `change` 引出的刷新整个丢掉（见 [`../decisions/web.md`](../decisions/web.md)）。展开不传它。
+  - **`force` 只有一个意思：连「已经在飞」也再发一趟**，刷新专用——「已经在取就不取」会把一次 `change` 引出的刷新整个丢掉：若它正是 agent 那一串写入的最后一个事件，这一层就停在旧内容上。重叠的请求改由按目录的请求序号（`latestWins`）决胜负，与 `loadState` / `loadDiff` 同一套。展开不传它。
   - **根那一层是切到这一档才取**，不在挂载时预取；「取过就不再取」的判据写在 `App` 那个 effect 里。
 - **树上的选中态与变更列表是同一份 `activeEditorPath`**（活动 tab 的路径，不看种类）：高亮只回答「右侧此刻是哪个文件」。
 - **树跟着活动 tab 展开并定位**（照 VS Code 的 `explorer.autoReveal`）：活动 tab 的路径一变，树把每一级祖先展开、再把那一行 `scrollIntoView({ block: 'nearest' })`。少了它，高亮行躺在没展开的层里，用户看不见「你正在读的是这个」。`state/tree.ts` 的 `revealPath` 只管展开（未展开的祖先加进集合并 `loadDir`），滚动由那一行自己按 `activeEditorPath` 做，不另设「待滚动」信号。三条不显然的判据：
@@ -38,7 +36,7 @@
 - **两个分区**：上面 `Changes`、下面 `History`（不叫 Graph——没有图形列）。分区壳在 `SourceControl.tsx`，比例与折叠态在 `state/sidebar.ts`。
   - **分区标题是一枚按钮**（三角 + 大写小号标题、`aria-expanded`），排在分区自己的滚动容器之外。
   - **两块各自滚动。都展开时按比例分高度**：上面那块 `flex-basis` 是百分比（默认 50%，夹在 15%–85%），下面 `flex-1` 吃剩下的——存比例不存像素，窗口变高变矮时一起伸缩。一块折起时另一块占满。
-  - **折起是隐藏不是卸载**：卸载时滚动容器连同 `scrollTop` 一起没了，折一下再展开就回到顶上。比例与折叠态不进 `localStorage`，理由同左栏宽度。
+  - **折起是隐藏不是卸载**：卸载时滚动容器连同 `scrollTop` 一起没了，折一下再展开就回到顶上。比例与折叠态不进 `localStorage`（见 [`web.md`](web.md) 的「主题开关」）。
   - **中间的横向分隔条与左栏把手是同一个组件 `Sash.tsx`**，只有轴向与单位（像素 / 百分比）由调用方给：pointer capture、收尾、键盘、`touch-action` 这些易漏的机制只写一次，两份副本时修了一把、另一把静默坏着。百分比就是存储单位，取一位小数；拖动起点那一刻量一次列高。
   - **`History` 折起时不取**，与「不在 `Changes` 档」同等对待。默认可见即页面一打开就取第一页。**但要等第一份 state 到了才判**：否则挂载时 HEAD 未知必判「对不上」，state 一到又判一次，每开一次页面两遍 `git log`。这条写在两处：`historyVisible` 把「state 已到」算进可见，`ensureHistory(null)` 自己也直接返回。补判的 effect 挂在 `SourceControl` 而不是 `App`，免得点一下分区标题整页重画。
 - **一行 = 展开箭头 + 主题 + 作者**，作者次要色小一号，**两段同住一个 `truncate` span**，理由与变更列表「文件名 + 目录」相同。**短哈希与时间不上行**，进原生 `title`，次序照 VS Code 的悬停卡片：`作者 · 相对时间 (绝对时间)`、主题、正文、短哈希（7 位，对照 `git log --oneline`）；完整 sha 不进提示。不自绘卡片：改动统计要每条多一次 diff，`Open on GitHub` 要读 remote（白名单之外）。body 随列表那次 `log` 一起回来。相对时间用 `Intl.RelativeTimeFormat('en')`，不挂计时器自己跳。

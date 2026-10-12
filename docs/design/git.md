@@ -15,7 +15,7 @@
 - **`GIT_OPTIONAL_LOCKS=0`**：`git status` 默认把 stat 缓存写回 `.git/index`，**不改变输出**，只读 `.git` 下也只是静默跳过。看得见它的只有 `.git` 逐字节比对与「读一次 `/api/state` 不引出刷新事件」（写 `.git` → 推 `change` → 再读一次，是个自激循环）。
 - **`GIT_LITERAL_PATHSPECS=1`**：pathspec 默认是 wildmatch，而路径来自 URL query——`path=*` 会回一份整仓 diff，名字里带 `*` 的真实文件也会匹配到邻居，页面在 A 的标题下显示 B 的补丁。本项目的路径全部来自 git 自己的输出，不需要通配语义。
 - **`GIT_NO_LAZY_FETCH=1`**：partial clone 里碰到一个不在本地的 blob，git 默认从 promisor remote 取回并写进 `.git/objects`，而提交历史读的恰恰是从没检出过的旧 blob。关掉后缺对象是一次非零退出，**分类只在 `run.ts` 做一次**（`GitError` 的 `missing-object`，HTTP 层统一译成 `unsupported`）——交给各调用点 catch 时，漏 catch 的那条路会把它说成「路径不存在」或一条 500。
-  - **这个变量 git 2.44 才有**：「git < 2.44 ∧ partial clone」时提交历史整个拒绝（`history.ts` 的 `guardLazyFetch`）。判 partial clone 读共享 git 目录下的 `config`，**两种记号都认**：`extensions.partialClone` 与 `remote.<名>.promisor`（git 布尔值的各种写法都算开）——漏认一种就是在老 git 上往对象库里写。版本与共享 git 目录由启动时 `locateRepo` 顺手拿到（`RepoInfo.gitVersion` / `commonDir`；`--git-common-dir` 返回的相对路径是**相对 cwd** 的）。工作区 diff 不受影响：它只碰已检出的那份。
+  - **这个变量 git 2.44 才有**：「git < 2.44 ∧ partial clone」时提交历史整个拒绝（`history.ts` 的 `refuseLazyFetch`）。判 partial clone 读共享 git 目录下的 `config`，**两种记号都认**：`extensions.partialClone` 与 `remote.<名>.promisor`（git 布尔值的各种写法都算开）——漏认一种就是在老 git 上往对象库里写。版本与共享 git 目录由启动时 `locateRepo` 顺手拿到（`RepoInfo.gitVersion` / `commonDir`；`--git-common-dir` 返回的相对路径是**相对 cwd** 的）。工作区 diff 不受影响：它只碰已检出的那份。
 - **每一条 `git diff` 紧跟子命令带 `--no-ext-diff --no-textconv`**，由 `runGitRaw` 按子命令注入、调用点不写。`diff=<驱动>` + `textconv` 会让补丁形态起外部程序，配了 `cachetextconv` 时还写 `refs/notes/textconv/*`；`diff.external` 同理。numstat 那几条也带：二进制与行数判定得与补丁看的是同一份内容。**代价**：配了 textconv 的文件按原始字节比。
 
 ## `-z` 解析的三个陷阱

@@ -86,7 +86,7 @@ scripts/               bench:startup、size 等门禁
 **DOM 测试环境**：几条「违反后不报错、只是静默出错」的约束——`draw()` 后重复调 `highlightCode()` 产生嵌套重复 span、漏注册 `plaintext` 炸掉整个 diff 视图、`colorScheme` 一旦回到 `auto` 就让深色取值静默失效——**都只有在真实 DOM 上跑一遍才断言得了**。选 happy-dom 而非 jsdom：纯 JS、无原生依赖、启动快，本项目只需要 `innerHTML` 与属性/class 断言这一档能力。
 
 - **环境按目录分，不全局开**：`test/unit/web/` 用 happy-dom，`test/unit/server/` 保持 node。给后端用例套一层 DOM 全局，是把「前端拿不到也不该拿到 Node API」那条边界反向捅一刀。
-- **落地方式是 Vitest 的 `projects`，不是 `environmentMatchGlobs`**——后者在 Vitest 4 已被移除，**因此 include 是几条具体路径**。放到 `test/unit/` 底下或第三个子目录里的用例**不属于任何 project、压根不会被跑，且套件照常全绿**。`test/unit/server/test-layout.test.ts` 钉着这条：它直接 import `vitest.config.ts` 把 include 编成正则（不抄目录白名单），所以加 project 不必同步任何清单。
+- **落地方式是 Vitest 的 `projects`，不是 `environmentMatchGlobs`**——后者在 Vitest 4 已被移除，**因此 include 是几条具体路径**。放到 `test/unit/` 底下或第三个子目录里的用例**不属于任何 project、压根不会被跑，且套件照常全绿**；它同样不在 `tsconfig.server.json` / `tsconfig.web.json` 任一份的 include 里，`pnpm typecheck` 也看不见它（两份的 `moduleResolution` 与 `lib` 不同，一个文件不能被两边同时收）。`test/unit/server/test-layout.test.ts` 钉着这条：它直接 import `vitest.config.ts` 把 include 编成正则（不抄目录白名单），所以加 project 不必同步任何清单。
 
 ## 包管理器（pnpm 11）
 

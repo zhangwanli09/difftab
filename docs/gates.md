@@ -7,6 +7,16 @@
 - **以 CI 绿为准，不以本机为准。** 本机绿而 CI 红是常态（实测：lefthook 的 postinstall 在 `CI` 置位时跳过写钩子，本机永远看不到这个）。
 - **CI 的 `windows-latest` / `ubuntu-latest` runner 本身就是真机，断言得了的一律交给它们。** 凡能写成断言的（三档的监听与过滤行为、inotify 用量、压低配额后的降级、全局安装、版本守卫、`--git-dir` 在各平台回来的分隔符形态）一律进 matrix 或专用作业。**留在 CI 之外的只有两类**：(a) **浏览器真的弹出来**——runner 没有桌面会话，`open` / `start` / `xdg-open` 的**选择与 argv** 由 `browser.test.ts` 与只读单点断言覆盖，弹窗与否只能靠真机桌面；(b) 肉眼观感类（渲染、配色、截断行为、「延迟感知不明显」）。**这不是把标准放宽**：一条每次推送都重跑的断言强于一次人工确认，而这两类恰恰是断言写不出来的部分。
 
+## 真机验收与未完事项
+
+上一节留在 CI 之外的那两类只能靠真机桌面补最后一跳，三端真机验过**是发 1.0.0 的前提**（见下方「发布产物约定」的 semver）。真机验收不留回归，这是它的性质决定的——弹窗与否 runner 断言不了。
+
+- **macOS 与 Windows：2026-08-22 同一轮已验。** macOS 的 `open` 与 Windows 的 `cmd /c start ""` 都确实拉起了默认浏览器，变更展示、改文件后的自动刷新、关掉标签页后按空闲自动退出均正常。**两端都把全局安装 / `npx` / 本地构建产物三种形态各跑一遍**：拉起浏览器是同一段代码，但装法不同，且 Windows 上 bin 靠的是 npm 生成的 `.cmd` / `.ps1` shim 而非可执行位。
+- **Linux 桌面：待验两件**，不阻塞日常发版、但阻塞 1.0.0，等首个真实 Linux 桌面：
+  1. **浏览器真的弹出来。** `xdg-open` 的选择与 argv 已由单测与只读单点断言每次推送重跑，缺的是「argv 对了之后系统真的响应」这最后一跳。
+  2. **token 经命令行的窗口在 `xdg-open` 下有多宽**（机制见 `design/server.md`「本地安全」一节末尾那条「已知边界」）。`xdg-open` 是脚本、`/proc/<pid>/cmdline` 默认全局可读，预计比 macOS 大。**刻意不进 CI**——headless 上 `xdg-open` 立刻失败退出，量出来的窗口比真实桌面上短得多，**是个会让人放心的假数**。
+- **与平台无关的已知缺陷：主题偏好跨不了实例**，先记着不动。机制与「没有门禁看得见」的原因在 `design/web.md` 的「主题开关」，被排除的修法在 `decisions/web.md`。
+
 ## 两条没有门禁的性能预算
 
 两条都**没有断言**，归上面第二条口径里的肉眼 / 人工项。写在这里是为了让 `decisions/` 里那两处实测有个可指的结论，**不是重开一份逐条勾选的验收清单**。
@@ -24,7 +34,7 @@
 | `pnpm typecheck` | 用到 Node 24+ 才有的内置 API 或超出 ES2023 的语法，而下限档要到 CI 跑完才发现 | build |
 | `pnpm test`（Vitest） | 解析器、三道校验、DOM 渲染路径的常规回归。`test-layout.test.ts` 另外钉住「用例目录放错就静默不跑」 | build |
 | `pnpm test:smoke`（`node --test`，跑 `dist/`） | 产物层面的行为回归。**先 `pnpm build`**——它跑 `dist/`，产物比源码旧一轮时红的样子像「三道校验全坏了」 | matrix（三平台 × Node 22.0.x/24/26） |
-| 只读**主门禁**（`readonly.test.js`） | 产品发出了白名单外的 git 子命令。**自带一条「确实记到了东西」的正面断言**——否则白名单会对着空数组通过。**白名单只看子命令，看不见参数**，所以另有两条按参数钉的断言：`diff` 不带 `--no-index` / `--ext-diff` / `--output` 且紧跟着 `--no-ext-diff --no-textconv`，`cat-file` 之后只能是 `blob` / `-s`（`--filters` / `--textconv` 会跑 smudge，LFS 的那个写 `.git/lfs`），`log` 的 argv 逐段等于那两种字面量形态（`--no-show-signature` 挡 gpg，不带任何 diff 选项挡外部 diff 驱动），`for-each-ref` 的 argv 逐段等于那一条字面量（`%(signature)` 一族会起 gpg）。**覆盖面等于 `runFullFlow` 打过的端点**：新增一个端点却不把它加进那条流程，门禁不会红，只是那条路上的 git 调用一次都没被看过 | matrix |
+| 只读**主门禁**（`readonly.test.js`） | 产品发出了白名单外的 git 子命令。**自带一条「确实记到了东西」的正面断言**——否则白名单会对着空数组通过。**白名单只看子命令，看不见参数**，所以另有按参数钉的断言：`diff` 不带 `--no-index` / `--ext-diff` / `--output` 且紧跟着 `--no-ext-diff --no-textconv`，`cat-file` 之后只能是 `blob` / `-s`，`log` 与 `for-each-ref` 的 argv 逐段等于字面量（每条为什么见 `design/git.md`）。**覆盖面等于 `runFullFlow` 打过的端点**：新增一个端点却不把它加进那条流程，门禁不会红，只是那条路上的 git 调用一次都没被看过 | matrix |
 | 只读**第二层**（`readonly-git-dir.test.js`） | `.git` 被写了。A 半锁死 `.git` 抓会报错的写，B 半逐字节比对抓**不报错**的那种（漏设 `GIT_OPTIONAL_LOCKS=0` 只有 B 半看得见）。两半各自带一条正面探针 | matrix |
 | 子进程单点断言 | git 子进程跑出了 `server/git`、或拉起浏览器跑出了 `server/cli`。**查的是相等而非「没有多余的」**——只查多出来的一半时，两处调用点双双改名会让白名单静默变成空表 | matrix |
 | `pnpm size` | 产物体积超预算（JS 与 CSS 各卡明文 + gzip 两道；卡的是总量，单次增量只在吃光余量时才响）。**不进 matrix**：同一份 `dist/` 再跑 9 遍不增加覆盖，反而因各 Node 自带 zlib 不同而引入方差 | build |
@@ -35,7 +45,7 @@
 | `pnpm check:global` | `npm i -g` 之后用 PATH 上那个名字跑不通，或全局目录下冒出了传递依赖。**要求全局尚未装着 difftab，否则脚本直接拒跑** | 专用作业（三平台） |
 | `pnpm check:inotify` | Linux 上压低 `fs.inotify.max_user_watches` 至 ENOSPC 后没能降级。**不进冒烟套件**，非 Linux 直接 SKIP | 专用作业（ubuntu，需免密 sudo） |
 | old-node-guard | 低于下限的 Node 上拿到的是 `SyntaxError` 而不是友好提示。**单列一档**，因为 build 与 matrix 都跑在 ≥22 上，解析期失败那条路径在那里永远测不到。**只跑 ubuntu + windows**：那句提示丢不丢只在 Windows 上看得见，macOS 与 ubuntu 同属 POSIX 的同一种行为 | 专用作业（Node 20 × 两平台） |
-| 只读性门禁确实进了调用参数 | `readonly.test.js` / `readonly-git-dir.test.js` 被改名、搬走、误删，或那条 glob 在某个平台上没展开到它们——两种都让「只读承诺的唯一自动化保护」变成一个什么都没跑的绿勾（`node --test` 一个文件都没匹配上时是 0 用例、exit 0）。**判据是 bash 自己把 `test/smoke/*.test.js` 展开成数组、点名检查、再把同一个数组原样传给 node**，与 node 版本、reporter 能力无关（为什么不数用例数、不按 junit 属性点名，见 `design/build.md` 的「CI 分层」） | matrix |
+| 只读性门禁确实进了调用参数 | `readonly.test.js` / `readonly-git-dir.test.js` 被改名、搬走、误删，或那条 glob 在某个平台上没展开到它们——两种都让「只读承诺的唯一自动化保护」变成一个什么都没跑的绿勾（`node --test` 一个文件都没匹配上时是 0 用例、exit 0）。判据与为什么不数用例数，见 `design/build.md` 的「CI 分层」 | matrix |
 | 发布前复跑整份 CI（`release.yml` 的 `gates` 作业） | 发出去的那个 commit 从没跑过三平台冒烟：release PR 由 `GITHUB_TOKEN` 创建，GitHub 不为它触发 `pull_request` CI，PR 上一个检查都没有。`publish` 依赖它，红了不发 | 发布 workflow（`workflow_call` 调 `ci.yml`） |
 | 后端产物 import 检查 | 后端引了标准库以外的模块（断言 `dist/server/main.js` 的 import 说明符全部以 `node:` 开头） | matrix |
 | 前端产物 CJK 计数为 0 | 界面文案漏了中文。**后端那侧拦不到**（产物按约定保留注释），它的用户可见文案是 `sendError` 与各 `*Error` 的字面量，归 `test/unit/server/` | matrix |
@@ -80,8 +90,6 @@
 - **`assets/`（logo、社交预览）刻意不进 `files`**：它只给 GitHub 与 README 用，README 里的相对路径由 npm 改写到 GitHub raw，不需要随包发。
 - **`dependencies` 为空。** 前端依赖在构建期即被打进 `dist/web/app.js`，后端只用 Node 标准库——用户 `npm i -g` 时零传递依赖安装。
 - **`publishConfig.registry` 钉住 `registry.npmjs.org`**：CI 里本来就是它；钉在 manifest 里，是让发布目标不取决于运行环境的 `~/.npmrc`。
-- **发布由 CI 完成**（release-please + npm trusted publishing，见 `../RELEASING.md`），用的是 `npm publish`，所以发出去的 `package.json` 里带着 `packageManager` 与 `prepublishOnly`——无害。
-- **`CHANGELOG.md` 由 release-please 生成**，条目取自合入 main 的 PR 标题，禁手改。
 - **semver：0.x 保留破坏性余地**（尤其 CLI 参数与端口/token 行为）。**1.0.0 是结论不是起点**——本工具的核心承诺是只读与零副作用，1.0.0 应当是这些承诺被两层验证覆盖、且三端真机验过之后的结果。
 
 发布的**步骤**照 [`../RELEASING.md`](../RELEASING.md) 走，不凭记忆敲。

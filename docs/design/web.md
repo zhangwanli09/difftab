@@ -1,8 +1,6 @@
 # 前端：界面文案、页面骨架与变更列表
 
-> **TypeScript + Preact + @preact/signals，经 Vite 构建为静态产物**，由后端直接托管。本文件管页面骨架与左栏的变更列表，文件浏览器、提交历史与分支列表在 [`sidebar.md`](sidebar.md)；右侧面板（编辑器标签页、diff / 文件两个视图的外壳、文件视图）在 [`editors.md`](editors.md)，diff 怎么渲染在 [`diff-render.md`](diff-render.md)，配色与层叠隔离在 [`style.md`](style.md)。选型与被排除的做法见 [`../decisions/web.md`](../decisions/web.md)，门禁见 [`../gates.md`](../gates.md)。
->
-> 本文件只写规则、判据与失效时的症状。类名、像素值与它们之间的加法以代码为准，标「有断言」的条目由 `test/unit/web/` 钉住、不进红线。
+> **TypeScript + Preact + @preact/signals，经 Vite 构建为静态产物**，由后端直接托管。本文件管页面骨架与左栏的变更列表，文件浏览器、提交历史与分支列表在 [`sidebar.md`](sidebar.md)；右侧面板（编辑器标签页、diff / 文件两个视图的外壳、文件视图）在 [`editors.md`](editors.md)，diff 怎么渲染在 [`diff-render.md`](diff-render.md)，配色与层叠隔离在 [`style.md`](style.md)。选型与被排除的做法见 [`../decisions/web.md`](../decisions/web.md)，门禁见 [`../gates.md`](../gates.md)。标「有断言」的条目由 `test/unit/web/` 钉住、不进红线。
 
 ## 界面文案与术语
 
@@ -42,7 +40,7 @@
   - **双击复位到 320px；键盘可达**：`role="separator"` + `aria-value*` + `tabIndex=0`，方向键与 Home / End 可调。
   - **上限还要随窗口收，这道交给 CSS**：内联 `max-width: min(640px, calc(100vw - 320px))` + `min-width: 200px`，窄窗口里 diff 面板不会被挤到 0；signal 存的是用户选的宽度，窗口拉回时自己回到原档，不必监听 `resize`。**代价是选的与屏幕上的可能不等**：拖动与键盘的起点读 `shownSidebarWidth()`（按式子算，不量 `offsetWidth`——signal 到 DOM 的绑定是异步的，连发方向键会读到旧值），否则窄窗口里的拖动全落在看不见的区间里。
   - **拖动时一个组件都不重渲染**：宽度以 signal 本身交给 `style`，由 `@preact/signals` 直接改 DOM；在 `App` 里读 `.value` 等于每个 pointermove 重渲整棵树。
-  - **宽度不跨会话记忆**，与变更列表的版式开关同一个结论（端口随机，`localStorage` 跨不了实例）。
+  - **宽度不跨会话记忆**（`localStorage` 跨不了实例，见「主题开关」）。
   - 拖宽左栏可能让 diff 面板跨过并排阈值而换版式：**不为此做任何事**，`outputFormat` 量的本来就是面板自身的 border box（见 [`diff-render.md`](diff-render.md) 的「版式按面板宽度自动切」）。
 
 ## 变更列表
@@ -61,7 +59,7 @@
 
 **tab 行右端那枚开关在平铺列表与目录树之间切换，默认列表。** 对应 VS Code 的 View as Tree / View as List：agent 单次改 300+ 文件时目录段满屏重复，树把同一目录的文件收在一起。开关的图标与文案表达的是**目标视图**（它是动作按钮，不是状态灯）。只在 `Changes` 档画。
 
-- **版式只活在本次页面里，不进 `localStorage`**：不是「不值得记」，是**记了也存不住**——后端 `listen(0)` 端口随机，`localStorage` 按 origin 隔离，换一次启动就归零（主题那份同样受限）。状态是 `state/change-tree.ts` 的一个模块级 signal。
+- **版式只活在本次页面里，不进 `localStorage`**（跨不了实例，见「主题开关」）。状态是 `state/change-tree.ts` 的一个模块级 signal。
 - **分组标题两种版式都留着**：三组是 git 语义（同一个文件可同时在两组），树只是组内的排法。
 - **`Changes` 组内是两份有序列表的归并，不是整体重排**：porcelain v2 先吐全部已跟踪、再吐 `?` 记录，直接拼接时未跟踪文件全堆在组尾。按路径归并一次即可（`store.ts` 的 `mergeByPath`）。
 - **冲突一律印 `!`，悬停给出原始 XY**（`Conflict (UD)`）。VS Code 把 `DU` / `UD` 印成 `D`，这里不跟：`Files` 档只拿得到归并后的 `ChangeCode`，跟了的话同一个文件在两档字母不一样。
@@ -96,7 +94,7 @@
 - **「跟随系统」是属性不存在，不是 `data-theme="system"`**：CSS 不必为它写第三条规则，`localStorage` 里也只有两个合法值。
 - 接线在 `state/theme.ts`：一个模块级 signal + 一个 `effect` 接到 `document.documentElement`。**同一个 effect 顺带写 `localStorage`**——拆开就会出现「切了但没记住」，只在刷新后才看得见。
 - **`localStorage` 的读与写各自 `try/catch`**：Safari 隐私模式下取值就会抛。抛了只在内存里生效；脏值退回跟随系统。
-- **这是仓库里第一份跨会话偏好**，key 为 `difftab:theme`。**但「跨会话」目前只到同一实例的刷新为止**（端口随机，origin 隔离），修法记在 [`../history.md`](../history.md) 的「未完事项」。
+- **这是仓库里唯一一份进 `localStorage` 的偏好**，key 为 `difftab:theme`。**但「跨会话」目前只到同一实例的刷新为止**：后端 `listen(0)` 端口随机，而 `localStorage` 按 origin（含端口）隔离，换一次启动就归零。**没有任何门禁看得见**（`theme.test.ts` 跑在同一个 happy-dom origin 里）；被排除的修法见 [`../decisions/web.md`](../decisions/web.md)。**其余页面状态——列表版式、左栏宽度、分区比例与折叠态、标签栏——因此一律不进 `localStorage`**：不是不值得记，是记了也存不住。
 - **在 `render()` 之前接线**，但**首帧仍可能闪一下系统色**：CSP 是 `script-src 'self'`，塞不了惯用的 pre-paint 内联脚本。代价只落在选了与系统相反档的人身上、闪一帧，为它开 `unsafe-inline` 或维护脚本 hash 不划算。
 - 控件只画图标，`title` 与 `aria-label` 分别是 `Follow system` / `Light` / `Dark`——三个词会跟项目名抢宽度。图标是 Lucide `Monitor` / `Sun` / `Moon`；`lucide-preact` 只进 `devDependencies`、构建期 tree-shake。
 
