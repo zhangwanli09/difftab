@@ -33,12 +33,12 @@
 - **分支名（连同图标）是一枚按钮**，点开「分支列表」（见 [`sidebar.md`](sidebar.md)）；detached 时照样可点——列表回答的是「仓库里有哪些 ref」。
 - **与上游的差距排成 `<behind>↓ <ahead>↑`**，逐字照 VS Code status bar 的 `syncLabel`——这一栏是拿去与另一个窗口对照的，左右反过来时每看一眼都要在心里翻一次。**两个 0 仍都画出来**：「已同步」与「无上游」必须是两个样子（有断言）。
 - **滚动的是中间那一层，不是左栏本身**：顶栏、tab 行、错误条、状态条钉在原处。`Files` 档滚的是 `<nav>` 本身；`Changes` 档滚的是两个分区各自那一层——共用一个滚动容器时历史一长就把变更列表滚出视野。左右两栏各有独立的滚动容器，SSE 刷新才能留住列表的滚动位置。**列表那层必须归零自己的自动最小尺寸**（`min-h-0` 或 `overflow-auto`），否则列表把整列撑高、状态条被挤出屏幕底部。
-- **左栏宽度可拖**：`<aside>` 右边缘一条竖向把手（sash，照 VS Code），范围 200–640px、默认 320px，宽度是 `state/sidebar.ts` 的一个 signal。下限给名字留得出几个字，上限防止笔记本屏上把 diff 面板挤到只剩行号。把手与「提交历史」那条横向分隔条是同一个组件 `Sash.tsx`。
+- **左栏宽度可拖**：`<aside>` 右边缘一条竖向把手（sash，照 VS Code），范围 200–960px、默认 320px，宽度是 `state/sidebar.ts` 的一个 signal。下限给名字留得出几个字，上限防止大屏上把 diff 面板挤到只剩行号（笔记本屏靠下面随窗口收的那道）。把手与「提交历史」那条横向分隔条是同一个组件 `Sash.tsx`。
   - **把手绝对定位叠在边框上**，不占布局宽度——做成第三个 flex 子项时它的宽度会从面板身上扣。悬停与拖动时只显出竖直居中的一小段握把，不是整条边变色。
   - **只有把手用的固定几何写内联样式，不写 Tailwind 类**：每个类都是产物里一条只服务一处的规则，内联样式不进产物。**`touch-action: none` 不能漏**：不带时触屏一按下就被认作滚动、发 `pointercancel`，拖几个像素就断。
   - **拖动走 pointer capture**：指针越过 diff 面板或离开窗口时 move 仍投递给把手。**拖动期间整页挂 `cursor: col-resize` 与 `user-select: none`**，松手（含 `lostpointercapture`）撤掉——不挂时光标一离开把手就闪回箭头、沿途 diff 文字被拖选成一片蓝。
   - **双击复位到 320px；键盘可达**：`role="separator"` + `aria-value*` + `tabIndex=0`，方向键与 Home / End 可调。
-  - **上限还要随窗口收，这道交给 CSS**：内联 `max-width: min(640px, calc(100vw - 320px))` + `min-width: 200px`，窄窗口里 diff 面板不会被挤到 0；signal 存的是用户选的宽度，窗口拉回时自己回到原档，不必监听 `resize`。**代价是选的与屏幕上的可能不等**：拖动与键盘的起点读 `shownSidebarWidth()`（按式子算，不量 `offsetWidth`——signal 到 DOM 的绑定是异步的，连发方向键会读到旧值），否则窄窗口里的拖动全落在看不见的区间里。
+  - **上限还要随窗口收，这道交给 CSS**：内联 `max-width: min(960px, calc(100vw - 320px))` + `min-width: 200px`，窄窗口里 diff 面板不会被挤到 0；signal 存的是用户选的宽度，窗口拉回时自己回到原档，不必监听 `resize`。**代价是选的与屏幕上的可能不等**：拖动与键盘的起点读 `shownSidebarWidth()`（按式子算，不量 `offsetWidth`——signal 到 DOM 的绑定是异步的，连发方向键会读到旧值），否则窄窗口里的拖动全落在看不见的区间里。
   - **拖动时一个组件都不重渲染**：宽度以 signal 本身交给 `style`，由 `@preact/signals` 直接改 DOM；在 `App` 里读 `.value` 等于每个 pointermove 重渲整棵树。
   - **宽度不跨会话记忆**（`localStorage` 跨不了实例，见「主题开关」）。
   - 拖宽左栏可能让 diff 面板跨过并排阈值而换版式：**不为此做任何事**，`outputFormat` 量的本来就是面板自身的 border box（见 [`diff-render.md`](diff-render.md) 的「版式按面板宽度自动切」）。

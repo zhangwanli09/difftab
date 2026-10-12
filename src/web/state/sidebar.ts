@@ -10,8 +10,8 @@ export const SIDEBAR_DEFAULT_WIDTH = 320;
 /** 下限：tab 行两枚图标 + 右端按钮、顶栏符号 + 开关之后，名字还剩得下几个字。 */
 export const SIDEBAR_MIN_WIDTH = 200;
 
-/** 上限：笔记本屏上再宽，diff 面板就只剩行号槽了。 */
-export const SIDEBAR_MAX_WIDTH = 640;
+/** 上限：大屏上再宽，diff 面板就只剩行号槽了；笔记本屏上起作用的是 `sidebarStyle` 里随视口收的那道。 */
+export const SIDEBAR_MAX_WIDTH = 960;
 
 /** 无论左栏多宽，至少给 diff 面板留这么多。`<aside>` 是 `shrink-0`，不留时窄窗口里面板被挤到 0。 */
 const PANEL_MIN_WIDTH = 320;
