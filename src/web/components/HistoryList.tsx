@@ -64,17 +64,17 @@ export function relativeTime(seconds: number, now = Date.now()): string {
 }
 
 /**
- * 提交行的悬停提示。次序照 VS Code 那张悬停卡片：作者与时间、主题、正文、哈希，段与段之间空一行；
- * 没有正文就连那一段带它的空行一起不画。仍是原生 `title`——正文是纯文本，自绘卡片换不来多少东西。
+ * 提交行的悬停提示：主题、正文，末尾一行是哈希连同作者与时间，段与段之间空一行；没有正文就连那一段
+ * 带它的空行一起不画。元信息收成一行垫底，读的人第一眼落在主题上。仍是原生 `title`——正文是纯文本，
+ * 自绘卡片换不来多少东西。
  */
 export function commitTooltip(commit: CommitSummary, now = Date.now()): string {
   const when = new Date(commit.time * 1000).toLocaleString();
   return [
-    `${commit.author} · ${relativeTime(commit.time, now)} (${when})`,
     commit.subject,
     commit.body,
     // 只放短哈希：完整 sha 在提示里只是一行噪音，要拿去用的是行内那枚复制按钮
-    shortSha(commit.sha),
+    `${shortSha(commit.sha)} · ${commit.author} · ${relativeTime(commit.time, now)} (${when})`,
   ]
     .filter((part) => part !== '')
     .join('\n\n');
