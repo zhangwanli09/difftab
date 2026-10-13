@@ -34,7 +34,12 @@ import {
   PANE_DEFAULT_PERCENT,
   panePercent,
 } from '../../../src/web/state/sidebar';
-import { commitDiffStates, diffStates, fileStates } from '../../../src/web/state/store';
+import {
+  commitDiffStates,
+  diffStates,
+  type FileRequestState,
+  fileStates,
+} from '../../../src/web/state/store';
 
 /** 清空标签栏与三张缓存。用到右侧状态的用例都从这里起。 */
 export function resetEditors(): void {
@@ -71,6 +76,11 @@ export function resetPanes(): void {
 export function hideHistory(): void {
   historyCollapsed.value = true;
   onTestFinished(resetPanes);
+}
+
+/** 写一个路径的全文缓存。 */
+export function setFileState(path: string, state: FileRequestState): void {
+  fileStates.value = new Map(fileStates.value).set(path, state);
 }
 
 /** 开一个固定 tab——产品里开出来的一律是预览，固定是双击那一下另做的，用例里合成一步。 */

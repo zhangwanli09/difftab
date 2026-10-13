@@ -2,15 +2,31 @@
 //
 // 钉的都是「不报错、只是不对」：关闭按钮是 tab 按钮的兄弟而不是孩子（套在里面时点 × 会顺带激活、
 // 快速双击 × 会把滑到指针底下的邻居固定住，且读屏看不见它）；预览 tab 斜体、固定之后转正；同一
-// 路径的 diff 与全文是两个 tab、图标是它们之间唯一的视觉差别；关闭按钮只在活动 tab 上常显。
+// 路径的 diff 与全文是两个 tab、图标是它们之间唯一的视觉差别；关闭按钮只在活动 tab 上常显；
+// 复制全文那枚只在全文正文就绪时出现、站在 tablist 之外。
 // happy-dom 没有排版引擎，横向滚、截断与透明度只能钉类名。
 
 import { render } from 'preact';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { FilePayload } from '../../../src/server/shared/protocol';
 import { EditorTabs } from '../../../src/web/components/EditorTabs';
-import { activeEditorKey, editors, openEditor } from '../../../src/web/state/editors';
-import { repoState } from '../../../src/web/state/store';
-import { file, openPinned, resetEditors, stubJson, waitFor } from './helpers';
+import {
+  activeEditorKey,
+  editorKey,
+  editors,
+  openCommitEditor,
+  openEditor,
+} from '../../../src/web/state/editors';
+import { type FileRequestState, repoState } from '../../../src/web/state/store';
+import {
+  file,
+  openPinned,
+  resetEditors,
+  setFileState,
+  stubClipboard,
+  stubJson,
+  waitFor,
+} from './helpers';
 
 let container: HTMLElement;
 let calls: string[];
@@ -26,8 +42,15 @@ const tabByTitle = (title: string): HTMLButtonElement => {
 const shellOf = (tab: HTMLElement) => tab.parentElement as HTMLElement;
 const closeOf = (tab: HTMLElement) =>
   shellOf(tab).querySelector('button[aria-label="Close"]') as HTMLButtonElement;
-/** 标签栏本身（tablist）。 */
+/** 装 tab 的那一层（tablist），横向滚动的是它。 */
 const strip = () => container.querySelector('[role="tablist"]');
+/** 栏的外层：高度、分隔线归它，tablist 与动作区并排住在里面。 */
+const bar = () => strip()?.parentElement ?? null;
+/** 动作区那枚复制全文；静止与刚复制完两种名字都认。 */
+const copyButton = () =>
+  container.querySelector<HTMLButtonElement>(
+    'button[aria-label="Copy file contents"], button[aria-label="Copied"]',
+  );
 
 const mouse = (type: string, button = 0) => new MouseEvent(type, { bubbles: true, button });
 
@@ -60,6 +83,8 @@ beforeEach(() => {
 afterEach(() => {
   render(null, container);
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 describe('EditorTabs', () => {
@@ -193,25 +218,126 @@ describe('EditorTabs', () => {
     flush();
     await waitFor(() => expect(scrolled).toHaveBeenCalledTimes(3));
     expect(scrolled.mock.instances[2]).toBe(shellOf(tabByTitle('src/a.ts')));
-    scrolled.mockRestore();
   });
 
-  it('栏横向滚但不画滚动条、tab 不压扁——happy-dom 里只能钉类名', () => {
+  it('tablist 横向滚但不画滚动条、tab 不压扁——happy-dom 里只能钉类名', () => {
     pinned('diff', 'src/a.ts');
     // 栏高与顶栏相等那条在 app.test.tsx 里钉，这里不重复钉一个字面量
-    for (const cls of ['shrink-0', 'overflow-x-auto', 'scrollbar-none']) {
+    expect(bar()?.classList.contains('shrink-0')).toBe(true);
+    // `min-w-0 flex-1`：tablist 吃掉动作区以外的宽度、溢出时自己滚，不把动作区挤出栏外
+    for (const cls of ['min-w-0', 'flex-1', 'overflow-x-auto', 'scrollbar-none']) {
       expect(strip()?.classList.contains(cls)).toBe(true);
     }
     expect(shellOf(tabByTitle('src/a.ts')).classList.contains('shrink-0')).toBe(true);
   });
 
-  it('分隔线是栏的 divider-b，tab 不 -mb-px——栏是滚动容器，伸进 border 带的那 1px 会被裁掉', () => {
+  it('分隔线是外层的 divider-b，tab 不 -mb-px——tablist 是滚动容器，伸进 border 带的那 1px 会被裁掉', () => {
     pinned('diff', 'src/a.ts');
     // 按教科书写法「修回去」（栏 border-b + tab -mb-px）时下划线看不见，还多出 1px 纵向可滚溢出
-    expect(strip()?.classList.contains('divider-b')).toBe(true);
+    expect(bar()?.classList.contains('divider-b')).toBe(true);
+    expect(bar()?.classList.contains('border-b')).toBe(false);
     expect(strip()?.classList.contains('border-b')).toBe(false);
     const shell = shellOf(tabByTitle('src/a.ts'));
     expect(shell.classList.contains('border-b')).toBe(true);
     expect(shell.classList.contains('-mb-px')).toBe(false);
+  });
+});
+
+/**
+ * 栏右端的 `Copy file contents`：全文 tab 的正文就绪时才有，复制的是缓存里的原文。它是 tablist
+ * 的兄弟——躺进去时读屏把它报成又一个 tab，且会随 tab 横向滚走。
+ */
+describe('Copy file contents', () => {
+  // 动作区自己订阅缓存，缓存一变它是 signals 调度的异步重画——根上那次同步 `flush()` 不
+  // 带它，断言前得等一拍
+  const ready = (path: string, payload: FilePayload) =>
+    setFileState(path, { status: 'ready', payload });
+  const labelOf = () => copyButton()?.getAttribute('aria-label') ?? null;
+
+  it('全文 tab 的正文就绪时画在 tablist 之外；点它写入原文、换成 Copied 再复原', async () => {
+    vi.useFakeTimers();
+    const writeText = stubClipboard();
+    pinned('file', 'src/a.ts');
+    expect(copyButton()).toBeNull();
+
+    // 原文带末尾换行、带要转义的字符：写进剪贴板的是它本身，不是 hljs 的 HTML，也没有行号
+    const content = 'const a = 1 < 2;\n';
+    ready('src/a.ts', { kind: 'text', content });
+    await waitFor(() => expect(labelOf()).toBe('Copy file contents'));
+    const button = copyButton();
+    expect(strip()?.contains(button ?? null)).toBe(false);
+    expect(bar()?.contains(button ?? null)).toBe(true);
+
+    button?.click();
+    expect(writeText).toHaveBeenCalledWith(content);
+    // 反馈等 writeText 的 promise 落定才画
+    await vi.advanceTimersByTimeAsync(0);
+    expect(labelOf()).toBe('Copied');
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(labelOf()).toBe('Copy file contents');
+  });
+
+  it('没有正文可复制时不画：加载中、出错、二进制、图片、符号链接、过大', async () => {
+    pinned('file', 'src/a.ts');
+    const noText: FileRequestState[] = [
+      { status: 'loading' },
+      { status: 'error', message: 'gone' },
+      { status: 'ready', payload: { kind: 'binary' } },
+      { status: 'ready', payload: { kind: 'image', size: 10, version: 'v1' } },
+      { status: 'ready', payload: { kind: 'symlink', target: 'b.ts' } },
+      { status: 'ready', payload: { kind: 'too-large', size: 6_000_000, reason: 'size' } },
+    ];
+    // 每一档都从「按钮在」起步：只断言 null 的话，一次没发生的重画也是绿的
+    for (const state of noText) {
+      ready('src/a.ts', { kind: 'text', content: 'x\n' });
+      await waitFor(() => expect(copyButton()).not.toBeNull());
+      setFileState('src/a.ts', state);
+      await waitFor(() => expect(copyButton()).toBeNull());
+    }
+  });
+
+  it('diff 与 commit tab 不画——哪怕同一路径的全文就在缓存里', async () => {
+    ready('src/a.ts', { kind: 'text', content: 'x\n' });
+    pinned('file', 'src/a.ts');
+    await waitFor(() => expect(copyButton()).not.toBeNull());
+
+    pinned('diff', 'src/a.ts');
+    await waitFor(() => expect(copyButton()).toBeNull());
+
+    activeEditorKey.value = editorKey('file', 'src/a.ts');
+    await waitFor(() => expect(copyButton()).not.toBeNull());
+    openCommitEditor('a'.repeat(40), 'src/a.ts', undefined, true);
+    await waitFor(() => expect(copyButton()).toBeNull());
+  });
+
+  it('正文就绪、动作区挤进来之后，活动 tab 再滚进视野一次——不然 tablist 窄了一截，它的右端被裁掉', async () => {
+    const scrolled = vi.spyOn(HTMLElement.prototype, 'scrollIntoView');
+    pinned('file', 'src/a.ts');
+    await waitFor(() => expect(scrolled).toHaveBeenCalledTimes(1));
+
+    ready('src/a.ts', { kind: 'text', content: 'x\n' });
+    await waitFor(() => expect(copyButton()).not.toBeNull());
+    await waitFor(() => expect(scrolled).toHaveBeenCalledTimes(2));
+    expect(scrolled.mock.instances[1]).toBe(shellOf(tabByTitle('src/a.ts')));
+    expect(scrolled.mock.calls[1]?.[0]).toMatchObject({ inline: 'nearest' });
+  });
+
+  it('切到另一个全文 tab 时 Copied 归零，不把上一个文件的「已复制」带过来', async () => {
+    vi.useFakeTimers();
+    stubClipboard();
+    ready('src/a.ts', { kind: 'text', content: 'a\n' });
+    ready('src/b.ts', { kind: 'text', content: 'b\n' });
+    pinned('file', 'src/a.ts');
+    pinned('file', 'src/b.ts');
+    activeEditorKey.value = editorKey('file', 'src/a.ts');
+    await waitFor(() => expect(labelOf()).toBe('Copy file contents'));
+
+    copyButton()?.click();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(labelOf()).toBe('Copied');
+
+    // 1.5s 远没到：此刻换回 `Copy file contents` 只能是按键重挂，不是计时器到点
+    activeEditorKey.value = editorKey('file', 'src/b.ts');
+    await waitFor(() => expect(labelOf()).toBe('Copy file contents'));
   });
 });

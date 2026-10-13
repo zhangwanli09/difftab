@@ -10,13 +10,13 @@ import type { FilePayload } from '../../../src/server/shared/protocol';
 import { FileView } from '../../../src/web/components/FileView';
 import { revealRequest, setReveal } from '../../../src/web/state/editors';
 import { type FileRequestState, fileStates } from '../../../src/web/state/store';
-import { waitFor } from './helpers';
+import { setFileState, waitFor } from './helpers';
 
 let container: HTMLElement;
 
 /** 写这个路径的缓存，并让视图画它（产品里 `path` 由 `App` 按活动 tab 给）。 */
 const set = (path: string, state: FileRequestState) => {
-  fileStates.value = new Map(fileStates.value).set(path, state);
+  setFileState(path, state);
   render(<FileView path={path} />, container);
 };
 const ready = (path: string, payload: FilePayload) => set(path, { status: 'ready', payload });

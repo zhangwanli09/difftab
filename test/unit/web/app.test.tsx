@@ -350,6 +350,8 @@ describe('tab 行右端那枚列表 / 树切换', () => {
  */
 describe('右侧面板', () => {
   const tabStrip = () => section()?.querySelector('[role="tablist"]');
+  /** 标签栏的外层：tablist 与右端动作区并排住在里面，高度归它。 */
+  const tabBar = () => tabStrip()?.parentElement;
   const scroller = () => section()?.querySelector('.overflow-auto');
 
   it('栏里没有 tab 时给一句提示，居中并配一枚图标', async () => {
@@ -396,8 +398,8 @@ describe('右侧面板', () => {
     expect(section()?.classList.contains('flex-col')).toBe(true);
     // 标签栏与滚动层是 `<section>` 的两个直接子项，前者在前：塞进滚动层里页面不报错，只是
     // 往下翻两屏就再也找不着它
-    expect(tabStrip()?.parentElement).toBe(section());
-    expect(tabStrip()?.nextElementSibling).toBe(scroller());
+    expect(tabBar()?.parentElement).toBe(section());
+    expect(tabBar()?.nextElementSibling).toBe(scroller());
     expect(tabStrip()?.textContent).toContain('app.ts');
     expect(section()?.textContent).not.toContain('Select a file on the left');
   });
@@ -409,7 +411,7 @@ describe('右侧面板', () => {
 
     const heightOf = (el: Element | null | undefined) => el?.className.match(/\bh-\d+\b/)?.[0];
     expect(heightOf(header())).toBeDefined();
-    expect(heightOf(tabStrip())).toBe(heightOf(header()));
+    expect(heightOf(tabBar())).toBe(heightOf(header()));
   });
 
   it('切到同种的另一个 tab 时滚动容器换新的——不然 B 会从 A 的滚动偏移量打开', async () => {

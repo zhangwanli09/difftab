@@ -11,7 +11,7 @@ import { DiffView } from '../../../src/web/components/DiffView';
 import { FileView } from '../../../src/web/components/FileView';
 import { diffPanelWidth, SIDE_BY_SIDE_MIN_WIDTH } from '../../../src/web/state/layout';
 import { diffStates, fileStates } from '../../../src/web/state/store';
-import { waitFor } from './helpers';
+import { setFileState, waitFor } from './helpers';
 
 let container: HTMLElement;
 
@@ -22,9 +22,8 @@ const readyDiff = (path: string, payload: DiffPayload) => {
     payload,
   });
 };
-const readyFile = (path: string, payload: FilePayload) => {
-  fileStates.value = new Map(fileStates.value).set(path, { status: 'ready', payload });
-};
+const readyFile = (path: string, payload: FilePayload) =>
+  setFileState(path, { status: 'ready', payload });
 
 const images = () => [...container.querySelectorAll('img')];
 const srcOf = (img: HTMLImageElement) => new URL(img.getAttribute('src') ?? '', 'http://x');
