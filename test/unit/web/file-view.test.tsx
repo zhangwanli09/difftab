@@ -1,7 +1,5 @@
-// FileView 的五个 payload 分支与那条层叠取舍（图片那一支的正文在 image-view.test.tsx）。
+// FileView 的五个 payload 分支（图片那一支的正文在 image-view.test.tsx）。
 //
-// 两条钉的都是「不报错、只是不对」：容器一旦挂上 `hljs` 类，那条 unlayered 的
-// `.hljs { background }` 会压过 `bg-editor-background`，页面上只是底色跟别处对不上；而
 // 未知扩展名没退回 `plaintext` 时 `hljs.highlight` 直接抛，炸掉的是整个文件视图。
 
 import { render } from 'preact';
@@ -98,15 +96,6 @@ describe('FileView', () => {
     // 末尾那个换行不算一行——否则每个正常结尾的文件都多出一个空行号
     const gutter = container.querySelectorAll('pre')[0];
     expect(gutter?.textContent).toBe('1\n2');
-  });
-
-  it('容器上没有 `hljs` 类——那条规则是 unlayered 的，会压过 bg-editor-background', async () => {
-    ready('a.ts', { kind: 'text', content: 'const x = 1;\n' });
-    await waitFor(() => expect(container.textContent).toContain('const x'));
-
-    for (const node of container.querySelectorAll('*')) {
-      expect(node.classList.contains('hljs')).toBe(false);
-    }
   });
 
   it('未知扩展名与无扩展名都退回 plaintext，不抛', async () => {

@@ -49,7 +49,6 @@
 **右侧那一份是只读全文，不是 diff。** `FilePayload` 五个 `kind` 全部在 `FileView` 分支，提示行与 `DiffView` 共用 `Notice`，`image` 那一支共用 `ImageView.tsx`。
 
 - **语言判定与 diff 视图同为 `languageOf(path)`**（`diff/hljs.ts`），它内部先 `getLanguage()` 探一下：`highlight()` 传未注册的语言名会抛，而这里没有 diff2html 兜底，抛出去炸的是整个文件视图。取不到退回 `plaintext`（见 [`diff-render.md`](diff-render.md)）。
-- **容器上不得加 `hljs` 类**（理由在 [`style.md`](style.md) 的「文件视图与 `.hljs`」）。
 - **行号做成兄弟元素，不按行切高亮输出**：hljs 的 span 会跨行，切开就是在重写被禁止的高亮切分逻辑。行号槽 `sticky left-0`。
 - **`sticky left-0` 要成立，正文那一层必须是 `w-max`**：普通块盒只有面板宽，行号槽没有滑动余量，横向一滚整列行号跟着滑出视口，而 `sticky left-0` 字样还在原地。
 - **但 `w-max` 只能给正文那一路**，判据是按 `kind` 穷举的 `NEEDS_WIDE_BOX` 表（`Record` 漏键是编译错误，写成 `kind === 'text'` 一句则是第二处独立判定）：`max-content` 下提示行那几句散文会排成一行跑出面板，`break-all` 也救不了（实测读数见 [`../decisions/web.md`](../decisions/web.md)）。以上有断言。

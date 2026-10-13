@@ -20,9 +20,8 @@ import { ImageFile } from './ImageView';
  * 红线在 diff2html 上明令禁止的事，换个地方做不会变得更容易。两个 `<pre>` 共用同一个
  * `leading-5`，对齐就成立；行号槽 `sticky left-0`，横向滚代码时它留在左边。
  *
- * **容器上不加 `hljs` 类**：`hljs-theme.css` 里那条 `.hljs { background: … }` 是 unlayered
- * 的，会压过 `bg-editor-background`，症状只是「文件视图底色跟页面其余部分对不上」。15 条
- * token 规则（`.hljs-keyword` 之类）是独立选择器，不挂容器类照样命中。
+ * 容器上不挂 `hljs` 类，也用不着：15 条 token 规则（`.hljs-keyword` 之类）是独立选择器，不挂容
+ * 器类照样命中。
  */
 /**
  * 正文与行号共用的行高（px），即 `leading-5`。跳到第 N 行按 `(N - 1) × 行高` 算位置：正文是一整块 hljs
