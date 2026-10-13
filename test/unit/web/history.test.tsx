@@ -9,6 +9,7 @@ import type {
   CommitSummary,
   RepoState,
 } from '../../../src/server/shared/protocol';
+import { CommitDiffView } from '../../../src/web/components/DiffView';
 import { commitTooltip, HistoryList, relativeTime } from '../../../src/web/components/HistoryList';
 import { badgesBySha, findUpstream, refBadges } from '../../../src/web/state/badges';
 import {
@@ -21,6 +22,7 @@ import {
   openEditor,
 } from '../../../src/web/state/editors';
 import {
+  commitDetails,
   expandedCommits,
   historyError,
   historyList,
@@ -487,6 +489,27 @@ describe('commit tab', () => {
     );
     selectCommitFile(sha(1), { path: 'a.ts', status: 'M' });
     expect(calls.filter((url) => url.startsWith('/api/commit-diff'))).toHaveLength(1);
+  });
+
+  test('顶上那一行只给合并提交：普通提交不画，合并提交写明对比的是第一父', () => {
+    commitDiffStates.value = new Map([
+      [
+        editorKey('commit', 'a.ts', sha(2)),
+        { status: 'ready', rename: null, payload: { kind: 'binary' } },
+      ],
+    ]);
+    const ready = (parents: string[]) =>
+      new Map([
+        [sha(2), { status: 'ready' as const, detail: { ...commit(2, { parents }), files: [] } }],
+      ]);
+    commitDetails.value = ready([sha(1)]);
+    render(<CommitDiffView sha={sha(2)} path="a.ts" />, container);
+    expect(container.textContent).not.toContain('commit 2');
+    expect(container.textContent).not.toContain('Merge commit');
+
+    commitDetails.value = ready([sha(1), sha(9)]);
+    render(<CommitDiffView sha={sha(2)} path="a.ts" />, container);
+    expect(container.textContent).toContain('Merge commit · compared with first parent');
   });
 
   test('上次没取到：切回这个 tab 就重试，并带上旧路径', async () => {

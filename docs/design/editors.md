@@ -10,7 +10,7 @@
 - **预览 tab 全局只有一个，判据是 `pinned === false` 的那一项，不是「最后打开的」**。单击不在栏里的文件：有预览 tab 就**原位**替换，没有就追加；单击已在栏里的只是切过去。
   - **`openEditor` 的 `pinned` 档给 `Open file` 用**（照 VS Code `git.openFile` 的 `preview: false`）：不在栏里就追加一个固定 tab、不碰现有预览 tab，已在栏里就固定并切过去。调用方不自己「先开预览再 pin」——那样会先顶掉一个无辜的预览 tab。
   - **`pinEditor` 是幂等的置 `true`，永不 toggle**：一次双击是 click、click、dblclick 三个事件，写成 toggle 会让已固定的 tab 在双击时静默解开。**dblclick 只调 `pinEditor`、不再走 `selectFile`**，否则一次双击是三趟 `git diff`。
-- **第三种 tab 是 `commit`，身份是 `commit:<sha>:<path>`**：`Editor` 多带一个 `sha`，`path` 仍是文件路径，其余读 `path` 的地方照旧。tab 上文件名后跟短哈希，图标 `GitCommitHorizontal`。**它活动时 `activeEditorPath` 是 `null`**：左栏同名那一行说的是工作区那一份，照亮它是在说一件不成立的事——这是「高亮不看种类」唯一的例外，判据是「左栏那一行与右侧是不是同一份内容」。
+- **第三种 tab 是 `commit`，身份是 `commit:<sha>:<path>`**：`Editor` 多带一个 `sha`，`path` 仍是文件路径，其余读 `path` 的地方照旧。tab 上文件名后跟短哈希，图标 `GitCommitHorizontal`。**正文顶上只有合并提交多一行 `Merge commit · compared with first parent`**（补丁相对第一父，这件事只在看补丁时才需要知道）；普通提交不画「这是哪次提交」——短哈希已在 tab 上、主题在 History 那一行，再印一遍只是占掉一行补丁。**它活动时 `activeEditorPath` 是 `null`**：左栏同名那一行说的是工作区那一份，照亮它是在说一件不成立的事——这是「高亮不看种类」唯一的例外，判据是「左栏那一行与右侧是不是同一份内容」。
 - **关掉活动 tab 切到右邻居、没有才切左邻居**，不维护 MRU 序列。
 - **两栏的高亮同按活动 tab 的路径判（`activeEditorPath`），不看 diff 还是全文**：按种类各认各的时，点了行内 `Open file` 那一行就熄了——用户刚从这一行出发，左栏却说「你没在看它」。
 - **切侧栏 tab、切列表 / 树版式、全部折叠，都不动 `activeEditor`**（症状见 [`web.md`](web.md) 的「页面骨架」）。**反方向有联动**：活动 tab 的路径一变，`Files` 树展开并定位那一行（机制在 [`sidebar.md`](sidebar.md) 的「文件浏览器」），但不切侧栏档位。

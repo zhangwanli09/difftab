@@ -14,7 +14,7 @@ import { useEffect, useRef } from 'preact/hooks';
 import type { DiffPayload } from '../../server/shared/protocol';
 import { renderDiff } from '../diff/render';
 import { editorKey } from '../state/editors';
-import { commitDetails, shortSha } from '../state/history';
+import { commitDetails } from '../state/history';
 import { diffOutputFormat } from '../state/layout';
 import {
   commitDiffStates,
@@ -184,20 +184,19 @@ export function DiffView({ path }: { path: string }) {
 }
 
 /**
- * commit tab 的视图：同一个 `DiffBody`，顶上多一行「这是哪次提交」。那一行读 `History` 里展开
- * 时取到的详情——tab 只能从展开的那一列点出来，详情必然在；万一不在（不该发生）就不画，补丁照常。
- * **合并提交在这里说明对比端**：补丁是相对第一父算的，而这件事只在看补丁时才需要知道。
+ * commit tab 的视图：同一个 `DiffBody`。**只有合并提交顶上多一行说明对比端**：补丁是相对第一父
+ * 算的，而这件事只在看补丁时才需要知道。是不是合并读 `History` 里展开时取到的详情——tab 只能从
+ * 展开的那一列点出来，详情必然在；万一不在（不该发生）就按普通提交处理。
  */
 export function CommitDiffView({ sha, path }: { sha: string; path: string }) {
   const state = commitDiffStates.value.get(editorKey('commit', path, sha)) ?? LOADING;
   const detail = commitDetails.value.get(sha);
-  const commit = detail?.status === 'ready' ? detail.detail : null;
+  const merge = detail?.status === 'ready' && detail.detail.parents.length > 1;
   return (
     <DiffBody path={path} state={state} sha={sha}>
-      {commit && (
-        <p class="truncate border-b border-panel-border px-4 py-1 text-xs text-description-foreground">
-          <span class="font-mono">{shortSha(sha)}</span> {commit.subject}
-          {commit.parents.length > 1 && ' · Merge commit · compared with first parent'}
+      {merge && (
+        <p class="border-b border-panel-border px-4 py-1 text-xs text-description-foreground">
+          Merge commit · compared with first parent
         </p>
       )}
     </DiffBody>
