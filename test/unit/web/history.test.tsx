@@ -652,6 +652,8 @@ describe('ref 徽标', () => {
     ]);
     const label = rows[0]?.querySelector('.truncate') as HTMLElement;
     expect(label.textContent).toBe('commit 100Ann');
+    // 少了 grow 时徽标紧跟主题，各行横向位置随主题长短乱跳
+    expect(label.classList.contains('grow')).toBe(true);
     repoState.value = null;
   });
 

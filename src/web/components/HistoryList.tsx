@@ -182,7 +182,8 @@ function CommitFiles({ sha }: { sha: string }) {
  * 前、作者作它的行内子元素），与变更列表「文件名 + 目录」同一个结构：省略号在右端先吃掉作者，主题
  * 留到最后；拆成两个平级 flex 子项会让两段按底边对齐。短哈希与时间不上行（320px 里放不下），进
  * `title`——短哈希是拿去与终端里 `git log --oneline` 对照的那把钥匙；要拿去用的是行内那枚复制按钮。
- * 当前分支与上游指着这条时，主题之后跟着它们的徽标（见 `RefBadgeLabel`）。
+ * 当前分支与上游指着这条时，行尾跟着它们的徽标（见 `RefBadgeLabel`）。**`truncate` span 带 `grow`**：
+ * 把徽标推到行右缘、各行对成一列，照 VS Code；紧跟主题时徽标随主题长短左右乱跳。
  */
 function CommitRow({ commit }: { commit: CommitSummary }) {
   const expanded = useComputed(() => expandedCommits.value.has(commit.sha)).value;
@@ -199,7 +200,7 @@ function CommitRow({ commit }: { commit: CommitSummary }) {
       sublevel={expanded && <CommitFiles sha={commit.sha} />}
     >
       <ExpandChevron expanded={expanded} />
-      <span class="min-w-0 truncate">
+      <span class="min-w-0 grow truncate">
         {commit.subject}
         <span class="ml-2 text-xs text-description-foreground">{commit.author}</span>
       </span>
