@@ -3,12 +3,13 @@
 // 钉的都是「不报错、只是不对」：关闭按钮是 tab 按钮的兄弟而不是孩子（套在里面时点 × 会顺带激活、
 // 快速双击 × 会把滑到指针底下的邻居固定住，且读屏看不见它）；预览 tab 斜体、固定之后转正；同一
 // 路径的 diff 与全文是两个 tab、图标是它们之间唯一的视觉差别；关闭按钮只在活动 tab 上常显；
-// 复制全文那枚只在全文正文就绪时出现、站在 tablist 之外。
+// 复制全文那枚只在全文正文就绪时出现、站在 tablist 之外；版式切换那枚只在 diff / commit 的文本补丁
+// 就绪时出现。
 // happy-dom 没有排版引擎，横向滚、截断与透明度只能钉类名。
 
 import { render } from 'preact';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { FilePayload } from '../../../src/server/shared/protocol';
+import type { DiffPayload, FilePayload } from '../../../src/server/shared/protocol';
 import { EditorTabs } from '../../../src/web/components/EditorTabs';
 import {
   activeEditorKey,
@@ -17,11 +18,23 @@ import {
   openCommitEditor,
   openEditor,
 } from '../../../src/web/state/editors';
-import { type FileRequestState, repoState } from '../../../src/web/state/store';
+import {
+  diffFormatOverride,
+  diffOutputFormat,
+  diffPanelWidth,
+  SIDE_BY_SIDE_MIN_WIDTH,
+} from '../../../src/web/state/layout';
+import {
+  type DiffRequestState,
+  type FileRequestState,
+  repoState,
+} from '../../../src/web/state/store';
 import {
   file,
   openPinned,
   resetEditors,
+  setCommitDiffState,
+  setDiffState,
   setFileState,
   stubClipboard,
   stubJson,
@@ -52,6 +65,12 @@ const copyButton = () =>
     'button[aria-label="Copy file contents"], button[aria-label="Copied"]',
   );
 
+/** 动作区那枚版式切换；两种目标版式的名字都认。 */
+const formatButton = () =>
+  container.querySelector<HTMLButtonElement>(
+    'button[aria-label="View inline"], button[aria-label="View side by side"]',
+  );
+
 const mouse = (type: string, button = 0) => new MouseEvent(type, { bubbles: true, button });
 
 /** signals 驱动的重画是微任务；断言 DOM 之前同步重画一次，省掉每处都 await。 */
@@ -70,6 +89,8 @@ beforeEach(() => {
   container = document.createElement('div');
   document.body.appendChild(container);
   resetEditors();
+  diffPanelWidth.value = SIDE_BY_SIDE_MIN_WIDTH;
+  diffFormatOverride.value = null;
   repoState.value = {
     repoName: 'demo',
     branch: { head: 'main', detached: false, upstream: null },
@@ -82,6 +103,10 @@ beforeEach(() => {
 
 afterEach(() => {
   render(null, container);
+  // 用了 fake timers 的用例要在换回真计时器之前把挂着的计时器跑掉：Preact 的 `useEffect` 排在
+  // rAF / setTimeout 上，且只在队列由空变非空时才排一次——假计时器下排的那一次永远不触发，队列
+  // 就一直非空，之后用例里的 effect 只进队不执行（症状是下一条「活动 tab 再滚一次」等不到调用）
+  if (vi.isFakeTimers()) vi.runOnlyPendingTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   vi.useRealTimers();
@@ -339,5 +364,83 @@ describe('Copy file contents', () => {
     // 1.5s 远没到：此刻换回 `Copy file contents` 只能是按键重挂，不是计时器到点
     activeEditorKey.value = editorKey('file', 'src/b.ts');
     await waitFor(() => expect(labelOf()).toBe('Copy file contents'));
+  });
+});
+
+describe('版式切换', () => {
+  const SHA = 'a'.repeat(40);
+  const PATCH: DiffPayload = { kind: 'text', patch: 'diff --git a/src/a.ts b/src/a.ts\n' };
+  /** 一份就绪的补丁状态（只造值、不写缓存，写由 `setDiffState` / `setCommitDiffState` 做）。 */
+  const readyDiff = (payload: DiffPayload): DiffRequestState => ({
+    status: 'ready',
+    rename: null,
+    payload,
+  });
+  const labelOf = () => formatButton()?.getAttribute('aria-label') ?? null;
+
+  it('diff tab 的文本补丁就绪时画在 tablist 之外；文案是目标版式，点一下翻过去', async () => {
+    pinned('diff', 'src/a.ts');
+    expect(formatButton()).toBeNull();
+
+    setDiffState('src/a.ts', readyDiff(PATCH));
+    await waitFor(() => expect(labelOf()).toBe('View inline'));
+    const button = formatButton();
+    expect(strip()?.contains(button ?? null)).toBe(false);
+    expect(bar()?.contains(button ?? null)).toBe(true);
+    // 同一时刻动作区至多一枚：diff tab 上没有复制全文
+    expect(copyButton()).toBeNull();
+
+    button?.click();
+    expect(diffOutputFormat.value).toBe('line-by-line');
+    await waitFor(() => expect(labelOf()).toBe('View side by side'));
+    formatButton()?.click();
+    expect(diffOutputFormat.value).toBe('side-by-side');
+    await waitFor(() => expect(labelOf()).toBe('View inline'));
+  });
+
+  it('untracked-text 与 commit tab 的文本补丁同样画', async () => {
+    pinned('diff', 'src/a.ts');
+    setDiffState('src/a.ts', readyDiff({ kind: 'untracked-text', patch: PATCH.patch }));
+    await waitFor(() => expect(formatButton()).not.toBeNull());
+
+    openCommitEditor(SHA, 'src/b.ts', undefined, true);
+    await waitFor(() => expect(formatButton()).toBeNull());
+    setCommitDiffState(SHA, 'src/b.ts', readyDiff(PATCH));
+    await waitFor(() => expect(formatButton()).not.toBeNull());
+  });
+
+  it('没有补丁表格时不画：加载中、出错、二进制、图片、过大，以及全文 tab', async () => {
+    pinned('diff', 'src/a.ts');
+    const noPatch: DiffRequestState[] = [
+      { status: 'loading', rename: null },
+      { status: 'error', rename: null, message: 'gone' },
+      readyDiff({ kind: 'binary' }),
+      readyDiff({ kind: 'image', old: null, new: null }),
+      readyDiff({ kind: 'too-large', size: 6_000_000, reason: 'size' }),
+    ];
+    // 每一档都从「按钮在」起步，理由同复制全文那条
+    for (const state of noPatch) {
+      setDiffState('src/a.ts', readyDiff(PATCH));
+      await waitFor(() => expect(formatButton()).not.toBeNull());
+      setDiffState('src/a.ts', state);
+      await waitFor(() => expect(formatButton()).toBeNull());
+    }
+
+    // 同一路径的补丁就在缓存里，切到全文 tab 也不画
+    setDiffState('src/a.ts', readyDiff(PATCH));
+    await waitFor(() => expect(formatButton()).not.toBeNull());
+    pinned('file', 'src/a.ts');
+    await waitFor(() => expect(formatButton()).toBeNull());
+  });
+
+  it('补丁就绪、动作区挤进来之后，活动 tab 再滚进视野一次', async () => {
+    const scrolled = vi.spyOn(HTMLElement.prototype, 'scrollIntoView');
+    pinned('diff', 'src/a.ts');
+    await waitFor(() => expect(scrolled).toHaveBeenCalledTimes(1));
+
+    setDiffState('src/a.ts', readyDiff(PATCH));
+    await waitFor(() => expect(formatButton()).not.toBeNull());
+    await waitFor(() => expect(scrolled).toHaveBeenCalledTimes(2));
+    expect(scrolled.mock.instances[1]).toBe(shellOf(tabByTitle('src/a.ts')));
   });
 });

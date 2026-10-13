@@ -6,13 +6,14 @@
 // 之后 × 的事件压根不经过 tab 按钮，那三样跟着消失。「在看哪个文件」由活动 tab 回答，完整路径
 // 挂在 `title` 上；栏下不再留一行路径横杠——每个文件的名字会在栏里与栏下各写一遍。
 //
-// **栏是两层，tablist 在里面**：右端那块编辑器动作区（全文 tab 的 `Copy file contents`）与
-// tablist 并排而不是躺在它里面，切法与侧栏那行 tab 一样——躺进去时读屏把按钮报成又一个 tab，
-// 而 tablist 是横向滚动容器，按钮还会跟着 tab 滚出视野。
+// **栏是两层，tablist 在里面**：右端那块编辑器动作区（全文 tab 的 `Copy file contents`、diff 与
+// commit tab 的版式切换）与 tablist 并排而不是躺在它里面，切法与侧栏那行 tab 一样——躺进去时
+// 读屏把按钮报成又一个 tab，而 tablist 是横向滚动容器，按钮还会跟着 tab 滚出视野。
 
 import { computed } from '@preact/signals';
-import { X } from 'lucide-preact';
+import { Columns2, type LucideIcon, Rows2, X } from 'lucide-preact';
 import { useEffect, useRef } from 'preact/hooks';
+import type { DiffOutputFormat } from '../diff/render';
 import {
   activeEditor,
   activeEditorKey,
@@ -22,7 +23,14 @@ import {
   pinEditor,
 } from '../state/editors';
 import { shortSha } from '../state/history';
-import { activateEditor, closeEditor, fileStates } from '../state/store';
+import { diffOutputFormat, toggleDiffOutputFormat } from '../state/layout';
+import {
+  activateEditor,
+  closeEditor,
+  commitDiffStates,
+  diffStates,
+  fileStates,
+} from '../state/store';
 import { splitForDisplay } from './ChangeList';
 import { Icon, KIND_ICON } from './Icon';
 import { IconButton } from './IconButton';
@@ -52,18 +60,55 @@ const activeFileText = computed<string | null>(() => {
   return state?.status === 'ready' && state.payload.kind === 'text' ? state.payload.content : null;
 });
 
+/**
+ * 活动 tab 有没有一张补丁表格可换版式：活动的是 diff 或 commit tab、且补丁 `ready` 并带着
+ * `patch` 时为真。动作区画不画版式切换由它定，与 `activeFileText` 一起决定活动 tab 要不要再滚一次。
+ *
+ * **判据是「payload 上有没有 `patch`」，不是列一遍 kind**：`DiffView` 交给 `Patch` 的正是带
+ * `patch` 的那几支，按结构判时新增一种带补丁的 kind 自动算进来，另列一张表则要与那个 switch
+ * 手动保持同步。
+ */
+const activePatchShown = computed<boolean>(() => {
+  const editor = activeEditor.value;
+  if (editor === null || editor.kind === 'file') return false;
+  // 两份缓存的键与 `DiffView` / `CommitDiffView` 读的同一套：diff 按路径，commit 按 tab 键
+  const state =
+    editor.kind === 'commit'
+      ? commitDiffStates.value.get(keyOf(editor))
+      : diffStates.value.get(editor.path);
+  return state?.status === 'ready' && 'patch' in state.payload;
+});
+
+/**
+ * 动作区此刻有没有一枚按钮。**画不画（`EditorActions`）与活动 tab 要不要再滚一次（`Tab`）读的是
+ * 这同一个 computed**：两处各自把两个判据拼一遍时，多一种动作只改了一处就静默漂开。
+ */
+const editorActionShown = computed<boolean>(
+  () => activeFileText.value !== null || activePatchShown.value,
+);
+
+/**
+ * 版式切换按**当前**版式查出要画的那枚。图标与文案表达的是**目标**版式，与变更列表的
+ * `VIEW_TOGGLE` 同类：一个动作按钮，不是显示当前档的状态灯。写成 `Record`：多一种版式时少填一格
+ * 是编译错误。
+ */
+const FORMAT_TOGGLE: Record<DiffOutputFormat, { icon: LucideIcon; label: string }> = {
+  'side-by-side': { icon: Rows2, label: 'View inline' },
+  'line-by-line': { icon: Columns2, label: 'View side by side' },
+};
+
 function Tab({ editor, active }: { editor: Editor; active: boolean }) {
   const key = keyOf(editor);
   const { dir, name } = splitForDisplay(editor.path);
   const self = useRef<HTMLDivElement>(null);
-  // 短路求值：只有活动那一个 tab 订阅 `activeFileText`，其余 tab 不因缓存变化重画
-  const actionsShown = active && activeFileText.value !== null;
+  // 短路求值：只有活动那一个 tab 订阅这个 computed，其余 tab 不因缓存变化重画
+  const actionsShown = active && editorActionShown.value;
 
   // 活动 tab 要在栏里看得见：tablist `overflow-x-auto`、新 tab 追加在末尾，溢出之后新开的那个就在
   // 屏幕外——正文换了而栏上看不出任何变化。`nearest`：已经看得见就一个像素都不动。
   //
-  // **动作区出现或消失时也再滚一次**：新开的全文 tab 先以 `loading` 激活、滚到 tablist 末端，正文
-  // 就绪后那枚复制按钮才挤进来，tablist 窄了一截而 `scrollLeft` 不动，活动 tab 的右端（连同它的 ×）
+  // **动作区出现或消失时也再滚一次**：新开的全文或 diff tab 先以 `loading` 激活、滚到 tablist 末端，
+  // 正文就绪后那枚按钮才挤进来，tablist 窄了一截而 `scrollLeft` 不动，活动 tab 的右端（连同它的 ×）
   // 就被裁在视野外
   useEffect(() => {
     if (active) self.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
@@ -126,23 +171,27 @@ function Tab({ editor, active }: { editor: Editor; active: boolean }) {
 }
 
 /**
- * 栏右端的编辑器动作区。眼下只有一枚：活动 tab 是全文、且正文已就绪时的 `Copy file contents`。
+ * 栏右端的编辑器动作区，按活动 tab 的种类至多画一枚：全文 tab 正文就绪时是 `Copy file contents`，
+ * diff / commit tab 补丁就绪为文本时是版式切换（点了就固定，语义在 `state/layout.ts`）。版式切换
+ * 不按 tab 键 `key`：它不带局部状态，版式本来就是全页面一份。
  *
  * 复制的是缓存里那份 `payload.content` 原文——不是 hljs 输出，也不带行号。其余几路（加载中、出错、
- * 二进制、图片、符号链接、过大）以及 diff / commit tab 都不画：没有正文可复制，灰着一枚按钮只是一块
- * 死区。按钮**按 tab 键 `key`**：`useCopied` 的状态跟着组件走，不重挂时切到另一个文件，那枚 ✓ 会
- * 把上一个文件的「已复制」挂在这一个上。
+ * 二进制、图片、符号链接、过大）都不画复制：没有正文可复制，灰着一枚按钮只是一块死区。按钮**按
+ * tab 键 `key`**：`useCopied` 的状态跟着组件走，不重挂时切到另一个文件，那枚 ✓ 会把上一个文件的
+ * 「已复制」挂在这一个上。
  */
 function EditorActions() {
   const editor = activeEditor.value;
+  if (editor === null || !editorActionShown.value) return null;
   const text = activeFileText.value;
-  if (editor === null || text === null) return null;
-  // `px-1.5` 与 tab 上那枚 × 的外壳同一个值：两枚 `IconButton` 离各自邻边一样远
-  return (
-    <span class="flex shrink-0 items-center px-1.5">
+  const action =
+    text !== null ? (
       <CopyButton key={keyOf(editor)} text={text} label="Copy file contents" />
-    </span>
-  );
+    ) : (
+      <IconButton {...FORMAT_TOGGLE[diffOutputFormat.value]} onClick={toggleDiffOutputFormat} />
+    );
+  // `px-1.5` 与 tab 上那枚 × 的外壳同一个值：两枚 `IconButton` 离各自邻边一样远
+  return <span class="flex shrink-0 items-center px-1.5">{action}</span>;
 }
 
 export function EditorTabs() {

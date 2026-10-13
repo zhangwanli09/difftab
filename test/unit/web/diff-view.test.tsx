@@ -8,7 +8,12 @@ import { render } from 'preact';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { DiffPayload } from '../../../src/server/shared/protocol';
 import { DiffView } from '../../../src/web/components/DiffView';
-import { diffPanelWidth, SIDE_BY_SIDE_MIN_WIDTH } from '../../../src/web/state/layout';
+import {
+  diffFormatOverride,
+  diffPanelWidth,
+  SIDE_BY_SIDE_MIN_WIDTH,
+  toggleDiffOutputFormat,
+} from '../../../src/web/state/layout';
 import { diffStates, type RenameInfo } from '../../../src/web/state/store';
 import { waitFor } from './helpers';
 
@@ -54,12 +59,14 @@ beforeEach(() => {
   // 面板宽度也要复位：它是模块级 signal，上一个用例写进去的值会跨用例串味，而串味的表现是「某条
   // 用例单跑绿、整档跑红」
   diffPanelWidth.value = SIDE_BY_SIDE_MIN_WIDTH;
+  diffFormatOverride.value = null;
 });
 
 afterEach(() => {
   render(null, container);
   diffStates.value = new Map();
   diffPanelWidth.value = SIDE_BY_SIDE_MIN_WIDTH;
+  diffFormatOverride.value = null;
 });
 
 describe('DiffView', () => {
@@ -231,5 +238,20 @@ describe('DiffView', () => {
     // diff2html 画好的 DOM 连同滚动位置一起丢掉（同上一条用例的判据）
     expect(payloadNode()).toBe(before);
     expect(container.textContent).toContain('const first');
+  });
+
+  it('手动切版式：就地重画成另一种，容器仍留在原地', async () => {
+    // 手动档走的是同一个 `diffOutputFormat`，所以不用另补依赖——这条钉的就是「没有另开一条通路」。
+    // 「固定之后拖宽度不再换」由 layout.test 按「下游一次通知都收不到」钉住，比在这里睡一拍再看 DOM 更硬
+    diffPanelWidth.value = 1400;
+    ready('a.ts', { kind: 'text', patch: patchFor('const first = 1;') });
+    show('a.ts');
+    await waitFor(() => expect(container.querySelectorAll('.d2h-file-side-diff')).toHaveLength(2));
+    const before = payloadNode();
+
+    toggleDiffOutputFormat();
+    await waitFor(() => expect(container.querySelectorAll('.d2h-diff-table')).toHaveLength(1));
+    expect(container.querySelectorAll('.d2h-file-side-diff')).toHaveLength(0);
+    expect(payloadNode()).toBe(before);
   });
 });
