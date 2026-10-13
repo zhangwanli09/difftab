@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.7.0](https://github.com/zhangwanli09/difftab/compare/v0.6.0...v0.7.0) (2026-10-13)
+
+
+### Features
+
+* **web:** add a Copy file contents button to file tabs ([#106](https://github.com/zhangwanli09/difftab/issues/106)) ([5130643](https://github.com/zhangwanli09/difftab/commit/51306434ac54f28a0d76e6ab064e5b7c341667c1))
+* **web:** add a side-by-side / inline toggle to diff tabs ([#107](https://github.com/zhangwanli09/difftab/issues/107)) ([5fab4dc](https://github.com/zhangwanli09/difftab/commit/5fab4dc8ad69e8bc32e5e6b1f2de797b27968d4b))
+* **web:** align colors with VS Code's 2026 default themes ([#109](https://github.com/zhangwanli09/difftab/issues/109)) ([121cf21](https://github.com/zhangwanli09/difftab/commit/121cf2105ceeeb9a773d913ae2c303b346c06fab))
+
+
+### Bug Fixes
+
+* **web:** drop the hash and subject line atop commit tabs ([#105](https://github.com/zhangwanli09/difftab/issues/105)) ([e0b7ea2](https://github.com/zhangwanli09/difftab/commit/e0b7ea2c33556121d544e59690d586245404c9fa))
+* **web:** put author and time on the hash line in commit tooltips ([#104](https://github.com/zhangwanli09/difftab/issues/104)) ([9840923](https://github.com/zhangwanli09/difftab/commit/984092351b21028f6e7ba9990ec961bbe86fdbbe))
+* **web:** right-align ref badges in the history list ([#102](https://github.com/zhangwanli09/difftab/issues/102)) ([60f26d4](https://github.com/zhangwanli09/difftab/commit/60f26d4329a4eb5a125cf8dc973b7e7f3e1d935c))
+
 ## [0.6.0](https://github.com/zhangwanli09/difftab/compare/v0.5.5...v0.6.0) (2026-10-12)
 
 
