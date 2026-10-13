@@ -41,7 +41,8 @@
 | 后台 tab 用一个 stale 标记记「SSE 后没重取」，激活时按标记决定取不取 | 多一份要在收编、改名、关闭各处维护的状态，而它省下的只是「切过去时内容没变也发一趟」那一次请求。`activateEditor` 每次都真的去取，与目录树的 `loadDir` 同一取向 |
 | 关掉活动 tab 后按最近使用顺序（MRU）选下一个 | 要多维护一份访问序列，换来的只是关掉一个刚从别处切过来的 tab 时少切一次。右邻居优先、否则左邻居，一眼能预期 |
 | 编辑器标签栏用 `overflow-x-hidden` 去掉滚动条 | `scrollIntoView` 照样能把活动 tab 滚进来，但用户自己滚不了——溢出之后前面的 tab 只能靠关掉后面的才够得着。`scrollbar-width: none` 只是不画滚动条，滚动能力一样不少 |
-| 编辑器标签栏外面再套一层 wrapper，栏留 `border-b`、tab 留 `-mb-px` | 多一层 div，且 tablist 不再是面板 `<section>` 的直接子项（`app.test.tsx` 钉着这条）。栏自己画一条 inset 阴影当分隔线，tab 的 `border-b` 落在 padding box 最后 1px 上盖过它，一层就够（`divider-b`） |
+| 编辑器标签栏的分隔线写成外层的 `border-b`、tab 留 `-mb-px` | 外层如今为了右端的动作区本就存在，但 tab 住在 tablist 这个滚动容器里，压出去的那 1px 照样被它裁掉。外层画一条 inset 阴影当分隔线，tab 的 `border-b` 落在它最后 1px 上盖过它（`divider-b`） |
+| `Copy file contents` 浮在全文正文的右上角（GitHub 代码块那种） | 正文那层是双向滚动容器、内容 `w-max`，浮层要在两个轴上都 sticky 才留得住，且会盖住长行末尾的代码。标签栏本就在滚动区之外，右端放动作照 VS Code editor title 的 actions |
 | 分隔线写成内联的 `shadow-[inset_0_-1px_var(--color-panel-border)]` | Tailwind 的 `shadow-*` 会把整套 shadow / ring 变量机制拖进产物：实测 CSS +2.2 KB（14 条 `@property` 注册、`@layer properties` 兜底块翻倍、五段式 `box-shadow` 里四段是 `0 0 #0000` 空转），为一条 1px 分隔线付整套机制；一条 `@utility divider-b { box-shadow: … }` 是 200 字节，测试也能钉一个名字而不是一段任意值的拼写 |
 | `Copy path` 放右键上下文菜单（VS Code 的 `Copy Path` 住在那里） | 仓库里没有任何菜单先例，为一项功能起整套定位、Escape、点外关闭、键盘导航；一项的菜单打开后还得再点一次。行内动作的机制上一版已为 `Open file` 铺好，第二枚只是往里再站一个，键盘可达性也一并继承（触屏靠 `pointer-coarse:flex` 常驻显示，见 [`../design/web.md`](../design/web.md)） |
 | `Copy path` 复制绝对路径，或两种路径各一枚（照 VS Code 的 Copy Path / Copy Relative Path） | 贴给 agent 与 `git` 子命令要的都是仓库相对路径，而它就是页面上现成的 `path`；绝对路径要给 `RepoState` 加 `root`（协议、冒烟断言各补一处）。再多一枚按钮时悬停要退 60px，320px 侧栏里近两成 |

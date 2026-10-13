@@ -34,8 +34,9 @@
 - **一个 tab = 种类图标 + 文件名 + 目录 + 关闭按钮。** 图标按 `kind`（`FileDiff` / `FileCode`），是同一路径两个 tab 之间唯一的视觉差别。文件名与目录**同住一个 `truncate` span**，理由同变更列表。预览 tab 的名字 `italic`。
   - **关闭按钮只在活动 tab 上常显，其余悬停或键盘焦点在 tab 内时才露出**（照 VS Code）。**用透明度藏而不是不渲染**：位置留着，悬停时 tab 宽度不跳。键盘那半条是 `group-focus-within`（不是行内动作那种 `has-focus-visible`）：活动 tab 本来就常亮着 ×，鼠标点过后焦点留在 tab 内也不会多钉住什么。`IconButton` 的悬停底色是半透明叠加的 `toolbar-hover-background`，否则在非活动 tab 的悬停底色上看不出反应。
 - **关闭按钮是 tab 按钮的兄弟，不是孩子**：套在里面时 tab 不是按钮，得手写 `tabIndex` / Enter / Space、另开手型光标规则、每个处理器加「来自 × 的事件不处理」守卫（不守时快速双击 × 会把滑到指针底下的邻居静默固定住），且 `role="tab"` 的子元素在无障碍树里只当文本、读屏看不见 ×。并排之后这些一起消失。中键（`auxclick` 且 `button === 1`）也关闭。`role="tablist"` 带 `aria-label="Open editors"`。
-- **选中态是 tab 自己的 `border-b`，通栏分隔线是栏的 `divider-b`（inset 阴影）——与侧栏那行 tab 同一套机制**。**这一栏是这套机制存在的理由**：它是滚动容器，按 padding box 裁内容，「栏 `border-b` + tab `-mb-px`」的教科书写法伸进 border 带的那 1px 会被裁掉——下划线看不见，还留下 1px 纵向可滚溢出，「始终显示滚动条」的系统设置下就是一条常驻滚动条。活动 tab 带 `bg-editor-background`，与正文连成一片。
-- **栏与左栏顶栏同高**（有断言）。**栏横向滚动、每个 tab `shrink-0`、滚动条隐藏（`scrollbar-none`）**：画出滚动条时栏会被撑高、与顶栏错开。**活动 tab 要自己滚进视野**（`scrollIntoView`，`inline: 'nearest'`）：否则溢出后新开的 tab 在屏幕外，正文换了而栏上看不出变化。
+- **栏是两层：外层管高度、底色与通栏分隔线，里面的 `role="tablist"` 只装 tab、管横向滚动，右端的编辑器动作区是 tablist 的兄弟**——与侧栏那行 tab 同一种切法。动作按钮躺进 tablist 时读屏把它报成又一个 tab，且会随 tab 一起横向滚出视野。动作区 `shrink-0`，tab 再多也钉在右端。
+- **选中态是 tab 自己的 `border-b`，通栏分隔线是外层的 `divider-b`（inset 阴影）——与侧栏那行 tab 同一套机制**。**这一栏是这套机制存在的理由**：tablist 是滚动容器，按 padding box 裁内容，「`border-b` + tab `-mb-px`」的教科书写法伸进 border 带的那 1px 会被裁掉——下划线看不见，还留下 1px 纵向可滚溢出，「始终显示滚动条」的系统设置下就是一条常驻滚动条。tablist 被 flex 拉满外层高度，tab 的 `border-b` 于是落在外层阴影那 1px 上、画在它上面。活动 tab 带 `bg-editor-background`，与正文连成一片。
+- **栏与左栏顶栏同高**（有断言）。**tablist 横向滚动、每个 tab `shrink-0`、滚动条隐藏（`scrollbar-none`）**：画出滚动条时栏会被撑高、与顶栏错开。**活动 tab 要自己滚进视野**（`scrollIntoView`，`inline: 'nearest'`）：否则溢出后新开的 tab 在屏幕外，正文换了而栏上看不出变化。**动作区出现或消失时也再滚一次**（有断言），判据与动作区画不画是同一个 computed：新开的全文 tab 先以 `loading` 激活、滚到 tablist 末端，正文就绪后复制按钮才挤进来，tablist 窄一截而 `scrollLeft` 不动，活动 tab 的右端连同 × 就被裁掉。拖窄侧栏或窗口同样会让 tablist 变窄，那一路不跟——要接 `ResizeObserver`，眼下不做。
 - **`DiffView` / `FileView` 接 `path` prop，在渲染体里读 `diffStates.value.get(path)`，不能用 `useComputed` 包**：`useComputed` 只随 signal 依赖重算，prop 换了它停在上一个 tab——「切了 tab 标题变了正文没变」。
 - **切 tab 是卸载重挂，滚动位置不保留**：diff2html 的 DOM 每份 MB 级，N 个 tab 常驻挂载等于 N 份 DOM，`outputFormat` 一变每份都要重画。**卸载重挂靠 `App` 给视图按 tab 键 `key`**：只换 `path` prop 时 `Panel` 连同 `scrollTop` 留着，B 从 A 的偏移量打开，而换视图种类时又从顶部开始——两种切法必须一个样子。视图里不再另给 `Payload` 一份 `key`。
 - **右侧空态只在栏里一个 tab 都没有时画**（`PanelEmptyState`）：`Changes` 档且工作区干净是 `Working tree clean` 配 ✓，其余是 `Select a file on the left`，图标按档位。「没得选」与「还没选」是两件事；第一份 state 没到时走「还没选」。
@@ -53,6 +54,7 @@
 - **`sticky left-0` 要成立，正文那一层必须是 `w-max`**：普通块盒只有面板宽，行号槽没有滑动余量，横向一滚整列行号跟着滑出视口，而 `sticky left-0` 字样还在原地。
 - **但 `w-max` 只能给正文那一路**，判据是按 `kind` 穷举的 `NEEDS_WIDE_BOX` 表（`Record` 漏键是编译错误，写成 `kind === 'text'` 一句则是第二处独立判定）：`max-content` 下提示行那几句散文会排成一行跑出面板，`break-all` 也救不了（实测读数见 [`../decisions/web.md`](../decisions/web.md)）。以上有断言。
 - 标签栏在滚动容器之外，不参与横向滚动。
+- **复制全文（`Copy file contents`）**：活动 tab 是 file 且全文 `ready`、`kind === 'text'` 时，标签栏右端的动作区画这一枚，把缓存里那份 `payload.content` 原文写进剪贴板——不是 hljs 输出，也不带行号。其余 kind、`loading` / `error`、diff 与 commit tab 都不画：没有正文可复制，灰着一枚按钮只是一块死区。写剪贴板与 `Check` + `Copied` 反馈复用行内动作那枚 `CopyButton`（规矩在 [`web.md`](web.md) 的「行内动作」）。**按钮按活动 tab 的键 `key`**：切 tab 时 `Copied` 归零，不把上一个文件的「已复制」带到这一个上。以上有断言。
 - **跳到行（全仓搜索的命中行）**：`openFile` 带 `line` 时在 `state/editors.ts` 记一份 `revealRequest { path, line }`，`FileView` 在 `text` 就绪且路径对得上时把那一行滚到面板竖直居中，并在那一行画一条绝对定位的整行高亮带。**行的位置按 `(line - 1) × 行高` 算**——行号槽靠同一个 `leading-5` 对齐，正文是一整块 hljs 输出、不按行切（理由同上）。每次请求都是一个新对象、跳行 effect 依赖它的身份，再点同一行也重新滚一次；高亮带留到下一次跳行或切走。**全文已 `ready` 时同样生效**，不等重取。
 
 ## 图片视图
