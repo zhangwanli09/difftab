@@ -218,16 +218,18 @@ describe('HistoryList 组件', () => {
     expect(container.textContent).toContain('Load more');
   });
 
-  test('悬停提示照 VS Code 的次序：作者与时间、主题、正文、哈希；没有正文不留空段', () => {
+  test('悬停提示的次序：主题、正文、哈希与作者时间同一行垫底；没有正文不留空段', () => {
     const now = (1_700_000_000 + 3 * 3600) * 1000;
     const withBody = commitTooltip(commit(100, { body: 'line 1\nline 2' }), now);
     const parts = withBody.split('\n\n');
-    expect(parts[0]).toMatch(/^Ann · 3 hours ago \(.+\)$/);
-    expect(parts.slice(1)).toEqual(['commit 100', 'line 1\nline 2', sha(100).slice(0, 7)]);
+    expect(parts).toEqual([
+      'commit 100',
+      'line 1\nline 2',
+      expect.stringMatching(/ · Ann · 3 hours ago \(.+\)$/),
+    ]);
+    expect(withBody).toContain(`\n\n${sha(100).slice(0, 7)} · Ann · `);
     expect(withBody).not.toContain(sha(100));
-    const bare = commitTooltip(commit(100), now);
-    expect(bare.split('\n\n')).toHaveLength(3);
-    expect(bare).not.toContain('\n\n\n');
+    expect(commitTooltip(commit(100), now).split('\n\n')).toHaveLength(2);
   });
 
   describe('滚到底自动翻页', () => {
