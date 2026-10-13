@@ -8,14 +8,17 @@
 
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  diffFormatOverride,
   diffOutputFormat,
   diffPanelWidth,
   SIDE_BY_SIDE_MIN_WIDTH,
+  toggleDiffOutputFormat,
 } from '../../../src/web/state/layout';
 
-// 复位成模块自己的初值——它是个模块级 signal，上一条用例写进去的宽度会跨用例串味
+// 复位成模块自己的初值——两个都是模块级 signal，上一条用例写进去的宽度与手动档会跨用例串味
 beforeEach(() => {
   diffPanelWidth.value = SIDE_BY_SIDE_MIN_WIDTH;
+  diffFormatOverride.value = null;
 });
 
 describe('diffOutputFormat', () => {
@@ -60,6 +63,41 @@ describe('diffOutputFormat', () => {
     expect(notifications).toBe(1);
     expect(diffOutputFormat.value).toBe('line-by-line');
 
+    stop();
+  });
+});
+
+describe('toggleDiffOutputFormat', () => {
+  it('从宽度给的那一种翻到另一种，再点翻回来', () => {
+    diffPanelWidth.value = 1400;
+    toggleDiffOutputFormat();
+    expect(diffOutputFormat.value).toBe('line-by-line');
+    toggleDiffOutputFormat();
+    expect(diffOutputFormat.value).toBe('side-by-side');
+
+    // 窄面板那一头同样以「当前」为起点，不是固定从并排起翻
+    diffFormatOverride.value = null;
+    diffPanelWidth.value = 700;
+    toggleDiffOutputFormat();
+    expect(diffOutputFormat.value).toBe('side-by-side');
+  });
+
+  it('点过之后跨阈值拖宽度也不再换版式——固定是这个开关的全部意义', () => {
+    diffPanelWidth.value = 700;
+    toggleDiffOutputFormat();
+    expect(diffOutputFormat.value).toBe('side-by-side');
+
+    let notifications = 0;
+    const stop = diffOutputFormat.subscribe(() => {
+      notifications += 1;
+    });
+    notifications = 0;
+
+    diffPanelWidth.value = 1400;
+    diffPanelWidth.value = 320;
+    expect(diffOutputFormat.value).toBe('side-by-side');
+    // 下游（`DiffView` 的 effect）连一次通知都收不到，不只是值碰巧没变
+    expect(notifications).toBe(0);
     stop();
   });
 });

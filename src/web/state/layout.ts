@@ -1,5 +1,5 @@
-// 布局派生状态（`outputFormat` 那条）。不放进 `store.ts`：那份装的是仓库状态，而面板宽度
-// 不是仓库的事，是页面自己的量。
+// 布局状态（`outputFormat` 那条）：面板宽度派生出的版式，加上用户手动固定的那一档。不放进
+// `store.ts`：那份装的是仓库状态，而面板宽度与版式偏好不是仓库的事，是页面自己的量。
 
 import { computed, signal } from '@preact/signals';
 import type { DiffOutputFormat } from '../diff/render';
@@ -24,15 +24,37 @@ export const SIDE_BY_SIDE_MIN_WIDTH = 1024;
 export const diffPanelWidth = signal(SIDE_BY_SIDE_MIN_WIDTH);
 
 /**
- * 当前该用哪种版式——**派生量，不是第二份状态**。`computed` 自带 `Object.is` 去重：拖窗口时
+ * 宽度判据给出的版式——**派生量，不是第二份状态**。`computed` 自带 `Object.is` 去重：拖窗口时
  * 每一像素都会写一次 `diffPanelWidth`，而下游只在**真的跨过阈值**那一次收到通知。**它封的是
  * 「每像素一次」，不是「每次跨越一次」**——贴着阈值来回蹭，每跨一次仍是一次完整的 `draw()`
  * （解析 + 全量高亮，同步）。没为此加迟滞或 debounce：同一次 `draw()` 的代价 SSE 刷新每来一
  * 个事件就要付一遍，而贴着边界反复拖是个转瞬即逝的动作，不值得把这个纯派生量变成第二份状态。
  */
-export const diffOutputFormat = computed<DiffOutputFormat>(() =>
+const autoFormat = computed<DiffOutputFormat>(() =>
   diffPanelWidth.value < SIDE_BY_SIDE_MIN_WIDTH ? 'line-by-line' : 'side-by-side',
 );
+
+/**
+ * 用户手动固定的版式，`null` 是「跟宽度走」。写入方只有 `toggleDiffOutputFormat`。与宽度那半
+ * 不同，它是用户的显式选择，不是派生量。**不进 `localStorage`**：端口随机，记了也活不过一次
+ * 重启；也因此刷新就回到自动，两态按钮不会把「跟宽度走」永久换掉。
+ */
+export const diffFormatOverride = signal<DiffOutputFormat | null>(null);
+
+/**
+ * 当前该用哪种版式。**override 与宽度判据合在这一个 `computed` 里**：`DiffView` 只订阅它，另开
+ * 一条通路时固定之后拖窗口照样换版式。固定之后观察者照写宽度，`autoFormat` 变了这里也不变，
+ * `Object.is` 去重让下游收不到通知。
+ */
+export const diffOutputFormat = computed<DiffOutputFormat>(
+  () => diffFormatOverride.value ?? autoFormat.value,
+);
+
+/** 翻到当前版式的另一种并固定下来——无论此刻是自动给的还是上次手动选的。 */
+export function toggleDiffOutputFormat(): void {
+  diffFormatOverride.value =
+    diffOutputFormat.value === 'side-by-side' ? 'line-by-line' : 'side-by-side';
+}
 
 /**
  * 把一个元素的宽度接到 `diffPanelWidth` 上，返回取消订阅的函数。

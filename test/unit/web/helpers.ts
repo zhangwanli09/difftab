@@ -36,6 +36,7 @@ import {
 } from '../../../src/web/state/sidebar';
 import {
   commitDiffStates,
+  type DiffRequestState,
   diffStates,
   type FileRequestState,
   fileStates,
@@ -81,6 +82,19 @@ export function hideHistory(): void {
 /** 写一个路径的全文缓存。 */
 export function setFileState(path: string, state: FileRequestState): void {
   fileStates.value = new Map(fileStates.value).set(path, state);
+}
+
+/** 写一个路径的工作区 diff 缓存。 */
+export function setDiffState(path: string, state: DiffRequestState): void {
+  diffStates.value = new Map(diffStates.value).set(path, state);
+}
+
+/** 写一次提交里一个文件的补丁缓存——键是 commit tab 的键，与产品里同一套。 */
+export function setCommitDiffState(sha: string, path: string, state: DiffRequestState): void {
+  commitDiffStates.value = new Map(commitDiffStates.value).set(
+    editorKey('commit', path, sha),
+    state,
+  );
 }
 
 /** 开一个固定 tab——产品里开出来的一律是预览，固定是双击那一下另做的，用例里合成一步。 */

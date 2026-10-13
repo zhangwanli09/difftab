@@ -55,6 +55,7 @@
 - **但 `w-max` 只能给正文那一路**，判据是按 `kind` 穷举的 `NEEDS_WIDE_BOX` 表（`Record` 漏键是编译错误，写成 `kind === 'text'` 一句则是第二处独立判定）：`max-content` 下提示行那几句散文会排成一行跑出面板，`break-all` 也救不了（实测读数见 [`../decisions/web.md`](../decisions/web.md)）。以上有断言。
 - 标签栏在滚动容器之外，不参与横向滚动。
 - **复制全文（`Copy file contents`）**：活动 tab 是 file 且全文 `ready`、`kind === 'text'` 时，标签栏右端的动作区画这一枚，把缓存里那份 `payload.content` 原文写进剪贴板——不是 hljs 输出，也不带行号。其余 kind、`loading` / `error`、diff 与 commit tab 都不画：没有正文可复制，灰着一枚按钮只是一块死区。写剪贴板与 `Check` + `Copied` 反馈复用行内动作那枚 `CopyButton`（规矩在 [`web.md`](web.md) 的「行内动作」）。**按钮按活动 tab 的键 `key`**：切 tab 时 `Copied` 归零，不把上一个文件的「已复制」带到这一个上。以上有断言。
+- **版式切换（`View inline` / `View side by side`）**：活动 tab 是 diff 或 commit、补丁 `ready` 且 `kind` 为 `text` / `untracked-text` 时，动作区画这一枚（语义在 [`diff-render.md`](diff-render.md) 的「版式：按面板宽度自动切，可手动固定」）。`loading` / `error`、`binary` / `image` / `too-large` 与 file tab 都不画：没有补丁表格可换版式。它与 `Copy file contents` 按 tab 种类互斥，动作区任一时刻至多一枚。**「动作区出现或消失时活动 tab 再滚进视野一次」的判据覆盖两枚**：新开的 diff tab 同样先以 `loading` 激活、补丁就绪后按钮才挤进来。以上有断言。
 - **跳到行（全仓搜索的命中行）**：`openFile` 带 `line` 时在 `state/editors.ts` 记一份 `revealRequest { path, line }`，`FileView` 在 `text` 就绪且路径对得上时把那一行滚到面板竖直居中，并在那一行画一条绝对定位的整行高亮带。**行的位置按 `(line - 1) × 行高` 算**——行号槽靠同一个 `leading-5` 对齐，正文是一整块 hljs 输出、不按行切（理由同上）。每次请求都是一个新对象、跳行 effect 依赖它的身份，再点同一行也重新滚一次；高亮带留到下一次跳行或切走。**全文已 `ready` 时同样生效**，不等重取。
 
 ## 图片视图
