@@ -23,6 +23,7 @@ import {
   groupOf,
   openPinned,
   resetEditors,
+  restoreRealTimers,
   revealSlotsIn,
   spacerIn,
   stubClipboard,
@@ -40,6 +41,7 @@ beforeEach(() => {
 
 afterEach(() => {
   render(null, container);
+  restoreRealTimers();
   // signals 活在组件树之外，不清就会漏进下一个用例
   resetEditors();
   changeView.value = 'list';
@@ -497,10 +499,6 @@ describe('ChangeList 的 Copy path 行内动作', () => {
   ];
   const copyButtonOf = (path: string) => actionOf(rowByTitle(path), 'Copy path');
   const openButtonOf = (path: string) => actionOf(rowByTitle(path), 'Open file');
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
 
   it('与 Open file 同住一个外壳、排在它左边；占位两枚宽', () => {
     render(<ChangeList files={[file({ path: 'src/a.ts', staged: 'M' })]} />, container);

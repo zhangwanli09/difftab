@@ -110,6 +110,17 @@ export function openPinned(kind: Exclude<EditorKind, 'commit'>, path: string): v
  */
 export const waitFor = (assert: () => void) => vi.waitFor(assert, { interval: 5 });
 
+/**
+ * 换回真计时器，换之前先把挂着的跑掉。Preact 的 `useEffect` 冲刷排在 rAF / setTimeout 上，且只在
+ * 队列由空变非空时才排一次——假计时器下排的那一次若被丢弃，队列就一直非空，本文件之后新挂载组件的
+ * effect 只进队不执行。放在 `render(null, container)` 之后调：冲刷会跳过已卸载的组件，不会在用例
+ * 结束后再替它们跑一遍 effect。
+ */
+export function restoreRealTimers(): void {
+  if (vi.isFakeTimers()) vi.runOnlyPendingTimers();
+  vi.useRealTimers();
+}
+
 /** 一条最小的变更条目，字段按需覆盖。 */
 export const file = (partial: Partial<FileEntry> & { path: string }): FileEntry => ({
   kind: 'tracked',

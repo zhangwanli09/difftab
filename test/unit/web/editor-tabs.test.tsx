@@ -33,6 +33,7 @@ import {
   file,
   openPinned,
   resetEditors,
+  restoreRealTimers,
   setCommitDiffState,
   setDiffState,
   setFileState,
@@ -103,13 +104,9 @@ beforeEach(() => {
 
 afterEach(() => {
   render(null, container);
-  // 用了 fake timers 的用例要在换回真计时器之前把挂着的计时器跑掉：Preact 的 `useEffect` 排在
-  // rAF / setTimeout 上，且只在队列由空变非空时才排一次——假计时器下排的那一次永远不触发，队列
-  // 就一直非空，之后用例里的 effect 只进队不执行（症状是下一条「活动 tab 再滚一次」等不到调用）
-  if (vi.isFakeTimers()) vi.runOnlyPendingTimers();
+  restoreRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
-  vi.useRealTimers();
 });
 
 describe('EditorTabs', () => {
