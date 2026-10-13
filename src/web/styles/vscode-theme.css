@@ -60,11 +60,11 @@
   /* 行底色 / 词级高亮 / 标签文字，增删各一套 */
   --d2h-ins-bg-color: var(--color-diff-inserted-background);
   --d2h-ins-highlight-bg-color: var(--color-diff-inserted-text-background);
-  --d2h-ins-border-color: var(--color-diff-inserted-border);
+  --d2h-ins-border-color: var(--color-diff-inserted-text-background);
   --d2h-ins-label-color: var(--color-git-added);
   --d2h-del-bg-color: var(--color-diff-removed-background);
   --d2h-del-highlight-bg-color: var(--color-diff-removed-text-background);
-  --d2h-del-border-color: var(--color-diff-removed-border);
+  --d2h-del-border-color: var(--color-diff-removed-text-background);
   --d2h-del-label-color: var(--color-git-deleted);
 
   /* 并排视图里"改动"那一对（左删右插）：diff2html 默认给的是琥珀 #fdf2d0 / 浅绿 #ded，与纯增

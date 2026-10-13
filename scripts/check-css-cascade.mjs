@@ -429,8 +429,9 @@ if (themedOutside.size === 0) {
 // **两种形状都得认**：构建目标一提就变回原生的，只认一种的话整条断言会以「一个双值 token 都没
 // 有」的形状假红。
 const DUAL_VALUE = /light-dark\(|--lightningcss-light\b[\s\S]*--lightningcss-dark\b/;
-// 15 个 hljs token **全部**该是双值，这一点与 --color-* 不同(那边「深浅共用同一取值」是正当写
-// 法，故只统计不断言)：它们逐一来自上游两份主题的同一处色值，而那两份实测逐条不同。
+// hljs token **全部**该是双值，这一点与 --color-* 不同(那边「深浅共用同一取值」是正当写
+// 法，故只统计不断言)：前景色逐一来自 VS Code 2026 深浅两份 tokenColors 的同一处色值，两个
+// -bg 来自 highlight.js 的 github / github-dark，实测深浅逐条不同。
 const hljsDecls = themedDecls.filter((d) => d.name.startsWith('--hljs-'));
 const singleValued = hljsDecls.filter((d) => !DUAL_VALUE.test(d.value)).map((d) => d.name);
 if (hljsDecls.length === 0) {
@@ -475,7 +476,7 @@ if (hljsRules.length > 0) {
       `${hardcoded.length}/${hljsRules.length} 条 hljs 规则里有硬编码颜色(如 "${normalize(firstOf(hardcoded).prelude).slice(0, 60)}")——深浅切换发生在 token 层，写死的那条在另一档下静默停在错的颜色上`,
     );
   } else {
-    notes.push(`hljs 规则：${hljsRules.length} 条，颜色全部走 var(--hljs-*)`);
+    notes.push(`hljs 规则：${hljsRules.length} 条，颜色全部走 var()`);
   }
 
   // 定义了却没人用 = 抄漏了它对应的那条规则。第 5 条查不到：它查的是引用侧的孤儿，

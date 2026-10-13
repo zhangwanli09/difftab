@@ -2,7 +2,7 @@
 
 > 设计 token、diff2html 配色覆写，以及「谁压得过谁」这件事的全部机制。组件与骨架在 [`web.md`](web.md)，diff 渲染在 [`diff-render.md`](diff-render.md)，选型与被排除的做法见 [`../decisions/style.md`](../decisions/style.md)，门禁见 [`../gates.md`](../gates.md)。
 
-**Tailwind v4（CSS-first，`@tailwindcss/vite`）。** 设计 token 写进 `@theme`，命名与数值参照 VS Code 颜色 token（如 `editor.background`），复刻 Dark+/Light+ 观感，轻量优先于还原度。引入完整 preflight——与 diff2html 的冲突面实测几乎为零，diff2html 的类选择器稳压 preflight 的通配重置。
+**Tailwind v4（CSS-first，`@tailwindcss/vite`）。** 设计 token 写进 `@theme`，命名与数值参照 VS Code 颜色 token（如 `editor.background`），复刻 VS Code 默认主题 Light 2026 / Dark 2026 的观感，轻量优先于还原度。引入完整 preflight——与 diff2html 的冲突面实测几乎为零，diff2html 的类选择器稳压 preflight 的通配重置。
 
 在此之上用**层叠层**做结构性隔离——**无层（unlayered）样式永远胜过有层样式，与特异性无关**，而 Tailwind v4 把 preflight 放在 `@layer base`：
 
@@ -40,18 +40,17 @@
 
 **上游 `github.css` / `github-dark.css` 切不出手动档**：两份都是无条件的 `.hljs` 规则，旧方案靠给深色那份的 `@import` 加媒体条件——而媒体条件切不出手动档；要跟着 `data-theme` 走只能在构建期给选择器加作用域前缀。
 
-于是收进与 `--d2h-*` **相同**的机制：15 个 `--hljs-*` token 各写一条 `light-dark()`，15 条规则的选择器与顺序逐条照抄上游，颜色一律 `var(--hljs-…)`——漏一条写成硬编码时，另一档下那一处静默停在错的颜色上（`check:css` 拦）。没抄的 3 条：一条空规则，以及 `code.hljs` / `pre code.hljs`——diff2html 整包没有 `<code>` 元素。
+于是收进与 `--d2h-*` **相同**的机制：每个 `--hljs-*` token 各写一条 `light-dark()`，15 条规则的选择器与顺序逐条照抄上游，颜色一律走 `var()`——漏一条写成硬编码时，另一档下那一处静默停在错的颜色上（`check:css` 拦）。没抄的 3 条：一条空规则，以及 `code.hljs` / `pre code.hljs`——diff2html 整包没有 `<code>` 元素。
 
-- **代价是色值抄进了仓库**，不随 highlight.js 升级。体积小幅净增（Lightning CSS 降级后的 token 流更长）。
-- **两个 token 浅色下与别的同值、深色下才分叉**（`markup-heading`、`markup-inserted`），**必须各自独立**——就近复用时深色悄悄错色，浅色下看不出。
-- **`--hljs-bg` 保持上游取值**，不映射到编辑器底色：合并主题不该顺手改观感。
+- **色值取自 VS Code 2026 两份主题的 `tokenColors`**，不再是 highlight.js 的 github / github-dark：两者同属 GitHub Primer 一系，深色几乎逐值相同，浅色是 Primer 新一版。代价是色值抄进了仓库，不随 VS Code 或 highlight.js 升级。体积小幅净增（Lightning CSS 降级后的 token 流更长）。
+- **`heading` 与 `constant`、`list` 与 `variable`、`inserted` 与 `entity-tag` 眼下深浅两档都同值，但必须各自独立**：它们是不同的语义，上游 highlight.js 那版就有浅色同值、深色分叉的——就近复用之后一旦再分叉，错色只出现在一档里。
 - **`check:css` 只能证明「都走了 `var()`」**（无硬编码颜色、每个 `--hljs-*` 双值且被引用），证明不了色值抄对了。
 
 ## 文件视图与 `.hljs`
 
-我们那份主题里的 `.hljs { color; background }` 是 **unlayered** 的，diff2html 把 `hljs` 类加在行容器上，那正是 diff 视图代码区底色的来源。
+**`.hljs` 只管 `color`，不管底色**。diff2html 把 `hljs` 类加在 `.d2h-code-line-ctn` 上，而它自己的 `.d2h-code-line-ctn{background:none}` 特异性相同、排在后面——上游那条 `background` 抄进来也从来压不过它，故不抄。diff 代码区的底色归 `--d2h-*`（未改动行是 `--d2h-bg-color`）。
 
-**文件视图的容器不得加这个类**：unlayered 规则胜过 `@layer utilities`，`class="hljs bg-editor-background"` 里赢的是 `.hljs`——症状只是文件视图底色跟页面对不上。不加也不损失什么：15 条 token 规则是独立选择器，不挂容器类照样命中。
+文件视图的容器不挂 `hljs` 类，也用不着：token 规则是独立选择器，不挂容器类照样命中；底色走容器自己的 `bg-editor-background`。
 
 ## 为什么 `colorScheme` 传 `'light'`
 
