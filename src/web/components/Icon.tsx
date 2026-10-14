@@ -45,8 +45,8 @@ export function Icon({
 }
 
 /**
- * 三种 tab 的种类图标——编辑器 tab 上那枚与空着时右侧那枚**同一张表**，住在图标外壳旁边而不是
- * 某一个消费者里。写成 `Record` 是让加第四种 tab 时少填一格成为编译错误。
+ * 三种 tab 的种类图标，编辑器 tab 上画的那枚。写成 `Record` 是让加第四种 tab 时少填一格成为
+ * 编译错误。
  */
 export const KIND_ICON: Record<EditorKind, LucideIcon> = {
   diff: FileDiff,

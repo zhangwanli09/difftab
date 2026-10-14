@@ -345,7 +345,7 @@ describe('tab 行右端那枚列表 / 树切换', () => {
 });
 
 /**
- * 右侧面板：空态与标签栏的位置。空态那三句从 diff-view 那份搬过来——它们现在归 `App`，两个视图
+ * 右侧面板：空态与标签栏的位置。空态从 diff-view 那份搬过来——它现在归 `App`，两个视图
  * 自己不再有空态分支。
  */
 describe('右侧面板', () => {
@@ -354,39 +354,43 @@ describe('右侧面板', () => {
   const tabBar = () => tabStrip()?.parentElement;
   const scroller = () => section()?.querySelector('.overflow-auto');
 
-  it('栏里没有 tab 时给一句提示，居中并配一枚图标', async () => {
+  it('栏里没有 tab 时画快捷键列表，居中', async () => {
     render(<App />, container);
-    await waitFor(() => expect(section()?.textContent).toContain('Select a file on the left'));
+    await waitFor(() => expect(section()?.textContent).toContain('Go to File'));
+    expect(section()?.textContent).toContain('Search');
+    // 每个按键一枚 `<kbd>`：P 那条两枚，F 那条三枚；整列对读屏隐藏，符号念出来没有意义
+    expect(section()?.querySelectorAll('kbd')).toHaveLength(5);
+    for (const dd of section()?.querySelectorAll('dd') ?? []) {
+      expect(dd.getAttribute('aria-hidden')).toBe('true');
+    }
 
-    // 空态居中并配图标。happy-dom 没有排版引擎，能钉的只有类名（撑满为什么是前提在 EmptyState.tsx）
+    // 空态居中。happy-dom 没有排版引擎，能钉的只有类名（撑满为什么是前提在 EmptyState.tsx）。
+    // 居中靠里层 `m-auto` 而不是外层 `justify-center`：面板矮时后者往上溢出、顶上那截滚不到
     const box = section()?.firstElementChild;
-    for (const cls of ['flex-1', 'items-center', 'justify-center']) {
+    for (const cls of ['flex-1', 'overflow-auto']) {
       expect(box?.classList.contains(cls)).toBe(true);
     }
-    expect(section()?.querySelector('svg.lucide-file-diff')).not.toBeNull();
+    expect(box?.classList.contains('justify-center')).toBe(false);
+    expect(box?.firstElementChild?.classList.contains('m-auto')).toBe(true);
+    // 第一份 state 还没到：不知道干不干净，不说那句
+    expect(section()?.textContent).not.toContain('Working tree clean');
     expect(tabStrip()).toBeNull();
   });
 
-  it('工作区干净时换一句——「点左边一个文件」指着的是一个空列表', async () => {
-    // 「没得选」与「还没选」是两件事：上一条用例的 repoState 是 null，走的正是「还没选」那句
+  it('工作区干净时列表上方多一句——它答的是「为什么没得看」', async () => {
     repoState.value = stateWith('demo');
     render(<App />, container);
 
     await waitFor(() => expect(section()?.textContent).toContain('Working tree clean'));
-    expect(section()?.textContent).not.toContain('Select a file on the left');
-    // 图标跟着文案一起换：干净是一个 ✓，不再是那份 diff
-    expect(section()?.querySelector('svg.lucide-circle-check')).not.toBeNull();
-    expect(section()?.querySelector('svg.lucide-file-diff')).toBeNull();
+    expect(section()?.textContent).toContain('Go to File');
   });
 
-  it('切到 Files 档时空态跟着档走：图标换成全文那枚，干净也照样说「点左边一个」', async () => {
-    // 干净仓库 + Files 档：那一档列的是整棵目录树，「Working tree clean」对着一列能点的文件说不通
+  it('切到 Files 档时干净也不说那句：那一档列的是整棵目录树，照样能点', async () => {
     repoState.value = stateWith('demo');
     activeTab.value = 'files';
     render(<App />, container);
 
-    await waitFor(() => expect(section()?.querySelector('svg.lucide-file-code')).not.toBeNull());
-    expect(section()?.textContent).toContain('Select a file on the left');
+    await waitFor(() => expect(section()?.textContent).toContain('Go to File'));
     expect(section()?.textContent).not.toContain('Working tree clean');
   });
 
@@ -401,7 +405,7 @@ describe('右侧面板', () => {
     expect(tabBar()?.parentElement).toBe(section());
     expect(tabBar()?.nextElementSibling).toBe(scroller());
     expect(tabStrip()?.textContent).toContain('app.ts');
-    expect(section()?.textContent).not.toContain('Select a file on the left');
+    expect(section()?.textContent).not.toContain('Go to File');
   });
 
   it('标签栏与左栏顶栏钉同一个高度——漂开时不报错，只是两条底边看着不齐', async () => {
@@ -447,7 +451,7 @@ describe('右侧面板', () => {
     await waitFor(() => expect(section()?.textContent).toContain('Binary file'));
 
     container.querySelector<HTMLButtonElement>('section button[aria-label="Close"]')?.click();
-    await waitFor(() => expect(section()?.textContent).toContain('Select a file on the left'));
+    await waitFor(() => expect(section()?.textContent).toContain('Go to File'));
     expect(editors.value).toEqual([]);
   });
 });
