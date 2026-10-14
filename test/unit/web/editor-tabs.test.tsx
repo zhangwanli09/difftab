@@ -4,13 +4,13 @@
 // 快速双击 × 会把滑到指针底下的邻居固定住，且读屏看不见它）；预览 tab 斜体、固定之后转正；同一
 // 路径的 diff 与全文是两个 tab、图标是它们之间唯一的视觉差别；关闭按钮只在活动 tab 上常显；
 // 复制全文那枚只在全文正文就绪时出现、站在 tablist 之外；版式切换那枚只在 diff / commit 的文本补丁
-// 就绪时出现。
+// 就绪时出现；目录只在撞名时画最短可区分的尾段；名字与文件树同色、commit tab 不染。
 // happy-dom 没有排版引擎，横向滚、截断与透明度只能钉类名。
 
 import { render } from 'preact';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DiffPayload, FilePayload } from '../../../src/server/shared/protocol';
-import { EditorTabs } from '../../../src/web/components/EditorTabs';
+import { distinguishingDirs, EditorTabs } from '../../../src/web/components/EditorTabs';
 import {
   activeEditorKey,
   editorKey,
@@ -32,6 +32,7 @@ import {
 import {
   file,
   openPinned,
+  repo,
   resetEditors,
   restoreRealTimers,
   setCommitDiffState,
@@ -110,13 +111,35 @@ afterEach(() => {
 });
 
 describe('EditorTabs', () => {
-  it('一个 editor 一个 tab、按顺序，title 是完整路径，名字与目录各一段', () => {
+  it('一个 editor 一个 tab、按顺序，title 是完整路径；没有同名时只画文件名、不画目录', () => {
     pinned('diff', 'src/a.ts');
     pinned('file', 'docs/b.md');
     expect(tabs().map((tab) => tab.title)).toEqual(['src/a.ts', 'docs/b.md']);
     const label = tabByTitle('src/a.ts').querySelector('.truncate');
-    expect(label?.textContent).toBe('a.tssrc');
-    expect(label?.querySelector('span')?.textContent).toBe('src');
+    expect(label?.textContent).toBe('a.ts');
+    expect(label?.querySelector('span')).toBeNull();
+  });
+
+  it('同名不同路径时画最短可区分的目录后缀，关掉一个后另一个的目录跟着消失', () => {
+    pinned('diff', 'packages/foo/src/index.ts');
+    pinned('file', 'packages/bar/src/index.ts');
+    const dirOf = (title: string) =>
+      tabByTitle(title).querySelector('.truncate > span')?.textContent ?? null;
+    expect(dirOf('packages/foo/src/index.ts')).toBe('…/foo/src');
+    expect(dirOf('packages/bar/src/index.ts')).toBe('…/bar/src');
+    closeOf(tabByTitle('packages/bar/src/index.ts')).click();
+    flush();
+    expect(dirOf('packages/foo/src/index.ts')).toBeNull();
+  });
+
+  it('同一路径的 diff、全文与 commit tab 不算撞名——目录一样，画了也分不开', () => {
+    pinned('diff', 'src/a.ts');
+    pinned('file', 'src/a.ts');
+    openCommitEditor('a'.repeat(40), 'src/a.ts', undefined, true);
+    flush();
+    for (const tab of tabs()) {
+      expect(tab.querySelector('.truncate')?.textContent).not.toContain('src');
+    }
   });
 
   it('同一路径的 diff 与全文是两个 tab，图标按 kind 区分', () => {
@@ -439,5 +462,69 @@ describe('版式切换', () => {
     await waitFor(() => expect(formatButton()).not.toBeNull());
     await waitFor(() => expect(scrolled).toHaveBeenCalledTimes(2));
     expect(scrolled.mock.instances[1]).toBe(shellOf(tabByTitle('src/a.ts')));
+  });
+});
+
+describe('distinguishingDirs', () => {
+  it('取最短可区分的尾段，没取全时前面写 …/；没撞名的不在表里', () => {
+    expect(
+      distinguishingDirs(['packages/foo/src/index.ts', 'packages/bar/src/index.ts', 'README.md']),
+    ).toEqual(
+      new Map([
+        ['packages/foo/src/index.ts', '…/foo/src'],
+        ['packages/bar/src/index.ts', '…/bar/src'],
+      ]),
+    );
+  });
+
+  it('根目录下的文件没有目录段，画空；另一边一段就够', () => {
+    expect(distinguishingDirs(['index.ts', 'src/index.ts'])).toEqual(
+      new Map([
+        ['index.ts', ''],
+        ['src/index.ts', 'src'],
+      ]),
+    );
+  });
+
+  it('三个同名时按与每个邻居的最大公共尾段取，取到了全长就不写 …/', () => {
+    expect(distinguishingDirs(['a/x/m.ts', 'b/x/m.ts', 'c/y/m.ts'])).toEqual(
+      new Map([
+        ['a/x/m.ts', 'a/x'],
+        ['b/x/m.ts', 'b/x'],
+        ['c/y/m.ts', '…/y'],
+      ]),
+    );
+  });
+});
+
+describe('按 git 状态染色', () => {
+  const labelOf = (title: string) => tabByTitle(title).querySelector('.truncate') as HTMLElement;
+
+  it('diff 与全文 tab 的名字与文件树同色，不在改动里的不染', () => {
+    pinned('diff', 'src/a.ts');
+    pinned('file', 'src/b.ts');
+    pinned('file', 'docs/c.md');
+    expect(labelOf('src/a.ts').classList).toContain('text-git-modified');
+    expect(labelOf('src/b.ts').classList).toContain('text-git-modified');
+    expect(labelOf('docs/c.md').className).not.toMatch(/text-git-/);
+  });
+
+  it('commit tab 不染——那是历史补丁，工作区的状态说的不是它', () => {
+    const sha = 'a'.repeat(40);
+    openCommitEditor(sha, 'src/a.ts', undefined, true);
+    flush();
+    expect(labelOf(`src/a.ts @ ${sha}`).className).not.toMatch(/text-git-/);
+  });
+
+  it('状态变了颜色跟着变', async () => {
+    pinned('diff', 'src/a.ts');
+    repoState.value = repo({
+      files: [file({ path: 'src/a.ts', staged: 'U', unstaged: 'U', conflicted: true })],
+    });
+    // tab 自己订阅 `codeByPath`，这一下是 signals 调度的异步重画，根上那次同步 `flush()` 不带它
+    await waitFor(() => {
+      expect(labelOf('src/a.ts').classList).toContain('text-git-conflicting');
+      expect(labelOf('src/a.ts').classList).not.toContain('text-git-modified');
+    });
   });
 });
