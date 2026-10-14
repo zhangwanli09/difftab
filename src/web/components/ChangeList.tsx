@@ -71,7 +71,8 @@ const badgeLetter = (code: StatusCode) => BADGE_LETTERS[code] ?? code;
  * 路径拆成目录与文件名两段展示。分隔符恒为 `/`（由后端保证），因此这里不需要也不应该考虑平台
  * 差异——那属于 git 知识。**目录段不含尾部斜杠**（它排在文件名之后、单独成一段），于是
  * `dir + name` 拼不回 `path`——名字里的 ForDisplay 就是这个意思。**导出给标签栏共用**：tab 上的
- * 名字与目录要与这一行是同一种拆法，各写一份时漂开的症状是同一个文件在两处显示成两个名字。
+ * 名字要与这一行是同一种拆法，各写一份时漂开的症状是同一个文件在两处显示成两个名字（目录那半 tab
+ * 只在撞名时画、另有算法，但按什么算撞名仍是这里拆出来的名字）。
  */
 export function splitForDisplay(path: string): { dir: string; name: string } {
   const slash = path.lastIndexOf('/');
@@ -84,7 +85,7 @@ export function splitForDisplay(path: string): { dir: string; name: string } {
  * 状态位的**颜色**，同样只是展示。取的是 VS Code `gitDecoration.*` 那套 token，让徽章的颜色
  * 语义与用户在编辑器里看到的一致。深浅两套取值在 token 层翻，这里不出现 `dark:` 变体。
  *
- * **导出给文件树共用，不复制一份**：同一个文件在两处必须是同一个颜色，而两份表漂开之后
+ * **导出给文件树与标签栏共用，不复制一份**：同一个文件在几处必须是同一个颜色，而两份表漂开之后
  * 页面上只是「树里那个 M 跟列表里那个 M 不一样绿」。
  */
 export const CODE_COLORS: Record<StatusCode, string> = {

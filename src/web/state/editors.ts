@@ -57,6 +57,15 @@ export const keyOf = (editor: Editor): EditorKey =>
     ? editorKey(editor.kind, editor.path, editor.sha)
     : editorKey(editor.kind, editor.path);
 
+/**
+ * 这个 tab 显示的是不是工作区里 `path` 那一份：是就回 `path`，不是回 `null`。**commit tab 是唯一的
+ * 「不是」**——它是历史上的某一版，与左栏同名那一行、与工作区此刻的状态说的都不是同一份内容。两栏
+ * 高亮（`activeEditorPath`）与 tab 名染色都按它判：各写一遍 `kind === 'commit'` 时，多一种显示非工作区
+ * 内容的 tab 只改了一处，症状是 tab 染着工作区的色、左栏却不亮，或者反过来。
+ */
+export const worktreePathOf = (editor: Editor): string | null =>
+  editor.kind === 'commit' ? null : editor.path;
+
 /** 换掉第 `index` 项，回一份新数组。`Array.prototype.with` 是 ES2023，前端 lib 停在 ES2022。 */
 const replaceAt = (list: readonly Editor[], index: number, editor: Editor): Editor[] =>
   list.map((item, i) => (i === index ? editor : item));
@@ -84,9 +93,8 @@ export const activeEditor = computed<Editor | null>(() => {
  */
 export const activeEditorPath = computed<string | null>(() => {
   const editor = activeEditor.value;
-  // **commit tab 是唯一的例外**：两栏里同名的那一行说的是工作区那一份，而右侧是历史上的某一
-  // 版——照亮它是在说一件不成立的事。判据是「左栏那一行与右侧是不是同一份内容」，不是种类
-  return editor === null || editor.kind === 'commit' ? null : editor.path;
+  // commit tab 不亮：两栏里同名的那一行说的是工作区那一份，照亮它是在说一件不成立的事
+  return editor === null ? null : worktreePathOf(editor);
 });
 
 /**

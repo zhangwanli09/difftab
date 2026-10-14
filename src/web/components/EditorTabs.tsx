@@ -1,16 +1,16 @@
 // 右侧面板顶上那条编辑器标签栏——面板唯一的 chrome，排在滚动区域之外。
 //
-// 一个 tab = 种类图标 + 文件名 + 目录 + 关闭按钮。**关闭按钮是 tab 按钮的兄弟，不是孩子**：套在
-// 里面时 tab 就不能是 `<button>`（按钮里不能套按钮），于是键盘激活、光标、以及「来自 × 的事件
-// 不能落到 tab 的处理器上」三样都得手写，而 `role="tab"` 的子元素在无障碍树里本就只当文本。并排
-// 之后 × 的事件压根不经过 tab 按钮，那三样跟着消失。「在看哪个文件」由活动 tab 回答，完整路径
-// 挂在 `title` 上；栏下不再留一行路径横杠——每个文件的名字会在栏里与栏下各写一遍。
+// 一个 tab = 种类图标 + 文件名 +（同名时的）目录 + 关闭按钮。**关闭按钮是 tab 按钮的兄弟，不是
+// 孩子**：套在里面时 tab 就不能是 `<button>`（按钮里不能套按钮），于是键盘激活、光标、以及「来自
+// × 的事件不能落到 tab 的处理器上」三样都得手写，而 `role="tab"` 的子元素在无障碍树里本就只当
+// 文本。并排之后 × 的事件压根不经过 tab 按钮，那三样跟着消失。「在看哪个文件」由活动 tab 回答，
+// 完整路径挂在 `title` 上；栏下不再留一行路径横杠——每个文件的名字会在栏里与栏下各写一遍。
 //
 // **栏是两层，tablist 在里面**：右端那块编辑器动作区（全文 tab 的 `Copy file contents`、diff 与
 // commit tab 的版式切换）与 tablist 并排而不是躺在它里面，切法与侧栏那行 tab 一样——躺进去时
 // 读屏把按钮报成又一个 tab，而 tablist 是横向滚动容器，按钮还会跟着 tab 滚出视野。
 
-import { computed } from '@preact/signals';
+import { computed, useComputed } from '@preact/signals';
 import { Columns2, type LucideIcon, Rows2, X } from 'lucide-preact';
 import { useEffect, useRef } from 'preact/hooks';
 import type { DiffOutputFormat } from '../diff/render';
@@ -21,17 +21,19 @@ import {
   editors,
   keyOf,
   pinEditor,
+  worktreePathOf,
 } from '../state/editors';
 import { shortSha } from '../state/history';
 import { diffOutputFormat, toggleDiffOutputFormat } from '../state/layout';
 import {
   activateEditor,
   closeEditor,
+  codeByPath,
   commitDiffStates,
   diffStates,
   fileStates,
 } from '../state/store';
-import { splitForDisplay } from './ChangeList';
+import { CODE_COLORS, splitForDisplay } from './ChangeList';
 import { Icon, KIND_ICON } from './Icon';
 import { IconButton } from './IconButton';
 import { CopyButton } from './tree-row';
@@ -97,12 +99,72 @@ const FORMAT_TOGGLE: Record<DiffOutputFormat, { icon: LucideIcon; label: string 
   'line-by-line': { icon: Columns2, label: 'View side by side' },
 };
 
-function Tab({ editor, active }: { editor: Editor; active: boolean }) {
+/**
+ * 栏里有**另一条路径**与之同名的那些路径，各画哪段目录：取最短可区分的那几段尾段。没撞名的路径不在
+ * 表里，根目录下的文件撞了名也是空串。
+ *
+ * 段数 = 1 + 与其余每个同名路径的公共尾段数的最大值，截到全长；没取全时前面写 `…/`。取尾段而不是
+ * 整段目录：能区分的那段常在中间，而目录排在名字后面、整段画出来会被 `max-w-64` 从右端裁掉，裁完
+ * 两个 tab 还是一个样。传进来的路径可以重复（同一路径的 diff 与全文 tab）——那不算撞名，先去重。
+ */
+export function distinguishingDirs(paths: readonly string[]): Map<string, string> {
+  const byName = new Map<string, { path: string; segments: string[] }[]>();
+  for (const path of new Set(paths)) {
+    const { name } = splitForDisplay(path);
+    const entry = { path, segments: path.split('/').slice(0, -1) };
+    const group = byName.get(name);
+    if (group === undefined) byName.set(name, [entry]);
+    else group.push(entry);
+  }
+  const dirs = new Map<string, string>();
+  for (const group of byName.values()) {
+    if (group.length === 1) continue;
+    for (const { path, segments } of group) {
+      // 与其余每个同名路径从末尾往前数有几段相同，取最大
+      let shared = 0;
+      for (const other of group) {
+        if (other.path === path) continue;
+        let n = 0;
+        while (n < segments.length && segments.at(-1 - n) === other.segments.at(-1 - n)) n++;
+        shared = Math.max(shared, n);
+      }
+      const count = Math.min(shared + 1, segments.length);
+      const tail = segments.slice(segments.length - count).join('/');
+      dirs.set(path, count < segments.length ? `…/${tail}` : tail);
+    }
+  }
+  return dirs;
+}
+
+/**
+ * 整栏一张表：撞不撞名要看邻居，单个 tab 自己算不出来——关掉一个同名 tab 时，另一个的目录得跟着
+ * 消失。
+ */
+const tabDirs = computed(() => distinguishingDirs(editors.value.map((editor) => editor.path)));
+
+function Tab({
+  editor,
+  active,
+  dir,
+}: {
+  editor: Editor;
+  active: boolean;
+  dir: string | undefined;
+}) {
   const key = keyOf(editor);
-  const { dir, name } = splitForDisplay(editor.path);
+  const { name } = splitForDisplay(editor.path);
   const self = useRef<HTMLDivElement>(null);
   // 短路求值：只有活动那一个 tab 订阅这个 computed，其余 tab 不因缓存变化重画
   const actionsShown = active && editorActionShown.value;
+  // 名字按 git 状态染色，与文件树同一张 `codeByPath`、同一张 `CODE_COLORS`；commit tab 不染（判据在
+  // `worktreePathOf`）。**包成 `computed`**：`codeByPath` 每个 SSE 都换一份，直接读时每次刷新整栏
+  // tab 都重画，包了只在这个 tab 自己的状态码变了才重画。闭包捕获挂载时的 `editor` 不会过期——tab
+  // 按 `keyOf` 挂载，路径与种类都在键里，改名即重挂
+  const code = useComputed(() => {
+    const path = worktreePathOf(editor);
+    return path === null ? undefined : codeByPath.value.get(path);
+  }).value;
+  const color = code === undefined ? '' : CODE_COLORS[code];
 
   // 活动 tab 要在栏里看得见：tablist `overflow-x-auto`、新 tab 追加在末尾，溢出之后新开的那个就在
   // 屏幕外——正文换了而栏上看不出任何变化。`nearest`：已经看得见就一个像素都不动。
@@ -143,7 +205,7 @@ function Tab({ editor, active }: { editor: Editor; active: boolean }) {
         <Icon icon={KIND_ICON[editor.kind]} class="shrink-0" />
         {/* 文件名与目录同住一个 truncate span（名在前、目录作它的行内子元素），理由与变更列表
             那一行一字不差：省略号在右端天然先吃掉目录。预览 tab 斜体，固定之后转正 */}
-        <span class={`max-w-64 min-w-0 truncate${editor.pinned ? '' : ' italic'}`}>
+        <span class={`max-w-64 min-w-0 truncate ${editor.pinned ? '' : 'italic'} ${color}`}>
           {name}
           {/* commit tab 在名后跟一个短哈希：同一个文件在两次提交里是两个 tab，没有它两个长得一样 */}
           {editor.kind === 'commit' && (
@@ -196,6 +258,7 @@ function EditorActions() {
 
 export function EditorTabs() {
   const active = activeEditorKey.value;
+  const dirs = tabDirs.value;
   // 外层：`h-9` 与左栏顶栏同一个值（理由写在那边）；通栏那条分隔线是这一层的 `divider-b`，tab 自己
   // 的 `border-b` 盖在它上面（见 TAB_CLASS）——tablist 被 flex 拉满这一层的高度，两条线才在同一个
   // 位置。里层 tablist：`min-w-0 flex-1` 让它吃掉动作区以外的全部宽度、溢出时自己滚而不是把动作区挤
@@ -209,7 +272,9 @@ export function EditorTabs() {
       >
         {editors.value.map((editor) => {
           const key = keyOf(editor);
-          return <Tab key={key} editor={editor} active={key === active} />;
+          return (
+            <Tab key={key} editor={editor} active={key === active} dir={dirs.get(editor.path)} />
+          );
         })}
       </div>
       <EditorActions />
