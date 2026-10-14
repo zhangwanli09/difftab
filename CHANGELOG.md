@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.8.0](https://github.com/zhangwanli09/difftab/compare/v0.7.0...v0.8.0) (2026-10-14)
+
+
+### Features
+
+* **web:** color tab names by git status and show dirs only on clashes ([#110](https://github.com/zhangwanli09/difftab/issues/110)) ([eb93ee6](https://github.com/zhangwanli09/difftab/commit/eb93ee6981b396bbd24d3c82b77d8ebac737b491))
+* **web:** show a VS Code-style shortcut list in the empty editor panel ([#112](https://github.com/zhangwanli09/difftab/issues/112)) ([69306ce](https://github.com/zhangwanli09/difftab/commit/69306ce8d23f87bd7917149d289e3d70a15866c6))
+
+
+### Bug Fixes
+
+* **web:** drop the redundant "Working tree clean" note ([#113](https://github.com/zhangwanli09/difftab/issues/113)) ([65d2713](https://github.com/zhangwanli09/difftab/commit/65d2713f3f433ba3637174c0657a4e408dce06b2))
+
 ## [0.7.0](https://github.com/zhangwanli09/difftab/compare/v0.6.0...v0.7.0) (2026-10-13)
 
 
