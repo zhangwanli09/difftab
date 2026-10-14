@@ -42,7 +42,7 @@
 - **`DiffView` / `FileView` 接 `path` prop，在渲染体里读 `diffStates.value.get(path)`，不能用 `useComputed` 包**：`useComputed` 只随 signal 依赖重算，prop 换了它停在上一个 tab——「切了 tab 标题变了正文没变」。
 - **切 tab 是卸载重挂，滚动位置不保留**：diff2html 的 DOM 每份 MB 级，N 个 tab 常驻挂载等于 N 份 DOM，`outputFormat` 一变每份都要重画。**卸载重挂靠 `App` 给视图按 tab 键 `key`**：只换 `path` prop 时 `Panel` 连同 `scrollTop` 留着，B 从 A 的偏移量打开，而换视图种类时又从顶部开始——两种切法必须一个样子。视图里不再另给 `Payload` 一份 `key`。
 - **右侧空态只在栏里一个 tab 都没有时画**（`PanelEmptyState`），照 VS Code 的空编辑区列**一列全局快捷键**（`Go to File` / `Search`，名字与顶栏按钮、侧栏 tab 同一份），不再说「点左边一个文件」——左栏就在旁边，这句不带信息。**不画 VS Code 列表上方那枚大号 logo 水印**：试过，放在这个面板里看着突兀。
-  - **只有 `Changes` 档且工作区干净时，列表上方多一句 `Working tree clean`**：它答的是「为什么没得看」，是这一块里唯一带信息的字。`Files` / `Search` 档不说（那两档列的东西照样能点），第一份 state 没到时也不说（还不知道干不干净）。
+  - **不说「工作区干净」**：左栏 `Changes` 档的 `No changes` 已经答了「为什么没得看」，右侧再说一遍只是重复。
   - **快捷键列表与全局快捷键同一份清单**（`state/shortcuts.ts` 的 `SHORTCUTS`），只展示、不可点——入口在顶栏与侧栏 tab 上已经有了。**布局照 VS Code**：一行一条、名字靠左、按键靠右；宽度随内容、两列只隔一小段（定宽时名字与按键离得太远，看着不像一行）；按键各一个 `<kbd>`，配色取 VS Code 的 `keybindingLabel.*`，按平台写 `⌘` 或 `Ctrl`。**按键那一列 `aria-hidden`**，读屏只念名字：一串 `⇧⌘F` 念出来是「shift symbol, place of interest sign」，与按钮 tooltip 里快捷键不进无障碍名同一条理由。
   - **空态居中**，`flex-1` 撑满面板是居中成立的前提（有断言）。**居中用里层 `m-auto` + 外层 `overflow-auto`，不用 `justify-center`**：面板比这一块矮时后者往上下两头溢出，顶上那截滚不到；auto margin 放不下时归零，从顶上排起、照常能滚（有断言）。
   - **其余提示（loading / error / binary / too-large / symlink）仍是 `Notice` 贴左上**：它们说的是「这个文件怎么了」，居中反而像整个面板坏了。

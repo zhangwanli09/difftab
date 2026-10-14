@@ -11,7 +11,6 @@
 
 import { type ComponentChildren, Fragment } from 'preact';
 import { SHORTCUTS, shortcutKeys } from '../state/shortcuts';
-import { activeTab, repoState } from '../state/store';
 
 /**
  * 左栏列表区的占位：`Loading…`、「取不到列表」与「工作区干净」三句共用。**三句一起居中而不是只
@@ -29,20 +28,15 @@ export function SidebarPlaceholder({ children }: { children: ComponentChildren }
 }
 
 /**
- * 栏里一个 tab 都没有时右侧画的那一块，由 `App` 画，**判据只在这里写一次**。两个视图自己不再
+ * 栏里一个 tab 都没有时右侧画的那一块，由 `App` 按「没有活动 tab」判一次。两个视图自己不再
  * 有空态分支：它们拿到的永远是一个存在的 tab。
  *
  * 照 VS Code 的空编辑区列一列全局快捷键，**不说「点左边一个文件」**——左栏就在旁边，这句不带
  * 信息。VS Code 在列表上方还有一枚大号 logo 水印，这里不画：放在这个面板里看着突兀。
  *
- * 唯一带信息的是 `Changes` 档且工作区干净时那句 `Working tree clean`：它答的是「为什么没得看」。
- *
- * - `Files` / `Search` 档即使干净也不说：那两档列的东西照样能点。
- * - 第一份 state 还没到（`repoState` 为 null）时不说：还不知道干不干净。
- * - 与左栏那句 `No changes` 刻意不逐字相同：一句说的是列表，一句说的是仓库。
+ * 也不说「工作区干净」：左栏 `Changes` 档那句 `No changes` 已经答了「为什么没得看」。
  */
 export function PanelEmptyState() {
-  const clean = activeTab.value === 'changes' && repoState.value?.files.length === 0;
   return (
     // 宿主 `<section>`（`App`）是一列 flex，撑满靠 `flex-1 min-h-0`——后者与面板里别的直接子项
     // 同款，flex 的自动最小尺寸在这里一样会作怪。
@@ -51,30 +45,27 @@ export function PanelEmptyState() {
     // 往上下两头等量溢出，顶上那截落在滚动原点之前、滚不到；auto margin 在放不下时归零，内容从顶
     // 上排起、外层 `overflow-auto` 照常能滚。
     <div class="flex min-h-0 flex-1 flex-col overflow-auto p-4 text-sm text-description-foreground">
-      <div class="m-auto flex flex-col items-center gap-6">
-        {clean && <p class="text-center">Working tree clean</p>}
-        {/* 两列 grid、宽度随内容：名字靠左、按键靠右，中间只隔一段 `gap-x-8`。定宽时两列之间空出
-            一大截，名字与它的按键看着不像一行 */}
-        <dl class="grid grid-cols-[auto_auto] items-center gap-x-8 gap-y-2">
-          {Object.values(SHORTCUTS).map((shortcut) => (
-            <Fragment key={shortcut.label}>
-              <dt>{shortcut.label}</dt>
-              {/* 按键只给眼睛看：读屏把 `⇧⌘F` 逐个念成符号名，没有意义——与按钮 tooltip 里快捷键
-                  不进无障碍名同一条理由 */}
-              <dd aria-hidden="true" class="flex justify-end gap-1">
-                {shortcutKeys(shortcut).map((key) => (
-                  <kbd
-                    key={key}
-                    class="min-w-5 rounded border border-keybinding-label-border border-b-keybinding-label-bottom-border bg-keybinding-label-background px-1 text-center font-sans text-xs"
-                  >
-                    {key}
-                  </kbd>
-                ))}
-              </dd>
-            </Fragment>
-          ))}
-        </dl>
-      </div>
+      {/* 两列 grid、宽度随内容：名字靠左、按键靠右，中间只隔一段 `gap-x-8`。定宽时两列之间空出
+          一大截，名字与它的按键看着不像一行 */}
+      <dl class="m-auto grid grid-cols-[auto_auto] items-center gap-x-8 gap-y-2">
+        {Object.values(SHORTCUTS).map((shortcut) => (
+          <Fragment key={shortcut.label}>
+            <dt>{shortcut.label}</dt>
+            {/* 按键只给眼睛看：读屏把 `⇧⌘F` 逐个念成符号名，没有意义——与按钮 tooltip 里快捷键
+              不进无障碍名同一条理由 */}
+            <dd aria-hidden="true" class="flex justify-end gap-1">
+              {shortcutKeys(shortcut).map((key) => (
+                <kbd
+                  key={key}
+                  class="min-w-5 rounded border border-keybinding-label-border border-b-keybinding-label-bottom-border bg-keybinding-label-background px-1 text-center font-sans text-xs"
+                >
+                  {key}
+                </kbd>
+              ))}
+            </dd>
+          </Fragment>
+        ))}
+      </dl>
     </div>
   );
 }

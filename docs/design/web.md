@@ -10,7 +10,7 @@
 - **变更列表的组标题与状态字母照 VS Code Source Control 的默认**：组是 `Merge Changes` / `Staged Changes` / `Changes`，未跟踪文件混在 `Changes` 里，字母未跟踪印 `U`、冲突印 `!`。读者每天在编辑器里看的就是那一套，两边各说一种话时同一个 `U` 在两处意思相反。协议层不跟着改：`StatusCode` 仍是 git 的字母，换字只发生在徽章那一张展示映射里（`ChangeList.tsx` 的 `BADGE_LETTERS`）。
 - **判据是「`dist/web/` 三个产物里的 CJK 字符数为 0」**，不是逐个文件翻源码：漏网的最可能形态是**不长在 JSX 上的那几条**（`state/store.ts` 的错误文案就这么漏过一次）。
 - **后端产物用不了这个判据**：`dist/server/main.js` 刻意保留中文注释以便审计。那一侧的用户可见文案是 `sendError` 与各 `*Error` 的字面量，归 `test/unit/server/`。
-- **句点只跟句子走**：标签式的短片段（`No changes` / `Working tree clean` / `Empty` / `Loading…`）末尾不加句点，说明性的完整句子（`Binary file — contents are not compared.`）才加。判据是「它是一个标签还是一句话」，不是长短。
+- **句点只跟句子走**：标签式的短片段（`No changes` / `Empty` / `Loading…`）末尾不加句点，说明性的完整句子（`Binary file — contents are not compared.`）才加。判据是「它是一个标签还是一句话」，不是长短。
 - **出错提示分两段：引导句（`Could not load this file`）与原因逐字各占一行，不拼成一句**——原因的来处不止一个（后端 `sendError`、浏览器的 `TypeError: Failed to fetch`、500 转发的 `ENOENT: …`），大小写与句点各成一派，接在冒号后总有一种读起来像两句话撞在一起。
 - **too-large 提示的主语随视图走**：diff 视图说 `Diff too large to show (file is 3.0 MB).`，文件视图说 `File too large to show (3.0 MB).`——diff 那侧 5MB 卡的是补丁字节、`size` 却是文件体积，两边都说「File too large」时同一个文件会在 Files 档里照常显示、在 diff 里说太大。文案在 `tooLargeNotice` 里只写一次，两个视图共用。
 

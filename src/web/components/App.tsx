@@ -281,7 +281,7 @@ export function App() {
           排在它之外，于是这里只剩一列 flex——标签栏 `shrink-0`，底下那层 `min-h-0 flex-1
           overflow-auto`。左右两栏仍是两个各自独立的滚动容器：列表侧的滚动位置在 SSE 刷新时要
           留住，两侧共用一个就做不到。画哪个视图由活动 tab 的 `kind` 定；栏里一个 tab 都没有时
-          画空态，画什么的判据在 `PanelEmptyState` 里只写一次。
+          画空态（`PanelEmptyState`）。
           **视图按 tab 键 `key` 住**：只换 `path` prop 时组件不卸载，滚动容器连同 `scrollTop`
           一起留着——在 A 里滚到三千像素再切到同种的 B，B 会从同一个偏移量打开；而切到另一种
           视图因为换了组件类型是从顶部开始，两种切法一个样子才对。同一个 tab 内换补丁不换键，
