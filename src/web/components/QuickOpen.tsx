@@ -13,6 +13,7 @@ import {
   type PathMatch,
   quickOpenVisible,
 } from '../state/quick-open';
+import { SHORTCUTS } from '../state/shortcuts';
 import { openFile, repoState } from '../state/store';
 import { splitForDisplay } from './ChangeList';
 import { QuickPick, type RowProps } from './QuickPick';
@@ -44,7 +45,7 @@ export function QuickOpen({ anchor }: { anchor: RefObject<HTMLElement> }) {
   return (
     <QuickPick<PathMatch, null>
       idPrefix="quick-open"
-      label="Go to File"
+      label={SHORTCUTS.goToFile.label}
       inputLabel="Search files by name"
       placeholder="Search files by name"
       anchor={anchor}

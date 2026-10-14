@@ -13,7 +13,12 @@ import {
   quickOpenVisible,
 } from '../../../src/web/state/quick-open';
 import { resetSearch, searchFocusRequest } from '../../../src/web/state/search';
-import { handleGlobalKey } from '../../../src/web/state/shortcuts';
+import {
+  handleGlobalKey,
+  SHORTCUTS,
+  shortcutKeys,
+  withShortcut,
+} from '../../../src/web/state/shortcuts';
 import { activeTab, repoState } from '../../../src/web/state/store';
 import { file, hideHistory, repo, resetEditors, stubJsonBy, waitFor } from './helpers';
 
@@ -164,5 +169,13 @@ describe('全局快捷键', () => {
     expect(press({ key: 'p', ctrlKey: true, altKey: true }, false).defaultPrevented).toBe(false);
     expect(press({ key: 'p' }, false).defaultPrevented).toBe(false);
     expect(quickOpenVisible.value).toBe(false);
+  });
+
+  it('按键提示按平台写：Mac 是符号连写，其余是 Ctrl+ 拼接', () => {
+    expect(shortcutKeys(SHORTCUTS.search, true)).toEqual(['⇧', '⌘', 'F']);
+    expect(shortcutKeys(SHORTCUTS.search, false)).toEqual(['Ctrl', 'Shift', 'F']);
+    expect(withShortcut('Go to File', SHORTCUTS.goToFile, true)).toBe('Go to File (⌘P)');
+    expect(withShortcut('Search', SHORTCUTS.search, false)).toBe('Search (Ctrl+Shift+F)');
+    expect(withShortcut('Files')).toBe('Files');
   });
 });

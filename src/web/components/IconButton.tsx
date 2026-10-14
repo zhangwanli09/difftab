@@ -13,6 +13,7 @@
 import type { LucideIcon } from 'lucide-preact';
 import type { Ref } from 'preact';
 import { useMemo } from 'preact/hooks';
+import { type Shortcut, withShortcut } from '../state/shortcuts';
 import { Icon } from './Icon';
 
 export function IconButton({
@@ -26,8 +27,8 @@ export function IconButton({
   icon: LucideIcon;
   /** 同时用作 tooltip 与无障碍名。 */
   label: string;
-  /** 快捷键（`⌘P`），只进 tooltip、不进无障碍名：读屏念的是控件名，一串符号念出来没有意义。 */
-  shortcut?: string;
+  /** 快捷键，只进 tooltip、不进无障碍名：读屏念的是控件名，一串符号念出来没有意义。 */
+  shortcut?: Shortcut;
   /** 点它弹出一个对话框（`aria-haspopup="dialog"`）。 */
   popup?: boolean;
   /** 按钮的 ref。显式命名：Preact 会把 `ref` 从 props 里剥掉（同 `TreeRow`）。 */
@@ -51,7 +52,7 @@ export function IconButton({
       ref={buttonRef}
       onClick={onClick}
       class="shrink-0 rounded-sm p-0.5 text-description-foreground hover:bg-toolbar-hover-background focus-visible:outline-2 focus-visible:outline-focus-border"
-      title={shortcut === undefined ? label : `${label} (${shortcut})`}
+      title={withShortcut(label, shortcut)}
       aria-label={label}
       aria-haspopup={popup ? 'dialog' : undefined}
     >

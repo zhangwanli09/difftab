@@ -20,7 +20,7 @@ import { activeEditor, keyOf } from '../state/editors';
 import { observeDiffPanel } from '../state/layout';
 import { quickOpenVisible } from '../state/quick-open';
 import { ensureSearchFresh } from '../state/search';
-import { handleGlobalKey, shortcutLabel } from '../state/shortcuts';
+import { handleGlobalKey, SHORTCUTS, type Shortcut, withShortcut } from '../state/shortcuts';
 import { dragStyle, sidebarStyle } from '../state/sidebar';
 import { activeTab, loadError, repoState } from '../state/store';
 import { PRODUCT_NAME } from '../state/title';
@@ -55,17 +55,17 @@ import { WatchBadge } from './WatchBadge';
  * `label` 不再进 DOM 文本，改作 `aria-label` 与 tooltip：只画图标时它是这个按钮名字的**唯一**
  * 来源，掉了之后读屏里就是两个无名控件，而页面上什么都看不出来（同 `ThemeToggle`）。
  */
-const TABS = [
-  { id: 'changes', label: 'Changes', title: 'Changes', icon: GitBranch },
-  { id: 'files', label: 'Files', title: 'Files', icon: Folder },
-  // 快捷键只进 tooltip，不进 `aria-label`：读屏念的是控件名，`⌘⇧F` 念出来是一串符号
-  {
-    id: 'search',
-    label: 'Search',
-    title: `Search (${shortcutLabel('F', { shift: true })})`,
-    icon: Search,
-  },
-] as const;
+const TABS: readonly {
+  id: typeof activeTab.value;
+  label: string;
+  icon: LucideIcon;
+  /** 只进 tooltip，不进 `aria-label`：读屏念的是控件名，快捷键念出来是一串符号。 */
+  shortcut?: Shortcut;
+}[] = [
+  { id: 'changes', label: 'Changes', icon: GitBranch },
+  { id: 'files', label: 'Files', icon: Folder },
+  { id: 'search', label: SHORTCUTS.search.label, shortcut: SHORTCUTS.search, icon: Search },
+];
 
 // **不给 `flex-1`**：每枚各按自身宽度排、紧挨着靠左，平分整栏时选中那条下划线有半栏宽，看着
 // 不像指示器像第二条分隔线。`px-3 py-1.5` 留着当点击热区（约 40×28px 一枚）。`flex` 只为把图标
@@ -121,7 +121,7 @@ function SideBarTabRow() {
             role="tab"
             aria-selected={active === tab.id}
             aria-label={tab.label}
-            title={tab.title}
+            title={withShortcut(tab.label, tab.shortcut)}
             /**
              * **只改 `activeTab`，绝不碰 `activeEditor`**：换的是左栏在列什么，不是用户此刻在读
              * 什么——写成「切到 Files 就清空右侧」时页面看着完全正常，只是每瞄一眼目录树就丢掉
@@ -184,7 +184,7 @@ export function App() {
     refreshTree();
   }, [tab]);
 
-  // 全局快捷键（`⌘P` / `⌘⇧F`），判据与动作都在 `state/shortcuts.ts`
+  // 全局快捷键，清单、判据与动作都在 `state/shortcuts.ts`
   useEffect(() => {
     document.addEventListener('keydown', handleGlobalKey);
     return () => document.removeEventListener('keydown', handleGlobalKey);
@@ -227,8 +227,8 @@ export function App() {
           {/* Quick Open 的可见入口（快捷键之外），开着时再点一次即关 */}
           <IconButton
             icon={FileSearch}
-            label="Go to File"
-            shortcut={shortcutLabel('P')}
+            label={SHORTCUTS.goToFile.label}
+            shortcut={SHORTCUTS.goToFile}
             popup
             buttonRef={goToFile}
             onClick={() => {
@@ -281,7 +281,7 @@ export function App() {
           排在它之外，于是这里只剩一列 flex——标签栏 `shrink-0`，底下那层 `min-h-0 flex-1
           overflow-auto`。左右两栏仍是两个各自独立的滚动容器：列表侧的滚动位置在 SSE 刷新时要
           留住，两侧共用一个就做不到。画哪个视图由活动 tab 的 `kind` 定；栏里一个 tab 都没有时
-          画空态，说哪句、配哪枚的判据在 `PanelEmptyState` 里只写一次。
+          画空态，画什么的判据在 `PanelEmptyState` 里只写一次。
           **视图按 tab 键 `key` 住**：只换 `path` prop 时组件不卸载，滚动容器连同 `scrollTop`
           一起留着——在 A 里滚到三千像素再切到同种的 B，B 会从同一个偏移量打开；而切到另一种
           视图因为换了组件类型是从顶部开始，两种切法一个样子才对。同一个 tab 内换补丁不换键，

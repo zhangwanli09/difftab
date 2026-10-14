@@ -53,6 +53,7 @@
 - **一行 = 文件名 + 目录**，两段同住一个 `truncate` span（理由同变更列表），`title` 是完整路径。
 - **选中走 `openFile` 的固定档**（照 VS Code `workbench.editor.enablePreviewFromQuickOpen` 的默认 `false`），不切侧栏档位。关闭后焦点交还给打开前那个元素。
 - **全局快捷键挂在 `document` 的 `keydown` 上，只有两条**：`⌘P` / `Ctrl+P` 开 Quick Open（`preventDefault` 拦下浏览器打印），`⌘⇧F` / `Ctrl+Shift+F` 切到 `Search` 档并聚焦、全选输入框。Mac 判 `metaKey`、其余判 `ctrlKey`——两个都认时会吃掉 macOS 输入框里 `Ctrl+P`（光标上移一行）这条系统级 Emacs 键位。按钮的 `title` 按平台写 `⌘P` 或 `Ctrl+P`。
+- **两条快捷键连同它们的名字只有一份清单**（`SHORTCUTS`，与 `handleGlobalKey` 同住 `state/shortcuts.ts`）：按钮与侧栏 tab 的名字和 tooltip（格式只在 `withShortcut` 写一次）、Quick Open 弹窗的名字、右侧空态的快捷键列表都从它取，改键或改名时界面上一起变（本节上面写的具体按键是文档，要手动跟）。
 
 ## 变更列表
 

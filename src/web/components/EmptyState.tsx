@@ -1,4 +1,4 @@
-// 两侧**空着**时画的那几块，都居中在各自的区域正中：右侧面板一枚图标 + 一句提示，左栏一句。
+// 两侧**空着**时画的那几块，都居中在各自的区域正中：右侧面板一列快捷键，左栏一句。
 //
 // 右侧那块只给「没选文件」这一个状态用。loading / error / binary / too-large / symlink 那几路
 // 仍是 `Notice` 贴左上——它们在标签栏底下的 `Panel` 里，说的是「这个文件怎么了」而不是「面板
@@ -6,22 +6,17 @@
 // 一个不填也不报错的可选参数，每个调用点都得再想一遍。
 //
 // **居中成立的前提是撑满宿主，两侧各有各的手段**：宿主是 flex 列时给 `flex-1 min-h-0`，是普
-// 通块盒时给 `h-full`。不撑满时 `items-center` / `justify-center` 只在自己那点内容高度里居
-// 中——页面上仍然贴顶，不报错（happy-dom 没有排版引擎，用例能钉的只有这几个类名在不在）。
-// 两块**不合成一个带可选 `icon` 的组件**：那又是一个不填也不报错的开关，且合成之后它得同时
-// 带两种撑满手段，看不出自己在哪种宿主里。
+// 通块盒时给 `h-full`。不撑满时居中只发生在自己那点内容高度里——页面上仍然贴顶，不报错
+// （happy-dom 没有排版引擎，用例能钉的只有类名在不在）。
 
-import { CircleCheck, type LucideIcon } from 'lucide-preact';
-import type { ComponentChildren } from 'preact';
-import type { EditorKind } from '../state/editors';
+import { type ComponentChildren, Fragment } from 'preact';
+import { SHORTCUTS, shortcutKeys } from '../state/shortcuts';
 import { activeTab, repoState } from '../state/store';
-import { Icon, KIND_ICON } from './Icon';
 
 /**
  * 左栏列表区的占位：`Loading…`、「取不到列表」与「工作区干净」三句共用。**三句一起居中而不是只
  * 居中干净那句**：它们轮流占同一个 `<nav>`，各摆各的位置时，干净仓库一启动就是「Loading…」贴
- * 左上、几百毫秒后跳到正中——不报错，只是每次启动闪一下。不配图标：320px 里那枚比一行字更抢，
- * 而右侧面板同一时刻已经画着一个 ✓。
+ * 左上、几百毫秒后跳到正中——不报错，只是每次启动闪一下。不配图标：320px 里那枚比一行字更抢。
  */
 export function SidebarPlaceholder({ children }: { children: ComponentChildren }) {
   return (
@@ -33,49 +28,53 @@ export function SidebarPlaceholder({ children }: { children: ComponentChildren }
   );
 }
 
-/** 空着时右侧按侧栏档位查「接下来会开出哪种 tab」，图标取那一种的。 */
-const TAB_KIND: Record<typeof activeTab.value, EditorKind> = {
-  changes: 'diff',
-  files: 'file',
-  // 搜索的命中行打开的是全文
-  search: 'file',
-};
-
-function EmptyState({ icon, children }: { icon: LucideIcon; children: ComponentChildren }) {
-  return (
-    // 宿主 `<section>`（`App`）是一列 flex，撑满靠 `flex-1 min-h-0`——后者与面板里别的直接子项
-    // 同款，flex 的自动最小尺寸在这里一样会作怪
-    <div class="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-4 text-sm text-description-foreground">
-      {/* 图标只是装饰，走同一个 `Icon` 外壳拿 `aria-hidden`。48px 下 lucide 默认的 2px 描边显
-          得粗，`stroke-1` 收细（CSS 属性压过 SVG 的 presentation attribute）；`opacity-60` 与被
-          忽略文件灰显同一档——它不该比旁边的文案更抢。颜色不写：`currentColor` 跟着文字色翻深浅 */}
-      <Icon icon={icon} size={48} class="stroke-1 opacity-60" />
-      <p class="text-center">{children}</p>
-    </div>
-  );
-}
-
 /**
  * 栏里一个 tab 都没有时右侧画的那一块，由 `App` 画，**判据只在这里写一次**。两个视图自己不再
  * 有空态分支：它们拿到的永远是一个存在的 tab。
  *
- * 说哪句、配哪枚**按侧栏此刻列的是哪一档定**：空着时右侧没有「此刻是哪个视图」可言，而侧栏
- * 档位说的正是「用户接下来会点开哪种东西」。
+ * 照 VS Code 的空编辑区列一列全局快捷键，**不说「点左边一个文件」**——左栏就在旁边，这句不带
+ * 信息。VS Code 在列表上方还有一枚大号 logo 水印，这里不画：放在这个面板里看着突兀。
  *
- * - `Changes` 档且工作区干净：`Working tree clean` 配一个 ✓。「没得选」与「还没选」是两件
- *   事——干净时「点左边一个文件」指着的是一个空列表。与左栏那句 `No changes` 刻意不逐字相
- *   同：一句说的是列表，一句说的是仓库；✓ 已经把「没得看」带上，不再另说一遍。
- * - 其余一律 `Select a file on the left`：**`Files` 档下即使干净也走这句**，那一档列的是整棵
- *   目录树，「Working tree clean」对着一列能点的文件答非所问。图标跟着档走：`Changes` 是一份
- *   diff（`FileDiff`），`Files` 是一份全文（`FileCode`）——两档打开同一个文件看到的是两样东
- *   西，图标在空着时就把这一点说出来。`Changes` 档里那个 `History` 分区不是档位，不另起一句。
- * - 第一份 state 还没到（`repoState` 为 null）时走「还没选」那句——左栏此时写的正是
- *   `Loading…`，两栏说的是同一件事。
+ * 唯一带信息的是 `Changes` 档且工作区干净时那句 `Working tree clean`：它答的是「为什么没得看」。
+ *
+ * - `Files` / `Search` 档即使干净也不说：那两档列的东西照样能点。
+ * - 第一份 state 还没到（`repoState` 为 null）时不说：还不知道干不干净。
+ * - 与左栏那句 `No changes` 刻意不逐字相同：一句说的是列表，一句说的是仓库。
  */
 export function PanelEmptyState() {
-  const tab = activeTab.value;
-  if (tab === 'changes' && repoState.value?.files.length === 0) {
-    return <EmptyState icon={CircleCheck}>Working tree clean</EmptyState>;
-  }
-  return <EmptyState icon={KIND_ICON[TAB_KIND[tab]]}>Select a file on the left</EmptyState>;
+  const clean = activeTab.value === 'changes' && repoState.value?.files.length === 0;
+  return (
+    // 宿主 `<section>`（`App`）是一列 flex，撑满靠 `flex-1 min-h-0`——后者与面板里别的直接子项
+    // 同款，flex 的自动最小尺寸在这里一样会作怪。
+    //
+    // **居中靠里层的 `m-auto`，不靠外层的 `justify-center`**：面板比这一块矮时 `justify-center`
+    // 往上下两头等量溢出，顶上那截落在滚动原点之前、滚不到；auto margin 在放不下时归零，内容从顶
+    // 上排起、外层 `overflow-auto` 照常能滚。
+    <div class="flex min-h-0 flex-1 flex-col overflow-auto p-4 text-sm text-description-foreground">
+      <div class="m-auto flex flex-col items-center gap-6">
+        {clean && <p class="text-center">Working tree clean</p>}
+        {/* 两列 grid、宽度随内容：名字靠左、按键靠右，中间只隔一段 `gap-x-8`。定宽时两列之间空出
+            一大截，名字与它的按键看着不像一行 */}
+        <dl class="grid grid-cols-[auto_auto] items-center gap-x-8 gap-y-2">
+          {Object.values(SHORTCUTS).map((shortcut) => (
+            <Fragment key={shortcut.label}>
+              <dt>{shortcut.label}</dt>
+              {/* 按键只给眼睛看：读屏把 `⇧⌘F` 逐个念成符号名，没有意义——与按钮 tooltip 里快捷键
+                  不进无障碍名同一条理由 */}
+              <dd aria-hidden="true" class="flex justify-end gap-1">
+                {shortcutKeys(shortcut).map((key) => (
+                  <kbd
+                    key={key}
+                    class="min-w-5 rounded border border-keybinding-label-border border-b-keybinding-label-bottom-border bg-keybinding-label-background px-1 text-center font-sans text-xs"
+                  >
+                    {key}
+                  </kbd>
+                ))}
+              </dd>
+            </Fragment>
+          ))}
+        </dl>
+      </div>
+    </div>
+  );
 }
