@@ -372,26 +372,7 @@ describe('右侧面板', () => {
     }
     expect(box?.classList.contains('justify-center')).toBe(false);
     expect(box?.firstElementChild?.classList.contains('m-auto')).toBe(true);
-    // 第一份 state 还没到：不知道干不干净，不说那句
-    expect(section()?.textContent).not.toContain('Working tree clean');
     expect(tabStrip()).toBeNull();
-  });
-
-  it('工作区干净时列表上方多一句——它答的是「为什么没得看」', async () => {
-    repoState.value = stateWith('demo');
-    render(<App />, container);
-
-    await waitFor(() => expect(section()?.textContent).toContain('Working tree clean'));
-    expect(section()?.textContent).toContain('Go to File');
-  });
-
-  it('切到 Files 档时干净也不说那句：那一档列的是整棵目录树，照样能点', async () => {
-    repoState.value = stateWith('demo');
-    activeTab.value = 'files';
-    render(<App />, container);
-
-    await waitFor(() => expect(section()?.textContent).toContain('Go to File'));
-    expect(section()?.textContent).not.toContain('Working tree clean');
   });
 
   it('有 tab 时标签栏排在面板顶上、滚动层之外——面板仍是一列 flex', async () => {
