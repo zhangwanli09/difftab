@@ -4,7 +4,7 @@
 
 ## 界面文案与术语
 
-**界面文案一律英文，`<html lang>` 为 `en`。** 判据是**产品表面与文档分属两个读者**：`docs/` 与代码注释写给维护者，中文；分发形态是 npm 全局包，CLI 的 `--help`、退出提示、版本守卫报错本来就是英文。中文读者由 `README.zh-CN.md` 承接。首版不做语言切换。
+**界面文案一律英文，`<html lang>` 为 `en`。** 判据是**产品表面与文档分属两个读者**：`docs/` 与代码注释写给维护者，中文；分发形态是 npm 全局包，CLI 的 `--help`、退出提示、版本守卫报错本来就是英文。中文读者由 `README.zh-CN.md` 承接。
 
 - 分支与进行中操作的术语跟 git 自己的用词走（`Detached HEAD` / `Rebasing`），不自造同义词——那一栏用户是拿它对照 `git status` 看的。
 - **变更列表的组标题与状态字母照 VS Code Source Control 的默认**：组是 `Merge Changes` / `Staged Changes` / `Changes`，未跟踪文件混在 `Changes` 里，字母未跟踪印 `U`、冲突印 `!`。读者每天在编辑器里看的就是那一套，两边各说一种话时同一个 `U` 在两处意思相反。协议层不跟着改：`StatusCode` 仍是 git 的字母，换字只发生在徽章那一张展示映射里（`ChangeList.tsx` 的 `BADGE_LETTERS`）。

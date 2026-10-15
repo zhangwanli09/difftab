@@ -131,8 +131,8 @@ instead, so everything still refreshes; it may just land a second or two later.
 ## Non-goals
 
 difftab is deliberately a viewer. Permanently out of scope: any repository write operation,
-code editing, accounts and cloud sync, and multi-user review workflows. Out of the current
-version: blame. The full list, and the reasoning, is in
+code editing, accounts and cloud sync, and multi-user review workflows. The full list,
+and the reasoning, is in
 [CONTRIBUTING.md](CONTRIBUTING.md#the-read-only-promise-is-not-negotiable).
 
 ## Contributing
