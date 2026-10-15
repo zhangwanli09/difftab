@@ -32,8 +32,7 @@ not what git commands you run while developing. Committing, branching and pushin
 repository are completely normal.
 
 Also permanently out of scope: editing code, accounts and cloud sync, and multi-user
-collaboration (PR review, comments, approvals). A second list holds what is deliberately
-out of the *first* version — that one moves as versions ship, so read it at the source:
+collaboration (PR review, comments, approvals). The full list, with the reasoning, is in
 [`docs/spec.md`](docs/spec.md).
 
 ## Setting up
