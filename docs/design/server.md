@@ -86,7 +86,7 @@
 
 **协议类型**（git 判据在 [`git.md`](git.md)）：
 
-- `FileEntry { path; oldPath?; kind: 'tracked' | 'untracked'; staged; unstaged; renameScore?; conflicted? }`——**`conflicted` 是「这条来自 `u` 记录」这一事实本身**，不从状态位推：`DD` / `AA` 都不是 `U`，归属留给前端等于让它重写一遍 porcelain 的记录类型。
+- `FileEntry { path; oldPath?; kind: 'tracked' | 'untracked'; staged; unstaged; conflicted? }`——**`conflicted` 是「这条来自 `u` 记录」这一事实本身**，不从状态位推：`DD` / `AA` 都不是 `U`，归属留给前端等于让它重写一遍 porcelain 的记录类型。
 - `BranchState { head; detached; upstream: null | { name; ahead; behind }; oid?; operation? }`——`oid` 是 HEAD 指向的提交（缺省即未出生），前端拿它判提交列表要不要重取。**`upstream: null` 即「无上游」**，编码进类型前端就漏不掉；`name` 供 History 在 `/api/refs` 里找上游。`operation` 缺省即没有进行中的操作。
 - `DiffPayload` 为判别联合：`text` / `binary` / `image { old, new }` / `too-large { size, reason: 'size' | 'lines' }` / `untracked-text`。
   - **`too-large` 必须带 `reason`**：两个触发口，只带 `size` 时行数那一路可能只有几百 KB，前端会说出「文件过大（0 MB）」。

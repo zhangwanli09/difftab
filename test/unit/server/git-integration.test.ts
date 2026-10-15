@@ -134,11 +134,10 @@ describe('未跟踪（展开到文件粒度，不折叠成 `dir/`）', () => {
 });
 
 describe('重命名', () => {
-  test('status 给出新旧两个路径与相似度', async () => {
+  test('status 给出新旧两个路径', async () => {
     const { files } = await statusOf(repos.renames);
     const renamed = files.find((f) => f.path === 'src/kept-renamed.txt');
     expect(renamed?.oldPath).toBe('src/kept.txt');
-    expect(renamed?.renameScore).toBe(100);
   });
 
   test('传两个路径才拿得到 rename from/to；只传新路径会退化成全新增', async () => {

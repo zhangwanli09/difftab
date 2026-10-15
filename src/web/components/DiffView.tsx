@@ -118,16 +118,15 @@ export function tooLargeNotice(
 }
 
 /**
- * 重命名标注。补丁正文里的 `rename from/to` 由 diff2html 画在文件头上（旧名 → 新名），但那是
- * `RENAMED` 标签、且**不含相似度**——相似度来自 status 的 `R<score>`，是我们自己带下来的。
- * 两者不重复：这一行说的是「这个条目是什么」，补丁头说的是「这份补丁是什么」，而 binary /
- * too-large 那几路压根没有补丁头。
+ * 重命名标注。补丁正文里的 `rename from/to` 由 diff2html 画在文件头上，而文件头整条藏掉了；
+ * binary / too-large 那几路更是压根没有补丁头——少了这一行，页面上就再没有任何地方说它是改名
+ * 来的。**只说旧路径，不印相似度**（照 VS Code）：status 的 `R<score>` 量的是 HEAD→index，而这份
+ * 补丁是 HEAD→工作区，`RM` 时两者对不上。
  */
 function RenameNotice({ rename }: { rename: RenameInfo }) {
   return (
     <p class="border-b border-panel-border px-4 py-1 text-xs text-description-foreground">
       Renamed from <span class="font-mono break-all">{rename.oldPath}</span>
-      {rename.score !== null && ` (${rename.score}% similar)`}
     </p>
   );
 }

@@ -46,14 +46,12 @@ export const repoState = signal<RepoState | null>(null);
 export const loadError = signal<string | null>(null);
 
 /**
- * 这次请求指向的条目是不是重命名来的，以及相似度（`null` = git 没给）。**它跟着请求走，不是
+ * 这次请求指向的条目是不是重命名来的。**它跟着请求走，不是
  * 在渲染时去列表里现找**：现找的写法多一份来源，而两份错位的窗口是真实存在的——`refresh`
  * 先换上新列表、`loadDiff` 还没回来的那一段里，右侧显示的仍是旧补丁。
  */
 export interface RenameInfo {
   oldPath: string;
-  /** `R100` → 100。git 只在识别为重命名/复制时给，取不到就不显示。 */
-  score: number | null;
 }
 
 /**
@@ -68,12 +66,11 @@ export type DiffRequestState =
   | { status: 'error'; rename: RenameInfo | null; message: string };
 
 /**
- * `FileEntry` 的重命名两个字段 → 一个可选对象。判据是 `oldPath` 存在，**不是比对新旧路径**
- *——重命名与否是 git 的判定，前端不重写一遍。
+ * `FileEntry` 的 `oldPath` → 一个可选对象。判据是 `oldPath` 存在，**不是比对新旧路径**——
+ * 重命名与否是 git 的判定，前端不重写一遍。
  */
 function renameOf(entry: FileEntry): RenameInfo | null {
-  if (entry.oldPath === undefined) return null;
-  return { oldPath: entry.oldPath, score: entry.renameScore ?? null };
+  return entry.oldPath === undefined ? null : { oldPath: entry.oldPath };
 }
 
 /**
@@ -134,11 +131,13 @@ function codeOf(entry: FileEntry): ChangeCode | null {
 
 /**
  * 同一个路径收到多个状态码时的归并优先级，小的赢。冲突最先——那是用户此刻唯一要处理的东西；
- * 其后修改一档（含改类型、重命名、复制）是绝大多数情形；未跟踪是最弱的主张，排最后。**这是展示
- * 上的取舍**：混合目录取哪个都对不了所有人，判据只求稳定。写成 `Record` 而不是数组：漏一个码时
- * 编译器报错，而数组的 `indexOf` 回 -1 会让漏掉的那个静默排到冲突前面。
+ * 其后修改一档（改类型同档、重命名与复制紧随）是绝大多数情形；未跟踪是最弱的主张，排最后。
+ * **这是展示上的取舍**：混合目录取哪个都对不了所有人，判据只求稳定。**每个码各占一档、不许
+ * 并列**：并列时先到的赢，一旦两者颜色不同，目录的颜色就随 porcelain 的条目顺序变——各占一档就
+ * 不必去管哪两个码此刻恰好同色。写成 `Record` 而不是数组：漏一个码时编译器报错，而数组的
+ * `indexOf` 回 -1 会让漏掉的那个静默排到冲突前面。
  */
-const CODE_RANK: Record<ChangeCode, number> = { U: 0, M: 1, T: 1, R: 1, C: 1, D: 2, A: 3, '?': 4 };
+const CODE_RANK: Record<ChangeCode, number> = { U: 0, M: 1, T: 2, R: 3, C: 4, D: 5, A: 6, '?': 7 };
 
 /**
  * `路径 → 状态码`，文件树上每一行按自己的路径查这一张表。每个改动条目把状态码记到**自己的路径
@@ -174,28 +173,40 @@ export interface ChangeGroup {
 }
 
 /**
- * 两份各自已按路径排好序的列表归并成一份。**不是整体重排**：每一侧内部仍是后端给的顺序，
- * 只在两侧之间按路径决定谁先——多一份排序意见就多一处与 `git status` 不一致的可能。比较用
- * `<`（UTF-16 码元序），与 git 的字节序只在 BMP 之外的字符上有出入，那只影响两侧交错的位置。
+ * 段内的比较照 VS Code `compareFileNames`：numeric（`file2` 在 `file10` 前）、不分大小写。
+ * `undefined` locale 即运行时默认——VS Code 也是按用户 locale 排的。
  */
-function mergeByPath(a: readonly FileEntry[], b: readonly FileEntry[]): FileEntry[] {
-  const merged: FileEntry[] = [];
-  let i = 0;
-  let j = 0;
-  for (;;) {
-    const left = a[i];
-    const right = b[j];
-    if (left === undefined || right === undefined) break;
-    if (right.path < left.path) {
-      merged.push(right);
-      j++;
-    } else {
-      merged.push(left);
-      i++;
-    }
+const segmentCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+
+/**
+ * 照 VS Code Source Control 列表视图的 `comparePaths`：按 `/` 逐段比，**同一层里文件排在子目录
+ * 之前**，段内用上面那个 collator。不沿用 git 的字节序：那样 `src/pages-x/a.vue` 排在
+ * `src/pages.json` 前面（`-` 0x2D < `.` 0x2E），与读者在编辑器里看的那份对不上。collator 判平
+ * （只差大小写）时**在这一段上**退回码元序（同 VS Code），同一份输入每次排出同一个顺序；留到整条
+ * 路径才判的话，`Docs/` 与 `docs/` 两个目录下的文件会按下一段交错成一锅。
+ *
+ * 树视图不另排：它按传入顺序插入目录与文件，喂进来的已是这个顺序，同层目录与同层文件就各自是
+ * collator 序。
+ */
+export function comparePaths(a: string, b: string): number {
+  const left = a.split('/');
+  const right = b.split('/');
+  const lastLeft = left.length - 1;
+  const lastRight = right.length - 1;
+  for (let k = 0; ; k++) {
+    const endLeft = k === lastLeft;
+    const endRight = k === lastRight;
+    if (endLeft !== endRight) return endLeft ? -1 : 1;
+    const l = left[k] ?? '';
+    const r = right[k] ?? '';
+    const order = segmentCollator.compare(l, r) || (l < r ? -1 : l > r ? 1 : 0);
+    if (order !== 0) return order;
+    if (endLeft) return 0;
   }
-  return merged.concat(a.slice(i), b.slice(j));
 }
+
+const sortedByPath = (files: readonly FileEntry[]): FileEntry[] =>
+  [...files].sort((a, b) => comparePaths(a.path, b.path));
 
 /**
  * 三个分组，照 VS Code Source Control 的默认：冲突、已暂存、工作区改动（含未跟踪）。
@@ -209,17 +220,17 @@ function mergeByPath(a: readonly FileEntry[], b: readonly FileEntry[]): FileEntr
  * 处理的东西。
  *
  * **未跟踪混在 `Changes` 里**（VS Code `git.untrackedChanges` 的默认值 `mixed`）。porcelain v2
- * 先吐全部已跟踪记录、再吐 `?` 记录，直接拼接时未跟踪全堆在组尾，所以两侧按路径归并一次。
+ * 先吐全部已跟踪记录、再吐 `?` 记录，每组按 `comparePaths` 整组重排，未跟踪于是落回各自的位置。
  */
 export function groupFiles(files: readonly FileEntry[]): ChangeGroup[] {
   return [
-    { id: 'conflicted', title: 'Merge Changes', files: files.filter(isConflicted) },
-    { id: 'staged', title: 'Staged Changes', files: files.filter(hasStagedChange) },
+    { id: 'conflicted', title: 'Merge Changes', files: sortedByPath(files.filter(isConflicted)) },
+    { id: 'staged', title: 'Staged Changes', files: sortedByPath(files.filter(hasStagedChange)) },
     {
       id: 'unstaged',
       title: 'Changes',
       // -uall 保证未跟踪那侧是文件粒度，不会是折叠后的 `dir/`
-      files: mergeByPath(files.filter(hasUnstagedChange), files.filter(isUntracked)),
+      files: sortedByPath(files.filter((f) => hasUnstagedChange(f) || isUntracked(f))),
     },
   ];
 }
@@ -323,7 +334,7 @@ export function selectFile(entry: FileEntry): void {
  *
  * - **活动的 diff tab 也要重取**，不能只刷列表：文件内容变了而列表条目没变（还是那个 `1 .M`）
  *   是最常见的形态，只刷列表的话右侧停在旧补丁上，而页面看不出任何异样
- * - **先 state 后 diff，且用新列表里的条目**：重命名条目取 diff 必须带 `oldPath`，而相似度
+ * - **先 state 后 diff，且用新列表里的条目**：重命名条目取 diff 必须带 `oldPath`，而配对
  *   是会变的。**列表没换上新的就整个不取**——`loadState()` 失败时 `repoState` 留着的是上一
  *   份快照，照着它找条目取 diff 就是用过期的 `oldPath`（重命名退化成全新增），而它不报错
  * - **收编要过一遍栏里全部 diff tab，不只活动那一个**：改动被撤销、或被 commit 掉了的 tab
@@ -513,14 +524,13 @@ const commitDiffCache = pathCache<DiffRequestState>();
 export const commitDiffStates = commitDiffCache.states;
 
 /**
- * 取一次提交里一个文件的补丁。重命名同样要把 `oldPath` 带上（只传新路径时退化成全新增）；相似
- * 度那一档没有——`--name-status` 的 `R<score>` 不进协议，标注只说「从哪改名来的」。
+ * 取一次提交里一个文件的补丁。重命名同样要把 `oldPath` 带上（只传新路径时退化成全新增）。
  */
 async function loadCommitDiff(editor: Extract<Editor, { kind: 'commit' }>): Promise<void> {
   const { sha, path, oldPath } = editor;
   const key = keyOf(editor);
   const ticket = commitDiffCache.tickets.claim(key);
-  const rename = oldPath === undefined ? null : { oldPath, score: null };
+  const rename = oldPath === undefined ? null : { oldPath };
   commitDiffCache.set(key, { status: 'loading', rename });
   try {
     const query = new URLSearchParams({ sha, path });

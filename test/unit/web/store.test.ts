@@ -22,6 +22,7 @@ import {
   activateEditor,
   activeTab,
   closeEditor,
+  comparePaths,
   diffStates,
   fileStates,
   groupFiles,
@@ -138,7 +139,7 @@ describe('groupFiles', () => {
         file({ path: 'both-deleted.txt', staged: 'D', unstaged: 'D', conflicted: true }),
       ]),
     ).toEqual({
-      conflicted: ['both-modified.txt', 'both-deleted.txt'],
+      conflicted: ['both-deleted.txt', 'both-modified.txt'],
       staged: [],
       unstaged: [],
     });
@@ -154,18 +155,42 @@ describe('groupFiles', () => {
       path: 'src/new.ts',
       oldPath: 'src/old.ts',
       staged: 'R',
-      renameScore: 96,
     });
     // 按 id 找而不是按下标取：分组一多一少，按下标的写法会安静地断言到另一组上
     const staged = groupFiles([entry]).find((g) => g.id === 'staged');
     expect(staged?.files[0]?.oldPath).toBe('src/old.ts');
-    expect(staged?.files[0]?.renameScore).toBe(96);
   });
 
-  test('保留后端给的顺序，不在前端再排一次', () => {
-    // 多一份排序意见就多一处与 `git status` 不一致的可能，而验收标准是「与 git status 结果一致」
-    const paths = ['z.txt', 'a.txt', 'm.txt'];
-    expect(byId(paths.map((path) => file({ path, unstaged: 'M' }))).unstaged).toEqual(paths);
+  test('组内照 VS Code 的 comparePaths 排：同层文件在子目录前，未跟踪落回各自的位置', () => {
+    // 喂进来的是 porcelain v2 的顺序：已跟踪按字节序在前、`?` 记录在后
+    const files = [
+      file({ path: 'src/pages-main-try/b.vue', unstaged: 'M' }),
+      file({ path: 'src/pages.json', unstaged: 'M' }),
+      file({ path: 'src/a/new.vue', kind: 'untracked', unstaged: '?' }),
+    ];
+    // 字节序下 `pages-main-try/`（`-` 0x2D）在 `pages.json`（`.` 0x2E）前；VS Code 把同层文件排前面
+    expect(byId(files).unstaged).toEqual([
+      'src/pages.json',
+      'src/a/new.vue',
+      'src/pages-main-try/b.vue',
+    ]);
+  });
+
+  test('comparePaths：段内 numeric、不分大小写，只差大小写时次序稳定', () => {
+    const sorted = ['file10.ts', 'File2.ts', 'b/x.ts', 'a.ts', 'file2.ts'].sort(comparePaths);
+    expect(sorted).toEqual(['a.ts', 'File2.ts', 'file2.ts', 'file10.ts', 'b/x.ts']);
+  });
+
+  test('comparePaths：只差大小写的两个目录不交错，平局在那一段上就判', () => {
+    // 留到整条路径才判时是 docs/a、Docs/b、Docs/c——两个目录按下一段交错
+    const sorted = ['Docs/b.md', 'docs/a.md', 'Docs/c.md'].sort(comparePaths);
+    expect(sorted).toEqual(['Docs/b.md', 'Docs/c.md', 'docs/a.md']);
+  });
+
+  test('已暂存组同样排序，入参不被就地改动', () => {
+    const files = [file({ path: 'z/a.ts', staged: 'M' }), file({ path: 'b.ts', staged: 'D' })];
+    expect(byId(files).staged).toEqual(['b.ts', 'z/a.ts']);
+    expect(files.map((f) => f.path)).toEqual(['z/a.ts', 'b.ts']);
   });
 
   test('工作区干净时三组都是空的，而不是缺组', () => {
@@ -296,18 +321,12 @@ describe('loadDiff（按文件懒加载）', () => {
     }
   });
 
-  test('重命名条目把旧路径与相似度一并带进状态，普通条目是 null', async () => {
+  test('重命名条目把旧路径带进状态，普通条目是 null', async () => {
     // 标注跟着请求走，而不是渲染时回列表里现找：两份来源错位的窗口是真实存在的——`refresh`
     // 先换上新列表、`loadDiff` 还没回来的那一段里，右侧显示的仍是旧补丁
     stubJson(text);
-    await loadDiff(
-      file({ path: 'src/new.ts', oldPath: 'src/old.ts', staged: 'R', renameScore: 87 }),
-    );
-    expect(diffOf('src/new.ts')?.rename).toEqual({ oldPath: 'src/old.ts', score: 87 });
-
-    // git 没给相似度就不编一个：`?? 0` 会让页面说出「相似度 0%」这句 git 没说过的话
     await loadDiff(file({ path: 'src/new.ts', oldPath: 'src/old.ts', staged: 'R' }));
-    expect(diffOf('src/new.ts')?.rename).toEqual({ oldPath: 'src/old.ts', score: null });
+    expect(diffOf('src/new.ts')?.rename).toEqual({ oldPath: 'src/old.ts' });
 
     await loadDiff(file({ path: 'plain.ts', unstaged: 'M' }));
     expect(diffOf('plain.ts')?.rename).toBeNull();
@@ -669,7 +688,7 @@ describe('refresh（一次 SSE change 之后要重取什么）', () => {
   });
 
   test('重取用的是新列表里的条目——oldPath 跟着变，不能拿旧条目去取', async () => {
-    // 相似度与配对结果都会随改动变化。用旧条目取等于用过期的 oldPath（双路径）
+    // 配对结果会随改动变化。用旧条目取等于用过期的 oldPath（双路径）
     openPinned('diff', 'new.ts');
     diffStates.value = new Map([ready('new.ts')]);
     const calls = stubEndpoints(
@@ -687,7 +706,7 @@ describe('refresh（一次 SSE change 之后要重取什么）', () => {
     openEditor('diff', 'old.ts');
     diffStates.value = new Map([ready('old.ts')]);
     const calls = stubEndpoints(
-      stateWith([file({ path: 'new.ts', oldPath: 'old.ts', staged: 'R', renameScore: 100 })]),
+      stateWith([file({ path: 'new.ts', oldPath: 'old.ts', staged: 'R' })]),
       fresh,
     );
 
@@ -701,7 +720,7 @@ describe('refresh（一次 SSE change 之后要重取什么）', () => {
     expect(diffStates.value.has('old.ts')).toBe(false);
     expect(diffStates.value.get('new.ts')).toEqual({
       status: 'ready',
-      rename: { oldPath: 'old.ts', score: 100 },
+      rename: { oldPath: 'old.ts' },
       payload: fresh,
     });
   });

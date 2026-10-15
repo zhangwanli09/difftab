@@ -159,25 +159,21 @@ describe('DiffView', () => {
     expect(byLines).not.toContain('MB');
   });
 
-  it('重命名条目标注旧路径与相似度（点开后要标注为重命名）', async () => {
+  it('重命名条目只标注旧路径，不印相似度（照 VS Code）', async () => {
     ready('src/new name.ts', { kind: 'text', patch: patchFor('const x = 1;') }, {
       oldPath: 'src/old name.ts',
-      score: 95,
     } satisfies RenameInfo);
     show('src/new name.ts');
 
     await waitFor(() => expect(container.textContent).toContain('Renamed from'));
     expect(container.textContent).toContain('src/old name.ts');
-    expect(container.textContent).toContain('95%');
+    expect(container.textContent).not.toContain('similar');
   });
 
-  it('相似度取不到时只说旧路径，不编一个百分比出来', async () => {
-    ready('b.ts', { kind: 'binary' }, { oldPath: 'a.ts', score: null });
+  it('没有补丁头的那几路也标注：binary 时标注丢了，页面上就再没有地方提过它是重命名', async () => {
+    ready('b.ts', { kind: 'binary' }, { oldPath: 'a.ts' });
     show('b.ts');
     await waitFor(() => expect(container.textContent).toContain('Renamed from'));
-    // 「相似度 null%」「相似度 0%」都是在说一件 git 没说过的事；而 binary 这一路
-    // 压根没有补丁头，标注要是也跟着丢，页面上就再没有任何地方提过它是重命名
-    expect(container.textContent).not.toContain('similar');
     expect(container.textContent).toContain('Binary file');
   });
 

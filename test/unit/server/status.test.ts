@@ -31,7 +31,6 @@ describe('parseStatus', () => {
       kind: 'tracked',
       staged: 'R',
       unstaged: 'M',
-      renameScore: 100,
     });
     expect(files[1]?.path).toBe('src/rewritten-renamed.txt');
   });

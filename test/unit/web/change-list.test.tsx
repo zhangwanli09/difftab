@@ -567,3 +567,69 @@ describe('ChangeList 的 Copy path 行内动作', () => {
     expect(editors.value).toEqual([]);
   });
 });
+
+/**
+ * 文件名的删除线、不染色、不画重命名来源。照 VS Code Source Control：颜色只在行尾字母上，名字
+ * 只在 `D` 时划掉；`RM` 条目在 `Changes` 组印 `M`，那里再标「`← old`」读起来像在说这一侧的改动是改名。
+ */
+describe('ChangeList 的文件名', () => {
+  /** 一行里装名字与目录的那个 truncate span。 */
+  const nameBoxOf = (path: string) => rowByTitle(path)?.querySelector('span.truncate');
+
+  it('名字不染色；徽章按本组那一位上色：同一个 RM 条目在两组各是 R 色与 M 色', () => {
+    render(
+      <ChangeList
+        files={[
+          file({ path: 'src/new.ts', staged: 'R', unstaged: 'M', oldPath: 'src/old.ts' }),
+          file({ path: 'added.ts', kind: 'untracked', unstaged: '?' }),
+        ]}
+      />,
+      container,
+    );
+
+    const rows = rowButtons().filter((row) => row.title === 'src/new.ts');
+    // DOM 顺序即分组顺序：Staged Changes 在前、Changes 在后
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.querySelector('span[title="Renamed"]')?.className).toContain(
+      'text-git-renamed',
+    );
+    expect(rows[1]?.querySelector('span[title="Modified"]')?.className).toContain(
+      'text-git-modified',
+    );
+    for (const row of rowButtons()) {
+      expect(row.querySelector('span.truncate')?.className).not.toContain('text-git-');
+    }
+  });
+
+  it('两组都不画重命名来源', () => {
+    render(
+      <ChangeList
+        files={[file({ path: 'src/new.ts', staged: 'R', unstaged: 'M', oldPath: 'src/old.ts' })]}
+      />,
+      container,
+    );
+
+    for (const row of rowButtons()) {
+      expect(row.textContent).not.toContain('←');
+      expect(row.textContent).not.toContain('old.ts');
+    }
+  });
+
+  it('D 只给名字加删除线，目录段不带；其余状态不加', () => {
+    render(
+      <ChangeList
+        files={[
+          file({ path: 'src/gone.ts', staged: 'D' }),
+          file({ path: 'src/kept.ts', unstaged: 'M' }),
+        ]}
+      />,
+      container,
+    );
+
+    const gone = nameBoxOf('src/gone.ts');
+    // 删除线挂在名字那个内层 span 上；挂到外层会传给目录段，而子元素截不断父级画的线
+    expect(gone?.className).not.toContain('line-through');
+    expect(gone?.querySelector('.line-through')?.textContent).toBe('gone.ts');
+    expect(nameBoxOf('src/kept.ts')?.querySelector('.line-through')).toBeNull();
+  });
+});

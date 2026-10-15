@@ -57,10 +57,13 @@
 
 ## 变更列表
 
-**一行的构成是「文件名 → 目录 →（重命名标注）→ 状态位」。** 目录跟在文件名之后、小一号、次要色、不带尾部斜杠；状态位在行尾靠右，成一列定宽字母（对应 VS Code Source Control 的 decoration）。判据是**侧栏宽度有限而 `truncate` 从右边裁**：路径在前时先被裁掉的恰恰是文件名，故空间不足时先牺牲目录、保住文件名。
+**一行的构成是「文件名 → 目录 → 状态位」。** 目录跟在文件名之后、小一号、次要色、不带尾部斜杠；状态位在行尾靠右，成一列定宽字母（对应 VS Code Source Control 的 decoration）。判据是**侧栏宽度有限而 `truncate` 从右边裁**：路径在前时先被裁掉的恰恰是文件名，故空间不足时先牺牲目录、保住文件名。
 
-- **两段必须同住一个 `truncate` span**（名在前、目录作为它的行内子元素）。拆成两个平级 flex 子项时两件事一起坏、都不报错：各自成为 scroll container 后基线按边框盒合成，两段按底边对齐、看着没对齐；谁先被裁只能靠 flex-basis 调，且会把重命名标注推离它注解的文件名。同住一个 span 时两段共用一个行盒，省略号天然先吃掉目录（有断言）。
+- **两段必须同住一个 `truncate` span**（名在前、目录作为它的行内子元素）。拆成两个平级 flex 子项时两件事一起坏、都不报错：各自成为 scroll container 后基线按边框盒合成，两段按底边对齐、看着没对齐；谁先被裁只能靠 flex-basis 调。同住一个 span 时两段共用一个行盒，省略号天然先吃掉目录（有断言）。
 - 整行挂 `title={file.path}` 补完整路径；不挂在目录 span 上——它被裁到零宽时就没得可悬停了。
+- **文件名不染色，只有本组那一位是 `D` 时加删除线**（照 VS Code Source Control：颜色只在行尾字母上，删除行划掉名字）：已暂存组看 X、其余看 Y。删除线只挂在名字上，目录段不带（有断言）。`Files` 档与 tab 染名字是照 VS Code 的 explorer 与编辑器标签，那是另两处的约定，不往这里搬。
+- **`R` 有自己的颜色**（`--color-git-renamed`，照 VS Code `gitDecoration.renamedResourceForeground`），不借 `M` 那一格：借了时改名行在列表里与改动行同色，而 VS Code 里它是绿的。`C` 仍借 `A`——VS Code 没有复制这一档。
+- **不画重命名来源**（照 VS Code，只显示新路径）：`RM` 条目在 `Changes` 组那一行印的是 `M`，再标「`← old`」读起来像在说这一侧的改动是改名。改名只在点开后的 diff 里说（`RenameNotice`）；**取 diff 照样带 `oldPath`**，那是 git 配对用的，不是展示。
 - **不做文件类型图标**：要么引一套 SVG 去顶体积门禁，要么自维护一张扩展名→颜色表，换来的只是观感。
 - **状态位的外壳是 `STATUS_SLOT` 一个常量**，三种记号（字母、冲突两位、目录圆点）共用，不一致时冲突组那一列会横着挪一截。记号比文件名淡一档（照 VS Code），**淡一档必须走 `opacity`，不能走 token 的 `/75` 修饰符**——双值 token 经 `color-mix()` 会让整条声明作废（红线）。
 - **列表区的三句占位（`Loading…`、取不到、`No changes`）共用 `SidebarPlaceholder`，一起居中在列表区正中**：它们轮流占同一个 `<nav>`，各摆各的位置时每次启动都是「贴左上 → 跳到正中」闪一下。`<nav>` 是块盒，占位得 `h-full` 才真的居中（有断言）。不配图标，也不与右侧面板的空态合成一个组件。
@@ -73,15 +76,15 @@
 
 - **版式只活在本次页面里，不进 `localStorage`**（跨不了实例，见「主题开关」）。状态是 `state/change-tree.ts` 的一个模块级 signal。
 - **分组标题两种版式都留着**：三组是 git 语义（同一个文件可同时在两组），树只是组内的排法。
-- **`Changes` 组内是两份有序列表的归并，不是整体重排**：porcelain v2 先吐全部已跟踪、再吐 `?` 记录，直接拼接时未跟踪文件全堆在组尾。按路径归并一次即可（`store.ts` 的 `mergeByPath`）。
+- **组内按 VS Code 的 `comparePaths` 排序，不沿用 git 的字节序**（`store.ts` 的 `comparePaths`）：逐段比，**同一层里文件排在子目录之前**，段内用 numeric、不分大小写的 collator。git 的字节序下 `src/pages-x/…`（`-` 0x2D）排在 `src/pages.json`（`.` 0x2E）前面，与读者在编辑器里看到的那份对不上；porcelain v2 先吐已跟踪、再吐 `?`，整组重排也顺带把未跟踪文件归到它们该在的位置。
 - **冲突一律印 `!`，悬停给出原始 XY**（`Conflict (UD)`）。VS Code 把 `DU` / `UD` 印成 `D`，这里不跟：`Files` 档只拿得到归并后的 `ChangeCode`，跟了的话同一个文件在两档字母不一样。
 - **分组标题 `sticky top-0` 必须带 `z-10`**：每一行的 group div 是 `relative`，与标题同为 positioned、同为 `z-index: auto` 时按 DOM 顺序绘制，滚到标题底下的行会画在标题上面（有断言）。
-- **树由 `buildChangeTree(files)` 从路径纯算出来，用 `useMemo` 不用 `useComputed`**：`files` 是 prop 不是 signal，computed 不会随它重算——SSE 刷新后树停在旧的那份。每层目录在前、文件在后，各自沿用 git 的顺序不另排序。
+- **树由 `buildChangeTree(files)` 从路径纯算出来，用 `useMemo` 不用 `useComputed`**：`files` 是 prop 不是 signal，computed 不会随它重算——SSE 刷新后树停在旧的那份。每层目录在前、文件在后，各自沿用传入列表的顺序不另排序——传入的已按 `comparePaths` 排好，目录按首次出现的先后插入，于是同层目录与同层文件各自已是 collator 序。
 - **单子目录链紧凑合并**（VS Code 的 compact folders）：只有一个子节点且它是目录时合并成 `src/web/components`，`path` 取链尾。有文件的目录不合并。
 - **折叠态记 collapsed 集合（`collapsedChangeDirs`），不记 expanded**：默认全展开，SSE 新冒出来的目录不用登记就是展开的；记 expanded 时漏登记的新目录默认收起——页面上只是「刚改的文件没显示出来」。
 - **折叠键带分组 id**（`${groupId}:${path}`）：同一个目录可同时出现在两组，不带分组时折 Staged Changes 里的 `src` 会连 Changes 里的一起折掉。陈旧的键不清理。
 - **不复用 `state/tree.ts` 的 `expandedDirs`**：那份默认收起、且 `refreshTree` 按它发请求，混进去每折一个变更目录就多一趟 `ls-files`。
-- **文件行不再画目录段**（祖先节点已经说了），重命名标注照旧。
+- **文件行不再画目录段**（祖先节点已经说了）。
 - **选中态不变**：仍是 `activeEditorPath` 按 `path` 比，切版式不动右侧。
 - **本版不做树模式下的 `Collapse all`**。
 
