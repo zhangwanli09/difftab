@@ -12,6 +12,7 @@ import { useMemo } from 'preact/hooks';
 import {
   type FileEntry,
   isAbsentFromWorktree,
+  isConflicted,
   type StatusCode,
 } from '../../server/shared/protocol';
 import {
@@ -94,7 +95,7 @@ export const CODE_COLORS: Record<StatusCode, string> = {
   T: 'text-git-modified',
   A: 'text-git-added',
   D: 'text-git-deleted',
-  R: 'text-git-modified',
+  R: 'text-git-renamed',
   C: 'text-git-added',
   U: 'text-git-conflicting',
   '?': 'text-git-untracked',
@@ -157,7 +158,11 @@ const DIR_ROW_CLASS = `${ROW_BASE} items-center`;
 /**
  * 一个文件那一行。`treeDepth` 有值即树视图里的一行：按层级缩进、行首多一个与目录行的展开三角
  * 等宽的占位（少了它文件名比同层的目录名往左挪一截，同一层看着像两层）、**不再画目录段**——
- * 祖先节点已经把目录说了。其余（选中态、重命名标注、行尾的状态位、整行 `title`）两种版式一字不差。
+ * 祖先节点已经把目录说了。其余（选中态、删除线、行尾的状态位、整行 `title`）两种版式一字不差。
+ *
+ * **不画重命名来源**（照 VS Code）：`RM` 条目落在 `Changes` 组时这一行印 `M`，再标「`← old`」读起来
+ * 像在说这一侧的改动是改名。改名在点开后的 diff 里说；`oldPath` 仍随 `selectFile` 交给 store 去取
+ * diff。
  */
 function FileRow({
   file,
@@ -173,6 +178,13 @@ function FileRow({
   // 工作区里已不存在的文件不给 `Open file`：它唯一能打开的是一条错误。判据是 git 知识，在协议层。
   // `Copy path` 照给——`git checkout -- <path>` 正要这条路径
   const canOpen = !isAbsentFromWorktree(file);
+  // 本组那一位：徽章印它，`D` 时名字再加删除线。名字不染色——照 VS Code Source Control，颜色只在
+  // 行尾那枚字母上。冲突取 `U`，与 `ConflictBadge` 同一格
+  const code: StatusCode = isConflicted(file)
+    ? 'U'
+    : group === 'staged'
+      ? file.staged
+      : file.unstaged;
   /**
    * 选中态包成 `computed` 再作为 prop 传下去，**不在组件体里读 `activeEditorPath.value`**：在组件
    * 体里读等于这一行订阅了它，换选中时 320 行全部重新渲染，其中 318 行产出的 vnode 与上一次逐
@@ -199,16 +211,16 @@ function FileRow({
       class={rowClass}
       // 平铺列表也走 `indent()`，取第 0 层：左内边距于是三种视图只此一个来源
       style={indent(treeDepth ?? 0)}
-      // 状态位靠右（`ml-auto`）：前面两个 `min-w-0 truncate` 收缩时它 `shrink-0` 不动。每个分组只
+      // 状态位靠右（`ml-auto`）：前面那个 `min-w-0 truncate` 收缩时它 `shrink-0` 不动。每个分组只
       // 展示它自己那一侧的状态位——「已暂存」看 X，其余看 Y；冲突条目两侧都不是 `.`，挑哪一位都会
       // 丢掉另一半，于是另画一枚。**「画冲突徽章」的判据是条目自己的 `conflicted`，不是它落在
       // 哪一组**：按分组判的话，这一行画得对不对就取决于 `groupFiles` 与这里是否一致，而那个
       // 一致性没有任何东西在管
       badge={
-        file.conflicted ? (
+        isConflicted(file) ? (
           <ConflictBadge staged={file.staged} unstaged={file.unstaged} />
         ) : (
-          <StatusBadge code={group === 'staged' ? file.staged : file.unstaged} />
+          <StatusBadge code={code} />
         )
       }
       // 行内动作，位置照 VS Code Source Control 的 inline action。`Copy path` 在左、`Open file` 留在
@@ -234,20 +246,14 @@ function FileRow({
           后面时，放不下先没的就是目录、文件名留到最后；改回「目录前缀 + 文件名」的老写法则
           反过来先吃掉文件名，而它才是认出这一行的东西。
           **两段必须同住这一个 truncate span**：拆成两个平级的 flex 子项会静默毁掉基线对齐，
-          还得靠 flex-basis 去调谁先被裁、连带把下面那段重命名标注推到侧栏最右。
-          `min-w-0` 不能省：flex 子项的 min-width 默认 auto，不给它时 overflow:hidden 收不住 */}
+          还得靠 flex-basis 去调谁先被裁。
+          `min-w-0` 不能省：flex 子项的 min-width 默认 auto，不给它时 overflow:hidden 收不住。
+          删除线只挂在名字那个内层 span 上：挂外层时 line-through 会传给目录段，而子元素的
+          `no-underline` 截不断父级画的线 */}
       <span class="min-w-0 truncate">
-        {name}
+        <span class={code === 'D' ? 'line-through' : undefined}>{name}</span>
         {dir && !inTree && <span class="ml-2 text-xs text-description-foreground">{dir}</span>}
       </span>
-      {/* 重命名的判据是 oldPath 存在，不是比对路径。这里只把旧路径说清楚，
-          点开后的 rename from/to 与相似度标注在 DiffView 那侧 */}
-      {file.oldPath && (
-        <span class="min-w-0 truncate text-xs text-description-foreground">
-          ← {file.oldPath}
-          {file.renameScore !== undefined && ` (${file.renameScore}%)`}
-        </span>
-      )}
     </TreeRow>
   );
 }

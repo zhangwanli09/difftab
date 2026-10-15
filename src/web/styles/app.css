@@ -161,6 +161,7 @@
   /* --- git 装饰色：变更列表的状态位徽章按这套上色 ------------------------ */
   --color-git-modified: light-dark(#667309, #e5ba7d);
   --color-git-deleted: light-dark(#ad0707, #f48771);
+  --color-git-renamed: light-dark(#007100, #73c991);
   --color-git-added: light-dark(#587c0c, #73c991);
   --color-git-untracked: light-dark(#587c0c, #73c991);
   --color-git-conflicting: light-dark(#ad0707, #f48771);

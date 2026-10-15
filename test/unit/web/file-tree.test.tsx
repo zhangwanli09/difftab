@@ -235,6 +235,18 @@ describe('FileTree', () => {
     expect(badgeOf('vendor')?.textContent).toBe('');
   });
 
+  it('目录底下同时有 R 与 M 时颜色不随条目顺序变', async () => {
+    treeCache.value = new Map([[ROOT, [entry({ name: 'src', kind: 'directory' })]]]);
+    // R 在前：两者同档时先到的赢，目录会是改名的绿
+    withFiles([
+      file({ path: 'src/a.ts', staged: 'R', oldPath: 'src/z.ts' }),
+      file({ path: 'src/b.ts', unstaged: 'M' }),
+    ]);
+    await waitFor(() => expect(badgeOf('src')).not.toBeNull());
+
+    expect(badgeOf('src')?.className).toContain('text-git-modified');
+  });
+
   it('展开的目录才画下一层，收起的不画', async () => {
     treeCache.value = new Map([
       [ROOT, [entry({ name: 'src', kind: 'directory' })]],

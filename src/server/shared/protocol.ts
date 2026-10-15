@@ -21,8 +21,6 @@ export interface FileEntry {
   staged: StatusCode;
   /** 工作区相对暂存区的状态位（porcelain 的 Y）。 */
   unstaged: StatusCode;
-  /** 重命名/复制的相似度(`R100` → 100)。 */
-  renameScore?: number;
   /**
    * 未合并（冲突）条目——**「这条来自 porcelain 的 `u` 记录」这一事实本身**，不是从状态
    * 位推出来的：`u` 记录的 XY 可以是 `UU` / `AA` / `DD` / `AU` / `UD`，而 `DD` 两位都不是

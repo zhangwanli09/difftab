@@ -45,12 +45,6 @@ function splitLeading(rec: string, n: number): [string[], string] | null {
   return rest ? [fields, rest] : null;
 }
 
-/** `R100` / `C75` → 100 / 75。 */
-function parseScore(field: string | undefined): number | null {
-  const m = field ? /^[RC](\d+)$/.exec(field) : null;
-  return m?.[1] ? Number(m[1]) : null;
-}
-
 /**
  * 解析 `-z` 输出。**NUL 在重命名记录里既是记录分隔符、又是字段分隔符**：`2 ` 记录是
  * `2 <XY> ... R<score> <新路径>\0<旧路径>`，一条占**两个** NUL 段。因此不能无状态地按
@@ -117,14 +111,14 @@ export function parseStatus(raw: string): StatusResult {
         i += 1;
         if (!split) break;
         const [fields, path] = split;
-        const score = parseScore(fields[8]);
+        // `R<score>` 那一段不进协议：它量的是 HEAD→index，而页面上的补丁是 HEAD→工作区，`RM`
+        // 时两者对不上；VS Code 也哪里都不印相似度
         files.push({
           path,
           oldPath,
           kind: 'tracked',
           staged: asStatusCode(fields[1]?.[0]),
           unstaged: asStatusCode(fields[1]?.[1]),
-          ...(score === null ? {} : { renameScore: score }),
         });
         break;
       }

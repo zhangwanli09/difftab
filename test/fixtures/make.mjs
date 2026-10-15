@@ -173,7 +173,7 @@ export function makeFixtures(destDir, only) {
 
   /**
    * `count` 行文本，**带尾部换行**。少了它 git 会在补丁末尾多一条 `\ No newline at end of file`，
-   * 而 renames 仓库是量相似度的——多出来的这一行会把 `R` 后面那个百分比顶掉一档。
+   * 而 renames 仓库的两半各要落在重命名检测阈值的一侧——多出来的这一行会把相似度顶掉一档。
    */
   const lines = (count, render) =>
     `${Array.from({ length: count }, (_, i) => render(i)).join('\n')}\n`;
