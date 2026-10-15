@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.1](https://github.com/zhangwanli09/difftab/compare/v0.8.0...v0.8.1) (2026-10-15)
+
+
+### Bug Fixes
+
+* **server:** treat ENOTCONN on stdout as a broken pipe on macOS ([#117](https://github.com/zhangwanli09/difftab/issues/117)) ([20172bd](https://github.com/zhangwanli09/difftab/commit/20172bd476a1bcd8b4d94e023d3ab7b0f3c81148))
+* **web:** align the change list with VS Code Source Control ([#114](https://github.com/zhangwanli09/difftab/issues/114)) ([385cbba](https://github.com/zhangwanli09/difftab/commit/385cbbaea9dc3264058bfe0d1564203ef232d05e))
+
 ## [0.8.0](https://github.com/zhangwanli09/difftab/compare/v0.7.0...v0.8.0) (2026-10-14)
 
 
