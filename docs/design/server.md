@@ -29,7 +29,7 @@
 - **判据是 SSE 连接数，但任何请求都重置计时**：「刚被探活复用、浏览器还在启动」与「SSE 被中间层悄悄回收」时连接数都是 0，只有请求活动能证明另一头还有人。
 - **重新武装接在 SSE 通道的 `onChange` 上而非端点**——端点各记一次时漏掉断连那侧不报错，只是关完标签也不退。
 - **宽限期可由内部环境变量 `DIFFTAB_IDLE_MS` 覆盖，取值不合法即启动失败，不退回 45 秒**：否则生命周期的每次自动化验证都要真等 45 秒。它不放宽任何安全校验，因此不属于禁止的「dev 分支」；不进 `--help` 与 README。
-- **退出前的报错走 `writeSync(2, …)` 并裹 try/catch**：`process.stderr.write` 写管道在 Windows 上是异步的，紧跟 `process.exit()` 时整条消息丢掉——而这句提示正是自动化验证「它是自己走的」的判据。**读端可能先走**（`| head -1`）：入口给 stdout / stderr 各挂一个只咽 **EPIPE 与 ECONNRESET** 的 `'error'` 监听器。后者是 macOS 上同一件事的第二种拼法（stdio 管道是 unix socket），漏了它 `| head -1` 偶发以 1 退出。
+- **退出前的报错走 `writeSync(2, …)` 并裹 try/catch**：`process.stderr.write` 写管道在 Windows 上是异步的，紧跟 `process.exit()` 时整条消息丢掉——而这句提示正是自动化验证「它是自己走的」的判据。**读端可能先走**（`| head -1`）：入口给 stdout / stderr 各挂一个只咽 **EPIPE、ECONNRESET 与 ENOTCONN** 的 `'error'` 监听器。后两个是 macOS 上同一件事的另外两种拼法（stdio 管道是 unix socket），漏了任一个 `| head -1` 偶发以 1 退出。
 - **已知边界**：HTTP/1.1 同源 6 条并发连接上限，一条常驻 SSE 占一条，超过 6 个标签页时新标签挂起。实际场景无影响。
 
 ## 同仓库单实例
