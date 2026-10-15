@@ -4,6 +4,7 @@
 // 依赖方向是 bin → server/cli → server/http → {server/git, server/watch}。
 
 import { readFileSync, writeSync } from 'node:fs';
+import type { Writable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { CliUsageError, HELP_TEXT, parseCliArgs } from './cli/args.ts';
 import { start } from './cli/start.ts';
@@ -39,20 +40,23 @@ function fail(message: string): never {
   process.exit(1);
 }
 
+const BROKEN_PIPE_CODES = new Set(['EPIPE', 'ECONNRESET', 'ENOTCONN']);
+
 /**
  * 读端先走了不算错误（`difftab --no-open | head -1`：用户只想要那行 URL）。之后每一次写都以
  * EPIPE 失败，而**在 Windows 上管道写是异步的**（POSIX 上同步），失败因此以一个 `'error'`
  * 事件到达——零监听器的流收到 `'error'` 就是整个进程带着裸栈以 1 退出。
  *
- * **macOS 上同一件事还有第二个码**：stdio 管道在那里是 unix socket，对端刚关闭时内核偶尔回
- * EPROTOTYPE，libuv 把它翻译成 ECONNRESET——与 EPIPE 是同一个事实的两种拼法。
+ * **macOS 上同一件事还有另外两个码**：stdio 管道在那里是 unix socket，对端刚关闭时内核偶尔回
+ * EPROTOTYPE（libuv 把它翻译成 ECONNRESET），也偶尔直接回 ENOTCONN——与 EPIPE 是同一个事实
+ * 的三种拼法。
  *
- * 服务本身没坏（浏览器照常用得上），所以这里只是把这两个码咽掉。**别的错误照旧抛**：
+ * 服务本身没坏（浏览器照常用得上），所以这里只是把这三个码咽掉。**别的错误照旧抛**：
  * 那是真出事了，不该借这条路一起被吞掉。
  */
-function ignoreBrokenPipe(stream: NodeJS.WriteStream): void {
+export function ignoreBrokenPipe(stream: Writable): void {
   stream.on('error', (cause: NodeJS.ErrnoException) => {
-    if (cause.code !== 'EPIPE' && cause.code !== 'ECONNRESET') throw cause;
+    if (!BROKEN_PIPE_CODES.has(cause.code ?? '')) throw cause;
   });
 }
 

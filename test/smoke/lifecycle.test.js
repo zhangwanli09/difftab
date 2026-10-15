@@ -108,7 +108,7 @@ test('stdout 的读端先走了(`| head -1`)，空闲退出仍是干净的 0', a
   );
   assert.doesNotMatch(
     server.stderr,
-    /EPIPE| {4}at /,
+    /EPIPE|ECONNRESET|ENOTCONN| {4}at /,
     `stderr 里出现了 Node 栈：\n${server.stderr}`,
   );
 });
