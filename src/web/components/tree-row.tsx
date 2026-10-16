@@ -43,6 +43,12 @@ export const ROW_BASE =
 const INDENT_PX = 12;
 
 /**
+ * 展开三角的边长（px）：`ExpandChevron` 按它画，引导线按它的一半对中。`ChevronPlaceholder` 的 `w-3`
+ * 是同一个数，但得写成字面量类名——Tailwind 只产出源码里出现过的类名。导出只为让用例按它算线的位置。
+ */
+export const CHEVRON_PX = 12;
+
+/**
  * 一行（或一句占位文案）在第 `depth` 层的左内边距。**只此一份**，两处各写一遍会让占位与行错位。
  * **平铺列表的行也走这里、取第 0 层**（= 12px，与侧栏别处的 `px-3` 同宽）：左内边距于是在三种视图
  * 里只有这一个来源，不必再给列表那档单独贴一个会被内联 style 盖掉的 `pl-*`。
@@ -50,11 +56,55 @@ const INDENT_PX = 12;
 export const indent = (depth: number) => ({ paddingLeft: `${(depth + 1) * INDENT_PX}px` });
 
 /**
+ * 缩进引导线的悬停作用域，挂在列表区那个 `<nav>` 上（照 VS Code 的
+ * `workbench.tree.renderIndentGuides: onHover`）：指针进了列表区，每一层的竖线一起亮。挂在每棵树的
+ * 根上不行——`Changes` 档一组一棵，悬在一组上时另一组的线不亮。写成具名 group 而不是裸 `group`：
+ * 行的 `ROW_GROUP` 已经占了那个名字，裸的会让悬停任一行就点亮它自己子层的线、别处不亮。
+ */
+export const TREE_SCOPE = 'group/tree';
+
+/**
+ * 子层 `<ul>` 上那条竖线。**画在 `::after` 上、不给 z-index**：行的 group div 是 `relative`，同为
+ * positioned、同为 `z-index: auto` 时按 DOM 顺序绘制，`::after` 排在这一层所有行之后，于是盖在
+ * 悬停与选中的底色上；给 `z-10` 则会与 sticky 分组标题（同为 `z-10`）按 DOM 顺序比，滚到标题底下时
+ * 线画在标题上。`::before` 则反过来被这一层的行底色盖住。`pointer-events-none`：线落在行按钮上，
+ * 不能吃掉那一列的点击。
+ *
+ * 横坐标的 `var()` **带 fallback**：`--guide-x` 只在内联 style 里有定义，产物里没有它的声明，
+ * `check:css` 只放行带 fallback 的引用。两侧的变量名由用例钉住。
+ *
+ * 默认透明、`TREE_SCOPE` 悬停时显形；**`pointer-coarse` 常显**，理由与 `REVEAL` 一字不差：触屏上
+ * `group-hover` 从不成立。导出只为让用例钉住这几个变体。
+ */
+export const INDENT_GUIDE =
+  'relative after:pointer-events-none after:absolute after:inset-y-0 after:left-[var(--guide-x,0)] after:w-px after:bg-tree-indent-guides-stroke after:opacity-0 group-hover/tree:after:opacity-100 pointer-coarse:after:opacity-100';
+
+/**
+ * 第 `depth` 层的 `<ul>`，两棵树的每一层都走这里。`depth > 0` 时左侧画一条引导线，横坐标对准父目录
+ * 那枚展开三角的中心：父行左内边距是 `indent(depth - 1)` = `depth * INDENT_PX`，再加三角半宽。
+ * 与 `indent()` 同住一处、从同一个常量算——各算各的时改缩进量不报错，只是线与三角错开。层数没有
+ * 上界，横坐标走内联的 CSS 变量，理由同 `indent()`。根那层不画：它没有父目录可对。
+ */
+export function TreeLevelList({ depth, children }: { depth: number; children: ComponentChildren }) {
+  const guided = depth > 0;
+  return (
+    <ul
+      class={guided ? INDENT_GUIDE : undefined}
+      style={guided ? { '--guide-x': `${depth * INDENT_PX + CHEVRON_PX / 2}px` } : undefined}
+    >
+      {children}
+    </ul>
+  );
+}
+
+/**
  * 目录行的展开三角。展开时靠 `rotate-90` 转 90°，不另换一枚朝下的图标。**按 12 画**：它是行首的
  * 从属记号而不是内容，与文件名同高时会跟名字抢视线。
  */
 export function ExpandChevron({ expanded }: { expanded: boolean }) {
-  return <Icon icon={ChevronRight} size={12} class={`shrink-0 ${expanded ? 'rotate-90' : ''}`} />;
+  return (
+    <Icon icon={ChevronRight} size={CHEVRON_PX} class={`shrink-0 ${expanded ? 'rotate-90' : ''}`} />
+  );
 }
 
 /** 文件行上与三角等宽的占位。少了它文件名会比同层的目录名往左挪一截，同一层看着像两层。 */

@@ -8,7 +8,13 @@ import { render } from 'preact';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FileEntry, TreeEntry } from '../../../src/server/shared/protocol';
 import { FileTree } from '../../../src/web/components/FileTree';
-import { REVEAL, ROW_BASE, ROW_GROUP } from '../../../src/web/components/tree-row';
+import {
+  INDENT_GUIDE,
+  REVEAL,
+  ROW_BASE,
+  ROW_GROUP,
+  TREE_SCOPE,
+} from '../../../src/web/components/tree-row';
 import { activeEditorKey, editors } from '../../../src/web/state/editors';
 import { setIn } from '../../../src/web/state/immutable';
 import { repoState } from '../../../src/web/state/store';
@@ -23,6 +29,7 @@ import {
 import {
   actionOf,
   expectEdgeAnchored,
+  expectGuideUnder,
   expectPlaceholderRow,
   file,
   groupOf,
@@ -352,6 +359,45 @@ describe('FileTree', () => {
     treeCache.value = new Map([[ROOT, [entry({ name: 'a.ts' })]]]);
     await waitFor(() => expect(container.textContent).toContain('a.ts'));
     expect(rowOf('a.ts').className).toContain(ROW_BASE);
+  });
+});
+
+describe('缩进引导线', () => {
+  it('展开的目录底下那层画线，对准它的三角中心；占位那一层也画；根层不画', async () => {
+    treeCache.value = new Map([
+      [ROOT, [entry({ name: 'src', kind: 'directory' })]],
+      [
+        'src',
+        [
+          entry({ name: 'web', path: 'src/web', kind: 'directory' }),
+          entry({ name: 'a.ts', path: 'src/a.ts' }),
+        ],
+      ],
+    ]);
+    expandedDirs.value = new Set(['src', 'src/web']);
+    await waitFor(() => expect(container.textContent).toContain('Loading…'));
+
+    expect(rowOf('src').closest('ul')?.className).toBe('');
+    expectGuideUnder(rowOf('src'));
+    // `src/web` 那层还在 `Loading…`，同样是这一层的 `<ul>`、同样画线
+    expectGuideUnder(rowOf('web'));
+  });
+
+  it('悬停才显形、触屏常显；线画在 ::after 上、不吃点击', () => {
+    // 悬停作用域是具名 group：裸 `group` 被行的 `ROW_GROUP` 占着，悬停一行只会点亮它自己子层的线
+    expect(ROW_GROUP.split(' ')).not.toContain(TREE_SCOPE);
+    for (const cls of [
+      'after:opacity-0',
+      'group-hover/tree:after:opacity-100',
+      'pointer-coarse:after:opacity-100',
+      'after:pointer-events-none',
+    ]) {
+      expect(INDENT_GUIDE.split(' ')).toContain(cls);
+    }
+    // 横坐标的变量名与 `TreeLevelList` 内联写进去的那个是同一个（上一条用例钉住了 style 那侧）
+    expect(INDENT_GUIDE).toContain('after:left-[var(--guide-x,0)]');
+    // 给 z-index 会与 sticky 分组标题按 DOM 顺序比，滚到标题底下时线画在标题上
+    expect(INDENT_GUIDE).not.toMatch(/\bz-/);
   });
 });
 

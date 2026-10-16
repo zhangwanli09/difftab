@@ -19,6 +19,7 @@ import { editors } from '../../../src/web/state/editors';
 import {
   actionOf,
   expectEdgeAnchored,
+  expectGuideUnder,
   file,
   groupOf,
   openPinned,
@@ -259,6 +260,25 @@ describe('ChangeList 的树视图', () => {
     expect(rowByTitle('src/web')?.style.paddingLeft).toBe('24px');
     expect(rowByTitle('src/a.ts')?.style.paddingLeft).toBe('24px');
     expect(rowByTitle('src/web/b.ts')?.style.paddingLeft).toBe('36px');
+  });
+
+  it('子层画引导线、横坐标对准父目录展开三角的中心，根层与平铺列表不画', () => {
+    changeView.value = 'tree';
+    // 带上 `src/a.ts`：`src` 只有 `web` 一个孩子时会与它合并成一个节点
+    const files = [
+      file({ path: 'src/a.ts', staged: 'M' }),
+      file({ path: 'src/web/b.ts', staged: 'M' }),
+      file({ path: 'x/c.ts', staged: 'M' }),
+    ];
+    render(<ChangeList files={files} />, container);
+
+    expectGuideUnder(rowByTitle('src'));
+    expectGuideUnder(rowByTitle('src/web'));
+    expect(rowByTitle('src')?.closest('ul')?.className).toBe('');
+
+    changeView.value = 'list';
+    render(<ChangeList files={files} />, container);
+    expect(container.querySelector(`ul[class]:not([class=""])`)).toBeNull();
   });
 
   it('点目录行把它底下的行折起来，再点展开', async () => {

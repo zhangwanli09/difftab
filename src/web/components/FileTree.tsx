@@ -21,6 +21,7 @@ import {
   PlaceholderRow,
   ROW_BASE,
   SELECTED,
+  TreeLevelList,
   TreeRow,
 } from './tree-row';
 
@@ -138,21 +139,16 @@ function Level({ path, depth }: { path: string; depth: number }) {
   const error = useComputed(() => treeErrors.value.get(path)).value;
 
   // 三种占位是同一行字，只是内容不同：还没取到（或没取到且有原因）、取回来是空的
-  if (entries === undefined || entries.length === 0) {
-    const text = entries === undefined ? (error ?? 'Loading…') : 'Empty';
-    return (
-      <ul>
-        <PlaceholderRow text={text} depth={depth} />
-      </ul>
-    );
-  }
-
+  const placeholder =
+    entries === undefined ? (error ?? 'Loading…') : entries.length === 0 ? 'Empty' : null;
   return (
-    <ul>
-      {entries.map((entry) => (
-        <Row key={entry.path} entry={entry} depth={depth} />
-      ))}
-    </ul>
+    <TreeLevelList depth={depth}>
+      {placeholder !== null ? (
+        <PlaceholderRow text={placeholder} depth={depth} />
+      ) : (
+        entries?.map((entry) => <Row key={entry.path} entry={entry} depth={depth} />)
+      )}
+    </TreeLevelList>
   );
 }
 

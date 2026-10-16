@@ -177,6 +177,8 @@
     rgb(255 255 255 / 0.133)
   );
   --color-list-active-selection-foreground: light-dark(#202020, #ededed);
+  /* 树的缩进引导线（VS Code 的 tree.indentGuidesStroke），深浅各取它的默认值 */
+  --color-tree-indent-guides-stroke: light-dark(#a9a9a9, #585858);
 
   /* --- 搜索与跳行 -------------------------------------------------------- */
   /* 搜索结果里命中那一段的底色（VS Code 的 editor.findMatchHighlightBackground）。2026 起由默认
