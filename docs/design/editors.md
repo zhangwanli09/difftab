@@ -70,9 +70,12 @@
 - **commit tab 里的图片 URL 多带 `commit=<sha>`**，`version` 是对象名，取一次就够。
 - **字节走 `<img src="/api/blob?path=&side=&v=">`**：同源、带 cookie、CSP 的 `img-src 'self'` 现成放行；不 `fetch` + `createObjectURL`（要给 CSP 开 `blob:`），不内联 base64。`path` 直接用 `ImageSide.path`。
 - **`v=` 与 figure 的 `key` 都是后端给的内容身份 `ImageSide.version`，前端只比对不解读**。它必须随内容变：URL 不变时浏览器不重新请求，「图改了、页面上还是旧的」。它也**只能**随内容变：`loadDiff` 每个 SSE 都跑，按「取过一次」换戳会让每次无关改动都重下两张图。
-- **图底下垫棋盘（`checkerboard`）**，格子色复用 `--color-diff-diagonal-fill`，不另开颜色；图外一圈边框。
-- **图 `max-w-full h-auto`，不做缩放、滑块、洋葱皮、像素 diff**。两张图 `flex-wrap`，与 diff 的版式切换不联动。
-- **图水平居中、从顶部起排，放图的那一行（`ImageRow`）两个视图共用、单张也走它**：单张退成普通块盒时 caption 贴的是面板右边而不是图的右下角。
+- **图底下垫棋盘（`checkerboard`）**，格子色复用 `--color-diff-diagonal-fill`，不另开颜色；图外一圈边框。**棋盘那层 `self-end`、不 stretch**：图比 caption 窄时 figure 宽由 caption 撑，stretch 会把棋盘拉宽、图右边多一截空格子。
+- **图按宽高一起缩进面板（照 VS Code 的「Whole Image」），只缩不放**：宽 `max-w-full`、高 `max-h` = 放图那一层的高减去内边距、caption 与边框，`h-auto` 保比例。只限宽时高图要往下滚才看得全。**不做缩放、滑块、洋葱皮、像素 diff**。两张图 `flex-wrap`，与 diff 的版式切换不联动；缩完仍并排不下时上下排，此时面板竖向滚。
+- **图在面板里水平、垂直都居中，放图的那一行（`ImageRow`）两个视图共用、单张也走它**：单张退成普通块盒时 caption 贴的是面板右边而不是图的右下角。
+- **高从面板一路传下来，只在 `image` 那一支**：`Panel` 带 `fill` 时成一列 flex，`ImageRow` 外层 `flex-1` 吃掉提示行（重命名、合并提交）之外的剩余高度，并做成 size 容器给 `max-h` 的 `cqh` 当基准；文件视图的 `w-max` 包裹只套正文那一路，图片那一支直接落在 `Panel` 里，两个视图层数相同。哪几个 kind 要 `fill` 按 kind 穷举成 `Record`，理由同 `NEEDS_WIDE_BOX`。正文与提示行不加 `fill`：滚动层的类名保持原样。
+- **放图那层矮于 8rem 时撤掉 `max-h`、退回只限宽**（size 容器查询）：矮面板里那条 calc 为负、钳成 0；漏带 `fill` 时那层高为 0。两种都会让图整张消失，退回往下滚才不出错。**门槛要离 calc 归零的点（约 3.4rem）留足余量**：写成 4rem 时 4–5rem 高的容器把图压成十几像素的一条，比滚动更糟。
+- **垂直居中靠内层 `m-auto` 而不是 `items-center`**：内容比面板高时 auto margin 归零、从顶部起排；`items-center` 会把溢出的那截均分到上下两头，顶上那截滚不到。
 - **`<img>` 的 `onError` 落成一句 `Could not load the image.`**：payload 与取字节之间文件可以被删、被改、长过 5MB，旧侧是 symlink / gitlink 时字节也解不出。**失败态必须随内容变化归零**：figure 按 `version` 给 `key`，否则撞上一次半写的文件后那一侧永远停在提示上。
 - **`NEEDS_WIDE_BOX.image = false`**：写 `true` 时宽图把滚动区撑到原始像素宽。
 - **体积走 `formatSize(size, 2)`，0 不画**：与 `too-large` 同一个 helper，精度靠一个参数分——caption 是元数据，`1.59 KB` 与 `2 KB` 的差别正是它要回答的。两份 helper 第一次提交就漂开过。

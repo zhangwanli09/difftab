@@ -377,10 +377,28 @@ function RenameNotice({ rename }: { rename: RenameInfo }) {
  *
  * 面板的 chrome 只有 `EditorTabs` 那一条，它排在滚动区域之外，因此这里既不需要 `sticky top-0`
  * 也不需要 `z-10`：补丁里那些 `sticky` 的行号格被滚动容器的 `overflow` 裁掉，够不着标签栏。
+ *
+ * **`fill` 只给图片那一支**：成一列 flex，让 `ImageRow` 用 `flex-1` 拿到面板剩余的高、把图按高缩、
+ * 上下居中。正文与提示行不带它，滚动层的类名照旧。
  */
-export function Panel({ children }: { children: ComponentChildren }) {
-  return <div class="min-h-0 flex-1 overflow-auto">{children}</div>;
+export function Panel({ children, fill = false }: { children: ComponentChildren; fill?: boolean }) {
+  return (
+    <div class={`${fill ? 'flex flex-col ' : ''}min-h-0 flex-1 overflow-auto`}>{children}</div>
+  );
 }
+
+/**
+ * 这一路要不要 `Panel` 的 `fill`。按 kind 穷举成 `Record`，理由同 `FileView` 的
+ * `NEEDS_WIDE_BOX`：与 `Payload` 各判各的 kind，加第六个 kind 时漏改这边会是编译错误而不是
+ * 静默退回不居中。
+ */
+const FILLS_PANEL: Record<DiffPayload['kind'], boolean> = {
+  text: false,
+  'untracked-text': false,
+  binary: false,
+  image: true,
+  'too-large': false,
+};
 
 function Payload({
   path,
@@ -450,7 +468,7 @@ function DiffBody({
   children?: ComponentChildren;
 }) {
   return (
-    <Panel>
+    <Panel fill={state.status === 'ready' && FILLS_PANEL[state.payload.kind]}>
       {children}
       {/* 三个状态下都标注：标注属于「选了哪个条目」，与补丁取到没有无关。它跟着补丁一起滚
           ——这一行说的是这份补丁的来历，不是「我在看哪个文件」，后者由标签栏答 */}

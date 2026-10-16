@@ -59,11 +59,11 @@ describe('FileView', () => {
     // 撑到 1977px（面板 960px）——提示语横着跑出面板，而没有任何门禁看得见
     ready('link', { kind: 'symlink', target: `${'../'.repeat(60)}target.txt` });
     await waitFor(() => expect(container.textContent).toContain('Symbolic link to'));
-    expect(wideBox()?.className).toBe('');
+    expect(wideBox()?.classList.contains('w-max')).toBe(false);
 
     set('a.ts', { status: 'error', message: 'x' });
     await waitFor(() => expect(container.textContent).toContain('Could not load this file'));
-    expect(wideBox()?.className).toBe('');
+    expect(wideBox()?.classList.contains('w-max')).toBe(false);
   });
 
   it('滚动时留在原处的那几样：视图只有滚动那一层、外层 w-max、行号槽', async () => {
