@@ -124,6 +124,42 @@ test('diff 调用一律带上 -c core.quotePath=false 之外的只读形态，�
   }
 });
 
+/**
+ * 取补丁那几条（不带 `--numstat` / `--name-status` 的 `diff`）：**请求参数只决定挑哪个字面量，
+ * 自己不进 argv**。`--unified` 恰好一个、值只能是 3 或整份上下文那个常量；`--inter-hunk-context=0`
+ * 必须在（用户配的 `diff.interHunkContext` 会把相隔几行的两段并成一个，前端的折叠随之错位）；`-w`
+ * 只以它自己出现、且 numstat 那几条一律不带。正面断言两种 `--unified` 与 `-w` 都真的出现过——
+ * `runFullFlow` 漏打带开关的请求时，这几条会对着从没出现过的形态通过。
+ */
+test('取补丁的 diff：--unified 只有 3 / 50000 两种字面量，-w 只给补丁那一次', async () => {
+  const commands = await trace();
+  const diffs = commands.filter((c) => c.subcommand === 'diff');
+  const isList = (c) => c.argv.some((token) => token === '--numstat' || token === '--name-status');
+  const patches = diffs.filter((c) => !isList(c));
+  const seen = new Set();
+  for (const diff of patches) {
+    const shown = diff.argv.join(' ');
+    const unified = diff.argv.filter((token) => token.startsWith('--unified') || /^-U/.test(token));
+    assert.equal(unified.length, 1, `取补丁的 diff 没有恰好一个 --unified：${shown}`);
+    assert.ok(
+      unified[0] === '--unified=3' || unified[0] === '--unified=50000',
+      `--unified 的值不是那两个字面量：${shown}`,
+    );
+    seen.add(unified[0]);
+    assert.ok(diff.argv.includes('--inter-hunk-context=0'), `缺 --inter-hunk-context=0：${shown}`);
+    for (const token of diff.argv) {
+      if (/^-w./.test(token) || token.startsWith('--ignore')) {
+        assert.fail(`忽略空白不是以 -w 自己出现：${shown}`);
+      }
+    }
+    if (diff.argv.includes('-w')) seen.add('-w');
+  }
+  for (const list of diffs.filter(isList)) {
+    assert.ok(!list.argv.includes('-w'), `numstat / name-status 带了 -w：${list.argv.join(' ')}`);
+  }
+  assert.deepEqual([...seen].sort(), ['--unified=3', '--unified=50000', '-w']);
+});
+
 test('cat-file 之后只能是 blob 或 -s——白名单看不见参数，smudge 那条路只有这里拦得住', async () => {
   const commands = await trace();
   const catFiles = commands.filter((c) => c.subcommand === 'cat-file');

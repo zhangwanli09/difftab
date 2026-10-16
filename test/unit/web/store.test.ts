@@ -37,6 +37,9 @@ import {
 import { expandedDirs, loadDir, ROOT, treeCache } from '../../../src/web/state/tree';
 import { file, hideHistory, openPinned, resetEditors, stubJson } from './helpers';
 
+/** 两个补丁开关都关着时请求状态里记的那一档。 */
+const OFF = { ignoreWhitespace: false, fullContext: false };
+
 // 这里测的不是提交历史
 beforeEach(hideHistory);
 
@@ -266,7 +269,7 @@ describe('loadState', () => {
 });
 
 describe('loadDiff（按文件懒加载）', () => {
-  const text: DiffPayload = { kind: 'text', patch: 'diff --git a/a.txt b/a.txt\n' };
+  const text: DiffPayload = { kind: 'text', patch: 'diff --git a/a.txt b/a.txt\n', full: false };
   const diffOf = (path: string) => diffStates.value.get(path);
 
   beforeEach(() => {
@@ -317,7 +320,7 @@ describe('loadDiff（按文件懒加载）', () => {
     ] satisfies DiffPayload[]) {
       stubJson(payload);
       await loadDiff(file({ path: 'a.bin', unstaged: 'M' }));
-      expect(diffOf('a.bin')).toEqual({ status: 'ready', rename: null, payload });
+      expect(diffOf('a.bin')).toEqual({ status: 'ready', rename: null, payload, options: OFF });
     }
   });
 
@@ -333,8 +336,8 @@ describe('loadDiff（按文件懒加载）', () => {
   });
 
   test('同一个路径两次请求重叠时后发的赢——先发后到不会盖掉新补丁', async () => {
-    const slow: DiffPayload = { kind: 'text', patch: 'stale\n' };
-    const fast: DiffPayload = { kind: 'text', patch: 'fresh\n' };
+    const slow: DiffPayload = { kind: 'text', patch: 'stale\n', full: false };
+    const fast: DiffPayload = { kind: 'text', patch: 'fresh\n', full: false };
     stubSlowThenFast(slow, fast);
 
     await Promise.all([
@@ -344,6 +347,7 @@ describe('loadDiff（按文件懒加载）', () => {
     expect(diffOf('a.txt')).toEqual({
       status: 'ready',
       rename: null,
+      options: OFF,
       payload: fast,
     });
   });
@@ -351,8 +355,8 @@ describe('loadDiff（按文件懒加载）', () => {
   test('两个不同路径的请求各落各的槽，互不顶掉', async () => {
     // 票按路径计数：两个 tab 各自的请求互不相干。全局一张票的写法会让先点的那个 tab 永远停在
     // loading 上
-    const slow: DiffPayload = { kind: 'text', patch: 'a\n' };
-    const fast: DiffPayload = { kind: 'text', patch: 'b\n' };
+    const slow: DiffPayload = { kind: 'text', patch: 'a\n', full: false };
+    const fast: DiffPayload = { kind: 'text', patch: 'b\n', full: false };
     stubSlowThenFast(slow, fast);
 
     await Promise.all([
@@ -362,11 +366,13 @@ describe('loadDiff（按文件懒加载）', () => {
     expect(diffOf('a.txt')).toEqual({
       status: 'ready',
       rename: null,
+      options: OFF,
       payload: slow,
     });
     expect(diffOf('b.txt')).toEqual({
       status: 'ready',
       rename: null,
+      options: OFF,
       payload: fast,
     });
   });
@@ -387,15 +393,17 @@ describe('loadDiff（按文件懒加载）', () => {
   test('请求发出前就进 loading 态，且带的是这个文件的 path', async () => {
     stubJson(text);
     const pending = loadDiff(file({ path: 'new.txt', unstaged: 'M' }));
-    expect(diffOf('new.txt')).toEqual({ status: 'loading', rename: null });
+    expect(diffOf('new.txt')).toEqual({ status: 'loading', rename: null, options: OFF });
     await pending;
   });
 
   test('同一个文件重新取时不回退到 loading——否则每次刷新都把画好的 diff 拆掉重画', async () => {
     // 回退的代价不是闪一下：ready → loading 会让渲染 diff 的子树整个卸载，滚动位置随之丢失。每个
     // SSE change 事件与每次切回这个 tab 都会走这里，而要求刷新不丢滚动位置
-    diffStates.value = new Map([['a.txt', { status: 'ready', rename: null, payload: text }]]);
-    const fresh: DiffPayload = { kind: 'text', patch: 'updated\n' };
+    diffStates.value = new Map([
+      ['a.txt', { status: 'ready', rename: null, payload: text, options: OFF }],
+    ]);
+    const fresh: DiffPayload = { kind: 'text', patch: 'updated\n', full: false };
     stubJson(fresh);
 
     const pending = loadDiff(file({ path: 'a.txt', unstaged: 'M' }));
@@ -403,19 +411,21 @@ describe('loadDiff（按文件懒加载）', () => {
     expect(diffOf('a.txt')).toEqual({
       status: 'ready',
       rename: null,
+      options: OFF,
       payload: text,
     });
     await pending;
     expect(diffOf('a.txt')).toEqual({
       status: 'ready',
       rename: null,
+      options: OFF,
       payload: fresh,
     });
   });
 });
 
 describe('selectFile / openFile（预览与固定）', () => {
-  const text: DiffPayload = { kind: 'text', patch: 'x\n' };
+  const text: DiffPayload = { kind: 'text', patch: 'x\n', full: false };
 
   beforeEach(() => {
     resetEditors();
@@ -508,7 +518,7 @@ describe('selectFile / openFile（预览与固定）', () => {
 });
 
 describe('activateEditor / closeEditor', () => {
-  const text: DiffPayload = { kind: 'text', patch: 'x\n' };
+  const text: DiffPayload = { kind: 'text', patch: 'x\n', full: false };
   const stateWith = (files: FileEntry[]): RepoState => ({
     repoName: 'demo',
     branch: { head: 'main', detached: false, upstream: null },
@@ -529,8 +539,10 @@ describe('activateEditor / closeEditor', () => {
     openPinned('diff', 'a.ts');
     openPinned('diff', 'b.ts');
     openPinned('diff', 'a.ts');
-    diffStates.value = new Map([['b.ts', { status: 'ready', rename: null, payload: text }]]);
-    const calls = stubJson({ kind: 'text', patch: 'fresh\n' } satisfies DiffPayload);
+    diffStates.value = new Map([
+      ['b.ts', { status: 'ready', rename: null, payload: text, options: OFF }],
+    ]);
+    const calls = stubJson({ kind: 'text', patch: 'fresh\n', full: false } satisfies DiffPayload);
 
     activateEditor('diff:b.ts');
     expect(activeEditorKey.value).toBe('diff:b.ts');
@@ -560,7 +572,9 @@ describe('activateEditor / closeEditor', () => {
     openPinned('diff', 'a.ts');
     openPinned('diff', 'b.ts');
     openPinned('diff', 'a.ts');
-    diffStates.value = new Map([['a.ts', { status: 'ready', rename: null, payload: text }]]);
+    diffStates.value = new Map([
+      ['a.ts', { status: 'ready', rename: null, payload: text, options: OFF }],
+    ]);
     const calls = stubJson(text);
 
     closeEditor('diff:a.ts');
@@ -605,9 +619,10 @@ describe('activateEditor / closeEditor', () => {
 });
 
 describe('refresh（一次 SSE change 之后要重取什么）', () => {
-  const text: DiffPayload = { kind: 'text', patch: 'old\n' };
-  const fresh: DiffPayload = { kind: 'text', patch: 'new\n' };
-  const ready = (path: string) => [path, { status: 'ready', rename: null, payload: text }] as const;
+  const text: DiffPayload = { kind: 'text', patch: 'old\n', full: false };
+  const fresh: DiffPayload = { kind: 'text', patch: 'new\n', full: false };
+  const ready = (path: string) =>
+    [path, { status: 'ready', rename: null, payload: text, options: OFF }] as const;
 
   const stateWith = (files: FileEntry[]): RepoState => ({
     repoName: 'demo',
@@ -662,6 +677,7 @@ describe('refresh（一次 SSE change 之后要重取什么）', () => {
     expect(diffStates.value.get('a.txt')).toEqual({
       status: 'ready',
       rename: null,
+      options: OFF,
       payload: fresh,
     });
   });
@@ -721,6 +737,7 @@ describe('refresh（一次 SSE change 之后要重取什么）', () => {
     expect(diffStates.value.get('new.ts')).toEqual({
       status: 'ready',
       rename: { oldPath: 'old.ts' },
+      options: OFF,
       payload: fresh,
     });
   });
@@ -853,6 +870,7 @@ describe('refresh（一次 SSE change 之后要重取什么）', () => {
     expect(diffStates.value.get('a.txt')).toEqual({
       status: 'ready',
       rename: null,
+      options: OFF,
       payload: text,
     });
   });

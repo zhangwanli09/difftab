@@ -5,12 +5,13 @@
 
 import type { Stats } from 'node:fs';
 import { lstat } from 'node:fs/promises';
-import type { DiffPayload, ImageSide } from '../shared/protocol.ts';
+import { DIFF_CONTEXT_LINES, type DiffPayload, type ImageSide } from '../shared/protocol.ts';
 import { requireParent, resolveCommit } from './history.ts';
 import { baseBlobSize } from './image.ts';
 import { type DiffBase, type RepoInfo, resolveDiffBase } from './repo.ts';
 import { GitError, runGit, runGitStrict } from './run.ts';
 import {
+  countLines,
   imageMimeOf,
   inspectFile,
   literalRepoPath,
@@ -209,12 +210,14 @@ async function trackedDiff(
   abs: string,
   oldPath: string | undefined,
   stat: { binary: boolean; lines: number } | null,
+  options: PatchOptions,
 ): Promise<DiffPayload> {
   return gatedPatch(root, {
     range: [base.ref],
     path,
     oldPath,
     stat,
+    options,
     image: () => imageDiff(root, base, path, abs, oldPath),
     size: async () => (await worktreeSize(abs)) ?? 0,
   });
@@ -230,12 +233,59 @@ interface PatchSource {
   path: string;
   oldPath: string | undefined;
   stat: { binary: boolean; lines: number } | null;
+  options: PatchOptions;
   image: () => Promise<DiffPayload>;
   size: () => Promise<number>;
 }
 
+/**
+ * 补丁的两个可选档，由 HTTP 层从 query 里解析成两个布尔。**它们只决定挑哪个字面量，自己不进
+ * argv**：`--unified` 的值只有 `DIFF_CONTEXT_LINES` 与 `MAX_LINES` 两个常量，`-w` 只以它自己出现。
+ */
+export interface PatchOptions {
+  ignoreWhitespace?: boolean;
+  fullContext?: boolean;
+}
+
+/**
+ * 取补丁那一次的 argv。**`--unified` 与 `--inter-hunk-context=0` 都必须显式**：用户配了 `diff.context`
+ * 时 git 照配置给上下文，前端按 3 行推断的文件末尾随之错位；`diff.interHunkContext` 会把相隔几行的
+ * 两段并成一个 hunk，前端在整份上下文里重算的折叠就与 `-U3` 那份对不上。`-w` 只给这
+ * 一次——numstat 那次带上它时，只改了空白的文件不回记录，`null` 的含义从「不在差异里」变成「没有
+ * 非空白的改动」，而它同时是已跟踪判定与两道闸的入口。
+ */
+function patchArgs(source: PatchSource, context: number): string[] {
+  const { range, path, oldPath, options } = source;
+  return [
+    'diff',
+    ...range,
+    `--unified=${context}`,
+    '--inter-hunk-context=0',
+    ...(options.ignoreWhitespace ? ['-w'] : []),
+    ...(oldPath ? ['-M', '--', path, oldPath] : ['--', path]),
+  ];
+}
+
+/**
+ * 带着上限取一次补丁。超限回 `null`——**超限是这一路要的答案而不是意外**：git 被就地掐断，补丁
+ * 一个字节都不会发给前端。非零退出在这里没有第二种解释（路径不存在、基准无效都属于坏请求）。
+ */
+async function fetchPatch(root: string, args: string[]): Promise<string | null> {
+  let result: Awaited<ReturnType<typeof runGit>>;
+  try {
+    result = await runGit(args, root, { maxStdoutBytes: MAX_BYTES });
+  } catch (cause) {
+    if (cause instanceof GitError && cause.kind === 'overflow') return null;
+    throw cause;
+  }
+  if (result.code !== 0) {
+    throw new WorktreeError('not-found', 'no diff available for this path');
+  }
+  return result.stdout;
+}
+
 async function gatedPatch(root: string, source: PatchSource): Promise<DiffPayload> {
-  const { range, path, oldPath, stat } = source;
+  const { path, stat } = source;
   if (stat?.binary) {
     return imageMimeOf(path) === null ? { kind: 'binary' } : source.image();
   }
@@ -244,24 +294,21 @@ async function gatedPatch(root: string, source: PatchSource): Promise<DiffPayloa
     return { kind: 'too-large', size: await source.size(), reason: 'lines' };
   }
 
-  const args = oldPath
-    ? ['diff', ...range, '-M', '--', path, oldPath]
-    : ['diff', ...range, '--', path];
-  let result: Awaited<ReturnType<typeof runGit>>;
-  try {
-    result = await runGit(args, root, { maxStdoutBytes: MAX_BYTES });
-  } catch (cause) {
-    // 超限是**这一路要的答案**而不是意外：git 被就地掐断，补丁一个字节都不会发给前端
-    if (cause instanceof GitError && cause.kind === 'overflow') {
-      return { kind: 'too-large', size: await source.size(), reason: 'size' };
+  /**
+   * 整份上下文是 `--unified=<MAX_LINES>`，**过了「补丁不超过 `MAX_LINES` 行」这道闸就一定是整份
+   * 文件**：没包住整份文件的补丁必有一侧连续 `MAX_LINES` 行上下文被收进来，再加至少一行改动就超了。
+   * 过不了闸（含字节超限）时**退回 3 行上下文再取一次、标 `full: false`**，不回 `too-large`：一个
+   * 6MB 的数据文件改一行，3 行上下文的补丁照样看得见。
+   */
+  if (source.options.fullContext) {
+    const full = await fetchPatch(root, patchArgs(source, MAX_LINES));
+    if (full !== null && countLines(full) <= MAX_LINES) {
+      return { kind: 'text', patch: full, full: true };
     }
-    throw cause;
   }
-  // 非零退出在这里没有第二种解释（路径不存在、基准无效都属于坏请求）
-  if (result.code !== 0) {
-    throw new WorktreeError('not-found', 'no diff available for this path');
-  }
-  return { kind: 'text', patch: result.stdout };
+  const patch = await fetchPatch(root, patchArgs(source, DIFF_CONTEXT_LINES));
+  if (patch === null) return { kind: 'too-large', size: await source.size(), reason: 'size' };
+  return { kind: 'text', patch, full: false };
 }
 
 /** unified diff 的头四行。未跟踪的一切都是「新增」，左侧恒为 /dev/null。 */
@@ -322,7 +369,7 @@ export async function untrackedDiff(root: string, path: string): Promise<DiffPay
   return { kind: 'untracked-text', patch: `${patch}\n` };
 }
 
-export interface DiffQuery {
+export interface DiffQuery extends PatchOptions {
   path: string;
   oldPath?: string | undefined;
 }
@@ -344,7 +391,7 @@ export async function readDiff(root: string, query: DiffQuery): Promise<DiffPayl
   const stat = await readNumstat(root, [base.ref], path, oldPath);
 
   if (listed || stat !== null) {
-    return trackedDiff(root, base, path, abs, oldPath, stat);
+    return trackedDiff(root, base, path, abs, oldPath, stat, query);
   }
   return untrackedDiff(root, path);
 }
@@ -375,6 +422,7 @@ export async function readCommitDiff(
     path,
     oldPath,
     stat,
+    options: query,
     image: () => commitImageDiff(root, parent, commit.sha, path, oldPath),
     // 拒绝时报的体积取新侧那个 blob（删除则取旧侧）——同一个文件在工作区 diff 里会说「file is
     // 6 MB」，这里给 0 两个视图就对不上了。`cat-file -s` 只在要拒绝的那两条分支上才问

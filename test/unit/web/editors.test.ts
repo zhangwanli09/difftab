@@ -9,6 +9,7 @@ import {
   activeEditor,
   activeEditorKey,
   activeEditorPath,
+  contextOf,
   type Editor,
   editorKey,
   editors,
@@ -18,6 +19,7 @@ import {
   pinEditor,
   removeEditor,
   renameEditor,
+  setEditorContext,
 } from '../../../src/web/state/editors';
 import { openPinned, resetEditors } from './helpers';
 
@@ -193,6 +195,34 @@ describe('renameEditor', () => {
     openEditor('diff', 'e.ts');
     renameEditor('diff', 'd.ts', 'e.ts');
     expect(editors.value.find((editor: Editor) => editor.path === 'e.ts')?.pinned).toBe(true);
+  });
+
+  it('上下文档跟着改名走；并入同名 tab 时取靠后的那档', () => {
+    openPinned('diff', 'a.ts');
+    setEditorContext('diff:a.ts', 'full');
+    renameEditor('diff', 'a.ts', 'a2.ts');
+    expect(contextOf(editors.value[0] as Editor)).toBe('full');
+
+    openPinned('diff', 'b.ts');
+    setEditorContext('diff:b.ts', 'unavailable');
+    renameEditor('diff', 'a2.ts', 'b.ts');
+    expect(keys()).toEqual(['diff:b.ts']);
+    expect(contextOf(editors.value[0] as Editor)).toBe('unavailable');
+
+    // 反过来也一样：幸存者是 hunks、并进来的是 full
+    openPinned('diff', 'c.ts');
+    openPinned('diff', 'd.ts');
+    setEditorContext('diff:d.ts', 'full');
+    renameEditor('diff', 'd.ts', 'c.ts');
+    expect(contextOf(editors.value.find((e) => e.path === 'c.ts') as Editor)).toBe('full');
+  });
+
+  it('被顶掉的预览 tab 不把上下文档留给顶替它的那个', () => {
+    openEditor('diff', 'a.ts');
+    setEditorContext('diff:a.ts', 'full');
+    openEditor('diff', 'b.ts');
+    expect(keys()).toEqual(['diff:b.ts']);
+    expect(contextOf(editors.value[0] as Editor)).toBe('hunks');
   });
 
   it('只改这一种 kind 的 tab', () => {

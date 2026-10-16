@@ -5,17 +5,24 @@
 // key 让子树卸载重挂。那只在 DOM 上看得见。空态不在这里：栏里没有 tab 时由 `App` 画，归 app.test。
 
 import { render } from 'preact';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DiffPayload } from '../../../src/server/shared/protocol';
 import { DiffView } from '../../../src/web/components/DiffView';
+import { contextOf, editors } from '../../../src/web/state/editors';
 import {
   diffFormatOverride,
   diffPanelWidth,
   SIDE_BY_SIDE_MIN_WIDTH,
   toggleDiffOutputFormat,
 } from '../../../src/web/state/layout';
-import { diffStates, type RenameInfo } from '../../../src/web/state/store';
-import { waitFor } from './helpers';
+import {
+  diffStates,
+  PATCH_DEFAULTS,
+  type PatchRequest,
+  type RenameInfo,
+  repoState,
+} from '../../../src/web/state/store';
+import { file, openPinned, repo, resetEditors, stubJsonBy, waitFor } from './helpers';
 
 /**
  * **那行上下文(`export const keep`)不是凑数的**：happy-dom 的 `Attr.nodeName` 返回空串（机制见
@@ -36,11 +43,17 @@ index 1111111..2222222 100644
 let container: HTMLElement;
 
 /** 把这个路径的缓存写成 ready。**不重新 render**：视图在渲染体里订阅 map，写了它自己会重画。 */
-const ready = (path: string, payload: DiffPayload, rename: RenameInfo | null = null) => {
+const ready = (
+  path: string,
+  payload: DiffPayload,
+  rename: RenameInfo | null = null,
+  options: PatchRequest = PATCH_DEFAULTS,
+) => {
   diffStates.value = new Map(diffStates.value).set(path, {
     status: 'ready',
     rename,
     payload,
+    options,
   });
 };
 
@@ -85,7 +98,7 @@ describe('DiffView', () => {
       {
         path: 'tracked.ts',
         marker: 'const tracked',
-        payload: { kind: 'text', patch: patchFor('const tracked = 2;') },
+        payload: { kind: 'text', patch: patchFor('const tracked = 2;'), full: false },
       },
       {
         path: 'untracked.ts',
@@ -106,7 +119,7 @@ describe('DiffView', () => {
   });
 
   it('视图只有滚动那一层，不再画路径横杠——「在看哪个文件」由标签栏答', async () => {
-    ready('a.ts', { kind: 'text', patch: patchFor('const x = 1;') });
+    ready('a.ts', { kind: 'text', patch: patchFor('const x = 1;'), full: false });
     show('a.ts');
     await waitFor(() => expect(container.querySelector('[data-diff-layout]')).not.toBeNull());
 
@@ -122,7 +135,7 @@ describe('DiffView', () => {
     ['line-by-line', 700],
   ] as const)('%s：行号槽 sticky，表格按内容撑宽——横滚时行号留在左边', async (_, width) => {
     diffPanelWidth.value = width;
-    ready('a.ts', { kind: 'text', patch: patchFor('const x = 1;') });
+    ready('a.ts', { kind: 'text', patch: patchFor('const x = 1;'), full: false });
     show('a.ts');
     await waitFor(() => expect(container.querySelector('[data-diff-layout]')).not.toBeNull());
 
@@ -145,6 +158,7 @@ describe('DiffView', () => {
       kind: 'text',
       patch:
         'diff --git a/big.ts b/big.ts\n--- a/big.ts\n+++ b/big.ts\n@@ -12345 +12345 @@\n-a\n+b\n',
+      full: false,
     });
     show('big.ts');
     await waitFor(() => expect(container.querySelector('[data-diff-layout]')).not.toBeNull());
@@ -162,6 +176,7 @@ describe('DiffView', () => {
     ready('run.sh', {
       kind: 'text',
       patch: 'diff --git a/run.sh b/run.sh\nold mode 100644\nnew mode 100755\n',
+      full: false,
     });
     show('run.sh');
     await waitFor(() => expect(container.textContent).toContain('File without changes.'));
@@ -171,7 +186,7 @@ describe('DiffView', () => {
 
   it('并排两侧横向联动——滚一侧，另一侧跟到同一个 scrollLeft', async () => {
     diffPanelWidth.value = 1400;
-    ready('a.ts', { kind: 'text', patch: patchFor('const x = 1;') });
+    ready('a.ts', { kind: 'text', patch: patchFor('const x = 1;'), full: false });
     show('a.ts');
     await waitFor(() => expect(container.querySelectorAll('[data-diff-side]')).toHaveLength(2));
 
@@ -221,7 +236,7 @@ describe('DiffView', () => {
   });
 
   it('重命名条目只标注旧路径，不印相似度（照 VS Code）', async () => {
-    ready('src/new name.ts', { kind: 'text', patch: patchFor('const x = 1;') }, {
+    ready('src/new name.ts', { kind: 'text', patch: patchFor('const x = 1;'), full: false }, {
       oldPath: 'src/old name.ts',
     } satisfies RenameInfo);
     show('src/new name.ts');
@@ -239,7 +254,7 @@ describe('DiffView', () => {
   });
 
   it('普通文件不出现重命名标注——判据是 rename 而不是路径长得像', async () => {
-    ready('a.ts', { kind: 'text', patch: patchFor('const x = 1;') });
+    ready('a.ts', { kind: 'text', patch: patchFor('const x = 1;'), full: false });
     show('a.ts');
     await waitFor(() => expect(container.textContent).toContain('const x'));
     expect(container.textContent).not.toContain('Renamed');
@@ -261,14 +276,14 @@ describe('DiffView', () => {
   });
 
   it('同一个文件换补丁：容器留在原地，不卸载重挂', async () => {
-    ready('a.ts', { kind: 'text', patch: patchFor('const first = 1;') });
+    ready('a.ts', { kind: 'text', patch: patchFor('const first = 1;'), full: false });
     show('a.ts');
     await waitFor(() => expect(container.textContent).toContain('const first'));
     const before = payloadNode();
 
     // **只写 map、不补 render**：视图在渲染体里订阅 map，状态一变自己就重画——手动补一次会把
     // 「状态变了会不会重画」替它做掉，而这条与下一条正是要证这个
-    ready('a.ts', { kind: 'text', patch: patchFor('const second = 2;') });
+    ready('a.ts', { kind: 'text', patch: patchFor('const second = 2;'), full: false });
     await waitFor(() => expect(container.textContent).toContain('const second'));
 
     // 元素**同一个**是这条验收的全部内容：换成新元素就意味着画好的 DOM 连同滚动位置一起被丢
@@ -284,7 +299,7 @@ describe('DiffView', () => {
     // 走的是直接写 `diffPanelWidth`，不经 ResizeObserver:happy-dom 的 ResizeObserver 是个空壳、
     // 也没有布局引擎，那一段归肉眼项
     diffPanelWidth.value = 700;
-    ready('a.ts', { kind: 'text', patch: patchFor('const first = 1;') });
+    ready('a.ts', { kind: 'text', patch: patchFor('const first = 1;'), full: false });
     show('a.ts');
     await waitFor(() => expect(container.querySelectorAll('table')).toHaveLength(1));
     const before = payloadNode();
@@ -303,7 +318,7 @@ describe('DiffView', () => {
     // 手动档走的是同一个 `diffOutputFormat`，所以不用另补依赖——这条钉的就是「没有另开一条通路」。
     // 「固定之后拖宽度不再换」由 layout.test 按「下游一次通知都收不到」钉住，比在这里睡一拍再看 DOM 更硬
     diffPanelWidth.value = 1400;
-    ready('a.ts', { kind: 'text', patch: patchFor('const first = 1;') });
+    ready('a.ts', { kind: 'text', patch: patchFor('const first = 1;'), full: false });
     show('a.ts');
     await waitFor(() => expect(container.querySelectorAll('[data-diff-side]')).toHaveLength(2));
     const before = payloadNode();
@@ -312,5 +327,199 @@ describe('DiffView', () => {
     await waitFor(() => expect(container.querySelectorAll('table')).toHaveLength(1));
     expect(container.querySelectorAll('[data-diff-side]')).toHaveLength(0);
     expect(payloadNode()).toBe(before);
+  });
+});
+
+describe('没改的行：折起与展开', () => {
+  /** 20 行的文件改了第 5、13 行。`full` 即整份上下文那一份。 */
+  const patch20 = (full: boolean) => {
+    const lines = Array.from({ length: 20 }, (_, i) => i + 1);
+    const changed = (n: number) => n === 5 || n === 13;
+    const body = (from: number, to: number) =>
+      lines
+        .slice(from - 1, to)
+        .flatMap((n) => (changed(n) ? [`-${n}`, `+${n}!`] : [` ${n}`]))
+        .join('\n');
+    const head =
+      'diff --git a/f.txt b/f.txt\nindex 1111111..2222222 100644\n--- a/f.txt\n+++ b/f.txt\n';
+    return full
+      ? `${head}@@ -1,20 +1,20 @@\n${body(1, 20)}\n`
+      : `${head}@@ -2,7 +2,7 @@\n${body(2, 8)}\n@@ -10,7 +10,7 @@\n${body(10, 16)}\n`;
+  };
+  const gapRows = () => [...container.querySelectorAll('tr[data-line="hunk"]')];
+  const gapTexts = () => gapRows().map((row) => row.textContent?.trim());
+  const gapButtons = () => [
+    ...container.querySelectorAll<HTMLButtonElement>('tr[data-line="hunk"] button'),
+  ];
+  const codeTexts = () =>
+    [...container.querySelectorAll('[data-code]')].map((code) => code.textContent);
+
+  let calls: string[];
+  /** 整份上下文那一趟回什么。 */
+  let fullResponse: DiffPayload;
+
+  beforeEach(() => {
+    resetEditors();
+    repoState.value = repo({ files: [file({ path: 'f.txt', unstaged: 'M' })] });
+    openPinned('diff', 'f.txt');
+    fullResponse = { kind: 'text', patch: patch20(true), full: true };
+    calls = stubJsonBy((url) => ({
+      payload:
+        url.searchParams.get('fullContext') === '1'
+          ? fullResponse
+          : { kind: 'text', patch: patch20(false), full: false },
+    }));
+  });
+
+  afterEach(() => {
+    resetEditors();
+    repoState.value = null;
+    vi.unstubAllGlobals();
+  });
+
+  it('不画 `@@` 那一行：hunk 之前、之间折成 N hidden lines，末尾数不出来的写 Show remaining lines', async () => {
+    diffPanelWidth.value = 700;
+    ready('f.txt', { kind: 'text', patch: patch20(false), full: false });
+    show('f.txt');
+    await waitFor(() => expect(gapRows()).toHaveLength(3));
+    expect(gapTexts()).toEqual(['1 hidden line', '1 hidden line', 'Show remaining lines']);
+    expect(container.textContent).not.toContain('@@');
+    expect(gapButtons()).toHaveLength(3);
+  });
+
+  it('3 行上下文时点开一段：去要整份上下文，回来后只展开点的那一段', async () => {
+    diffPanelWidth.value = 700;
+    ready('f.txt', { kind: 'text', patch: patch20(false), full: false });
+    show('f.txt');
+    await waitFor(() => expect(gapButtons()).toHaveLength(3));
+
+    gapButtons()[1]?.click();
+    expect(contextOf(editors.value[0] as (typeof editors.value)[number])).toBe('full');
+    await waitFor(() => expect(calls.some((url) => url.includes('fullContext=1'))).toBe(true));
+    // 回来之后：第 9 行展开，另两段照旧折着；末尾那一段有了行数
+    await waitFor(() => expect(gapTexts()).toEqual(['1 hidden line', '4 hidden lines']));
+    expect(codeTexts()).toContain('9');
+    expect(codeTexts()).not.toContain('1');
+  });
+
+  it('点过、整份上下文还没回来时那一行是 Loading…，不可再点', async () => {
+    diffPanelWidth.value = 700;
+    vi.stubGlobal('fetch', () => new Promise(() => {}));
+    ready('f.txt', { kind: 'text', patch: patch20(false), full: false });
+    show('f.txt');
+    await waitFor(() => expect(gapButtons()).toHaveLength(3));
+
+    gapButtons()[0]?.click();
+    await waitFor(() => expect(gapTexts()[0]).toBe('Loading…'));
+    expect(gapButtons()).toHaveLength(2);
+  });
+
+  it('整份上下文过不了闸：tab 记成 unavailable，所有折叠行只是文本', async () => {
+    diffPanelWidth.value = 700;
+    fullResponse = { kind: 'text', patch: patch20(false), full: false };
+    ready('f.txt', { kind: 'text', patch: patch20(false), full: false });
+    show('f.txt');
+    await waitFor(() => expect(gapButtons()).toHaveLength(3));
+
+    gapButtons()[0]?.click();
+    await waitFor(() =>
+      expect(contextOf(editors.value[0] as (typeof editors.value)[number])).toBe('unavailable'),
+    );
+    await waitFor(() => expect(gapButtons()).toHaveLength(0));
+    expect(gapTexts()).toEqual([
+      '1 hidden line · too large to expand',
+      '1 hidden line · too large to expand',
+      'Remaining lines · too large to expand',
+    ]);
+  });
+
+  it('已经是整份上下文时点开是即时的，不再发请求', async () => {
+    diffPanelWidth.value = 700;
+    ready('f.txt', { kind: 'text', patch: patch20(true), full: true });
+    show('f.txt');
+    await waitFor(() =>
+      expect(gapTexts()).toEqual(['1 hidden line', '1 hidden line', '4 hidden lines']),
+    );
+
+    gapButtons()[2]?.click();
+    await waitFor(() => expect(gapRows()).toHaveLength(2));
+    expect(codeTexts()).toEqual(expect.arrayContaining(['17', '18', '19', '20']));
+    expect(calls).toHaveLength(0);
+  });
+
+  it('切了忽略空白：记着的展开一律作废——同一个旧侧行号在 `-w` 下可能是另一段', async () => {
+    diffPanelWidth.value = 700;
+    ready('f.txt', { kind: 'text', patch: patch20(true), full: true });
+    show('f.txt');
+    await waitFor(() => expect(gapButtons()).toHaveLength(3));
+    gapButtons()[1]?.click();
+    await waitFor(() => expect(gapRows()).toHaveLength(2));
+
+    // 同一份补丁、只是记成按 `-w` 取的：没人点过，就不该有哪一段是开着的
+    ready('f.txt', { kind: 'text', patch: patch20(true), full: true }, null, {
+      ignoreWhitespace: true,
+      fullContext: true,
+    });
+    await waitFor(() => expect(gapRows()).toHaveLength(3));
+    expect(codeTexts()).not.toContain('9');
+  });
+
+  it('那一行已不在变更列表里（两次刷新之间）：点了不改档、不发请求，也不停在 Loading…', async () => {
+    diffPanelWidth.value = 700;
+    repoState.value = repo({ files: [] });
+    ready('f.txt', { kind: 'text', patch: patch20(false), full: false });
+    show('f.txt');
+    await waitFor(() => expect(gapButtons()).toHaveLength(3));
+
+    gapButtons()[0]?.click();
+    expect(contextOf(editors.value[0] as (typeof editors.value)[number])).toBe('hunks');
+    await waitFor(() => expect(gapTexts()[0]).toBe('1 hidden line'));
+    expect(calls).toHaveLength(0);
+  });
+
+  it('要整份上下文却回来 too-large：同样记成 unavailable——留在 full 就是每个 SSE 白撞两次闸', async () => {
+    fullResponse = { kind: 'too-large', size: 6_000_000, reason: 'size' };
+    ready('f.txt', { kind: 'text', patch: patch20(false), full: false });
+    show('f.txt');
+    await waitFor(() => expect(gapButtons()).toHaveLength(3));
+
+    gapButtons()[0]?.click();
+    await waitFor(() =>
+      expect(contextOf(editors.value[0] as (typeof editors.value)[number])).toBe('unavailable'),
+    );
+  });
+
+  it('并排时折叠行两侧各占一行，文案与按钮只在旧侧', async () => {
+    diffPanelWidth.value = 1400;
+    ready('f.txt', { kind: 'text', patch: patch20(false), full: false });
+    show('f.txt');
+    await waitFor(() => expect(container.querySelectorAll('[data-diff-side]')).toHaveLength(2));
+    const [left, right] = [...container.querySelectorAll('[data-diff-side]')];
+    expect(left?.querySelectorAll('tr[data-line="hunk"] button')).toHaveLength(3);
+    expect(right?.querySelectorAll('tr[data-line="hunk"]')).toHaveLength(3);
+    expect(right?.querySelectorAll('tr[data-line="hunk"] button')).toHaveLength(0);
+  });
+
+  it('忽略空白取回来的补丁没有 hunk：说 Only whitespace changes.；关着取的照旧', async () => {
+    const empty: DiffPayload = { kind: 'text', patch: '', full: false };
+    ready('f.txt', empty, null, { ignoreWhitespace: true, fullContext: false });
+    show('f.txt');
+    await waitFor(() => expect(container.textContent).toContain('Only whitespace changes.'));
+
+    // 判据是这份补丁**取的时候**那一档，不是此刻的开关
+    ready('f.txt', empty);
+    await waitFor(() => expect(container.textContent).toContain('File without changes.'));
+  });
+
+  it('忽略空白时只改了权限位：git 仍给文件头，说 File without changes. 而不是空白', async () => {
+    const modeOnly: DiffPayload = {
+      kind: 'text',
+      patch: 'diff --git a/run.sh b/run.sh\nold mode 100644\nnew mode 100755\n',
+      full: false,
+    };
+    ready('run.sh', modeOnly, null, { ignoreWhitespace: true, fullContext: false });
+    show('run.sh');
+    await waitFor(() => expect(container.textContent).toContain('File without changes.'));
+    expect(container.textContent).not.toContain('Only whitespace changes.');
   });
 });

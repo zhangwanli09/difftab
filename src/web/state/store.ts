@@ -21,15 +21,19 @@ import {
 } from '../../server/shared/protocol';
 import {
   activeEditor,
+  contextOf,
   type Editor,
   type EditorKey,
+  editorKey,
   editors,
+  findEditor,
   focusEditor,
   keyOf,
   openCommitEditor,
   openEditor,
   removeEditor,
   renameEditor,
+  setEditorContext,
   setReveal,
 } from './editors';
 import { ensureHistory } from './history';
@@ -61,9 +65,73 @@ export interface RenameInfo {
  * `diffStates` 里的键回答，状态自己不再带一份 `path`。
  */
 export type DiffRequestState =
-  | { status: 'loading'; rename: RenameInfo | null }
-  | { status: 'ready'; rename: RenameInfo | null; payload: DiffPayload }
+  | { status: 'loading'; rename: RenameInfo | null; options: PatchRequest }
+  | {
+      status: 'ready';
+      rename: RenameInfo | null;
+      payload: DiffPayload;
+      /**
+       * **这份 payload 是什么**，不是请求里问了什么：忽略空白取自请求，整份上下文取自 payload（带着
+       * `fullContext=1` 却被退回 3 行时记成关）。视图按它渲染，不读此刻的开关；commit tab 的
+       * `refetch` 拿它与此刻要的那一档比。
+       */
+      options: PatchRequest;
+      /**
+       * 一次按这一档的重取正在路上，而画面上留着的仍是上面那份。只有 commit tab 用：它的 `refetch`
+       * 要靠这个判「已经在取了」，否则 SSE 每来一次就新发一趟、新票作废旧票，慢补丁永远落不了地。
+       */
+      pending?: PatchRequest;
+    }
   | { status: 'error'; rename: RenameInfo | null; message: string };
+
+/** 一次补丁请求带的两个开关。 */
+export interface PatchRequest {
+  ignoreWhitespace: boolean;
+  fullContext: boolean;
+}
+
+/** 两样都关：起步那一档。 */
+export const PATCH_DEFAULTS: PatchRequest = { ignoreWhitespace: false, fullContext: false };
+
+const samePatchRequest = (a: PatchRequest, b: PatchRequest) =>
+  a.ignoreWhitespace === b.ignoreWhitespace && a.fullContext === b.fullContext;
+
+/**
+ * 忽略空白的开关。**全局一份，不分 tab**（照 VS Code，那是一个全局设置）；**不进 `localStorage`**：
+ * 端口随机，记了也跨不了实例，理由同版式 override。写入方只有 `toggleIgnoreWhitespace`。
+ */
+export const ignoreWhitespace = signal(false);
+
+/** 这个 tab 此刻该按哪一档取：开关是全局的，上下文档是 tab 自己的。 */
+const patchRequestOf = (editor: Editor | undefined): PatchRequest => ({
+  ignoreWhitespace: ignoreWhitespace.value,
+  fullContext: contextOf(editor) === 'full',
+});
+
+/** 两个开关写进 query。关着的不写——后端缺省即关，且只认 `1`。 */
+function setPatchQuery(query: URLSearchParams, options: PatchRequest): void {
+  if (options.ignoreWhitespace) query.set('ignoreWhitespace', '1');
+  if (options.fullContext) query.set('fullContext', '1');
+}
+
+/** 按 `request` 取回来的 `payload` 是哪一档：整份上下文只认 payload 的 `full`。 */
+const fetchedAs = (request: PatchRequest, payload: DiffPayload): PatchRequest => ({
+  ignoreWhitespace: request.ignoreWhitespace,
+  fullContext: payload.kind === 'text' && payload.full,
+});
+
+/**
+ * 带着 `fullContext=1` 取回来的却不是整份上下文：后端说过不了闸。这个 tab 从此记成 `unavailable`、
+ * 退回 3 行上下文。`too-large` 同样记：文件长过了字节闸时后端先按整份上下文撞一次、退回 3 行再撞一
+ * 次，留在 `full` 就是每个 SSE 白跑两趟 git。二进制与图片不记——它们与上下文无关，文件变回文本时照常
+ * 能展开。
+ */
+function noteUnavailable(key: EditorKey, request: PatchRequest, payload: DiffPayload): void {
+  if (!request.fullContext) return;
+  if ((payload.kind === 'text' && !payload.full) || payload.kind === 'too-large') {
+    setEditorContext(key, 'unavailable');
+  }
+}
 
 /**
  * `FileEntry` 的 `oldPath` → 一个可选对象。判据是 `oldPath` 存在，**不是比对新旧路径**——
@@ -292,20 +360,31 @@ export async function loadDiff(entry: FileEntry): Promise<void> {
   const { path } = entry;
   const ticket = diffCache.tickets.claim(path);
   const rename = renameOf(entry);
+  const key = editorKey('diff', path);
+  const options = patchRequestOf(findEditor(key));
   /**
    * **同一个文件重新取时不回退到 loading 态**：`ready` 变 `loading` 会让渲染 diff 的那棵子树
    * 整个卸载，画好的 DOM 连同滚动位置一起没了，补丁回来后从零重画。每个 SSE
    * `change` 事件与每次切回这个 tab 都会走这里，而要求刷新**不丢选中文件与滚动位置**。
    */
   if (diffStates.value.get(path)?.status !== 'ready')
-    diffCache.set(path, { status: 'loading', rename });
+    diffCache.set(path, { status: 'loading', rename, options });
   try {
     const query = new URLSearchParams({ path });
     if (entry.oldPath) query.set('oldPath', entry.oldPath);
+    setPatchQuery(query, options);
     const payload = await getJson<DiffPayload>(`/api/diff?${query}`);
     // 这个路径上又发了一次、或 tab 已被关掉——这份结果已经是过期的那一个
     if (!diffCache.tickets.isCurrent(ticket, path)) return;
-    diffCache.set(path, { status: 'ready', rename, payload });
+    batch(() => {
+      diffCache.set(path, {
+        status: 'ready',
+        rename,
+        payload,
+        options: fetchedAs(options, payload),
+      });
+      noteUnavailable(key, options, payload);
+    });
   } catch (cause) {
     if (!diffCache.tickets.isCurrent(ticket, path)) return;
     diffCache.set(path, { status: 'error', rename, message: toMessage(cause) });
@@ -422,13 +501,30 @@ function refetch(editor: Editor): Promise<void> {
     // 取到了就不再取；**在途也不再取**——每次 SSE 都重发一次时，新票作废旧票，一份几百毫秒才回来的
     // 补丁在 agent 跑动期间永远轮不到落地，tab 就一直停在 `Loading…`。状态是 `loading` 即有一次在
     // 途：作废一次请求的唯一途径是 `forget`，而它连状态一起删了
-    const status = commitDiffStates.value.get(keyOf(editor))?.status;
-    return status === 'ready' || status === 'loading' ? Promise.resolve() : loadCommitDiff(editor);
+    //
+    // **例外是取的那一档与此刻不同**（切了忽略空白、点开了折叠行）：这两样只在用户点了什么时才变，
+    // 不会有 SSE 那种饿死。已经按此刻这一档在取（`pending`）也算「在途」
+    const state = commitDiffStates.value.get(keyOf(editor));
+    const wanted = patchRequestOf(editor);
+    // 在途的那一档优先：`ready` 带着 `pending` 时画面上是旧的、路上是新的
+    const settledAs =
+      state?.status === 'ready'
+        ? (state.pending ?? state.options)
+        : state?.status === 'loading'
+          ? state.options
+          : null;
+    return settledAs !== null && samePatchRequest(settledAs, wanted)
+      ? Promise.resolve()
+      : loadCommitDiff(editor);
   }
   if (editor.kind === 'file') return loadFile(editor.path);
-  const entry = repoState.value?.files.find((file) => file.path === editor.path);
+  const entry = entryOf(editor);
   return entry === undefined ? Promise.resolve() : loadDiff(entry);
 }
+
+/** diff tab 在当前列表里的那一行；不在（两次刷新之间的窗口）时 `refetch` 什么都不发。 */
+const entryOf = (editor: Editor): FileEntry | undefined =>
+  repoState.value?.files.find((file) => file.path === editor.path);
 
 /**
  * 关掉一个 tab：从栏里移除、忘掉它的缓存与在途请求；关的是活动 tab 时顶上来的邻居也要重取
@@ -531,13 +627,31 @@ async function loadCommitDiff(editor: Extract<Editor, { kind: 'commit' }>): Prom
   const key = keyOf(editor);
   const ticket = commitDiffCache.tickets.claim(key);
   const rename = oldPath === undefined ? null : { oldPath };
-  commitDiffCache.set(key, { status: 'loading', rename });
+  const options = patchRequestOf(editor);
+  // 已有一份时照常显示它、记一笔「在取」，不回退 loading：回退会让表格卸载重挂，点开折叠行的那一刻
+  // 展开状态（住在组件里）跟着没了
+  const current = commitDiffStates.value.get(key);
+  commitDiffCache.set(
+    key,
+    current?.status === 'ready'
+      ? { ...current, pending: options }
+      : { status: 'loading', rename, options },
+  );
   try {
     const query = new URLSearchParams({ sha, path });
     if (oldPath) query.set('oldPath', oldPath);
+    setPatchQuery(query, options);
     const payload = await getJson<DiffPayload>(`/api/commit-diff?${query}`);
     if (!commitDiffCache.tickets.isCurrent(ticket, key)) return;
-    commitDiffCache.set(key, { status: 'ready', rename, payload });
+    batch(() => {
+      commitDiffCache.set(key, {
+        status: 'ready',
+        rename,
+        payload,
+        options: fetchedAs(options, payload),
+      });
+      noteUnavailable(key, options, payload);
+    });
   } catch (cause) {
     if (!commitDiffCache.tickets.isCurrent(ticket, key)) return;
     commitDiffCache.set(key, { status: 'error', rename, message: toMessage(cause) });
@@ -554,4 +668,29 @@ export function selectCommitFile(sha: string, entry: CommitFileEntry): void {
   if (replaced !== null) forget(replaced);
   const opened = activeEditor.value;
   if (opened !== null) void refetch(opened);
+}
+
+/**
+ * 切换忽略空白，**只重取活动 tab**：后台的 diff tab 切过去时本来就重取，commit tab 切过去时按「取的
+ * 那一档与此刻不同」重取。重取期间照常显示旧补丁、不回退 loading，与 SSE 刷新同一条。
+ */
+export function toggleIgnoreWhitespace(): void {
+  ignoreWhitespace.value = !ignoreWhitespace.value;
+  const editor = activeEditor.value;
+  if (editor !== null && editor.kind !== 'file') void refetch(editor);
+}
+
+/**
+ * 点开一段折叠行而手上只有 3 行上下文：这个 tab 从此要整份上下文，立刻重取一次。`full` /
+ * `unavailable` 时什么都不做——前者已经有了（或在路上），后者说过展开不了。
+ */
+export function expandContext(key: EditorKey): void {
+  const editor = findEditor(key);
+  if (editor === undefined || contextOf(editor) !== 'hunks') return;
+  // 这一下发不出请求（diff tab 的那一行已不在列表里，下一次 SSE 会关掉它）就不改档：改了时点的那一段
+  // 停在 `Loading…`，而什么都不会来
+  if (editor.kind === 'diff' && entryOf(editor) === undefined) return;
+  setEditorContext(key, 'full');
+  const updated = findEditor(key);
+  if (updated !== undefined) void refetch(updated);
 }

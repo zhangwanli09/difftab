@@ -45,10 +45,12 @@ import {
   diffStates,
   type FileRequestState,
   fileStates,
+  ignoreWhitespace,
 } from '../../../src/web/state/store';
 
-/** 清空标签栏与三张缓存。用到右侧状态的用例都从这里起。 */
+/** 清空标签栏、三张缓存与忽略空白的开关。用到右侧状态的用例都从这里起。 */
 export function resetEditors(): void {
+  ignoreWhitespace.value = false;
   editors.value = [];
   activeEditorKey.value = null;
   diffStates.value = new Map();

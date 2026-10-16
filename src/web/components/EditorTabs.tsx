@@ -7,11 +7,11 @@
 // 完整路径挂在 `title` 上；栏下不再留一行路径横杠——每个文件的名字会在栏里与栏下各写一遍。
 //
 // **栏是两层，tablist 在里面**：右端那块编辑器动作区（全文 tab 的 `Copy file contents`、diff 与
-// commit tab 的版式切换）与 tablist 并排而不是躺在它里面，切法与侧栏那行 tab 一样——躺进去时
+// commit tab 的忽略空白与版式切换）与 tablist 并排而不是躺在它里面，切法与侧栏那行 tab 一样——躺进去时
 // 读屏把按钮报成又一个 tab，而 tablist 是横向滚动容器，按钮还会跟着 tab 滚出视野。
 
 import { computed, useComputed } from '@preact/signals';
-import { Columns2, type LucideIcon, Rows2, X } from 'lucide-preact';
+import { Columns2, type LucideIcon, Pilcrow, Rows2, X } from 'lucide-preact';
 import { useEffect, useRef } from 'preact/hooks';
 import {
   activeEditor,
@@ -31,10 +31,13 @@ import {
   commitDiffStates,
   diffStates,
   fileStates,
+  ignoreWhitespace,
+  toggleIgnoreWhitespace,
 } from '../state/store';
 import { CODE_COLORS, splitForDisplay } from './ChangeList';
 import { Icon, KIND_ICON } from './Icon';
 import { IconButton } from './IconButton';
+import { Toggle } from './Toggle';
 import { CopyButton } from './tree-row';
 
 // 外壳：下划线是自己的 `border-b`（选中 `border-editor-foreground`、未选中透明），盖在栏那条
@@ -69,24 +72,39 @@ const activeFileText = computed<string | null>(() => {
  * `patch` 的那几支，按结构判时新增一种带补丁的 kind 自动算进来，另列一张表则要与那个 switch
  * 手动保持同步。
  */
-const activePatchShown = computed<boolean>(() => {
+const activePatchPayload = computed(() => {
   const editor = activeEditor.value;
-  if (editor === null || editor.kind === 'file') return false;
+  if (editor === null || editor.kind === 'file') return null;
   // 两份缓存的键与 `DiffView` / `CommitDiffView` 读的同一套：diff 按路径，commit 按 tab 键
   const state =
     editor.kind === 'commit'
       ? commitDiffStates.value.get(keyOf(editor))
       : diffStates.value.get(editor.path);
-  return state?.status === 'ready' && 'patch' in state.payload;
+  return state?.status === 'ready' && 'patch' in state.payload ? state.payload : null;
 });
 
 /**
- * 动作区此刻有没有一枚按钮。**画不画（`EditorActions`）与活动 tab 要不要再滚一次（`Tab`）读的是
- * 这同一个 computed**：两处各自把两个判据拼一遍时，多一种动作只改了一处就静默漂开。
+ * 活动 tab 的补丁有没有空白差异可藏：git 出的那一份（`text`）才有。`untracked-text` 是全新增，
+ * 没有旧侧可比。
  */
-const editorActionShown = computed<boolean>(
-  () => activeFileText.value !== null || activePatchShown.value,
+const whitespaceToggleShown = computed<boolean>(() => activePatchPayload.value?.kind === 'text');
+
+/**
+ * 动作区此刻画几枚。活动 tab 要不要再滚一次跟的是它而不是「画不画」：在两个都有版式按钮的 tab 之间
+ * 切换（`text` ↔ `untracked-text`）时，忽略空白那一枚照样会进出，动作区宽度随之变。
+ */
+const editorActionCount = computed<number>(
+  () =>
+    (activeFileText.value !== null ? 1 : 0) +
+    (activePatchPayload.value !== null ? 1 : 0) +
+    (whitespaceToggleShown.value ? 1 : 0),
 );
+
+/**
+ * 动作区此刻有没有一枚按钮（`EditorActions` 画不画）。**由按钮数派生**，不再把判据拼一遍：两处各拼
+ * 一遍时，多一种动作只改了一处就静默漂开。
+ */
+const editorActionShown = computed<boolean>(() => editorActionCount.value > 0);
 
 /**
  * 版式切换按**当前**版式查出要画的那枚。图标与文案表达的是**目标**版式，与变更列表的
@@ -154,7 +172,7 @@ function Tab({
   const { name } = splitForDisplay(editor.path);
   const self = useRef<HTMLDivElement>(null);
   // 短路求值：只有活动那一个 tab 订阅这个 computed，其余 tab 不因缓存变化重画
-  const actionsShown = active && editorActionShown.value;
+  const actionCount = active ? editorActionCount.value : 0;
   // 名字按 git 状态染色，与文件树同一张 `codeByPath`、同一张 `CODE_COLORS`；commit tab 不染（判据在
   // `worktreePathOf`）。**包成 `computed`**：`codeByPath` 每个 SSE 都换一份，直接读时每次刷新整栏
   // tab 都重画，包了只在这个 tab 自己的状态码变了才重画。闭包捕获挂载时的 `editor` 不会过期——tab
@@ -168,12 +186,12 @@ function Tab({
   // 活动 tab 要在栏里看得见：tablist `overflow-x-auto`、新 tab 追加在末尾，溢出之后新开的那个就在
   // 屏幕外——正文换了而栏上看不出任何变化。`nearest`：已经看得见就一个像素都不动。
   //
-  // **动作区出现或消失时也再滚一次**：新开的全文或 diff tab 先以 `loading` 激活、滚到 tablist 末端，
-  // 正文就绪后那枚按钮才挤进来，tablist 窄了一截而 `scrollLeft` 不动，活动 tab 的右端（连同它的 ×）
+  // **动作区的按钮数变了也再滚一次**：新开的全文或 diff tab 先以 `loading` 激活、滚到 tablist 末端，
+  // 正文就绪后按钮才挤进来，tablist 窄了一截而 `scrollLeft` 不动，活动 tab 的右端（连同它的 ×）
   // 就被裁在视野外
   useEffect(() => {
     if (active) self.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-  }, [active, actionsShown]);
+  }, [active, actionCount]);
 
   return (
     <div
@@ -245,14 +263,26 @@ function EditorActions() {
   const editor = activeEditor.value;
   if (editor === null || !editorActionShown.value) return null;
   const text = activeFileText.value;
-  const action =
+  // 忽略空白是一枚**带按下态的开关、文案恒定**，与版式按钮「文案写目标版式」刻意不同：版式是什么
+  // 一眼看得出，空白藏没藏看不出——开着而认不出来时，用户只会觉得 diff 少了几处改动
+  const actions =
     text !== null ? (
       <CopyButton key={keyOf(editor)} text={text} label="Copy file contents" />
     ) : (
-      <IconButton {...FORMAT_TOGGLE[diffOutputFormat.value]} onClick={toggleDiffOutputFormat} />
+      <>
+        {whitespaceToggleShown.value && (
+          <Toggle
+            icon={Pilcrow}
+            label="Hide whitespace changes"
+            pressed={ignoreWhitespace.value}
+            onClick={toggleIgnoreWhitespace}
+          />
+        )}
+        <IconButton {...FORMAT_TOGGLE[diffOutputFormat.value]} onClick={toggleDiffOutputFormat} />
+      </>
     );
   // `px-1.5` 与 tab 上那枚 × 的外壳同一个值：两枚 `IconButton` 离各自邻边一样远
-  return <span class="flex shrink-0 items-center px-1.5">{action}</span>;
+  return <span class="flex shrink-0 items-center px-1.5">{actions}</span>;
 }
 
 export function EditorTabs() {

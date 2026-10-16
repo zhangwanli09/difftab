@@ -5,7 +5,7 @@
 // 插入行是一组，组内按下标两两配对，多出来的那侧补空位。上游另有按相似度重新配对的两档，默认
 // 不开，我们也从没开过——照搬的是页面上一直以来的样子。
 
-import { diffWordsWithSpace } from 'diff';
+import { diffWords, diffWordsWithSpace } from 'diff';
 import type { LineKind } from './parse';
 
 /** 一组：一行上下文，或一段「删除 + 插入」 */
@@ -79,13 +79,25 @@ export const MAX_WORD_DIFF_LENGTH = 10000;
 /**
  * 配上对的一删一增之间的词级差异：旧侧被删掉的那几段、新侧加进来的那几段。超长时给两个空数组，
  * 那一对就只有整行底色。
+ *
+ * `ignoreWhitespace` 时改用 `diffWords`（不计空白）：补丁是按 `-w` 取的，一行同时改了内容与缩进时
+ * 只该标内容那几段。**它不能与另一档共用一趟循环**：空白不同而被认作相同的片段，`value` 取的是第二
+ * 个参数那一侧的原文，两侧的偏移按同一个长度累加就从第一处缩进起错开。所以两侧各比一次，每次只沿
+ * 第二个参数那一侧走——未删除的片段拼起来恰好是那一侧的原文。
  */
-export function wordRanges(before: string, after: string): { deleted: Range[]; inserted: Range[] } {
+export function wordRanges(
+  before: string,
+  after: string,
+  ignoreWhitespace = false,
+): { deleted: Range[]; inserted: Range[] } {
+  if (before.length > MAX_WORD_DIFF_LENGTH || after.length > MAX_WORD_DIFF_LENGTH) {
+    return { deleted: [], inserted: [] };
+  }
+  if (ignoreWhitespace) {
+    return { deleted: addedRanges(after, before), inserted: addedRanges(before, after) };
+  }
   const deleted: Range[] = [];
   const inserted: Range[] = [];
-  if (before.length > MAX_WORD_DIFF_LENGTH || after.length > MAX_WORD_DIFF_LENGTH) {
-    return { deleted, inserted };
-  }
   let atOld = 0;
   let atNew = 0;
   for (const part of diffWordsWithSpace(before, after)) {
@@ -102,4 +114,17 @@ export function wordRanges(before: string, after: string): { deleted: Range[]; i
     }
   }
   return { deleted, inserted };
+}
+
+/** 不计空白时 `to` 比 `from` 多出来的那几段，按 `to` 的下标。 */
+function addedRanges(from: string, to: string): Range[] {
+  const ranges: Range[] = [];
+  let at = 0;
+  for (const part of diffWords(from, to)) {
+    if (part.removed) continue;
+    const length = part.value.length;
+    if (part.added) ranges.push({ start: at, end: at + length });
+    at += length;
+  }
+  return ranges;
 }

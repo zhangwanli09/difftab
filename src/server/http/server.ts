@@ -6,7 +6,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { Socket } from 'node:net';
 import { homedir } from 'node:os';
-import { readCommitDiff, readDiff } from '../git/diff.ts';
+import { type PatchOptions, readCommitDiff, readDiff } from '../git/diff.ts';
 import { readFileContent } from '../git/file.ts';
 import { listCommits, readCommit } from '../git/history.ts';
 import { readImageBytes } from '../git/image.ts';
@@ -86,6 +86,24 @@ function send(res: ServerResponse, status: number, body: Buffer | string, conten
 
 function sendJson(res: ServerResponse, status: number, body: unknown) {
   send(res, status, JSON.stringify(body), 'application/json; charset=utf-8');
+}
+
+const PATCH_OPTION_ERROR = 'ignoreWhitespace and fullContext only accept 1';
+
+/**
+ * 两个补丁开关：缺省即关，**只认 `1`、其余值回 `null`（400）**。与 `/api/search` 的 `case` / `word`
+ * （非 `1` 即关）刻意不同：唯一的调用方是前端，写成 `true` 的笔误在宽松解析下是一个静默不生效的开关。
+ */
+export function patchOptionsOf(params: URLSearchParams): Required<PatchOptions> | null {
+  const flag = (name: string): boolean | null => {
+    const value = params.get(name);
+    if (value === null) return false;
+    return value === '1' ? true : null;
+  };
+  const ignoreWhitespace = flag('ignoreWhitespace');
+  const fullContext = flag('fullContext');
+  if (ignoreWhitespace === null || fullContext === null) return null;
+  return { ignoreWhitespace, fullContext };
 }
 
 export async function startServer(
@@ -279,8 +297,17 @@ export async function startServer(
           sendError(res, 400, 'bad-request', 'path is required');
           return;
         }
+        const options = patchOptionsOf(url.searchParams);
+        if (options === null) {
+          sendError(res, 400, 'bad-request', PATCH_OPTION_ERROR);
+          return;
+        }
         const oldPath = url.searchParams.get('oldPath');
-        sendJson(res, 200, await readDiff(repo.root, { path, ...(oldPath ? { oldPath } : {}) }));
+        sendJson(
+          res,
+          200,
+          await readDiff(repo.root, { path, ...(oldPath ? { oldPath } : {}), ...options }),
+        );
         return;
       }
 
@@ -370,11 +397,16 @@ export async function startServer(
           sendError(res, 400, 'bad-request', 'sha and path are required');
           return;
         }
+        const options = patchOptionsOf(url.searchParams);
+        if (options === null) {
+          sendError(res, 400, 'bad-request', PATCH_OPTION_ERROR);
+          return;
+        }
         const oldPath = url.searchParams.get('oldPath');
         sendJson(
           res,
           200,
-          await readCommitDiff(repo, sha, { path, ...(oldPath ? { oldPath } : {}) }),
+          await readCommitDiff(repo, sha, { path, ...(oldPath ? { oldPath } : {}), ...options }),
         );
         return;
       }

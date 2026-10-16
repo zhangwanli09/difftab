@@ -10,7 +10,7 @@ import type { DiffPayload, FilePayload } from '../../../src/server/shared/protoc
 import { DiffView } from '../../../src/web/components/DiffView';
 import { FileView } from '../../../src/web/components/FileView';
 import { diffPanelWidth, SIDE_BY_SIDE_MIN_WIDTH } from '../../../src/web/state/layout';
-import { diffStates, fileStates } from '../../../src/web/state/store';
+import { diffStates, fileStates, PATCH_DEFAULTS } from '../../../src/web/state/store';
 import { setFileState, waitFor } from './helpers';
 
 let container: HTMLElement;
@@ -19,6 +19,7 @@ const readyDiff = (path: string, payload: DiffPayload) => {
   diffStates.value = new Map(diffStates.value).set(path, {
     status: 'ready',
     rename: null,
+    options: PATCH_DEFAULTS,
     payload,
   });
 };
