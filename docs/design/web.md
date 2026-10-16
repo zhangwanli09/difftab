@@ -69,7 +69,7 @@
 - **列表区的三句占位（`Loading…`、取不到、`No changes`）共用 `SidebarPlaceholder`，一起居中在列表区正中**：它们轮流占同一个 `<nav>`，各摆各的位置时每次启动都是「贴左上 → 跳到正中」闪一下。`<nav>` 是块盒，占位得 `h-full` 才真的居中（有断言）。不配图标，也不与右侧面板的空态合成一个组件。
 - **左栏所有行一律 24px，行高由列表区 `<nav>` 的 `text-sm/6` 给、底下全靠继承，行自己不写字号也不给纵向内边距**：一行里嵌着小一号的片段，行高由 line-height 定时它们共用同一个行盒；靠 `py-*` 凑时两个视图曾各凑各的，切一次 tab 行高跳一截（有断言）。**唯一例外是分组标题**：它自带 `text-xs`，Tailwind 的 `text-*` 会重设 line-height，得自带 `/6`。
 - **两棵树的行骨架只在 `tree-row.tsx` 一份**：`ROW_BASE`（间距、焦点环）、`indent()`（左内边距，平铺列表取第 0 层）、展开三角与它等宽的占位、`TreeRow` 本身。各写一份时改一处不报错，只是切一次 tab 缩进或间距跳一截（有断言）。它独立成文件是因为 `FileTree` 已 import `ChangeList`，反向会成环。
-- **两棵树的每个子层左侧画一条缩进引导线，指针在列表区时才显形**（照 VS Code 的 `workbench.tree.renderIndentGuides: onHover`，颜色 token 照 `tree.indentGuidesStroke`）：每层只缩进 12px，agent 的改动又常在四五层深的路径里，没有线时 320px 侧栏里看不出一行属于哪个目录。机制只在 `tree-row.tsx` 一份（`TreeLevelList`），各条均有断言：
+- **两棵树的每个子层左侧画一条缩进引导线，指针在列表区时才显形**（照 VS Code 的 `workbench.tree.renderIndentGuides: onHover`，颜色 token 照 `tree.inactiveIndentGuidesStroke`——不做活动高亮，每条线都是 inactive 那档）：每层只缩进 12px，agent 的改动又常在四五层深的路径里，没有线时 320px 侧栏里看不出一行属于哪个目录。机制只在 `tree-row.tsx` 一份（`TreeLevelList`），各条均有断言：
   - **横坐标对准父目录展开三角的中心**，与 `indent()` 从同一个缩进常量算——各算各的时改缩进量不报错，只是线与三角错开。根层不画。
   - **画在子层 `<ul>` 的 `::after` 上、不给 z-index**：排在这一层所有行之后，于是盖在悬停与选中底色上；给 `z-10` 会与 sticky 分组标题按 DOM 顺序比，滚到标题底下时线画在标题上。不吃点击。
   - **悬停作用域挂在列表区 `<nav>` 上，是具名 group**：挂在每棵树的根上时 `Changes` 档悬在一组上另一组不亮；裸 `group` 已被行占着。**触屏常显**，理由同行内动作。

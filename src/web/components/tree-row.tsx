@@ -77,7 +77,7 @@ export const TREE_SCOPE = 'group/tree';
  * `group-hover` 从不成立。导出只为让用例钉住这几个变体。
  */
 export const INDENT_GUIDE =
-  'relative after:pointer-events-none after:absolute after:inset-y-0 after:left-[var(--guide-x,0)] after:w-px after:bg-tree-indent-guides-stroke after:opacity-0 group-hover/tree:after:opacity-100 pointer-coarse:after:opacity-100';
+  'relative after:pointer-events-none after:absolute after:inset-y-0 after:left-[var(--guide-x,0)] after:w-px after:bg-tree-inactive-indent-guides-stroke after:opacity-0 group-hover/tree:after:opacity-100 pointer-coarse:after:opacity-100';
 
 /**
  * 第 `depth` 层的 `<ul>`，两棵树的每一层都走这里。`depth > 0` 时左侧画一条引导线，横坐标对准父目录
