@@ -1,31 +1,23 @@
-// diff2html 渲染路径的回归测试。
+// 解析 + 配对 + 上色（`prepareDiff()`）的回归测试。画成 DOM、两种版式、两侧联动在
+// diff-view.test.tsx。
 //
 // **这几条是本文件存在的理由，它们全都「违反后不报错、只是静默出错」**：
 //
-// 1. **高亮只做一遍**。现行配置是 `highlight: false` + `draw()` 之后走我们自己那个逐行循环
-//    （`highlightLines()`，`highlightCode()` 一次都不调）；把 `highlight` 也开上就是两遍，第二遍
-//    的 `nodeStream()` 拿到的已是第一遍插入的 hljs span,`mergeStreams` 把两份流交织进同一行，产
-//    出**嵌套重复**的 span(开销也翻倍)，而页面看上去只是颜色略怪，不报错；
-// 2. **语言由 `languageOf(path)` 判，不由 diff2html 判**——它内置的 `languagesToExt` 里没有
-//    `vue` / `env` / `svelte`，也够不着 `.env.local` 这种多段名；而单文件组件还要**逐行**换语言
-//    （`createLineLanguage()`），diff2html 对一个文件只认一个语言。判据是行上那个语言 class；
-// 3. `plaintext` 兜底——无扩展名文件(`LICENSE` / `Dockerfile`)会让 diff2html 把语言改写成字面
-//    量 `'plaintext'` 再无条件调 hljs，漏注册时异常从 `highlightCode()` 冒到调用方，**炸的是整
-//    个 diff 视图**，不是那一个文件；
-// 4. `colorScheme` 必须是 `'light'`——传 `'auto'` 会让 `.d2h-auto-color-scheme` 前缀规则(特异
-//    性 0,2,0)压过基础规则、读回 diff2html 自带的 `--d2h-dark-*`，d2h-theme.css 覆写的那 23
-//    个变量在深色下一条都不生效；
-// 5. `outputFormat` 由调用方按 diff 面板宽度给。两种版式的判据是一对正反计数：并排下一个文件是
-//    **两张** `.d2h-diff-table`（各裹在一个 `.d2h-file-side-diff` 里），逐行下是**一张**且
-//    `.d2h-file-side-diff` 一个都没有。传错时页面照常渲染，只是版式不对；
-// 6. **并排两侧的横向联动**(`synchronisedScroll`)。关掉时两半各滚各的——同一行的新旧内容错开
-//    成两个列位置，而页面照常渲染、不报错。
+// 1. **高亮只做一遍**。上下文行两侧共用同一份 HTML；谁把它改成两侧各上一次色、再把结果交织回
+//    去，产出的是**嵌套重复**的 span（开销也翻倍），而页面看上去只是颜色略怪，不报错；
+// 2. **语言由 `languageOf(path)` 判**——diff2html 那张 `languagesToExt` 里没有 `vue` / `env` /
+//    `svelte`，也够不着 `.env.local` 这种多段名；而单文件组件还要**逐行**换语言
+//    （`createLineLanguage()`）。判据是行上那个语言名；
+// 3. `plaintext` 兜底——无扩展名文件(`LICENSE` / `Dockerfile`)三道判定全落空，漏注册时
+//    `hljs.highlight()` 抛 `Unknown language`，**炸的是整个 diff 视图**，不是那一个文件；
+// 4. **词级标记只给配上对的那一删一增**，而且标记与高亮交织在同一行里——标记丢了时增删行只剩整
+//    行底色，页面照常渲染。
 //
-// **每条否定式断言都配一条正面断言**：容器空着的时候，「没有重复 span」「没有 auto class」全都自
-// 动成立。所以每个用例都先确认 diff 真的画出来了、色真的上了。
+// **每条否定式断言都配一条正面断言**：什么都没画出来的时候，「没有重复 span」全都自动成立。
 
 import { beforeEach, describe, expect, it } from 'vitest';
-import { renderDiff } from '../../../src/web/diff/render';
+import { type DiffLine, prepareDiff } from '../../../src/web/diff/render';
+import { MAX_WORD_DIFF_LENGTH, unifiedLines } from '../../../src/web/diff/rows';
 
 // **一条 happy-dom 的坑，决定了下面的补丁必须带上下文行**：它的 `Attr.nodeName` 返回**空字符串**
 // （`name` / `localName` 正常），而 diff2html 的 `mergeStreams.open()` 恰好用 `attr.nodeName` 重
@@ -71,7 +63,7 @@ index af8a489..3d3aa51 100644
  line 4
 `;
 
-/** 无扩展名的文件——diff2html 会把语言改写成字面量 'plaintext'。 */
+/** 无扩展名的文件——三道判定全落空，走 `plaintext` 兜底。 */
 const LICENSE_PATCH = `diff --git a/LICENSE b/LICENSE
 index 1111111..2222222 100644
 --- a/LICENSE
@@ -85,8 +77,8 @@ index 1111111..2222222 100644
 /**
  * Vue SFC 的补丁，三个区块齐全。**highlight.js 上游没有 vue 模块**，diff2html 的
  * `languagesToExt` 里也没有 `vue` 这个键——两侧都认不出时整份文件是没有颜色的纯文本；而只把它
- * 判成 `xml` 时，`<script>` / `<style>` 那两段仍旧一个 span 都拿不到（diff2html 逐行高亮，跨行
- * 状态不保留），页面上就是「模板有色、另外两段整块白」。
+ * 判成 `xml` 时，`<script>` / `<style>` 那两段仍旧一个 span 都拿不到（逐行高亮，跨行状态不保
+ * 留），页面上就是「模板有色、另外两段整块白」。
  *
  * 每段都留了上下文行——增删行的类名在 happy-dom 下会丢（理由见文件头）。
  */
@@ -142,33 +134,38 @@ beforeEach(() => {
   document.body.appendChild(host);
 });
 
+/** 全部行，按 hunk、组的顺序摊平（一组里先删后增）。 */
+const allLines = (path: string, patch: string): DiffLine[] =>
+  prepareDiff(path, patch).flatMap((hunk) => unifiedLines(hunk.groups));
+
+/** 把每行的 HTML 照 DiffView 的挂法写进 host，好用选择器数。 */
+const paint = (path: string, patch: string) => {
+  host.innerHTML = allLines(path, patch)
+    .map((line) => `<span class="hljs ${line.language ?? ''}">${line.html}</span>`)
+    .join('\n');
+};
+
 const hljsSpanCount = () => host.querySelectorAll('[class*="hljs-"]').length;
 
-describe('renderDiff', () => {
-  it('画出 diff 表格并给代码上色', () => {
-    renderDiff(host, 'src/a.ts', TS_PATCH, 'side-by-side');
+describe('prepareDiff', () => {
+  it('给代码上色', () => {
+    paint('src/a.ts', TS_PATCH);
 
     // 正面断言：下面几条否定式断言的前提
-    expect(host.querySelector('.d2h-diff-table')).not.toBeNull();
     expect(host.textContent).toContain('greet');
     expect(hljsSpanCount()).toBeGreaterThan(3);
   });
 
   it('高亮只做一遍——没有一模一样的 span 套一层', () => {
-    renderDiff(host, 'src/a.ts', TS_PATCH, 'side-by-side');
-
-    // 在 `draw()` 后补一次 `highlightCode()`（即被禁的那个写法）时，**先炸的是这一条**：第二遍让
-    // 上下文行也走一次 mergeStreams，连它的类名都被写坏（机制见文件头），span 数从 20+ 掉到 0——
-    // 已把那一行真加回 render.ts 验证过。真实浏览器里的表现是嵌套重复 span，由下面那条判据接住
+    paint('src/a.ts', TS_PATCH);
     expect(hljsSpanCount()).toBeGreaterThan(3);
 
-    // 嵌套判据按**字符串**写而不是遍历 DOM，正是为了同时盖住上面那两种形态：浏览器下重复的是
-    // `<span class="hljs-x"><span class="hljs-x">`,happy-dom 下是 `<span hljs-x=""><span
-    // hljs-x="">`，而按 `[class*=hljs-]` 遍历在后者上找不到东西。判据也不能只是「存在嵌套 span」：
-    // hljs 自身的语法嵌套本来就有(params > attr、string > subst)，重复的特征是**属性逐字相同**
-    // 的同名标签直接套一层——那只可能来自两份 node stream 交织
-    const doubled = /<span([^>]*)><span\1>/.exec(host.innerHTML);
-    expect(doubled).toBeNull();
+    // 嵌套判据按**字符串**写而不是遍历 DOM：浏览器下重复的是 `<span class="hljs-x"><span
+    // class="hljs-x">`，happy-dom 下是 `<span hljs-x=""><span hljs-x="">`，按 `[class*=hljs-]`
+    // 遍历在后者上找不到东西。判据也不能只是「存在嵌套 span」：hljs 自身的语法嵌套本来就有
+    // (params > attr、string > subst)，重复的特征是**属性逐字相同**的同名标签直接套一层——那只
+    // 可能来自两份 node stream 交织
+    expect(/<span([^>]*)><span\1>/.exec(host.innerHTML)).toBeNull();
 
     // 另一半：文字本身没有被复制一遍
     expect(host.textContent?.match(/const prefix/g) ?? []).toHaveLength(1);
@@ -176,113 +173,83 @@ describe('renderDiff', () => {
 
   it('无扩展名文件走 plaintext 兜底，不抛异常也不空白', () => {
     // 漏注册 plaintext 时这里抛 `Unknown language: "plaintext"`，而整个 diff 视图都渲染不出来
-    expect(() => renderDiff(host, 'LICENSE', LICENSE_PATCH, 'side-by-side')).not.toThrow();
-    expect(host.querySelector('.d2h-diff-table')).not.toBeNull();
+    expect(() => paint('LICENSE', LICENSE_PATCH)).not.toThrow();
     expect(host.textContent).toContain('MIT License');
   });
 
-  // 三段各自的语言 class + 各自真上了色。**只断言「模板有色」是抓不到这次回归的**——那一段在
-  // 只判 xml 的写法下本来就有色，白的是另外两段
+  // 三段各自的语言 + 各自真上了色。**只断言「模板有色」是抓不到这次回归的**——那一段在只判 xml
+  // 的写法下本来就有色，白的是另外两段
   it.each([
     ['xml', '.hljs-name', 'template'],
     ['ts', '.hljs-keyword', 'script'],
     ['css', '.hljs-attribute', 'style'],
   ])('.vue 的 %s 段落到 %s（区块：%s）', (language, token) => {
-    renderDiff(host, 'src/App.vue', VUE_PATCH, 'side-by-side');
+    paint('src/App.vue', VUE_PATCH);
 
-    // 判据的两半：行上落了这个语言 class，且这一段真的上了色。只断言前者时，一个高亮没跑起来
-    // 的容器照样通过；只断言后者时，别的语言碰巧也能给这段文本上点色
-    expect(host.querySelectorAll(`.d2h-code-line-ctn.${language}`).length).toBeGreaterThan(0);
+    // 判据的两半：行上落了这个语言，且这一段真的上了色。只断言前者时，一个高亮没跑起来的行照样
+    // 通过；只断言后者时，别的语言碰巧也能给这段文本上点色
+    expect(host.querySelectorAll(`.hljs.${language}`).length).toBeGreaterThan(0);
     expect(host.querySelectorAll(token).length).toBeGreaterThan(0);
   });
 
   // 语言只由 path 判、与补丁头无关，所以同一段 `.env` 补丁换个 path 就能盖住多段名那条规则：
   // `.env.production` 的「扩展名」是 `production`，只有按文件名的规则接得住
   it.each(['.env', '.env.local', 'apps/web/.env.production'])('%s 走 ini', (path) => {
-    renderDiff(host, path, ENV_PATCH, 'side-by-side');
+    paint(path, ENV_PATCH);
 
-    expect(host.querySelectorAll('.d2h-code-line-ctn.ini').length).toBeGreaterThan(0);
+    expect(host.querySelectorAll('.hljs.ini').length).toBeGreaterThan(0);
     // `API_URL` 那行是上下文行，ini 把等号左边判成 attr
     expect(host.querySelectorAll('.hljs-attr').length).toBeGreaterThan(0);
     expect(host.querySelectorAll('.hljs-comment').length).toBeGreaterThan(0);
   });
 
   it('.pyi 走 python——语言判据的第三道（上游那张 languagesToExt）也在这条路上', () => {
-    renderDiff(host, 'stubs/api.pyi', PYI_PATCH, 'side-by-side');
+    paint('stubs/api.pyi', PYI_PATCH);
 
-    expect(host.querySelectorAll('.d2h-code-line-ctn.python').length).toBeGreaterThan(0);
+    expect(host.querySelectorAll('.hljs.python').length).toBeGreaterThan(0);
     // `from typing import Any` 是上下文行，python 把 from / import 判成关键字
     expect(host.querySelectorAll('.hljs-keyword').length).toBeGreaterThan(0);
   });
 
-  it('重命名的补丁画成一个文件、新旧两个名字都在（不退化成全新增）', () => {
-    renderDiff(host, 'src/kept-renamed.txt', RENAME_PATCH, 'side-by-side');
+  it('重命名的补丁是一份 hunk，正文照常（不退化成全新增）', () => {
+    const hunks = prepareDiff('src/kept-renamed.txt', RENAME_PATCH);
 
-    // 一个文件而不是两个：diff2html 把 `rename from/to` 认成同一个文件的两侧
-    expect(host.querySelectorAll('.d2h-file-wrapper')).toHaveLength(1);
-    // diff2html 把公共目录前缀提出来，写成 `src/{kept.txt → kept-renamed.txt}`（实测）。
-    // 那是**紧凑形式而不是完整旧路径**，DiffView 那条「重命名自 <旧路径>」因此不是重复
-    const header = host.querySelector('.d2h-file-name')?.textContent ?? '';
-    expect(header).toContain('kept.txt');
-    expect(header).toContain('kept-renamed.txt');
-    expect(header).toContain('→');
-    // 正文照常有内容——只标注不渲染同样是坏的
+    expect(hunks).toHaveLength(1);
+    // 全新增的样子是一组只有插入、没有上下文：这里两行上下文都在
+    expect(hunks[0]?.groups.filter((g) => g.kind === 'context')).toHaveLength(2);
+    paint('src/kept-renamed.txt', RENAME_PATCH);
     expect(host.textContent).toContain('line three, edited');
   });
 
-  it('容器上没有 d2h 自己那套深色 class——深浅归我们的 --d2h-* 覆写', () => {
-    renderDiff(host, 'src/a.ts', TS_PATCH, 'side-by-side');
+  it('配上对的一删一增带词级标记，多出来的那行不带', () => {
+    const [hunk] = prepareDiff('src/a.ts', TS_PATCH);
+    const change = hunk?.groups.find((g) => g.kind === 'change');
+    if (change?.kind !== 'change') throw new Error('补丁里应当有一组改动');
 
-    // 正面断言：colorScheme 确实生效了，只是生效成那个空 class
-    expect(host.querySelector('.d2h-light-color-scheme')).not.toBeNull();
-
-    // 这两个一旦出现，d2h-theme.css 里 23 个 --d2h-* 覆写在深色下会被整块旁路，
-    // 而页面只是"深色不太像 VS Code"，测试和 CI 都不会红——所以钉在这里
-    expect(host.querySelectorAll('.d2h-auto-color-scheme')).toHaveLength(0);
-    expect(host.querySelectorAll('.d2h-dark-color-scheme')).toHaveLength(0);
+    // 一删对两增：第一对有标记，第二个插入行没有可对的，整行就是差异本身
+    expect(change.deleted).toHaveLength(1);
+    expect(change.inserted).toHaveLength(2);
+    // `<del >` 带一个空格：mergeStreams 重新序列化开标签的写法
+    expect(change.deleted[0]?.html).toMatch(/<del\b/);
+    expect(change.inserted[0]?.html).toMatch(/<ins\b/);
+    expect(change.inserted[1]?.html).not.toMatch(/<ins\b/);
+    // 标记交织进了同一行，没有把正文复制一份：去掉全部标签后逐字等于原文
+    const plain = (html = '') => html.replace(/<[^>]+>/g, '').replace(/&#x27;/g, "'");
+    expect(plain(change.deleted[0]?.html)).toBe("  return 'hi ' + name;");
   });
 
-  // 两种版式的全部可断言差别就是这两个计数。`.d2h-file-side-diff` 那列是否定式的一半，
-  // `.d2h-diff-table` 那列是配套的正面断言——少了后者，一个什么都没画出来的容器同样能让它通过
-  it.each([
-    ['side-by-side', 2, 2],
-    ['line-by-line', 1, 0],
-  ] as const)('outputFormat=%s:%i 张表、%i 个并排容器', (format, tables, sideDiffs) => {
-    renderDiff(host, 'src/a.ts', TS_PATCH, format);
+  it('超长的一对不算词级差异，只有整行底色', () => {
+    const long = 'x'.repeat(MAX_WORD_DIFF_LENGTH + 1);
+    const patch = `--- a/a.txt
++++ b/a.txt
+@@ -1 +1 @@
+-${long}
++${long}y
+`;
+    const [line] = allLines('a.txt', patch);
 
-    expect(host.querySelectorAll('.d2h-diff-table')).toHaveLength(tables);
-    expect(host.querySelectorAll('.d2h-file-side-diff')).toHaveLength(sideDiffs);
-    expect(host.textContent).toContain('const prefix');
-  });
-
-  it('并排两侧横向联动——滚一侧，另一侧跟到同一个 scrollLeft', () => {
-    renderDiff(host, 'src/a.ts', TS_PATCH, 'side-by-side');
-
-    const sides = [...host.querySelectorAll('.d2h-file-side-diff')];
-    // 正面断言：两个滚动容器真的画出来了——少了它，下面那条 toEqual 在一个空数组上同样通过
-    expect(sides).toHaveLength(2);
-
-    // 两个方向各来一次：diff2html 给两侧各绑一个监听器，只绑一侧的症状是「拖左边管用、拖右边不管
-    // 用」。happy-dom 的 `scrollLeft` 是纯属性——赋值既不派发 scroll 事件也不做 clamp，所以这里
-    // 手工派发一次浏览器本来会派发的那个事件，断言也因此不受布局影响(真实的滚动与两侧上限不等时
-    // 的回弹都只能上真机看)
-    for (const [index, from] of sides.entries()) {
-      const scrollLeft = 40 * (index + 1);
-      from.scrollLeft = scrollLeft;
-      from.dispatchEvent(new Event('scroll'));
-
-      expect(sides.map((side) => side.scrollLeft)).toEqual([scrollLeft, scrollLeft]);
-    }
-  });
-
-  it('同一个容器重画一次不会叠加两份 diff', () => {
-    // 同一个文件拿到新补丁时就走这条路（DiffView 的 effect 按 [patch] 重跑），靠的是 draw() 内部
-    // 整片覆盖 innerHTML
-    renderDiff(host, 'src/a.ts', TS_PATCH, 'side-by-side');
-    renderDiff(host, 'src/a.ts', TS_PATCH, 'side-by-side');
-
-    // 数的是「几个文件」而不是「几张表」：并排下一个文件本来就是左右两张表，按表数会得到 2
-    expect(host.querySelectorAll('.d2h-file-wrapper')).toHaveLength(1);
-    expect(host.textContent?.match(/const prefix/g) ?? []).toHaveLength(1);
+    // 正面断言：这一行确实画出来了
+    expect(line?.kind).toBe('delete');
+    expect(line?.html).not.toMatch(/<del\b/);
   });
 });

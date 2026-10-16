@@ -8,7 +8,7 @@
  * 覆盖前者、浅色直接失效；给深色那份的 @import 加媒体条件能修好这一半，但**媒体条件切不出顶
  * 栏那个手动档**。代价明码标价：这些色值此后不随 VS Code 或 highlight.js 升级。
  *
- * 本文件必须保持 unlayered，且由 app.css 引在 diff2html.min.css **之前**。
+ * 本文件必须保持 unlayered。
  */
 
 /* token 与上游注释里的 prettylights-syntax-* 语义一一对应。
@@ -35,14 +35,14 @@
 }
 
 /* 以下 15 条规则的选择器与顺序逐条照抄上游，只把颜色换成 var()。上游 18 条里有 3 条没抄进
- * 来，都不是漏：`code.hljs` 与 `pre code.hljs`（两条 padding）——diff2html **整包零个
- * `<code>` 元素**，它把 `hljs` 类加在行容器上，这两条一条都命不中，抄进来还会撞 biome 的
- * noDescendingSpecificity；以及一条**空规则**（上游注为 purposely ignored）——那几类词刻意
- * 不上色，记在这里而不是抄一个空块。
+ * 来，都不是漏：`code.hljs` 与 `pre code.hljs`（两条 padding）——页面上**一个 `<code>` 元素
+ * 都没有**，`hljs` 类只挂在 diff 每行正文的 <span> 上（文件视图连容器类都不挂），这两条一条都
+ * 命不中，抄进来还会撞 biome 的 noDescendingSpecificity；以及一条**空规则**（上游注为
+ * purposely ignored）——那几类词刻意不上色，记在这里而不是抄一个空块。
  *
- * `.hljs` 也只抄了 color，上游那条 background 没抄：hljs 类落在 `.d2h-code-line-ctn` 上，而 d2h
- * 自己的 `.d2h-code-line-ctn{background:none}` 特异性相同、排在后面，那条从来压不过它——代码区
- * 底色归 --d2h-*。 */
+ * `.hljs` 也只抄了 color，上游那条 background 没抄：hljs 类落在 diff 每行正文的 <span> 上，而
+ * 那一行的增删底色画在外面那格上（`diff-code`）。本文件 unlayered，抄进来的底色会无条件盖住
+ * 它，增删行看起来就成了上下文行。 */
 
 .hljs {
   color: var(--hljs-fg);

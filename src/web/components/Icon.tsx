@@ -6,7 +6,7 @@
 //
 // 图形取自 **Lucide**（ISC，Copyright Lucide Contributors），署名就落在这里，照
 // `styles/hljs-theme.css` 顶部记 hljs 主题来源的同一种做法，不另建 NOTICE 文件——已经打进
-// 产物的 diff2html 与 highlight.js 也是这么处理的。
+// 产物的 diff2html（只剩解析器与几个高亮辅助函数）与 highlight.js 也是这么处理的。
 //
 // 只抽外壳，不抽语义：画哪一枚由调用方传组件进来。**传组件而不是传 path 字符串**是这套图标
 // 相对上一套的实质增强：状态条与侧栏 `Changes` 那个 tab 画的是同一枚 `GitBranch`，两处

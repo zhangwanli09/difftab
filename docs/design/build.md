@@ -20,9 +20,9 @@ src/server/
 src/web/
   brand/               logo 的几何（纯 JS，组件与 scripts/logo.mjs 共用同一份）
   components/          变更列表、分支状态、diff 容器
-  diff/                diff2html 深导入（前端唯一可 import 它的目录）+ hljs 语言注册
+  diff/                补丁解析（diff2html 深导入，前端唯一可 import 它的目录）、配对、高亮 + hljs 语言注册
   state/               signals
-  styles/              app.css / d2h-theme.css / vscode-theme.css / hljs-theme.css
+  styles/              app.css / vscode-theme.css / hljs-theme.css
 test/unit/             Vitest，跑 TS 源码
 test/smoke/            纯 JS，跑 dist/ 产物（含只读性两层验证）
 test/fixtures/         测试仓库生成脚本
@@ -83,7 +83,7 @@ scripts/               bench:startup、size 等门禁
 | 测试 | Vitest + `node:test` | 分层用途见下方 CI |
 | DOM 测试环境 | happy-dom | 只给 `src/web` 的渲染路径用，按目录分环境 |
 
-**DOM 测试环境**：几条「违反后不报错、只是静默出错」的约束——`draw()` 后重复调 `highlightCode()` 产生嵌套重复 span、漏注册 `plaintext` 炸掉整个 diff 视图、`colorScheme` 一旦回到 `auto` 就让深色取值静默失效——**都只有在真实 DOM 上跑一遍才断言得了**。选 happy-dom 而非 jsdom：纯 JS、无原生依赖、启动快，本项目只需要 `innerHTML` 与属性/class 断言这一档能力。
+**DOM 测试环境**：几条「违反后不报错、只是静默出错」的约束——上下文行被高亮两遍再交织产生嵌套重复 span、漏注册 `plaintext` 炸掉整个 diff 视图、词级标记丢了只剩整行底色——**都只有在真实 DOM 上跑一遍才断言得了**。选 happy-dom 而非 jsdom：纯 JS、无原生依赖、启动快，本项目只需要 `innerHTML` 与属性/class 断言这一档能力。
 
 - **环境按目录分，不全局开**：`test/unit/web/` 用 happy-dom，`test/unit/server/` 保持 node。给后端用例套一层 DOM 全局，是把「前端拿不到也不该拿到 Node API」那条边界反向捅一刀。
 - **落地方式是 Vitest 的 `projects`，不是 `environmentMatchGlobs`**——后者在 Vitest 4 已被移除，**因此 include 是几条具体路径**。放到 `test/unit/` 底下或第三个子目录里的用例**不属于任何 project、压根不会被跑，且套件照常全绿**；它同样不在 `tsconfig.server.json` / `tsconfig.web.json` 任一份的 include 里，`pnpm typecheck` 也看不见它（两份的 `moduleResolution` 与 `lib` 不同，一个文件不能被两边同时收）。`test/unit/server/test-layout.test.ts` 钉着这条：它直接 import `vitest.config.ts` 把 include 编成正则（不抄目录白名单），所以加 project 不必同步任何清单。
@@ -93,7 +93,7 @@ scripts/               bench:startup、size 等门禁
 - **版本的唯一事实来源是 `package.json` 的 `packageManager` 字段**，不在别处重复写版本号。CI 用 `pnpm/action-setup` 且**不传 `version`**，让它读该字段；**不靠 `corepack enable`**——Corepack 已不再随 Node 25+ 发行版分发，而 CI 矩阵含 Node 26，靠它等于把工具链固定寄托在一个正在消失的东西上。
 - **`pnpm-workspace.yaml` 是所有 pnpm 设置的唯一位置**，单包仓库同样需要这个文件。pnpm 11 起**不再读 `package.json` 的 `pnpm` 字段**，`.npmrc` **只保留 registry 与鉴权**。**写错位置不报错、无 deprecation 警告，只是设置静默不生效**，因此每一条约束的落地都必须连带确认它写在了正确的文件里。
 - `pnpm-lock.yaml` 入库，所有非交互安装用 `pnpm install --frozen-lockfile`。
-- **严格 node_modules 是资产不是障碍**：禁 `shamefullyHoist` / `nodeLinker: hoisted`。任何被 import 的包必须由我们自己声明——diff2html 的两个传递依赖（`diff`、`@profoundlogic/hogan`）由打包器经 diff2html 自身的依赖树解析，**我们的代码与配置不得直接引用它们**。
+- **严格 node_modules 是资产不是障碍**：禁 `shamefullyHoist` / `nodeLinker: hoisted`。任何被 import 的包必须由我们自己声明：`diff`（词级差异）因此进了 `devDependencies`，钉在与 diff2html 解析到的那份相同的版本上，产物里只有一份——**升级 diff2html 或 `diff` 时用 `pnpm why diff` 核一下仍是一份**，分成两份不报错，只是产物多带一份同名库；diff2html 剩下的传递依赖 `@profoundlogic/hogan` **我们的代码与配置不得直接引用**。
 - **依赖的生命周期脚本默认不执行**：需要执行的包必须显式列进 **`allowBuilds`**（已知 `lefthook`——它靠安装后脚本把 git hooks 写进 `.git/hooks`，漏列不报错、安装照常成功，只是 hooks 静默没装、提交前检查全线失效）。判据是两条并列：**`pnpm ignored-builds` 报 `None`** + 钩子文件实际存在。**只看钩子文件会在 CI 上假红**（lefthook 的 postinstall 检测到 `CI` 就跳过 `lefthook install`），故 CI 的安装步骤必须设 `LEFTHOOK=1`。
 - **`test/fixtures/` 的生成脚本与 `scripts/` 下的门禁脚本必须是零依赖纯 JS、可由 `node <路径>` 直接执行**，`package.json` 里的 `fixtures` / `bench:startup` / `size` / `check:css` / `check:global` / `check:inotify` 只是别名。理由与下方 matrix 档「完全不装依赖」同源：这些脚本要在没有 pnpm、没有 `node_modules` 的 matrix 机器上跑。
 

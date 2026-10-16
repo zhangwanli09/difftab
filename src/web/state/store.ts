@@ -294,7 +294,7 @@ export async function loadDiff(entry: FileEntry): Promise<void> {
   const rename = renameOf(entry);
   /**
    * **同一个文件重新取时不回退到 loading 态**：`ready` 变 `loading` 会让渲染 diff 的那棵子树
-   * 整个卸载，diff2html 画好的 DOM 连同滚动位置一起没了，补丁回来后从零重画。每个 SSE
+   * 整个卸载，画好的 DOM 连同滚动位置一起没了，补丁回来后从零重画。每个 SSE
    * `change` 事件与每次切回这个 tab 都会走这里，而要求刷新**不丢选中文件与滚动位置**。
    */
   if (diffStates.value.get(path)?.status !== 'ready')

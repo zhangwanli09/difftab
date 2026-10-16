@@ -132,7 +132,7 @@ describe('languageOf', () => {
   });
 
   // 第三道：hljs 有这个模块，只是它的 aliases 没覆盖到这个扩展名。这些**刻意不进补漏表**——
-  // 抄进来的那份不会跟着上游更新，而这一道白拿（那张表随 diff2html-ui-base 早就在产物里）
+  // 抄进来的那份不会跟着上游更新，而这一道白拿（那张表随 highlight.js-helpers 早就在产物里）
   it.each([
     ['types.pyi', 'python'],
     ['data.jsonl', 'json'],

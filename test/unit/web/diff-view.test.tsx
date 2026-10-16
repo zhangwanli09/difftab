@@ -73,12 +73,12 @@ describe('DiffView', () => {
   it('缓存里还没有这个路径时画一行加载中，不渲染空的 diff 容器', async () => {
     show('a.ts');
     await waitFor(() => expect(container.textContent).toContain('Loading…'));
-    expect(container.querySelector('.d2h-file-wrapper')).toBeNull();
+    expect(container.querySelector('[data-diff-layout]')).toBeNull();
     // 提示行在滚动层里、贴左上（`Notice`），不是居中的空态——面板不是空着，是这个文件还没来
     expect(scroller()?.textContent).toContain('Loading…');
   });
 
-  it('text / untracked-text 都走 diff2html', async () => {
+  it('text / untracked-text 都画成 diff', async () => {
     // 两轮**换不同的 path**，并各等自己那行代码出现：同一个 path 的话，第二轮开头容器与 hljs span
     // 还是上一轮留下的，「渲染成功了」会立刻通过而什么都没验
     for (const { path, marker, payload } of [
@@ -96,10 +96,10 @@ describe('DiffView', () => {
       ready(path, payload);
       show(path);
 
-      // 三条一起等：高亮是 draw() 内部同一次调用里做的，容器出现时 span 必然已经在了
+      // 三条一起等：上色与画表是同一次渲染，表出现时 span 必然已经在了
       await waitFor(() => {
         expect(container.textContent).toContain(marker);
-        expect(container.querySelector('.d2h-file-wrapper')).not.toBeNull();
+        expect(container.querySelector('[data-diff-layout]')).not.toBeNull();
         expect(container.querySelector('[class*="hljs-"]')).not.toBeNull();
       });
     }
@@ -108,7 +108,7 @@ describe('DiffView', () => {
   it('视图只有滚动那一层，不再画路径横杠——「在看哪个文件」由标签栏答', async () => {
     ready('a.ts', { kind: 'text', patch: patchFor('const x = 1;') });
     show('a.ts');
-    await waitFor(() => expect(container.querySelector('.d2h-file-wrapper')).not.toBeNull());
+    await waitFor(() => expect(container.querySelector('[data-diff-layout]')).not.toBeNull());
 
     // 滚动层是视图的根：它与标签栏在 `App` 那个 `<section>` 里是两个兄弟，类名两个视图必须
     // 逐字相同（`Panel` 只此一份）——漂开的症状是其中一个面板底下那半屏不跟着滚
@@ -117,17 +117,78 @@ describe('DiffView', () => {
     expect(scroller()?.className).toBe('min-h-0 flex-1 overflow-auto');
   });
 
-  it('diff2html 的宿主容器带着 relative——行号列的包含块', async () => {
+  it.each([
+    ['side-by-side', 1400],
+    ['line-by-line', 700],
+  ] as const)('%s：行号槽 sticky，表格按内容撑宽——横滚时行号留在左边', async (_, width) => {
+    diffPanelWidth.value = width;
     ready('a.ts', { kind: 'text', patch: patchFor('const x = 1;') });
     show('a.ts');
-    await waitFor(() => expect(container.querySelector('.d2h-file-wrapper')).not.toBeNull());
+    await waitFor(() => expect(container.querySelector('[data-diff-layout]')).not.toBeNull());
 
-    // 少了这个包含块，右侧一滚整列行号就原地钉死、与代码行错开。**断言只能压在类名上**：
-    // happy-dom 没有排版引擎，「滚动后行号还对得上」在这里不可判定，这条钉的是「那个类名还在」，
-    // 防的是有人把它当成多余的工具类顺手删掉。等 diff2html 画完再断言不是白等——`draw()` 是往这
-    // 个元素上赋 `innerHTML`，顺带钉住它没把我们的 class 冲掉。类名换成拼出来的这条照样绿，而
-    // Tailwind 扫不到字面量、产物里就没有那条规则——那一半由 `pnpm check:css` 直接查产物
-    expect(payloadNode()).toHaveProperty('className', 'relative');
+    // **断言只能压在类名上**：happy-dom 没有排版引擎，「横滚后行号还在」在这里不可判定。两半缺
+    // 一不可：少了 `sticky` 行号跟着正文滚走；表格只有面板那么宽时 sticky 的滑动余量为 0，与
+    // static 一模一样。类名换成拼出来的这条照样绿，而 Tailwind 扫不到字面量、产物里就没有那条规
+    // 则——那一半肉眼看
+    const tables = [...container.querySelectorAll('table')];
+    expect(tables.length).toBeGreaterThan(0);
+    for (const table of tables) {
+      expect(table.className).toContain('w-max');
+      const gutter = table.querySelector('tr[data-line] > td');
+      expect(gutter?.className).toContain('sticky');
+      expect(gutter?.className).toContain('left-0');
+    }
+  });
+
+  it('行号的位数写在 --diff-digits 上，五位数的槽跟着撑宽', async () => {
+    ready('big.ts', {
+      kind: 'text',
+      patch:
+        'diff --git a/big.ts b/big.ts\n--- a/big.ts\n+++ b/big.ts\n@@ -12345 +12345 @@\n-a\n+b\n',
+    });
+    show('big.ts');
+    await waitFor(() => expect(container.querySelector('[data-diff-layout]')).not.toBeNull());
+
+    // 断言只能压在变量与类名上（happy-dom 不排版）：漏写变量时格宽回落到 4 位的默认值，第
+    // 10000 行起号溢进旁边那格，页面不报错
+    const host = container.querySelector('[data-diff-layout]')?.parentElement;
+    expect(host?.style.getPropertyValue('--diff-digits')).toBe('5');
+    const gutter = container.querySelector('tr[data-line] > td');
+    expect(gutter?.className).toContain('var(--diff-digits');
+    expect(gutter?.className).toContain('whitespace-nowrap');
+  });
+
+  it('没有 hunk（只改了权限位）：一句提示，不画空表', async () => {
+    ready('run.sh', {
+      kind: 'text',
+      patch: 'diff --git a/run.sh b/run.sh\nold mode 100644\nnew mode 100755\n',
+    });
+    show('run.sh');
+    await waitFor(() => expect(container.textContent).toContain('File without changes.'));
+
+    expect(container.querySelector('table')).toBeNull();
+  });
+
+  it('并排两侧横向联动——滚一侧，另一侧跟到同一个 scrollLeft', async () => {
+    diffPanelWidth.value = 1400;
+    ready('a.ts', { kind: 'text', patch: patchFor('const x = 1;') });
+    show('a.ts');
+    await waitFor(() => expect(container.querySelectorAll('[data-diff-side]')).toHaveLength(2));
+
+    // 两个滚动容器是两张表的父元素
+    const sides = [...container.querySelectorAll('[data-diff-side]')].map(
+      (table) => table.parentElement as HTMLElement,
+    );
+    // 两个方向各来一次：只绑一侧的症状是「拖左边管用、拖右边不管用」。happy-dom 的 `scrollLeft`
+    // 是纯属性——赋值既不派发 scroll 事件也不做 clamp，所以这里手工派发一次浏览器本来会派发的那
+    // 个事件，断言也因此不受布局影响（真实的滚动与两侧上限不等时的回弹都只能上真机看）
+    for (const [index, from] of sides.entries()) {
+      const scrollLeft = 40 * (index + 1);
+      from.scrollLeft = scrollLeft;
+      from.dispatchEvent(new Event('scroll'));
+
+      expect(sides.map((side) => side.scrollLeft)).toEqual([scrollLeft, scrollLeft]);
+    }
   });
 
   it('binary 只提示，不画 diff', async () => {
@@ -135,7 +196,7 @@ describe('DiffView', () => {
     show('logo.bin');
     await waitFor(() => expect(container.textContent).toContain('Binary file'));
 
-    expect(container.querySelector('.d2h-file-wrapper')).toBeNull();
+    expect(container.querySelector('[data-diff-layout]')).toBeNull();
   });
 
   it('too-large 的两个触发口给出不同的话，小文件不会被说成 MB', async () => {
@@ -210,28 +271,30 @@ describe('DiffView', () => {
     ready('a.ts', { kind: 'text', patch: patchFor('const second = 2;') });
     await waitFor(() => expect(container.textContent).toContain('const second'));
 
-    // 元素**同一个**是这条验收的全部内容：换成新元素就意味着 diff2html 画好的 DOM
-    // 连同滚动位置一起被丢掉，而要求刷新不丢这两样——每个 change 事件都会走这条路
+    // 元素**同一个**是这条验收的全部内容：换成新元素就意味着画好的 DOM 连同滚动位置一起被丢
+    // 掉，而要求刷新不丢这两样——每个 change 事件都会走这条路
     expect(payloadNode()).toBe(before);
     expect(container.textContent).not.toContain('const first');
+    // 也没有叠出第二份：并排下一个文件本来就是左右两张表
+    expect(container.querySelectorAll('table')).toHaveLength(2);
   });
 
   it('面板变窄变宽：版式跟着换，容器仍留在原地', async () => {
-    // 这条钉的是那句「格式必须进 effect 的依赖数组」。漏了不报错、页面照常有 diff，只是拖窗口时版
-    // 式纹丝不动。走的是直接写 `diffPanelWidth`，不经 ResizeObserver:happy-dom 的 ResizeObserver
-    // 是个空壳、也没有布局引擎，那一段归肉眼项
+    // 这条钉的是「版式在渲染体里订阅」。漏了不报错、页面照常有 diff，只是拖窗口时版式纹丝不动。
+    // 走的是直接写 `diffPanelWidth`，不经 ResizeObserver:happy-dom 的 ResizeObserver 是个空壳、
+    // 也没有布局引擎，那一段归肉眼项
     diffPanelWidth.value = 700;
     ready('a.ts', { kind: 'text', patch: patchFor('const first = 1;') });
     show('a.ts');
-    await waitFor(() => expect(container.querySelectorAll('.d2h-diff-table')).toHaveLength(1));
+    await waitFor(() => expect(container.querySelectorAll('table')).toHaveLength(1));
     const before = payloadNode();
-    expect(container.querySelectorAll('.d2h-file-side-diff')).toHaveLength(0);
+    expect(container.querySelectorAll('[data-diff-side]')).toHaveLength(0);
 
     diffPanelWidth.value = 1400;
-    await waitFor(() => expect(container.querySelectorAll('.d2h-file-side-diff')).toHaveLength(2));
+    await waitFor(() => expect(container.querySelectorAll('[data-diff-side]')).toHaveLength(2));
 
-    // 补丁没变，重画的理由只可能是版式——而且是**就地**重画：换成新元素等于把
-    // diff2html 画好的 DOM 连同滚动位置一起丢掉（同上一条用例的判据）
+    // 补丁没变，重画的理由只可能是版式——而且是**就地**重画：外层换成新元素等于把面板里的这一
+    // 档整个卸载重挂（同上一条用例的判据）
     expect(payloadNode()).toBe(before);
     expect(container.textContent).toContain('const first');
   });
@@ -242,12 +305,12 @@ describe('DiffView', () => {
     diffPanelWidth.value = 1400;
     ready('a.ts', { kind: 'text', patch: patchFor('const first = 1;') });
     show('a.ts');
-    await waitFor(() => expect(container.querySelectorAll('.d2h-file-side-diff')).toHaveLength(2));
+    await waitFor(() => expect(container.querySelectorAll('[data-diff-side]')).toHaveLength(2));
     const before = payloadNode();
 
     toggleDiffOutputFormat();
-    await waitFor(() => expect(container.querySelectorAll('.d2h-diff-table')).toHaveLength(1));
-    expect(container.querySelectorAll('.d2h-file-side-diff')).toHaveLength(0);
+    await waitFor(() => expect(container.querySelectorAll('table')).toHaveLength(1));
+    expect(container.querySelectorAll('[data-diff-side]')).toHaveLength(0);
     expect(payloadNode()).toBe(before);
   });
 });

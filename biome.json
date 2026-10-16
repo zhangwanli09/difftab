@@ -56,8 +56,8 @@
                     "message": "架构边界：子进程只允许出现在 server/git(git)与 server/cli（拉起浏览器）。"
                   },
                   {
-                    "group": ["diff", "@profoundlogic/hogan"],
-                    "message": "红线：被 import 的包必须由自己声明。这两个是 diff2html 的传递依赖，不得直接引用——pnpm 严格布局下今天会解析失败，但那是链接器的副作用，不是约束本身。要用就先进 package.json。"
+                    "group": ["@profoundlogic/hogan"],
+                    "message": "红线：被 import 的包必须由自己声明。这是 diff2html 的传递依赖，不得直接引用——pnpm 严格布局下今天会解析失败，但那是链接器的副作用，不是约束本身。要用就先进 package.json。"
                   },
                   {
                     "group": ["diff2html", "diff2html/**"],
@@ -88,8 +88,8 @@
                     "message": "架构边界：子进程只允许出现在 server/git(git)与 server/cli（拉起浏览器）。"
                   },
                   {
-                    "group": ["diff", "@profoundlogic/hogan"],
-                    "message": "红线：被 import 的包必须由自己声明。这两个是 diff2html 的传递依赖，不得直接引用——pnpm 严格布局下今天会解析失败，但那是链接器的副作用，不是约束本身。要用就先进 package.json。"
+                    "group": ["@profoundlogic/hogan"],
+                    "message": "红线：被 import 的包必须由自己声明。这是 diff2html 的传递依赖，不得直接引用——pnpm 严格布局下今天会解析失败，但那是链接器的副作用，不是约束本身。要用就先进 package.json。"
                   }
                 ]
               }

@@ -1,50 +1,59 @@
-# diff 渲染：diff2html 与语法高亮
+# diff 渲染：解析、配对、高亮与两种版式
 
-> 一份 unified diff 文本怎么变成页面上那块带高亮的 HTML。组件与骨架在 [`web.md`](web.md)，配色与层叠隔离在 [`style.md`](style.md)，选型与被排除的做法见 [`../decisions/web.md`](../decisions/web.md)，门禁见 [`../gates.md`](../gates.md)。
+> 一份 unified diff 文本怎么变成页面上那块带高亮的表格。组件与骨架在 [`web.md`](web.md)，配色与层叠隔离在 [`style.md`](style.md)，选型与被排除的做法见 [`../decisions/web.md`](../decisions/web.md)，门禁见 [`../gates.md`](../gates.md)。
 
-[diff2html](https://github.com/rtfpessoa/diff2html) 解析 `git diff` 的 unified diff 文本渲染为 HTML，[highlight.js](https://highlightjs.org/) 做语法高亮。所有资源随包本地分发，**不走 CDN**——工具必须离线可用。
+[diff2html](https://github.com/rtfpessoa/diff2html) **只负责解析**，[highlight.js](https://highlightjs.org/) 做语法高亮，画成表格的是我们自己的 Preact 组件。所有资源随包本地分发，**不走 CDN**——工具必须离线可用。
 
-**按需 import + 显式注册 hljs 语言子集，不使用任何 diff2html 预构建 UI bundle**（`diff2html-ui.min.js` / `-slim` / `-base` 三个都不用）。**被排除的是三个预构建 bundle，不是 UI 层源码**——深导入 `diff2html/lib-esm/ui/js/diff2html-ui-base.js` 与同目录的 `highlight.js-helpers.js` 参与 tree-shaking、hljs 实例由我们注入，是允许且推荐的。
+一份补丁走四步，前三步与版式无关：
 
-- **高亮是一行一次 `hljs.highlight()`**：`highlight.js-helpers` 的 `closeTags` / `nodeStream` / `mergeStreams` 把高亮结果与行内已有的 `<del>` / `<ins>` 词级标记交织回同一行、补齐被切断的标签。**跨行的语法状态一律不保留。** 禁止自行重写这三个切分函数。
-- `draw()` 是 `innerHTML` 赋值 + 命令式绑定事件，**必须放在 Preact 的 ref/effect 之后**，不与 vdom 争同一棵子树。
-- **交给 `Diff2HtmlUI` 的宿主 div 必须带 `relative`**：diff2html 的行号列是 `position: absolute`，滚动容器内部缺了 positioned 祖先时，一滚代码行走了、整列行号原地钉死（机制见 [`style.md`](style.md) 的「行号列需要一个 positioned 祖先」）。
-- 用不到的开关一律关掉：`fileListToggle` / `fileContentToggle` / `stickyFileHeaders` / `highlight` 全部 `false`，打开的只有 `synchronisedScroll`。
-- **`synchronisedScroll: true` 管的是并排两侧的横向联动**：两半各是一个独立的横向滚动容器，不联动时横滚一侧看长行，同一行的新旧内容错开——并排存在的理由正好在需要横滚时失效。逐行版式下它是空操作，两种版式共用一份配置。监听器绑在每次 `draw()` 新写出的节点上，重画不叠加。**已知取舍**：两侧滚动上限不等时边界处顿一下；换掉它要自研一份带回声抑制的联动，排除理由见 [`../decisions/web.md`](../decisions/web.md)。
-- **`highlight: false`，高亮整个归我们自己那个循环（`render.ts` 的 `highlightLines()`）**：上游的 `highlightCode()` 对一个文件只认一个语言，而单文件组件一份文件里有三种。
-- **高亮只做一遍**：两条同时开时第二遍的 `nodeStream` 拿到的已是第一遍的 `hljs-*` span，结果是嵌套重复的 span，开销也翻倍。禁再开 `highlight` 或调 `highlightCode()`。
-- **自研的只有「这一行用哪个语言」**（`hljs.ts` 的 `createLineLanguage()`），切分仍是上游那三个导出原样调用。
-- **`colorScheme` 传 `'light'`，不传 `'auto'`**（理由见 [`style.md`](style.md)）。**明暗开关不进 `draw()` 的依赖数组**：主题整个发生在 CSS 变量上，为它重跑 `draw()` 是白付一次全量高亮。
+1. **解析**（`diff/parse.ts`）：深导入 `diff2html/lib-esm/diff-parser.js` 的 `parse()`，映射成我们自己的 `Hunk` / `PatchLine`。**不经包入口 `diff2html.js`**：它连带引入两个 renderer 与 hogan 模板。没有 hunk（只改了权限位、空的新文件）是正常结果，视图画一句 `File without changes.`。
+2. **配对**（`diff/rows.ts`，纯函数）：一段连续删除与紧随其后的那段插入是一组，组内按下标两两配对，多出来的那侧补空位——照搬上游默认的 `matching: 'none'`，即页面上一直以来的样子。配上对的一删一增用 `diff` 包的 `diffWordsWithSpace` 算词级区间（与上游同一个函数），**任一侧超过 10000 字符就不算**（同上游 `maxLineLengthHighlight`）：它是 O(N·D)，一行压缩过的 JS 能把页面卡住好几秒。
+3. **上色**（`diff/render.ts` 的 `prepareDiff()`）：一行一次 `hljs.highlight()`，**跨行的语法状态一律不保留**。词级区间先在脱离文档的元素里搭成 `<del>` / `<ins>`，再由 `highlight.js-helpers` 的 `closeTags` / `nodeStream` / `mergeStreams` 与高亮结果交织回同一行、补齐被切断的标签。**禁止自行重写这三个切分函数**，排除理由见 [`../decisions/web.md`](../decisions/web.md)。
+4. **排版**（`DiffView.tsx`）：逐行版式每组先列全部删除再列全部插入，并排版式按配对一行一行排，见下文「两种版式的 DOM」。
 
-## diff2html 的触点只有两处
+- **结果按 `[path, patch]` 缓存，版式不在依赖里**：两种版式共用同一份上色结果，拖窗口跨过阈值只是换一种排法，不重新高亮。**明暗开关也不在**：主题整个发生在 CSS 变量上。
+- **整张表的 vnode 再按 `[上色结果, 版式]` 缓存**：视图订阅的是整个 `diffStates`，别的 tab 加载或关掉、SSE 重取到逐字相同的补丁都会让它重渲染；缓存命中时 Preact 拿到同一个 vnode 直接跳过，不把几万行再建一遍、比一遍。
+- **表格行的 `key` 跟着行号走，不跟下标**（上下文与删除行认旧行号、插入行认新行号、并排的空位认对面那一行）：SSE 刷新时文件开头多一行，按下标比对会让其后每一行的正文都重写一遍 `innerHTML`。
+- **高亮只做一遍**：上下文行两侧共用同一份 HTML。把它改成两侧各上一次色、再交织回去，产出的是嵌套重复的 span，开销也翻倍，而页面只是颜色略怪。
+- **语言判定器旧侧一个、新侧一个**，各吃自己那一侧的连续行序（上下文行两侧都吃），见下文「单文件组件的区块高亮」。
+- **每行正文经 `dangerouslySetInnerHTML` 写进去**：内容来自 hljs，它自己转义了正文里的一切标记；词级标签由 DOM API 搭出来，不拼字符串。
 
-**JS 只许在 `src/web/diff/` 里 import `diff2html`**；CSS 那侧只许在 `d2h-theme.css`（见 [`style.md`](style.md)）。违反时不报错，只是哪天要换掉渲染层，得先把散在各处的触点找全，漏掉的那处静默变成死代码。
+## diff2html 的触点
+
+**JS 只许在 `src/web/diff/` 里 import `diff2html`**，而且只剩两个深导入：`diff-parser.js`（`parse.ts`）与 `ui/js/highlight.js-helpers.js`（`render.ts` 的三个切分函数、`hljs.ts` 的第三道语言判定）。CSS 一条都不引。违反时不报错，只是触点又散回各处。
 
 - 由 `biome.json` 静态拦截：`src/web/**` 的 override 禁 `diff2html`，`src/web/diff/**` 的 override 放开它，并原样带上其余条目（替换不合并，见 AGENTS.md 红线）——**往 `src/web/**` 加新禁令时两处都要加**。
-- 组件只经 `diff/render.ts` 的 `renderDiff()` 与 `DiffOutputFormat` 类型接触渲染层；`diff/hljs.ts` 的第三道语言判定（见下文）是另一处深导入。
-- 组件与测试里的 `.d2h-*` 类名（DOM 查询、注释）不在这条规则内——它们读的是渲染结果，换渲染层时随那份结果一起改。
+- **`diff` 由我们自己声明**（钉在与 diff2html 解析到的那份相同的版本上，升级时的核对见 [`build.md`](build.md)）；**`@profoundlogic/hogan` 仍是禁止直接引用的传递依赖**，而且已经不在产物里——它只被我们不再 import 的 renderer 用到。
+- 组件只经 `diff/render.ts` 的 `prepareDiff()`、`DiffLine` / `PreparedHunk` / `DiffOutputFormat` 类型与 `diff/rows.ts` 的排版函数接触这一层。
 
-## 文件头整条不显示
+## 两种版式的 DOM
 
-diff2html **没有**关掉文件头（`.d2h-file-header`）的配置项，只能落在样式那侧的一条 `display: none`（见 [`style.md`](style.md) 的「四条选择器规则的例外」）。
+外面一层 `font-mono text-[13px] leading-5` 的 div 在两种版式之间不换，换版式、SSE 刷新都落在同一个元素里；里面是 `[data-diff-layout]`。
 
-- 头里四样：文件图标、文件名、`CHANGED` / `RENAMED` 标签、一个已经失效的「Viewed」复选框。前两样与标签栏重复，重命名由 `RenameNotice` 说得更全——**藏掉它页面上不掉任何信息**。
+- **逐行**：一张表，外层自己 `overflow-x-auto`（不交给面板），让改名标注之类排在补丁上面的东西不跟着横滚出去。行号槽 7.5em，新旧两个号各 3.5em 并列，槽 `whitespace-nowrap`——不然两个 inline-block 的号会折成两行、整行变高。
+- **并排**：左旧右新两张表（`[data-diff-side]`），各自是一个 `overflow-x-scroll` 的半栏；两张表行数相同、行高相同，竖直方向天然对齐。行号槽 4em，hunk 头只在旧侧写一次。
+- **行号放不下才撑宽，不裁**：3.5em / 4em 只装得下四位数，第 10000 行起会溢进旁边那格。`Patch` 把这份补丁最大行号的位数写在 `--diff-digits` 上，格宽取 `max(原宽, 位数 × 1ch + 1em)`，两侧一起变、仍然等宽。diff2html 的做法是 `overflow:hidden` 裁掉，而被裁的行号就是错的行号。
+- **正文格一律 `w-full`**：表格 `min-w-full`，行都比面板短时有富余，自动布局会把富余分给每一列，行号槽凭空多出一大块；`w-full` 让富余全归正文。
+- **行号槽 `sticky left-0`，表格 `w-max min-w-full`**：sticky 的滑动余量来自包含块，表格只有面板那么宽时余量为 0，与 static 一模一样（实测见 [`../decisions/web.md`](../decisions/web.md)）。**`border-separate`**：合并边框模式下边框属于表格，sticky 的格子会把自己的右边线留在原地。
+- **行号槽必须是实心色**：横滚时正文从它底下滑过，半透明就透字。颜色机制（`--diff-tint` / `--diff-edge` 与 `diff-gutter` / `diff-code` 两个工具类）见 [`style.md`](style.md)。
+- **空位那一行的高度来自行号槽的 `h-5`**：两格都没有字，不给最小高度就塌成 0，与对面那侧错开一行。
+- **行首记号后面带一个空格**（`- ` / `+ ` / 两个空格）：照旧的观感——diff2html 模板里记号与正文之间那个换行在 `nowrap` 下折成一个空格。记号与行号都 `select-none`，复制出来的是代码本身。
+- **并排两侧横向联动**：一侧的 `scroll` 事件无条件把另一侧的 `scrollLeft` 写成同一个值，与上游 `synchronisedScroll` 同语义。**已知取舍**：没有回声抑制，两侧滚动上限不等时边界处顿一下，之后继续正常滚（排除理由见 [`../decisions/web.md`](../decisions/web.md)）。监听器在 layout effect 里绑：与元素同一次提交就绑上，中间没有一帧「滚了不跟」。
+- **不画文件头**：文件名在标签栏，改名由 `RenameNotice` 说。`+N` / `-M` 增删统计 difftab 至今没在页面上给过。
 - **`RenameNotice` 只说旧路径，不印相似度**（照 VS Code，它哪里都不印）：status 的 `R<score>` 量的是 HEAD→index，而补丁是 HEAD→工作区。`RM`（暂存了改名、之后又改了内容）时两者不是一回事——内容改多了 git 在补丁里甚至配不上对，下面画的是整段删 + 整段增，头上却写着「100% similar」。故 `R<score>` 在解析时就丢掉、不进协议；要从补丁头另取一个准的数是一条新的协议面，换来的只是一个 VS Code 也不给的数字。
-- **`+N` / `-M` 增删统计不在这条头里**：它属于文件列表模板，而我们传 `drawFileList: false`。difftab 至今没在页面上给过增删行数，藏掉文件头不等于放弃了统计。
 
 ## 版式：按面板宽度自动切，可手动固定
 
-面板宽度 < 1024px 给 `line-by-line`，否则 `side-by-side`。**1024 是按 diff2html 的字体与行号槽宽算出来的**（并排每侧约剩 50 个等宽字符），与 Tailwind 的 `lg` 相同纯属巧合。以下几条都属「违反后不报错」：
+面板宽度 < 1024px 给 `line-by-line`，否则 `side-by-side`。**1024 是按字体与行号槽宽算出来的**（并排每侧约剩 50 个等宽字符，推导在 `state/layout.ts`），与 Tailwind 的 `lg` 相同纯属巧合。以下几条都属「违反后不报错」：
 
 - **判据是 diff 面板自身的宽度，不是视口宽度**：按视口判等于把侧栏宽度在 CSS 之外再写一遍，侧栏一改阈值就静默错位——而侧栏现在还能拖。
 - **量的是面板那一层（`<section>`），不是里面那层滚动容器**：换格式 → 内容高度变 → 竖直滚动条进出 → 内层宽度抖十几像素，阈值附近两种格式来回重画。面板自己不滚，宽度不随滚动条变。
 - **border box 那两处仍显式写**（`observe(el, { box: 'border-box' })` + `entry.borderBoxSize[0].inlineSize`）：滚动条是从 content box 里扣的，这一层哪天加了 `overflow` 或内边距，默认观察就把抖动请回来；只在读值那侧挑滤的是已产生的回调，指定观察 box 才是从源头不投递。
 - **量法与阈值同住 `state/layout.ts` 的 `observeDiffPanel()`**：阈值的正确性全靠送进来的是 border box，而这件事没有门禁强制得了，拆到两个文件里就让其中一半失去说明。
-- 格式是一个 `computed`，靠 `Object.is` 去重，只有真跨过阈值才通知下游。贴着阈值来回蹭时每跨一次仍是一次 `draw()`——不为此加迟滞，那会把纯派生量变成第二份状态。
-- **格式必须进 `DiffView` 那个 effect 的依赖数组**：`draw()` 是命令式的，不重跑就停在旧格式上——只是拖窗口没反应。
-- 两种格式共用同一套 `--d2h-*` 覆写，无需分叉。
+- 格式是一个 `computed`，靠 `Object.is` 去重，只有真跨过阈值才通知下游。贴着阈值来回蹭时每跨一次仍是一次重排（不重新高亮）——不为此加迟滞，那会把纯派生量变成第二份状态。
+- **`Patch` 必须在渲染体里读 `diffOutputFormat`**：读到 memo 或 effect 里去，拖窗口时版式就纹丝不动。
 - **手动切换是一枚两态按钮，点过即固定**：住在编辑器标签栏右端的动作区（显示条件见 [`editors.md`](editors.md)），点一下翻到当前版式的另一种并写进 `diffFormatOverride`，此后本次页面内不再跟宽度走；刷新回到自动。图标与文案表达的是**目标**版式（`View inline` / `View side by side`），与变更列表的 `View as tree` 同类，不是显示当前档的状态灯。
-- **override 与宽度判据合成同一个 `diffOutputFormat`**（`override ?? 宽度判据`）：`DiffView` 只认这一个 signal，依赖数组一字不改；另开一条通路时固定之后拖窗口照样换版式。固定后观察者照写宽度，`computed` 去重，不触发重画。
+- **override 与宽度判据合成同一个 `diffOutputFormat`**（`override ?? 宽度判据`）：`DiffView` 只认这一个 signal；另开一条通路时固定之后拖窗口照样换版式。固定后观察者照写宽度，`computed` 去重，不触发重画。
 - **override 不进 `localStorage`**：跨不了实例（见 [`web.md`](web.md) 的「主题开关」）。也正因为不落盘，两态不会像主题那样「点过一次就永远回不到自动」——为什么不做三态见 [`../decisions/web.md`](../decisions/web.md)。
 
 ## hljs 语言清单
@@ -54,13 +63,12 @@ diff2html **没有**关掉文件头（`.d2h-file-header`）的配置项，只能
 - **别名不是模块，不得单独 import**：`jsx` 属 `javascript`、`tsx` 属 `typescript`、`toml` 属 **`ini`**、`html` 属 `xml`。`highlight.js/lib/languages/{jsx,tsx,toml}` 不存在，写了构建期 resolve 失败。
 - **`plaintext` 必须与这 22 个一起注册，它是兜底而非语言**：`lib/core` 不自带它，漏注册时 `hljs.highlight()` 抛 `Unknown language: "plaintext"`，**整个 diff 视图渲染失败**——diff 里出现 `LICENSE` / `Dockerfile` / `.txt` 即触发。
 - 配色 CSS 不来自 highlight.js，与语言清单增删互不影响（见 [`style.md`](style.md)）。
-- diff2html 的传递依赖 `@profoundlogic/hogan` 只有 CJS 入口，靠打包器的 CJS 互操作，不会被 tree-shake。
 
 ## 扩展名 / 文件名 → 语言的补漏表
 
 **两个视图共用 `languageOf(path)`（`src/web/diff/hljs.ts`），它是全项目唯一一条语言判据。** 各写一份的症状是同一个文件在 diff 里有色、在文件视图里没色。
 
-- **判定是三道，顺序不能换**：我们的补漏表 → hljs 模块自带的 `aliases` → diff2html 那张 `languagesToExt`（每道结果都要过 `getLanguage()`），全落空才是 `plaintext`。**第三道不能砍、也不许抄成自己的表**：它随 `diff2html-ui-base` 早就在产物里、体积为 0，实测比前两道多认 88 个扩展名（`pyi` / `jsonl` / `rake` …），砍掉后它们静默变纯文本；抄件则不会跟上游更新。
+- **判定是三道，顺序不能换**：我们的补漏表 → hljs 模块自带的 `aliases` → diff2html 那张 `languagesToExt`（每道结果都要过 `getLanguage()`），全落空才是 `plaintext`。**第三道不能砍、也不许抄成自己的表**：它随 `highlight.js-helpers.js` 早就在产物里（那三个切分函数也住在那里）、体积为 0，实测比前两道多认 88 个扩展名（`pyi` / `jsonl` / `rake` …），砍掉后它们静默变纯文本；抄件则不会跟上游更新。
 - **第三道排在最后**：`properties` 这类两边都认的得按我们的判——上游映到一个我们没注册的模块。
 - **表里的值只允许是那 22 个已注册模块**，映射到别的名字静默退回 plaintext。
 - **表里查出来的东西要先验 `typeof`**：两张表都是对象字面量，`a.constructor` 这样的文件名会取出**构造函数**，`getLanguage()` 对它当场抛，炸的是整个视图。
@@ -81,11 +89,11 @@ diff2html **没有**关掉文件头（`.d2h-file-header`）的配置项，只能
 
 症状是「模板那段有色、`<script>` 与 `<style>` 整块白」，不报错。因此 diff 侧用逐行区块状态机：
 
-- **状态机在 `hljs.ts`（`createLineLanguage()`），DOM 操作在 `render.ts`（`highlightLines()`）**。
+- **状态机在 `hljs.ts`（`createLineLanguage()`），喂给它哪条行序在 `render.ts`（`prepareDiff()`）**。
 - **区块标签行自己按 `xml` 判**；`lang="ts"` / `lang="scss"` 走同一条 `languageOf()`，判不出来时退回区块默认值（script→javascript / style→css / template→xml），**不退回 plaintext**。
 - **看不见起始标签的 hunk 保守停在 `xml`**：只改了 `<script>` 中间几行时判定器没见过 `<script>`，宁可没颜色也不猜。
 - **一行开闭的区块不算进入区块**（`<script src="…"></script>`、一行写完的 `<style>`）：漏判时状态回不来，之后每一行都按 JS 高亮。
-- **一张 `.d2h-diff-table` 一个判定器**：状态属于一条连续的行序，并排版式下左右各一条。
+- **旧侧一个判定器、新侧一个**：状态属于一条连续的行序，而文件的旧版本与新版本各是一条，与版式无关。上下文行两侧都吃；两侧判出来的语言不同时（区块边界恰好在这一段里变了）按新侧上色。**取舍**：逐行版式下状态从前是跟着「删增交错的那条行序」走的，现在各跟各的版本——后者才是文件真实的样子。
 
 ## 产物体积门禁
 
@@ -93,9 +101,9 @@ diff2html **没有**关掉文件头（`.d2h-file-header`）的配置项，只能
 
 | 产物 | 门禁 | 当前实测 |
 |---|---|---|
-| 前端 JS（明文） | ≤ 350 KB | 241.3 KB |
-| 前端 JS（gzip） | ≤ 120 KB | 81.0 KB |
-| 前端 CSS（明文，含 `diff2html.min.css` + 自建 hljs 主题 + Tailwind 产物） | ≤ 48 KB | 38.6 KB |
-| 前端 CSS（gzip） | ≤ 10 KB | 7.5 KB |
+| 前端 JS（明文） | ≤ 350 KB | 223.0 KB |
+| 前端 JS（gzip） | ≤ 120 KB | 77.4 KB |
+| 前端 CSS（明文，自建 hljs 主题 + Tailwind 产物） | ≤ 48 KB | 26.9 KB |
+| 前端 CSS（gzip） | ≤ 10 KB | 6.1 KB |
 
 **CSS 与 JS 一样明文、gzip 两道并卡**（理由见 [`../decisions/web.md`](../decisions/web.md)）。单次小幅增量两道都够不着，review 时看一眼 `dist/web/app.css` 的增量。

@@ -97,9 +97,9 @@ live in the `docs/design/` file that §4 routes to, with the evidence in
 - **Test layout.** Vitest projects include specific paths: `test/unit/server/` (node) and
   `test/unit/web/` (happy-dom). A test file placed anywhere else under `test/unit/`
   **belongs to no project, is never run, and the suite stays green.**
-- **CSS layering.** The highlight.js themes and `diff2html.min.css` must stay unlayered
-  and in that order, and our `--d2h-*` overrides must come *after* diff2html. Getting the
-  order wrong makes 23 overrides silently do nothing; the page just looks a bit off.
+- **CSS layering.** The highlight.js theme must stay unlayered, so Tailwind's preflight
+  can never override it. Wrapping it in an `@layer` breaks nothing visibly at first; the
+  syntax colours just quietly lose to the base layer.
 - **git invocation details.** `-z`, `core.quotePath=false`, `GIT_OPTIONAL_LOCKS=0` and
   `GIT_LITERAL_PATHSPECS=1` are set in the wrapper layer for reasons that each have a
   test. Removing one does not produce an error.

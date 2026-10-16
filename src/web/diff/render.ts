@@ -1,18 +1,10 @@
-// diff2html 渲染。
+// 一份补丁 → 带好颜色的行。画成 DOM 归 `DiffView.tsx`，这里只产出数据与每行的 HTML 片段。
 //
-// `html()` 本身不做语法高亮——高亮在 `Diff2HtmlUI.highlightCode()`，它依赖
-// highlight.js-helpers 的 closeTags / nodeStream / mergeStreams / getLanguage：先把整个文件
-// 的代码合起来交给 hljs，再按 diff 的行边界切回、补齐跨行未闭合的标签。自行重写这段切分逻辑
-// 不在本项目要解决的问题之列。
-//
-// 被排除的是三个预构建 UI bundle(-ui / -ui-slim / -ui-base)，**不是** UI 层源码：深导入下面
-// 的 diff2html-ui-base ESM 源码模块参与 tree-shaking、hljs 实例由我们注入，是允许且推荐的。
-// ColorSchemeType 只取类型——enum 作为值 import 会把整个枚举对象带进产物，而我们只需要字面
-// 量 'light'。OutputFormatType **不是** enum，是个普通的字符串联合，所以它不需要那样的 cast
-//——别照着上一行给它也套一个。
+// **按行高亮，切分仍是 diff2html 的那三个导出**：`closeTags` / `nodeStream` / `mergeStreams` 把一行
+// 的高亮结果与这一行的词级 `<del>` / `<ins>` 交织回同一行、补齐被切断的标签。自研等于维护一份更
+// 易出错的等价物——它们随 `highlight.js-helpers.js` 本就在产物里（`hljs.ts` 的第三道语言判定也
+// 读那个模块）。
 
-import type { ColorSchemeType, OutputFormatType } from 'diff2html/lib-esm/types.js';
-import { Diff2HtmlUI } from 'diff2html/lib-esm/ui/js/diff2html-ui-base.js';
 import {
   closeTags,
   mergeStreams,
@@ -20,120 +12,110 @@ import {
 } from 'diff2html/lib-esm/ui/js/highlight.js-helpers.js';
 
 import { createLineLanguage, getHljs } from './hljs';
+import { type LineKind, type PatchLine, parsePatch } from './parse';
+import { type Group, groupLines, type Range, wordRanges } from './rows';
 
-/**
- * diff2html 的两种版式——**别名，不是第二份声明**：自己写一遍 `'side-by-side' |
- * 'line-by-line'` 要配一个 `as OutputFormatType` 才塞得进配置对象，而那个 cast 正好会在上游加
- * 出第三种版式时**把分叉压住不报**。名字留在这里而不搬去 `state/layout.ts`：它描述的是
- * diff2html 的配置面，而「什么时候用哪个」才是状态那侧的判据。
- */
-export type DiffOutputFormat = OutputFormatType;
+/** 一行画出来需要的全部东西 */
+export interface DiffLine {
+  kind: LineKind;
+  oldNo: number | undefined;
+  newNo: number | undefined;
+  /** hljs 输出（已转义），词级标记已交织进去，可直接写进 `innerHTML` */
+  html: string;
+  /** hljs 报回来的语言名，挂成正文上的 class（与 `.hljs` 一起，同上游的挂法） */
+  language: string | undefined;
+}
 
-/**
- * 把一段 unified diff 渲染进 target 并高亮。调用方必须在 Preact 的 ref/effect 之后调用——
- * `draw()` 内部是 `innerHTML` 赋值加命令式事件绑定，不能与 vdom 争夺同一棵子树。
- *
- * **`path` 是语言判据的来源**，与文件视图共用 `languageOf()`：diff2html 自己那条判据是「文件
- * 名最后一段扩展名 → 它内置的 `languagesToExt`」，而那张表里没有 `vue` / `env` / `svelte` 之
- * 类，也够不着 `.env.local` 这种多段名——症状是这些文件在两个视图里都静默没有颜色。
- */
-export function renderDiff(
-  target: HTMLElement,
-  path: string,
-  patch: string,
-  format: DiffOutputFormat,
-): void {
-  const ui = new Diff2HtmlUI(
-    target,
-    patch,
-    {
-      // 用不到的开关一律关掉，留下的是紧随其后那条 synchronisedScroll
-      fileListToggle: false,
-      fileContentToggle: false,
-      stickyFileHeaders: false,
-      /**
-       * **高亮整个归 `highlightLines()`（见文件末），这里必须关掉。**
-       *
-       * `highlightCode()` 对一个文件只认一个语言（每个 `.d2h-file-wrapper` 上的 `data-lang`），
-       * 而单文件组件一份文件里有三种。开着它就是**两遍高亮**：第二遍读到的 `textContent` 仍是
-       * 纯文本，但 `nodeStream()` 拿到的已是第一遍插入的 hljs span，`mergeStreams` 把两份流交
-       * 织成嵌套重复的 span，开销也白付一倍。
-       */
-      highlight: false,
-      drawFileList: false,
-      /**
-       * **并排两侧的横向联动**。两半各是一个独立的滚动容器（`.d2h-file-side-diff` 自带
-       * `overflow-x: scroll`），关掉这一条时横向拖一侧去看长行、另一侧原地不动，同一行的新旧
-       * 内容错开成两个列位置——并排存在的理由正好在需要横滚时失效。逐行版式下这一步是空操
-       * 作，两种版式因此共用同一份配置；绑定发生在 `draw()` 刚写出来的节点上，而它整片覆盖
-       * `innerHTML`，重画不叠加，也不必自己解绑。
-       *
-       * **已知取舍**：互相回写 `scrollLeft` 时分不出「用户滚的」与「回写引起的」，越过窄侧上
-       * 限的那一下会把宽侧拽回窄侧的上限——边界处顿一下，之后继续正常滚。
-       */
-      synchronisedScroll: true,
-      /**
-       * **由调用方给，且必填、不给默认值**：漏传时要的是 `tsc` 当场报错，而不是静默退回并排
-       *——后者的症状是「这个视图怎么不跟着窗口变」。判据本身归 `state/layout.ts`。
-       */
-      outputFormat: format,
-      /**
-       * **必须是 'light'，不能是 'auto'**——这不是"只支持浅色"，恰恰相反，它是深色能按
-       * VS Code 取值出来的前提。diff2html 的深色配色由容器上的 class 门控：'auto' 输出
-       * `.d2h-auto-color-scheme`，对应规则整块包在它自带的那个 `@media (prefers-color-scheme:
-       * dark)` 里、读的是**另一套** `--d2h-dark-*`，而特异性 (0,2,0) 稳压基础规则 (0,1,0)——
-       * 于是 d2h-theme.css 覆写的那 23 个 `--d2h-*` 在深色下一条都不生效，页面只是"深色不
-       * 太像 VS Code"，不报错。
-       *
-       * 'light' 输出的 `.d2h-light-color-scheme` 在 d2h 的 CSS 里一条规则都没有，全部配色因此
-       * 落在无前缀的基础规则上，深浅由我们自己那套 token 承担。顺带避开 3.4.56 的一处缺口：
-       * auto 块里 `.d2h-deleted` 挂错成了 `.d2h-dark-color-scheme .d2h-deleted`。
-       */
-      colorScheme: 'light' as ColorSchemeType,
-    },
-    getHljs(),
-  );
-  // draw() 只写 innerHTML 与绑那对滚动联动，不高亮（highlight: false，理由见上）
-  ui.draw();
-  highlightLines(target, path);
+export interface PreparedHunk {
+  header: string;
+  groups: Group<DiffLine>[];
 }
 
 /**
- * 逐行上色。**替掉的是 `Diff2HtmlUI.highlightCode()` 的那个 `forEach`，不是它的切分逻辑**——
- * `closeTags` / `nodeStream` / `mergeStreams` 三个仍是 diff2html 的导出，原样调用：把一行的高亮
- * 结果与这一行已有的 `<del>` / `<ins>` 词级标记合流、补齐被切断的标签，是它们的活，自研等于维
- * 护一份更易出错的等价物。
+ * 解析、配对、上色一次做完。**与版式无关**：两种版式共用同一份结果，切版式只是换一种排法，不
+ * 重新高亮——调用方按 `[path, patch]` 缓存它。
  *
- * **自研的只有「这一行用哪个语言」**：上游那个循环对整个文件只取一次 `data-lang`，而单文件组件
- * 一份文件里有三种语言（模板 / 脚本 / 样式）。判定器由 `createLineLanguage()` 给，状态机住在
- * `hljs.ts`——语言的事继续只在那一个文件里。
+ * **语言判定器旧侧一个、新侧一个**，各自吃自己那一侧的连续行序（上下文行两侧都吃）。判定器是个
+ * 状态机（单文件组件在 `<script>` / `<style>` 里换语言），状态属于「一条连续的行序」，而文件
+ * 的旧版本与新版本各是一条。**每个文件段重新造一对**：类型变了的路径有两段，是两个文件版本。
+ * 上下文行两侧判出来的语言不同时（区块边界恰好在这一段里变了）取新侧的：同一行只上一次色，并排
+ * 两侧显示的是同一份 HTML。
  *
- * **一张表一个判定器**：状态属于「一条连续的行序」，而并排版式下 `.d2h-diff-table` 有两张（左
- * 旧右新），各自内部才连续。共用一个的话，右栏开头继承的是左栏末尾的状态——两栏行数相同时它
- * 恰好总被右栏的上下文行重置回来（试出来的：这条**造不出失败用例**，所以没有配测试），但那是
- * 巧合不是判据，两栏内容一错开就不成立。
+ * **`path` 是语言判据的来源**，与文件视图共用 `languageOf()`（经 `createLineLanguage()`）。
  */
-function highlightLines(target: HTMLElement, path: string): void {
-  const hljs = getHljs();
-  for (const table of target.querySelectorAll('.d2h-diff-table')) {
-    const languageAt = createLineLanguage(path);
-    for (const line of table.querySelectorAll('.d2h-code-line-ctn')) {
-      const text = line.textContent;
-      if (text === null) continue;
-      const result = closeTags(
-        // ignoreIllegals：补丁给的是片段，一行代码在语法上「不合法」是常态
-        hljs.highlight(text, { language: languageAt(text), ignoreIllegals: true }),
-      );
-      const original = nodeStream(line);
-      if (original.length) {
-        // 这一行里已经有 diff2html 画的词级 <del> / <ins>，两份流得交织回一行
-        const rendered = document.createElementNS('http://www.w3.org/1999/xhtml', 'div');
-        rendered.innerHTML = result.value;
-        result.value = mergeStreams(original, nodeStream(rendered), text);
-      }
-      line.classList.add('hljs');
-      if (result.language) line.classList.add(result.language);
-      line.innerHTML = result.value;
-    }
+export function prepareDiff(path: string, patch: string): PreparedHunk[] {
+  return parsePatch(patch).flatMap((section) => {
+    const oldLanguageAt = createLineLanguage(path);
+    const newLanguageAt = createLineLanguage(path);
+    return section.map((hunk) => ({
+      header: hunk.header,
+      groups: groupLines(hunk.lines).map((group): Group<DiffLine> => {
+        if (group.kind === 'context') {
+          const { text } = group.line;
+          oldLanguageAt(text);
+          return { kind: 'context', line: toLine(group.line, newLanguageAt(text)) };
+        }
+        // 只有配上对的那几行有词级差异；多出来的那侧整行就是差异本身。两侧各自按序 map，判定器
+        // 吃到的仍是自己那一侧的连续行序
+        const ranges = group.deleted.map((line, i) => {
+          const partner = group.inserted[i];
+          return partner ? wordRanges(line.text, partner.text) : null;
+        });
+        return {
+          kind: 'change',
+          deleted: group.deleted.map((line, i) =>
+            toLine(line, oldLanguageAt(line.text), ranges[i]?.deleted, 'del'),
+          ),
+          inserted: group.inserted.map((line, i) =>
+            toLine(line, newLanguageAt(line.text), ranges[i]?.inserted, 'ins'),
+          ),
+        };
+      }),
+    }));
+  });
+}
+
+/** 词级标记：`marks` 为空即没有（上下文行、没配上对的那侧） */
+function toLine(
+  line: PatchLine,
+  language: string,
+  marks: readonly Range[] = [],
+  tag: 'del' | 'ins' = 'del',
+): DiffLine {
+  const { html, language: reported } = highlightLine(line.text, language, marks, tag);
+  return { kind: line.kind, oldNo: line.oldNo, newNo: line.newNo, html, language: reported };
+}
+
+type NodeEvent = Parameters<typeof mergeStreams>[0][number];
+
+/**
+ * 给一行代码上色，词级标记（若有）交织进去。返回可直接写进 `innerHTML` 的 HTML。
+ *
+ * 词级标记的事件流**直接由区间造**，与 `nodeStream` 对一个搭好 `<del>` / `<ins>` 的元素取出来的
+ * 逐条同形——不必为每一对改动行先搭一棵 DOM 再拆回来。`mergeStreams` 按字符偏移把它与 hljs 的流
+ * 合并，两份流的偏移都按同一个 `text` 计。hljs 那一侧仍要经 `innerHTML` 解析一次：它给的是字符
+ * 串，事件流只能从节点里取。
+ */
+function highlightLine(
+  text: string,
+  language: string,
+  marks: readonly Range[],
+  tag: 'del' | 'ins',
+): { html: string; language: string | undefined } {
+  const result = closeTags(
+    // ignoreIllegals：补丁给的是片段，一行代码在语法上「不合法」是常态
+    getHljs().highlight(text, { language, ignoreIllegals: true }),
+  );
+  if (marks.length) {
+    // 一行一个标记元素就够：`mergeStreams` 只读它的标签名与（空的）属性表
+    const node = document.createElement(tag);
+    const stream = marks.flatMap(({ start, end }): NodeEvent[] => [
+      { event: 'start', offset: start, node },
+      { event: 'stop', offset: end, node },
+    ]);
+    const rendered = document.createElement('div');
+    rendered.innerHTML = result.value;
+    result.value = mergeStreams(stream, nodeStream(rendered), text);
   }
+  return { html: result.value, language: result.language };
 }

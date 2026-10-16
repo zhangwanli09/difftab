@@ -2,7 +2,7 @@
 //
 // 顶栏与状态条都归左栏、不横跨全屏：两处画的都是「这个仓库现在怎么样」(项目名、分支、监听
 // 档位)，与右边看的是哪个文件无关，横跨等于在 diff 面板顶上切一条与 diff 无关的横杠。
-// 两侧的所有权是分开的：列表归 Preact 的 keyed reconcile，单文件 diff 容器归 `Diff2HtmlUI`。
+// 两侧都由 Preact 画：列表靠 keyed reconcile，单文件 diff 的表格按行位置比对。
 
 import {
   ChevronsDownUp,

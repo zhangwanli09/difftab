@@ -11,7 +11,7 @@
 
 这五条都写在 `server/git` 的封装层（`run.ts`），不留给调用点自己记得加。其中后几条挡的是「读一下就写库」——命令本身只读、不失败、不改输出，只有 `.git` 逐字节比对看得见。
 
-- **`-c core.quotePath=false`**：`-z` 管不到补丁正文，`diff --git` / `---` / `+++` / `rename from|to` 头部仍会转义，而 diff2html 正从这些行解析文件名，界面上会直接显示 `\351\234\200`。
+- **`-c core.quotePath=false`**：`-z` 管不到补丁正文，`diff --git` / `---` / `+++` / `rename from|to` 头部仍会转义，而 diff2html 的解析器正从这些行取文件名，转义后拿到的是 `\351\234\200`（界面眼下不画补丁里的文件名，但解析结果里的名字从此是错的）。
 - **`GIT_OPTIONAL_LOCKS=0`**：`git status` 默认把 stat 缓存写回 `.git/index`，**不改变输出**，只读 `.git` 下也只是静默跳过。看得见它的只有 `.git` 逐字节比对与「读一次 `/api/state` 不引出刷新事件」（写 `.git` → 推 `change` → 再读一次，是个自激循环）。
 - **`GIT_LITERAL_PATHSPECS=1`**：pathspec 默认是 wildmatch，而路径来自 URL query——`path=*` 会回一份整仓 diff，名字里带 `*` 的真实文件也会匹配到邻居，页面在 A 的标题下显示 B 的补丁。本项目的路径全部来自 git 自己的输出，不需要通配语义。
 - **`GIT_NO_LAZY_FETCH=1`**：partial clone 里碰到一个不在本地的 blob，git 默认从 promisor remote 取回并写进 `.git/objects`，而提交历史读的恰恰是从没检出过的旧 blob。关掉后缺对象是一次非零退出，**分类只在 `run.ts` 做一次**（`GitError` 的 `missing-object`，HTTP 层统一译成 `unsupported`）——交给各调用点 catch 时，漏 catch 的那条路会把它说成「路径不存在」或一条 500。

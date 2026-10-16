@@ -13,7 +13,6 @@
 import { computed, useComputed } from '@preact/signals';
 import { Columns2, type LucideIcon, Rows2, X } from 'lucide-preact';
 import { useEffect, useRef } from 'preact/hooks';
-import type { DiffOutputFormat } from '../diff/render';
 import {
   activeEditor,
   activeEditorKey,
@@ -24,7 +23,7 @@ import {
   worktreePathOf,
 } from '../state/editors';
 import { shortSha } from '../state/history';
-import { diffOutputFormat, toggleDiffOutputFormat } from '../state/layout';
+import { type DiffOutputFormat, diffOutputFormat, toggleDiffOutputFormat } from '../state/layout';
 import {
   activateEditor,
   closeEditor,

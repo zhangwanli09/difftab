@@ -2,18 +2,15 @@
  *
  * 层叠方案：无层(unlayered)样式在层叠中永远胜过有层样式，与特异性无关，而 Tailwind v4 把
  * preflight 放在 @layer base、工具类放在 @layer utilities、本文件 @theme 的产出放在
- * @layer theme。因此把 hljs 主题与 diff2html 的 CSS 以 unlayered 形式引在其后，结构上就不
- * 可能被 preflight 压过。两条随之而来的硬约束：
- *   1. 这两份 CSS 不得放进任何 @layer——一旦入层，这层保障就被拆掉了；
- *   2. diff2html 渲染出的内部元素只能靠覆写 --d2h-* 变量改配色，不得用 Tailwind 工具类去压。
+ * @layer theme。因此把 hljs 主题以 unlayered 形式引在其后，结构上就不可能被 preflight 压过；
+ * 它不得放进任何 @layer——一旦入层，这层保障就被拆掉了。
  *
- * hljs 主题必须排在 diff2html.min.css 之前，且它是**我们自己那份**——上游那两份只能靠
- * @import 的媒体条件区分深浅，而媒体条件切不出顶栏那个手动档。
+ * hljs 主题是**我们自己那份**——上游那两份只能靠 @import 的媒体条件区分深浅，而媒体条件切不
+ * 出顶栏那个手动档。
  */
 
 @import "tailwindcss";
 @import "./hljs-theme.css";
-@import "./d2h-theme.css";
 @import "./vscode-theme.css";
 
 /* 扫描范围写死成 src/web——Tailwind v4 的自动探测以最近的项目根为基准，探测范围一旦与预期
@@ -27,7 +24,7 @@
  * preflight（同在 base 层）的一条默认值，同层靠源码顺序胜出；工具类仍在 utilities 层，真要在
  * 某个按钮上改回箭头照旧压得过。逐处贴的写法每加一个按钮就要有人记得再贴一遍，漏了不报错。
  *
- * 页面上的 <button> 全是我们自己的：diff2html 渲染出的是 table 与 div，这条命中不到它。
+ * 页面上的 <button> 全是我们自己的组件画的。
  * `:not(:disabled)` 是因为手型画在禁用按钮上是句假话——本仓库暂时一个禁用按钮都没有，但这半条
  * 的成本只有一个选择器。 */
 @layer base {
@@ -86,6 +83,49 @@
     transparent 0 50%
   );
   background-size: 16px 16px;
+}
+
+/* diff 每一行的颜色。`DiffView` 只在 <tr> 上标 `data-line`（delete / insert / hunk / empty，上下
+ * 文行是 context），这里把它翻成两个变量：`--diff-tint`（行底色）与 `--diff-edge`（行号槽右边那
+ * 条线），缺省即上下文行——没有 tint、线用面板边框色。行的种类因此只有 `data-line` 一份来源；
+ * 写成普通规则而不是工具类，也就不靠 Tailwind 扫字面量，一定进产物。
+ *
+ * 落在 @layer components：比 base 高、比工具类低，组件上真要压一条颜色照样压得过。 */
+@layer components {
+  tr[data-line="delete"] {
+    --diff-tint: var(--color-diff-removed-background);
+    --diff-edge: var(--color-diff-removed-text-background);
+  }
+  tr[data-line="insert"] {
+    --diff-tint: var(--color-diff-inserted-background);
+    --diff-edge: var(--color-diff-inserted-text-background);
+  }
+  /* hunk 头（`@@ … @@`）与侧边栏同一档灰，读起来是「外壳」而不是内容 */
+  tr[data-line="hunk"] {
+    --diff-tint: var(--color-side-bar-background);
+    color: var(--color-description-foreground);
+  }
+  /* 并排时对面那侧没有对应行的空位 */
+  tr[data-line="empty"] {
+    --diff-tint: var(--color-diff-diagonal-fill);
+  }
+}
+
+/* 读那两个变量的两个工具类。
+ *
+ * **行号槽必须是实心色**：它 `sticky left-0`，横滚时正文从它底下滑过去，半透明就透字。所以底色
+ * 是编辑器底色，tint 作为两层 background-image 叠在上面（叠两层是照旧的观感：比整行深一档）。
+ * 正文那格只叠一层。两处读的是同一个变量，同一行的颜色只写一次。 */
+@utility diff-gutter {
+  background-color: var(--color-editor-background);
+  background-image:
+    linear-gradient(var(--diff-tint, transparent) 0 0),
+    linear-gradient(var(--diff-tint, transparent) 0 0);
+  border-right: 1px solid var(--diff-edge, var(--color-panel-border));
+}
+
+@utility diff-code {
+  background-color: var(--diff-tint, transparent);
 }
 
 /* 设计 token。
@@ -172,10 +212,10 @@
   --color-scm-graph-history-item-ref: #59a4f9;
   --color-scm-graph-history-item-remote-ref: #b180d7;
 
-  /* --- diff 底色：由 d2h-theme.css 映射到 --d2h-* ------------------------ */
+  /* --- diff 底色：DiffView 经 diff-gutter / diff-code 两个工具类读 -------------- */
   /* 整行底色与词级高亮，增删各一套，全是半透明叠加。四个都是双值：Dark 2026 换了一套更沉的
    * 绿与红；Light 2026 只改了词级那两个，整行那两个它没写，取的是 VS Code 的默认值。
-   * VS Code 没有「diff 行边框」这个键，diff2html 的两个边框变量借用词级高亮这一档。 */
+   * VS Code 没有「diff 行边框」这个键，行号槽右边那条线借用词级高亮这一档。 */
   --color-diff-inserted-background: light-dark(rgb(155 185 85 / 0.2), rgb(52 125 57 / 0.15));
   --color-diff-inserted-text-background: light-dark(rgb(88 124 12 / 0.15), rgb(87 171 90 / 0.3));
   --color-diff-removed-background: light-dark(rgb(255 0 0 / 0.2), rgb(201 60 55 / 0.15));
