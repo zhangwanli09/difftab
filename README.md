@@ -40,7 +40,8 @@ the IDE.
 ## Features
 
 - **The diff, the way an editor shows it** — staged, unstaged, untracked and conflicting
-  changes, side by side with syntax highlighting.
+  changes, side by side with syntax highlighting. Laid out like VS Code, so there is
+  nothing new to learn.
 - **The whole repository, not only what changed** — browse the file tree and open any file.
 - **Branch status you can trust** — ahead/behind, no upstream, detached HEAD, a rebase or
   merge still in progress.
