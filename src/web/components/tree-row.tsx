@@ -1,6 +1,6 @@
 // 两棵树（变更列表的树视图、`Files` 那档的目录树）共用的一行：行的骨架、缩进量、目录行的展开
-// 三角、文件行与它等宽的占位，以及一行的形状本身（`TreeRow`：group div、行内动作的占位与外壳）与
-// 悬停露出的 `Copy path`。
+// 三角、文件行与它等宽的占位、层内那句占位文案（`PlaceholderRow`），以及一行的形状本身
+// （`TreeRow`：group div、行内动作的占位与外壳）与悬停露出的 `Copy path`。
 //
 // 独立成文件而不是从其中一棵导出：`FileTree` 已经 import `ChangeList` 的 `CODE_COLORS`，反向
 // import 会成环。**这几样必须同住一处**：三角按 12 画、占位 `w-3`（= 12px）是同一个不变量，各写一
@@ -60,6 +60,21 @@ export function ExpandChevron({ expanded }: { expanded: boolean }) {
 /** 文件行上与三角等宽的占位。少了它文件名会比同层的目录名往左挪一截，同一层看着像两层。 */
 export function ChevronPlaceholder() {
   return <span class="w-3 shrink-0" />;
+}
+
+/**
+ * 一层里的一句占位文案（`Loading…`、错误、空），两棵树（目录树的层、提交展开后的文件列表）共用：
+ * 画成第 `depth` 层文件行的骨架——行首一枚 `ChevronPlaceholder`、单行截断，全文进 `title`。只给
+ * 缩进时文字比同层文件名往左差一枚三角加 gap（18px），看着落在上一层；自由换行的长错误又把行盒
+ * 撑成几行，与 24px 一行的树对不上。是 `<li>`：调用方把它放进那一层的 `<ul>`，与真行同一种容器。
+ */
+export function PlaceholderRow({ text, depth }: { text: string; depth: number }) {
+  return (
+    <li class={`${ROW_BASE} text-description-foreground`} style={indent(depth)} title={text}>
+      <ChevronPlaceholder />
+      <span class="min-w-0 truncate">{text}</span>
+    </li>
+  );
 }
 
 /**

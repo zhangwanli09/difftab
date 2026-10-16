@@ -23,6 +23,7 @@ import {
 import {
   actionOf,
   expectEdgeAnchored,
+  expectPlaceholderRow,
   file,
   groupOf,
   openPinned,
@@ -105,6 +106,13 @@ describe('FileTree', () => {
     treeErrors.value = new Map([[ROOT, 'Request failed (HTTP 500).']]);
     // **不写进那条全局错误条**：一个目录展不开不该让整个页面看起来坏掉
     await waitFor(() => expect(container.textContent).toContain('Request failed (HTTP 500).'));
+  });
+
+  it('层内占位按文件行的骨架画：行首等宽占位、单行截断、全文进 title', async () => {
+    const message = 'Request failed (HTTP 500).';
+    treeErrors.value = new Map([[ROOT, message]]);
+    await waitFor(() => expect(container.textContent).toContain(message));
+    expectPlaceholderRow(container, message);
   });
 
   it('手上已经有这一层时，刷新失败不把它换成一行红字', async () => {
