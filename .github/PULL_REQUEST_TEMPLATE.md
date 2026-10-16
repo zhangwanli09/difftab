@@ -22,6 +22,7 @@ Two things worth knowing before you spend time here:
 - [ ] `pnpm build` then `pnpm test:smoke` passes (smoke runs against `dist/`, so a stale
       build fails in misleading ways)
 - [ ] Behaviour changes are reflected in `docs/` first
-- [ ] New tests live in `test/unit/server/` or `test/unit/web/` — anywhere else under
-      `test/unit/` and they are silently never run
-- [ ] Each new gate or assertion was made to fail once, on purpose, to prove it is wired up
+- [ ] New tests, if any, live in `test/unit/server/` or `test/unit/web/` — anywhere else
+      under `test/unit/` and they are silently never run
+- [ ] If this adds a gate or assertion, it was made to fail once, on purpose, to prove it
+      is wired up
