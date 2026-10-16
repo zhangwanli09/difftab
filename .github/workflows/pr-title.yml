@@ -7,12 +7,15 @@ name: PR title
 # 单独成一个 workflow 而不进 ci.yml：改标题只触发 `edited`，给 ci.yml 加上它的话，改一下
 # PR 描述就会把三平台矩阵整套重跑一遍。
 #
-# 不设为 required check：release PR 由 GITHUB_TOKEN 创建，GitHub 不为它触发 pull_request，
-# 设成 required 后 release PR 就永远合不进去。
+# 它是 required check，所以还有 workflow_dispatch 一个入口：release PR 由 GITHUB_TOKEN
+# 创建，GitHub 不为它触发 pull_request，release.yml 在 release 分支上派发本 workflow。
+# 派发时没有事件里的标题，按分支查出那个 open PR、校验它的真实标题，而不是空跑通过——
+# 否则任何能派发 workflow 的人都能在自己的分支上把这道检查点绿。
 
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened]
+  workflow_dispatch:
 
 permissions: {}
 
@@ -24,13 +27,23 @@ jobs:
   conventional:
     name: Conventional Commits title
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read # 派发时按分支查 PR 标题
     steps:
       # 标题经 env 传入，不直接插进 run:——标题由 PR 作者控制，`${{ }}` 是在 shell 解析之前
       # 做的文本替换，直接插进去就是脚本注入
       - env:
-          TITLE: ${{ github.event.pull_request.title }}
+          EVENT_TITLE: ${{ github.event.pull_request.title }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          re='^(feat|fix|docs|refactor|perf|test|build|ci|chore)(\([a-z0-9-]+\))?!?: [^ ].*[^.]$'
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            TITLE=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$GITHUB_REF_NAME" --state open \
+              --json title --jq '.[0].title // empty')
+            [ -n "$TITLE" ] || { echo "::error::no open PR has $GITHUB_REF_NAME as its head branch"; exit 1; }
+          else
+            TITLE=$EVENT_TITLE
+          fi
+          re='^(feat|fix|docs|refactor|perf|test|build|ci|chore)(\([a-z0-9-]+\))?!?: [^ ](.*[^.])?$'
           if [[ $TITLE =~ $re ]]; then
             echo "OK: $TITLE"
             exit 0
@@ -39,6 +52,7 @@ jobs:
           echo "Expected: <type>(<scope>)!: <description>"
           echo "  type: feat | fix | docs | refactor | perf | test | build | ci | chore"
           echo "  scope and ! are optional; scope is lowercase; no trailing period"
+          echo "  write a revert as an ordinary change, e.g. fix(web): revert the folded diff lines"
           echo "The title becomes the commit subject on main, which release-please reads to"
           echo "write CHANGELOG.md and pick the next version."
           exit 1

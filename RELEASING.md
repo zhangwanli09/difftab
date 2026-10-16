@@ -18,8 +18,8 @@ Don't bump the version, edit `CHANGELOG.md`, tag, or publish by hand.
 
 The release PR is opened with `GITHUB_TOKEN`, and GitHub does not trigger `pull_request`
 workflows for it. So whenever release-please opens or updates the PR, the workflow
-dispatches `ci.yml` on the release branch itself, which is how the PR gets the required
-`all gates passed` check. The re-run before publishing is still not redundant: the PR's CI
+dispatches `ci.yml` and `pr-title.yml` on the release branch itself, which is how the PR
+gets its two required checks. The re-run before publishing is still not redundant: the PR's CI
 tested the PR head, while the tag lands on the squash commit created at merge time, and the
 two differ if another PR merged in between.
 
@@ -46,9 +46,9 @@ machines.
 - GitHub → Settings → General → Pull Requests: squash merges only, with the default commit
   message set to "Pull request title and commit details" (`squash_merge_commit_title =
   PR_TITLE`), so the subject on `main` is always the PR title.
-- GitHub → Settings → Rules → "Protect main": require the status check `all gates passed`
-  (source: GitHub Actions). It is the only required check; it aggregates every job in
-  `ci.yml`.
+- GitHub → Settings → Rules → "Protect main": require the status checks `all gates passed`
+  and `Conventional Commits title` (source: GitHub Actions). The first aggregates every job
+  in `ci.yml`; the second comes from `pr-title.yml`.
 
 ## When something fails
 
