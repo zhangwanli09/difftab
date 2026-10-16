@@ -82,7 +82,7 @@ export function renderDiff(
        * VS Code 取值出来的前提。diff2html 的深色配色由容器上的 class 门控：'auto' 输出
        * `.d2h-auto-color-scheme`，对应规则整块包在它自带的那个 `@media (prefers-color-scheme:
        * dark)` 里、读的是**另一套** `--d2h-dark-*`，而特异性 (0,2,0) 稳压基础规则 (0,1,0)——
-       * 于是 vscode-theme.css 覆写的那 23 个 `--d2h-*` 在深色下一条都不生效，页面只是"深色不
+       * 于是 d2h-theme.css 覆写的那 23 个 `--d2h-*` 在深色下一条都不生效，页面只是"深色不
        * 太像 VS Code"，不报错。
        *
        * 'light' 输出的 `.d2h-light-color-scheme` 在 d2h 的 CSS 里一条规则都没有，全部配色因此

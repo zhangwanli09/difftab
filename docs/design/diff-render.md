@@ -16,6 +16,14 @@
 - **自研的只有「这一行用哪个语言」**（`hljs.ts` 的 `createLineLanguage()`），切分仍是上游那三个导出原样调用。
 - **`colorScheme` 传 `'light'`，不传 `'auto'`**（理由见 [`style.md`](style.md)）。**明暗开关不进 `draw()` 的依赖数组**：主题整个发生在 CSS 变量上，为它重跑 `draw()` 是白付一次全量高亮。
 
+## diff2html 的触点只有两处
+
+**JS 只许在 `src/web/diff/` 里 import `diff2html`**；CSS 那侧只许在 `d2h-theme.css`（见 [`style.md`](style.md)）。违反时不报错，只是哪天要换掉渲染层，得先把散在各处的触点找全，漏掉的那处静默变成死代码。
+
+- 由 `biome.json` 静态拦截：`src/web/**` 的 override 禁 `diff2html`，`src/web/diff/**` 的 override 放开它，并原样带上其余条目（替换不合并，见 AGENTS.md 红线）——**往 `src/web/**` 加新禁令时两处都要加**。
+- 组件只经 `diff/render.ts` 的 `renderDiff()` 与 `DiffOutputFormat` 类型接触渲染层；`diff/hljs.ts` 的第三道语言判定（见下文）是另一处深导入。
+- 组件与测试里的 `.d2h-*` 类名（DOM 查询、注释）不在这条规则内——它们读的是渲染结果，换渲染层时随那份结果一起改。
+
 ## 文件头整条不显示
 
 diff2html **没有**关掉文件头（`.d2h-file-header`）的配置项，只能落在样式那侧的一条 `display: none`（见 [`style.md`](style.md) 的「四条选择器规则的例外」）。
