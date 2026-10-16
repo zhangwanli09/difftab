@@ -8,7 +8,7 @@
 // 判别联合；图片那一支交给 `ImageView`。
 
 import { UnfoldVertical } from 'lucide-preact';
-import type { ComponentChildren } from 'preact';
+import type { ComponentChildren, Ref } from 'preact';
 import { useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { DiffPayload } from '../../server/shared/protocol';
 import type { Gap } from '../diff/fold';
@@ -184,42 +184,37 @@ const NUMBER_WIDTH = {
 const PREFIX: Record<LineKind, string> = { context: '  ', delete: '- ', insert: '+ ' };
 
 /**
- * 两种版式共用的表格外观。
+ * 两种版式共用的表格外观。每一侧是两张表：行号表在左、不滚，正文表装在它右边的横向滚动容器里
+ *——横向滚动条从正文起头，行号不在滚动区里。**两张表逐行对齐全靠行高**：行号格与正文格都是
+ * `h-5`（= `leading-5`），正文 `whitespace-pre` 不折行；空位与折叠行的格子没有字，少了 `h-5` 就
+ * 塌成 0，行号从那一行起往上错。
  *
- * - **`w-max min-w-full`**：行号槽 `sticky left-0` 的滑动余量来自包含块，表格只有面板那么宽时
- *   余量为 0，粘性与 static 一模一样（文件视图踩过同一个坑）。`min-w-full` 的另一面是行都比面
- *   板短时表格有富余，自动布局会把富余分给每一列——所以正文格一律 `w-full`，富余全归它。
- * - **`border-separate`**：合并边框模式下边框属于表格而不是格子，`sticky` 的格子会把自己的右边线
- *   留在原地。
+ * - **行号表 `border-separate`**：Tailwind 的 preflight 给表格 `border-collapse`，合并模式下行号格
+ *   那条右边线一半算进表格。正文格没有边线，两种模式排出来一样。
+ * - **正文表 `min-w-full`**：行都比滚动容器短时也铺满，行底色画到右缘。
  * - **词级标记**：`<del>` / `<ins>` 的 UA 样式是删除线与下划线，preflight 不撤它们；换成一块圆角
- *   底色，取 VS Code 词级高亮那一档。挂在表上而不是每一格上：后代选择器，一份类名管全表。
+ *   底色，取 VS Code 词级高亮那一档。挂在正文表上而不是每一格上：后代选择器，一份类名管全表。
  *
- * 每行的底色不在这里：`<tr>` 的 `data-line` 由 `app.css` 的 `@layer components` 读。
+ * 每行的底色不在这里：两张表的 `<tr>` 各标一份 `data-line`，由 `app.css` 的 `@layer components` 读。
  */
-const TABLE =
-  'w-max min-w-full border-separate border-spacing-0 ' +
+const GUTTER_TABLE = 'border-separate border-spacing-0';
+const CODE_TABLE =
+  'min-w-full ' +
   '[&_del]:rounded-[0.2em] [&_del]:bg-diff-removed-text-background [&_del]:no-underline ' +
   '[&_ins]:rounded-[0.2em] [&_ins]:bg-diff-inserted-text-background [&_ins]:no-underline';
 
 /**
- * 行号槽。`h-5`（与行高同为 20px）是空位那一行的高度来源：它两格都没有字，不给最小高度就塌
- * 成 0，与对面那侧错开一行。`whitespace-nowrap`：逐行版式的槽里是两个 inline-block 的号，正文格
- * `w-full` 把槽压到最窄时它们会折成两行、整行变高。`select-none`：拖选正文时不该把行号一起选进
- * 剪贴板。
+ * 行号槽与正文格的公共部分。`whitespace-nowrap`：逐行版式的槽里是两个 inline-block 的号，不给它
+ * 会折成两行、整行变高。`select-none`：拖选正文时不该把行号一起选进剪贴板。
  */
 const GUTTER =
-  'diff-gutter sticky left-0 h-5 whitespace-nowrap text-right text-description-foreground select-none';
+  'diff-gutter h-5 whitespace-nowrap text-right text-description-foreground select-none';
+const CODE = 'diff-code h-5 whitespace-pre pl-[0.5em]';
 
 /** 两种版式各自的行号槽与正文格。右侧留白照抄 diff2html 的版面，`state/layout.ts` 的阈值按它算。 */
 const CELLS = {
-  split: {
-    gutter: `${GUTTER} px-[0.5em] ${NUMBER_WIDTH.split}`,
-    code: 'diff-code w-full whitespace-pre pr-[4.5em] pl-[0.5em]',
-  },
-  unified: {
-    gutter: GUTTER,
-    code: 'diff-code w-full whitespace-pre pr-[8em] pl-[0.5em]',
-  },
+  split: { gutter: `${GUTTER} px-[0.5em] ${NUMBER_WIDTH.split}`, code: `${CODE} pr-[4.5em]` },
+  unified: { gutter: GUTTER, code: `${CODE} pr-[8em]` },
 } as const;
 
 const UNIFIED_NUMBER = `inline-block px-[0.5em] ${NUMBER_WIDTH.unified}`;
@@ -267,7 +262,7 @@ function gapLabel(gap: Gap<DiffLine>, fold: Fold): { text: string; clickable: bo
   return { text: lines, clickable: true };
 }
 
-/** 折叠行的正文格。**并排时只在旧侧画**，新侧那一行留空占高（`h-5` 来自行号槽）。 */
+/** 折叠行的正文格。**并排时只在旧侧画**，新侧那一行留空占高。 */
 function GapCell({ gap, fold }: { gap: Gap<DiffLine>; fold: Fold }) {
   const { text, clickable } = gapLabel(gap, fold);
   const body = (
@@ -290,51 +285,23 @@ function GapCell({ gap, fold }: { gap: Gap<DiffLine>; fold: Fold }) {
   );
 }
 
-/** 两种版式共用的表格骨架：逐行，折叠行在其间。行号格里画什么由调用方给。 */
-function PatchTable({
-  rows,
-  fold,
-  cells,
-  numbers,
-  side,
-}: {
-  rows: Row[];
-  fold: Fold;
-  cells: (typeof CELLS)[keyof typeof CELLS];
-  numbers: (line: DiffLine) => ComponentChildren;
-  side?: 'old' | 'new';
-}) {
+/** 一行在 `app.css` 那边是哪一种：两张表的同一行标同一个值，底色与行号槽右边线才是一家。 */
+const lineOf = (row: Row) => ('gap' in row ? 'hunk' : (row.line?.kind ?? 'empty'));
+
+/** 正文表的一格：一行代码、空位（空格），或折叠行（并排时只在旧侧画）。 */
+function CodeCell({ row, side, fold }: { row: Row; side: Side; fold: Fold }) {
+  if ('gap' in row) return side === 'new' ? null : <GapCell gap={row.gap} fold={fold} />;
+  if (!row.line) return null;
   return (
-    <table data-diff-side={side} class={TABLE}>
-      <tbody>
-        {rows.map((row) =>
-          'gap' in row ? (
-            <tr key={row.key} data-line="hunk">
-              <td class={cells.gutter} />
-              <td class={cells.code}>{side !== 'new' && <GapCell gap={row.gap} fold={fold} />}</td>
-            </tr>
-          ) : row.line ? (
-            <tr key={row.key} data-line={row.line.kind}>
-              <td class={cells.gutter}>{numbers(row.line)}</td>
-              {/* 前缀 `select-none`，复制出来的是代码本身 */}
-              <td class={cells.code}>
-                <span class="select-none">{PREFIX[row.line.kind]}</span>
-                <span
-                  data-code
-                  class={row.line.language ? `hljs ${row.line.language}` : 'hljs'}
-                  dangerouslySetInnerHTML={{ __html: row.line.html }}
-                />
-              </td>
-            </tr>
-          ) : (
-            <tr key={row.key} data-line="empty">
-              <td class={cells.gutter} />
-              <td class={cells.code} />
-            </tr>
-          ),
-        )}
-      </tbody>
-    </table>
+    <>
+      {/* 前缀 `select-none`，复制出来的是代码本身 */}
+      <span class="select-none">{PREFIX[row.line.kind]}</span>
+      <span
+        data-code
+        class={row.line.language ? `hljs ${row.line.language}` : 'hljs'}
+        dangerouslySetInnerHTML={{ __html: row.line.html }}
+      />
+    </>
   );
 }
 
@@ -344,8 +311,76 @@ const unifiedNumbers = (line: DiffLine) => (
     <span class={UNIFIED_NEW_NUMBER}>{line.newNo}</span>
   </>
 );
-const oldNumber = (line: DiffLine) => line.oldNo;
-const newNumber = (line: DiffLine) => line.newNo;
+
+// overflow-x-scroll 而不是 auto：并排两侧总带着同样的横向滚动条，底边才对得齐
+const SPLIT_SCROLL = 'overflow-x-scroll overflow-y-hidden';
+
+/** 一侧：逐行版式只有一侧，并排是旧、新两侧。格子、行号、滚动容器与外框都由它定。 */
+type Side = 'unified' | 'old' | 'new';
+const SIDES: Record<
+  Side,
+  {
+    cells: (typeof CELLS)[keyof typeof CELLS];
+    numbers: (line: DiffLine) => ComponentChildren;
+    scroll: string;
+    outer: string;
+  }
+> = {
+  unified: { cells: CELLS.unified, numbers: unifiedNumbers, scroll: 'overflow-x-auto', outer: '' },
+  old: { cells: CELLS.split, numbers: (line) => line.oldNo, scroll: SPLIT_SCROLL, outer: 'w-1/2' },
+  new: {
+    cells: CELLS.split,
+    numbers: (line) => line.newNo,
+    scroll: SPLIT_SCROLL,
+    outer: 'w-1/2 border-l border-panel-border',
+  },
+};
+
+/**
+ * 两种版式共用的一侧：行号表 + 横向滚动的正文表，逐行，折叠行在其间。
+ *
+ * **`items-start`**：行号表是 flex 子项，被拉伸到与滚动容器（正文 + 横向滚动条）同高时，多出来
+ * 的高度会按比例分给每一行，行号随之一行比一行往下错。
+ */
+function PatchTable({
+  rows,
+  fold,
+  side,
+  scrollRef,
+}: {
+  rows: Row[];
+  fold: Fold;
+  side: Side;
+  scrollRef?: Ref<HTMLDivElement>;
+}) {
+  const { cells, numbers, scroll, outer } = SIDES[side];
+  return (
+    <div class={`flex items-start ${outer}`}>
+      <table class={GUTTER_TABLE}>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.key} data-line={lineOf(row)}>
+              <td class={cells.gutter}>{'line' in row && row.line && numbers(row.line)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div ref={scrollRef ?? null} class={`min-w-0 flex-1 ${scroll}`}>
+        <table data-diff-side={side === 'unified' ? undefined : side} class={CODE_TABLE}>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.key} data-line={lineOf(row)}>
+                <td class={cells.code}>
+                  <CodeCell row={row} side={side} fold={fold} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 
 /** 一段折叠行在表里占的行：展开了就是那几行上下文，否则一行折叠行。两种版式共用。 */
 const gapRows = (gap: Gap<DiffLine>, fold: Fold): Row[] =>
@@ -354,8 +389,8 @@ const gapRows = (gap: Gap<DiffLine>, fold: Fold): Row[] =>
     : [{ key: `g${gap.id}`, gap }];
 
 /**
- * 逐行版式：一张表，行号槽里新旧两个号并列。外层自己横向滚动（不交给 `Panel`），让改名标注之类
- * 排在补丁上面的东西不跟着横滚出去。
+ * 逐行版式：一侧，行号槽里新旧两个号并列。正文自己横向滚动（不交给 `Panel`），让行号与改名标注
+ * 之类排在补丁上面的东西都不跟着横滚出去。
  */
 function UnifiedPatch({ blocks, fold }: { blocks: PreparedBlock[]; fold: Fold }) {
   const rows = blocks.flatMap((block): Row[] => {
@@ -365,14 +400,14 @@ function UnifiedPatch({ blocks, fold }: { blocks: PreparedBlock[]; fold: Fold })
     return gapRows(block, fold);
   });
   return (
-    <div data-diff-layout="line-by-line" class="overflow-x-auto">
-      <PatchTable rows={rows} fold={fold} cells={CELLS.unified} numbers={unifiedNumbers} />
+    <div data-diff-layout="line-by-line">
+      <PatchTable rows={rows} fold={fold} side="unified" />
     </div>
   );
 }
 
 /**
- * 并排版式：左旧右新两张表，各自是一个横向滚动容器，行数相同、行高相同，于是竖直方向天然对齐。
+ * 并排版式：左旧右新两侧，各自的正文是一个横向滚动容器，行数相同、行高相同，于是竖直方向天然对齐。
  * 折叠行两侧各占一行，文案与按钮只在旧侧。
  *
  * **两侧横向联动**：横滚一侧看长行时另一侧跟到同一个 `scrollLeft`，否则同一行的新旧内容错开成两
@@ -386,7 +421,7 @@ function SplitPatch({ blocks, fold }: { blocks: PreparedBlock[]; fold: Fold }) {
   const right: Row[] = [];
   for (const block of blocks) {
     if (block.kind === 'gap') {
-      // 上下文行与折叠行两侧各占一行、同一个 key；折叠行的文案只在旧侧画（`PatchTable` 按 `side` 判）
+      // 上下文行与折叠行两侧各占一行、同一个 key；折叠行的文案只在旧侧画（`CodeCell` 按 `side` 判）
       const rows = gapRows(block, fold);
       left.push(...rows);
       right.push(...rows);
@@ -421,16 +456,10 @@ function SplitPatch({ blocks, fold }: { blocks: PreparedBlock[]; fold: Fold }) {
       for (const off of unbind) off();
     };
   }, []);
-  // overflow-x-scroll 而不是 auto：两侧总带着同样的横向滚动条，底边才对得齐
-  const half = 'w-1/2 overflow-x-scroll overflow-y-hidden';
   return (
     <div data-diff-layout="side-by-side" class="flex">
-      <div ref={leftRef} class={half}>
-        <PatchTable rows={left} fold={fold} cells={CELLS.split} numbers={oldNumber} side="old" />
-      </div>
-      <div ref={rightRef} class={`${half} border-l border-panel-border`}>
-        <PatchTable rows={right} fold={fold} cells={CELLS.split} numbers={newNumber} side="new" />
-      </div>
+      <PatchTable rows={left} fold={fold} side="old" scrollRef={leftRef} />
+      <PatchTable rows={right} fold={fold} side="new" scrollRef={rightRef} />
     </div>
   );
 }
@@ -501,7 +530,7 @@ function RenameNotice({ rename }: { rename: RenameInfo }) {
  * 撑宽的盒子。
  *
  * 面板的 chrome 只有 `EditorTabs` 那一条，它排在滚动区域之外，因此这里既不需要 `sticky top-0`
- * 也不需要 `z-10`：补丁里那些 `sticky` 的行号格被滚动容器的 `overflow` 裁掉，够不着标签栏。
+ * 也不需要 `z-10`：文件视图里 `sticky` 的行号槽被滚动容器的 `overflow` 裁掉，够不着标签栏。
  *
  * **`fill` 只给图片那一支**：成一列 flex，让 `ImageRow` 用 `flex-1` 拿到面板剩余的高、把图按高缩、
  * 上下居中。正文与提示行不带它，滚动层的类名照旧。

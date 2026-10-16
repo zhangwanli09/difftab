@@ -113,9 +113,8 @@
 
 /* 读那两个变量的两个工具类。
  *
- * **行号槽必须是实心色**：它 `sticky left-0`，横滚时正文从它底下滑过去，半透明就透字。所以底色
- * 是编辑器底色，tint 作为两层 background-image 叠在上面（叠两层是照旧的观感：比整行深一档）。
- * 正文那格只叠一层。两处读的是同一个变量，同一行的颜色只写一次。 */
+ * 行号槽的底色是编辑器底色，tint 作为两层 background-image 叠在上面（叠两层是照旧的观感：比整行
+ * 深一档）。正文那格只叠一层。两处读的是同一个变量，同一行的颜色只写一次。 */
 @utility diff-gutter {
   background-color: var(--color-editor-background);
   background-image:
