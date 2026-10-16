@@ -8,8 +8,9 @@
 //      开关的全部机制，少一条的症状是**按钮照常有反应而页面不变**；6b 是同一件事的另一半——
 //      凡把 --color-* / --hljs-* 声明进 prefers-color-scheme 的一律判红，那样写不报错、浅色也
 //      对，只有手动档对它无效。Lightning CSS 补的 --lightningcss-* 不受影响。
-//   5b. **diff 行号槽的 `.sticky` / `.diff-gutter` / `.diff-code` 三条规则在产物里。** 类名改成拼
-//      出来的，Tailwind 扫不到字面量，规则静默消失：行号跟着正文滚走，或增删行没了底色。
+//   5b. **文件视图行号槽的 `.sticky` 与 diff 底色的 `.diff-gutter` / `.diff-code` 三条规则在产物
+//      里。** 类名改成拼出来的，Tailwind 扫不到字面量，规则静默消失：文件视图的行号跟着正文滚走，
+//      或增删行没了底色。
 //   5. **没有无定义的 var() 引用**。Tailwind v4 会裁掉既没被工具类、也没被我们自己的 CSS 引用
 //      的 @theme 变量，所以引用侧写错一个字符时，产物里留下的是一个无定义的 var()——该属性变
 //      成 unset，颜色悄悄没了。--tw-* 除外：它们由 @property 声明，不走 `--x:` 这个形状。
@@ -171,9 +172,9 @@ if (referenced.size === 0) {
   notes.push(`var() 引用：${referenced.size} 个不带 fallback 的自定义属性，全部有定义`);
 }
 
-// --- 5b. diff 行号槽的粘性与底色那几条工具类确实在产物里 -------------------
-// `DiffView` 的行号格靠 `sticky` 在横滚时留在左边，靠 `diff-gutter` / `diff-code` 读每行的
-// tint。这条查的是**产物**而不是源码：Tailwind 靠 @source 扫**字面量**生成工具类，类名一旦改成
+// --- 5b. 行号槽的粘性与底色那几条工具类确实在产物里 -----------------------
+// `FileView` 的行号槽靠 `sticky` 在横滚时留在左边，`DiffView` 靠 `diff-gutter` / `diff-code` 读
+// 每行的 tint。这条查的是**产物**而不是源码：Tailwind 靠 @source 扫**字面量**生成工具类，类名一旦改成
 // 拼出来的，DOM 上的 className 照旧、组件测试照常绿，而 CSS 里那条规则没了——行号跟着正文滚
 // 走、增删行没了底色，都不报错。
 for (const [label, re] of [
@@ -182,10 +183,10 @@ for (const [label, re] of [
   ['`.diff-code`', /(^|[\s,}])\.diff-code\s*\{[^}]*background-color/],
 ]) {
   if (re.test(css)) {
-    notes.push(`diff 行号槽：${label} 在产物里`);
+    notes.push(`行号槽与 diff 底色：${label} 在产物里`);
   } else {
     failures.push(
-      `产物里没有 ${label}——diff 的行号槽横滚时跟着正文滚走，或增删行没了底色，页面不报错`,
+      `产物里没有 ${label}——文件视图的行号横滚时跟着正文滚走，或增删行没了底色，页面不报错`,
     );
   }
 }

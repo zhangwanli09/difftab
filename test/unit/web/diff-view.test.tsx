@@ -133,24 +133,26 @@ describe('DiffView', () => {
   it.each([
     ['side-by-side', 1400],
     ['line-by-line', 700],
-  ] as const)('%s：行号槽 sticky，表格按内容撑宽——横滚时行号留在左边', async (_, width) => {
+  ] as const)('%s：行号表在横向滚动区之外，两张表逐行同高', async (_, width) => {
     diffPanelWidth.value = width;
     ready('a.ts', { kind: 'text', patch: patchFor('const x = 1;'), full: false });
     show('a.ts');
     await waitFor(() => expect(container.querySelector('[data-diff-layout]')).not.toBeNull());
 
-    // **断言只能压在类名上**：happy-dom 没有排版引擎，「横滚后行号还在」在这里不可判定。两半缺
-    // 一不可：少了 `sticky` 行号跟着正文滚走；表格只有面板那么宽时 sticky 的滑动余量为 0，与
-    // static 一模一样。类名换成拼出来的这条照样绿，而 Tailwind 扫不到字面量、产物里就没有那条规
-    // 则——那一半肉眼看
-    const tables = [...container.querySelectorAll('table')];
-    expect(tables.length).toBeGreaterThan(0);
-    for (const table of tables) {
-      expect(table.className).toContain('w-max');
-      const gutter = table.querySelector('tr[data-line] > td');
-      expect(gutter?.className).toContain('sticky');
-      expect(gutter?.className).toContain('left-0');
-    }
+    // **断言只能压在 DOM 结构与类名上**：happy-dom 没有排版引擎，「横滚时行号不动、两张表逐行对
+    // 齐」在这里不可判定。结构那一半：行号格不在任何横向滚动容器里，滚动容器里只有正文。类名那一
+    // 半：两侧的格子都是 `h-5`——两张表逐行对齐全靠它，空位与折叠行的格子没有字，少了就塌成 0
+    const scroller = '[class*="overflow-x-"]';
+    const gutters = [...container.querySelectorAll('.diff-gutter')];
+    const codes = [...container.querySelectorAll('.diff-code')];
+    expect(container.querySelectorAll(`[data-diff-layout] ${scroller}`)).toHaveLength(
+      width === 1400 ? 2 : 1,
+    );
+    expect(gutters.length).toBeGreaterThan(0);
+    expect(gutters).toHaveLength(codes.length);
+    for (const gutter of gutters) expect(gutter.closest(scroller)).toBeNull();
+    for (const code of codes) expect(code.closest(scroller)).not.toBeNull();
+    for (const cell of [...gutters, ...codes]) expect(cell.classList.contains('h-5')).toBe(true);
   });
 
   it('行号的位数写在 --diff-digits 上，五位数的槽跟着撑宽', async () => {
@@ -290,8 +292,8 @@ describe('DiffView', () => {
     // 掉，而要求刷新不丢这两样——每个 change 事件都会走这条路
     expect(payloadNode()).toBe(before);
     expect(container.textContent).not.toContain('const first');
-    // 也没有叠出第二份：并排下一个文件本来就是左右两张表
-    expect(container.querySelectorAll('table')).toHaveLength(2);
+    // 也没有叠出第二份：并排下一个文件本来就是左右两侧、每侧行号与正文各一张表
+    expect(container.querySelectorAll('table')).toHaveLength(4);
   });
 
   it('面板变窄变宽：版式跟着换，容器仍留在原地', async () => {
@@ -301,7 +303,7 @@ describe('DiffView', () => {
     diffPanelWidth.value = 700;
     ready('a.ts', { kind: 'text', patch: patchFor('const first = 1;'), full: false });
     show('a.ts');
-    await waitFor(() => expect(container.querySelectorAll('table')).toHaveLength(1));
+    await waitFor(() => expect(container.querySelectorAll('table')).toHaveLength(2));
     const before = payloadNode();
     expect(container.querySelectorAll('[data-diff-side]')).toHaveLength(0);
 
@@ -324,7 +326,7 @@ describe('DiffView', () => {
     const before = payloadNode();
 
     toggleDiffOutputFormat();
-    await waitFor(() => expect(container.querySelectorAll('table')).toHaveLength(1));
+    await waitFor(() => expect(container.querySelectorAll('table')).toHaveLength(2));
     expect(container.querySelectorAll('[data-diff-side]')).toHaveLength(0);
     expect(payloadNode()).toBe(before);
   });
@@ -346,7 +348,8 @@ describe('没改的行：折起与展开', () => {
       ? `${head}@@ -1,20 +1,20 @@\n${body(1, 20)}\n`
       : `${head}@@ -2,7 +2,7 @@\n${body(2, 8)}\n@@ -10,7 +10,7 @@\n${body(10, 16)}\n`;
   };
-  const gapRows = () => [...container.querySelectorAll('tr[data-line="hunk"]')];
+  // 折叠行在行号表与正文表里各占一行，文案只在正文那格
+  const gapRows = () => [...container.querySelectorAll('tr[data-line="hunk"] > .diff-code')];
   const gapTexts = () => gapRows().map((row) => row.textContent?.trim());
   const gapButtons = () => [
     ...container.querySelectorAll<HTMLButtonElement>('tr[data-line="hunk"] button'),

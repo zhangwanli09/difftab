@@ -56,14 +56,14 @@
 
 - **翻译规则是 `@layer components` 里的普通规则，不是组件里的 arbitrary-property 类**：行的种类只有 `data-line` 一份来源；普通规则也不靠 Tailwind 扫字面量，一定进产物。比工具类低一层，组件上真要压一条颜色照样压得过。
 
-- **`diff-gutter`（行号槽）必须是实心色**：它 `sticky left-0`，横滚时正文从它底下滑过去，半透明就透字。所以底色是 `--color-editor-background`，tint 作为两层 `background-image` 叠在上面。**叠两层是照旧的观感**：diff2html 的行号格是半透明 tint、`absolute` 压在同样带 tint 的正文格上，比整行深一档。
+- **`diff-gutter`（行号槽）底色是 `--color-editor-background`，tint 作为两层 `background-image` 叠在上面**。**叠两层是照旧的观感**：diff2html 的行号格是半透明 tint、`absolute` 压在同样带 tint 的正文格上，比整行深一档。
 - **`diff-code`（正文格）只叠一层 tint**。两处读同一个变量，同一行的颜色只写一次。
 - **行号槽只画右边线**：左边线会与侧栏的 `border-r` 同色贴在一起叠成 2px，同一条分隔线上粗下细（实测见 [`../decisions/style.md`](../decisions/style.md)）。并排两栏之间那条由右半栏自己的 `border-l` 画。
 - **为什么经变量而不是各挂一个 `bg-*`**：同一个颜色两种用法（实心叠加 / 半透明），各挂各的就得每种行写两遍颜色，改一处漏一处。
 - **配上对的一删一增与纯增删同色**：只有词级标记多一档，整行不另起一种「改动行」底色（diff2html 有一档琥珀，我们从来没用过）——VS Code 的 diff 编辑器没有这一档区分。**这是取舍不是遗漏**。
 - **词级标记**是 `<del>` / `<ins>`，UA 样式是删除线与下划线，preflight 不撤它们；换成圆角底色（`--color-diff-*-text-background`）。
 - **词级标记的样式挂在表上**（`[&_del]` / `[&_ins]` 是后代选择器），一份类名管全表，不在每一格上重复。
-- `check:css` 查 `.sticky`、`.diff-gutter`、`.diff-code` 三条规则在产物里（类名改成拼出来的，Tailwind 扫不到字面量，规则就静默消失）；真布局归人工。
+- `check:css` 查 `.diff-gutter`、`.diff-code` 与文件视图行号槽要的 `.sticky` 三条规则在产物里（类名改成拼出来的，Tailwind 扫不到字面量，规则就静默消失）；真布局归人工。
 
 ## `@theme` 变量会被裁掉
 

@@ -30,13 +30,14 @@
 
 外面一层 `font-mono text-[13px] leading-5` 的 div 在两种版式之间不换，换版式、SSE 刷新都落在同一个元素里；里面是 `[data-diff-layout]`。
 
-- **逐行**：一张表，外层自己 `overflow-x-auto`（不交给面板），让改名标注之类排在补丁上面的东西不跟着横滚出去。行号槽 7.5em，新旧两个号各 3.5em 并列，槽 `whitespace-nowrap`——不然两个 inline-block 的号会折成两行、整行变高。
-- **并排**：左旧右新两张表（`[data-diff-side]`），各自是一个 `overflow-x-scroll` 的半栏；两张表行数相同、行高相同，竖直方向天然对齐。行号槽 4em，折叠行的文案与按钮只在旧侧画一次，新侧那一行留空占高。
+- **每一侧是两张表：行号表在左、不滚，正文表装在它右边的横向滚动容器里**——横向滚动条从正文起头，横滚时正文不从行号底下滑过（照 VS Code）。两张表各标一份 `data-line`，同一行同一个值。
+- **逐行**：一侧，滚动容器 `overflow-x-auto`（不交给面板），让行号与改名标注之类排在补丁上面的东西都不跟着横滚出去。行号槽 7.5em，新旧两个号各 3.5em 并列，槽 `whitespace-nowrap`——不然两个 inline-block 的号会折成两行、整行变高。
+- **并排**：左旧右新两侧，正文表带 `[data-diff-side]`，各自的滚动容器 `overflow-x-scroll`；两侧行数相同、行高相同，竖直方向天然对齐。行号槽 4em，折叠行的文案与按钮只在旧侧画一次，新侧那一行留空占高。
 - **行号放不下才撑宽，不裁**：3.5em / 4em 只装得下四位数，第 10000 行起会溢进旁边那格。`Patch` 把这份补丁最大行号的位数写在 `--diff-digits` 上，格宽取 `max(原宽, 位数 × 1ch + 1em)`，两侧一起变、仍然等宽。diff2html 的做法是 `overflow:hidden` 裁掉，而被裁的行号就是错的行号。
-- **正文格一律 `w-full`**：表格 `min-w-full`，行都比面板短时有富余，自动布局会把富余分给每一列，行号槽凭空多出一大块；`w-full` 让富余全归正文。
-- **行号槽 `sticky left-0`，表格 `w-max min-w-full`**：sticky 的滑动余量来自包含块，表格只有面板那么宽时余量为 0，与 static 一模一样（实测见 [`../decisions/web.md`](../decisions/web.md)）。**`border-separate`**：合并边框模式下边框属于表格，sticky 的格子会把自己的右边线留在原地。
-- **行号槽必须是实心色**：横滚时正文从它底下滑过，半透明就透字。颜色机制（`--diff-tint` / `--diff-edge` 与 `diff-gutter` / `diff-code` 两个工具类）见 [`style.md`](style.md)。
-- **空位那一行的高度来自行号槽的 `h-5`**：两格都没有字，不给最小高度就塌成 0，与对面那侧错开一行。
+- **两张表逐行对齐全靠行高**：行号格与正文格都是 `h-5`（= `leading-5`），正文 `whitespace-pre` 不折行。空位与折叠行的格子没有字，少了 `h-5` 就塌成 0，行号从那一行起往上错；正文格里加任何会换行或比 20px 高的东西同理（emoji / CJK 回退字体的实测见 [`../decisions/web.md`](../decisions/web.md)）。
+- **外层 flex 必须 `items-start`**：拉伸时行号表被撑到「正文 + 横向滚动条」那么高，多出来的高度按比例分给每一行，行号一行比一行往下错。
+- **正文表 `min-w-full`**：行都比滚动容器短时也铺满，行底色画到右缘。行号表 **`border-separate`**：preflight 的合并边框模式下，行号格右边线的一半算进表格。
+- 颜色机制（`--diff-tint` / `--diff-edge` 与 `diff-gutter` / `diff-code` 两个工具类）见 [`style.md`](style.md)。
 - **行首记号后面带一个空格**（`- ` / `+ ` / 两个空格）：照旧的观感——diff2html 模板里记号与正文之间那个换行在 `nowrap` 下折成一个空格。记号与行号都 `select-none`，复制出来的是代码本身。
 - **并排两侧横向联动**：一侧的 `scroll` 事件无条件把另一侧的 `scrollLeft` 写成同一个值，与上游 `synchronisedScroll` 同语义。**已知取舍**：没有回声抑制，两侧滚动上限不等时边界处顿一下，之后继续正常滚（排除理由见 [`../decisions/web.md`](../decisions/web.md)）。监听器在 layout effect 里绑：与元素同一次提交就绑上，中间没有一帧「滚了不跟」。
 - **不画文件头**：文件名在标签栏，改名由 `RenameNotice` 说。`+N` / `-M` 增删统计 difftab 至今没在页面上给过。
@@ -123,9 +124,9 @@
 
 | 产物 | 门禁 | 当前实测 |
 |---|---|---|
-| 前端 JS（明文） | ≤ 350 KB | 228.8 KB |
-| 前端 JS（gzip） | ≤ 120 KB | 79.4 KB |
-| 前端 CSS（明文，自建 hljs 主题 + Tailwind 产物） | ≤ 48 KB | 28.1 KB |
+| 前端 JS（明文） | ≤ 350 KB | 229.0 KB |
+| 前端 JS（gzip） | ≤ 120 KB | 79.5 KB |
+| 前端 CSS（明文，自建 hljs 主题 + Tailwind 产物） | ≤ 48 KB | 28.2 KB |
 | 前端 CSS（gzip） | ≤ 10 KB | 6.4 KB |
 
 **CSS 与 JS 一样明文、gzip 两道并卡**（理由见 [`../decisions/web.md`](../decisions/web.md)）。单次小幅增量两道都够不着，review 时看一眼 `dist/web/app.css` 的增量。
