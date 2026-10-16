@@ -2,17 +2,20 @@
 // `store.ts`：那份装的是仓库状态，而面板宽度与版式偏好不是仓库的事，是页面自己的量。
 
 import { computed, signal } from '@preact/signals';
-import type { DiffOutputFormat } from '../diff/render';
+
+/** diff 的两种版式。什么时候用哪个，就是本文件的事。 */
+export type DiffOutputFormat = 'side-by-side' | 'line-by-line';
 
 /**
  * 低于这个宽度就不并排。**量的是 diff 面板自己的宽度，不是视口宽度**：面板宽度是「视口 −
  * 侧栏宽度」，而侧栏可拖（`sidebar.ts`）。按视口判等于另算一遍侧栏宽度，漏了它切换点就静默
  * 错位到别的宽度上。
  *
- * **1024 这个数是算出来的，不是抄 Tailwind 的 `lg`**：diff2html 的表是 13px Menlo，并排每侧
- * 留 `9em` 给行号槽、逐行留 `8em`。于是面板 1024 时并排每侧只剩约 395px（约 50 个等宽字符），
- * 而同一宽度下逐行有 920px（约 118 个）。50 列是绝大多数源码行开始需要横向滚动的地方，阈值
- * 就落在这里。要改它，回来重算这两行，别凭手感调。
+ * **1024 这个数是算出来的，不是抄 Tailwind 的 `lg`**：diff 表是 13px 等宽，并排每侧留 `9em`
+ * （左边 4em 行号槽 + 0.5em 间距，右边 4.5em 留白）、逐行留 `8em`（7.5em 行号槽 + 0.5em）——
+ * 这几个数照抄的是 diff2html 当年的版面。于是面板 1024 时并排每侧只剩约 395px（约 50 个等宽
+ * 字符），而同一宽度下逐行有 920px（约 118 个）。50 列是绝大多数源码行开始需要横向滚动的地方，
+ * 阈值就落在这里。要改它，回来重算这两行，别凭手感调。
  */
 export const SIDE_BY_SIDE_MIN_WIDTH = 1024;
 
@@ -26,9 +29,9 @@ export const diffPanelWidth = signal(SIDE_BY_SIDE_MIN_WIDTH);
 /**
  * 宽度判据给出的版式——**派生量，不是第二份状态**。`computed` 自带 `Object.is` 去重：拖窗口时
  * 每一像素都会写一次 `diffPanelWidth`，而下游只在**真的跨过阈值**那一次收到通知。**它封的是
- * 「每像素一次」，不是「每次跨越一次」**——贴着阈值来回蹭，每跨一次仍是一次完整的 `draw()`
- * （解析 + 全量高亮，同步）。没为此加迟滞或 debounce：同一次 `draw()` 的代价 SSE 刷新每来一
- * 个事件就要付一遍，而贴着边界反复拖是个转瞬即逝的动作，不值得把这个纯派生量变成第二份状态。
+ * 「每像素一次」，不是「每次跨越一次」**——贴着阈值来回蹭，每跨一次仍是一次整表重排（高亮结果
+ * 按补丁缓存，不重算）。没为此加迟滞或 debounce：贴着边界反复拖是个转瞬即逝的动作，不值得把
+ * 这个纯派生量变成第二份状态。
  */
 const autoFormat = computed<DiffOutputFormat>(() =>
   diffPanelWidth.value < SIDE_BY_SIDE_MIN_WIDTH ? 'line-by-line' : 'side-by-side',

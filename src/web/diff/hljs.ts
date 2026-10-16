@@ -1,15 +1,15 @@
 // highlight.js 的按需装配。
 //
-// 只引 lib/core，再逐个显式注册语言——清单即白名单，增删语言就是增删体积，这正是放弃
-// diff2html 预构建 bundle 换来的可控性。JS 体积门禁的主导项就是这张表(22 个模块 ESM 明文
+// 只引 lib/core，再逐个显式注册语言——清单即白名单，增删语言就是增删体积，这正是不用任何
+// 整包预构建 bundle 换来的可控性。JS 体积门禁的主导项就是这张表(22 个模块 ESM 明文
 // 合计 225.6 KB)，要压体积第一刀砍这里。
 //
 // 别名不是模块，不得单独 import:jsx / mjs / cjs → javascript,tsx / ts → typescript，
 // toml → ini,html → xml。`registerLanguage` 注册主模块时别名一并生效；而
 // highlight.js/lib/languages/{jsx,tsx,toml} 三个路径实际不存在，写了会在构建期 resolve 失败。
 //
-// plaintext 是兜底、不是语言，但**必须一起注册**：diff2html 对未知扩展名(以及 LICENSE /
-// Dockerfile 这类无扩展名文件)会把语言改写成字面量 'plaintext' 再无条件调 hljs.highlight；
+// plaintext 是兜底、不是语言，但**必须一起注册**：`languageOf()` 对未知扩展名(以及 LICENSE /
+// Dockerfile 这类无扩展名文件)三道全落空时给的就是字面量 'plaintext'，再无条件调 hljs.highlight；
 // lib/core 不自带它，漏注册就抛 Unknown language，异常冒到调用方后**整个 diff 视图渲染失败**，
 // 而不是那一个文件退化。
 
@@ -179,7 +179,7 @@ function basenameOf(path: string): string {
  * 各活各的。
  *
  * **必须先 `getLanguage()` 探一下**：`highlight()` 传一个没注册的语言名会**抛**，而文件视图
- * 那侧没有 diff2html 兜底，异常冒上去炸的是整个面板。取不到一律退回 `plaintext`（它随那 22
+ * 那侧没有别的兜底，异常冒上去炸的是整个面板。取不到一律退回 `plaintext`（它随那 22
  * 个模块一起注册着，正是为这类兜底）。
  */
 export function languageOf(path: string): string {
@@ -189,7 +189,7 @@ export function languageOf(path: string): string {
   // 到同名的 `properties` 模块，而那个模块我们没注册，让给上游等于让它退回 plaintext）
   const own = registeredLanguage(EXTRA_ALIASES[ext] ?? ext);
   if (own !== null) return own;
-  // 最后一道是 diff2html 那张 `languagesToExt`。**它随 `diff2html-ui-base` 早就在产物里**，接
+  // 最后一道是 diff2html 那张 `languagesToExt`。**它随 `highlight.js-helpers` 早就在产物里**，接
   // 过来体积是 0，而实测它比「我们的表 + hljs 别名」多认 88 个扩展名（`pyi` / `jsonl` / `rake`
   // / `mysql` / `es6` …）。抄一份进上面那张表才是真花钱的做法，且抄件不会跟着上游更新
   return registeredLanguage(upstreamExtensionLanguage(ext)) ?? 'plaintext';
@@ -223,7 +223,7 @@ function blockLanguage(tag: string, attributes: string): string {
 /**
  * 造一个**逐行**的语言判定器：`(这一行的文本) => 这一行该用的语言`。
  *
- * **为什么是逐行而不是整份**：diff2html 的高亮是一行一次 `hljs.highlight()`，跨行的语法状态一
+ * **为什么是逐行而不是整份**：diff 视图的高亮是一行一次 `hljs.highlight()`，跨行的语法状态一
  * 律不保留——于是 SFC 在 `xml` 下只有模板那段有色，`<script>` / `<style>` 里的行一个 span 都
  * 拿不到（实测：`import { ref } from 'vue'` 按 xml 高亮的输出里没有任何标签）。判定器自己按
  * 区块标签记住「现在在哪一段」，把那两段换成 javascript / css。

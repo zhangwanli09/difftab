@@ -113,7 +113,7 @@ describe('BranchStatus 的分支图标', () => {
     expect(icon?.getAttribute('aria-hidden')).toBe('true');
     // 两个类名各挡一件**只是「看着不对」**的事（先被裁的变成图标 / 图标坐在文字基线上比字高出小
     // 半个字），没有它们就该进红线。happy-dom 没有排版引擎，能断言的只有类名在不在——这条的真正
-    // 职责也正是拦住「看着是条多余的工具类」的顺手删除（同 `diff-view.test.tsx` 钉 `relative`）
+    // 职责也正是拦住「看着是条多余的工具类」的顺手删除（同 `diff-view.test.tsx` 钉行号槽的 `sticky`）
     expect(icon?.classList.contains('shrink-0')).toBe(true);
     expect(icon?.classList.contains('self-center')).toBe(true);
   });

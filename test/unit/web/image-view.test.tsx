@@ -60,8 +60,8 @@ describe('ImageDiff', () => {
     expect(container.textContent).toContain('After');
     expect(container.textContent).toContain('1.00 KB');
     expect(container.textContent).toContain('2.00 KB');
-    // 不是 diff2html 的事
-    expect(container.querySelector('.d2h-file-wrapper')).toBeNull();
+    // 图片不走补丁表格
+    expect(container.querySelector('[data-diff-layout]')).toBeNull();
     // 两张一组在面板里水平居中
     const row = images()[0]?.closest('figure')?.parentElement;
     expect(row?.className.split(' ')).toContain('justify-center');
