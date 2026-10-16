@@ -41,6 +41,7 @@ import {
   ROW_BASE,
   SELECTED,
   STATUS_WIDTH,
+  TreeLevelList,
   TreeRow,
 } from './tree-row';
 
@@ -302,7 +303,7 @@ function TreeLevel({
   depth: number;
 }) {
   return (
-    <ul>
+    <TreeLevelList depth={depth}>
       {nodes.map((node) =>
         node.kind === 'directory' ? (
           <DirRow key={node.path} node={node} group={group} depth={depth} />
@@ -310,7 +311,7 @@ function TreeLevel({
           <FileRow key={node.file.path} file={node.file} group={group} treeDepth={depth} />
         ),
       )}
-    </ul>
+    </TreeLevelList>
   );
 }
 

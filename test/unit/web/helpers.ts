@@ -10,7 +10,12 @@ import type {
   RefEntry,
   RepoState,
 } from '../../../src/server/shared/protocol';
-import { ACTION_SHELL, SHELL_AT_EDGE } from '../../../src/web/components/tree-row';
+import {
+  ACTION_SHELL,
+  CHEVRON_PX,
+  INDENT_GUIDE,
+  SHELL_AT_EDGE,
+} from '../../../src/web/components/tree-row';
 import {
   activeEditorKey,
   type EditorKind,
@@ -217,6 +222,22 @@ export const revealSlotsIn = (row: Element | null | undefined) =>
   [...(row?.querySelectorAll('span') ?? [])].filter(
     (node) => node.classList.contains('hidden') && node.textContent === '',
   );
+
+/** 目录行展开后的子层 `<ul>`：与行按钮同住一个 `<li>`，在 group div 之外。 */
+export const childLevelOf = (row: Element | null | undefined) =>
+  row?.closest('li')?.querySelector('ul') ?? null;
+
+/**
+ * 断言目录行 `row` 底下那层画着引导线，且横坐标对准它的三角中心（父行左内边距 + 三角半宽）：
+ * 线与三角错开时不报错，只是对不上。两棵树的用例共用，按 `CHEVRON_PX` 与行的实际内边距算，
+ * 不写死像素。
+ */
+export function expectGuideUnder(row: HTMLElement | null | undefined) {
+  const level = childLevelOf(row);
+  expect(level?.className).toBe(INDENT_GUIDE);
+  const parentPad = Number.parseInt(row?.style.paddingLeft ?? '', 10);
+  expect(level?.style.getPropertyValue('--guide-x')).toBe(`${parentPad + CHEVRON_PX / 2}px`);
+}
 
 /** 行按钮里行内动作的占位：空 span 里的第一个。 */
 export const spacerIn = (row: Element | null | undefined) => revealSlotsIn(row)[0];

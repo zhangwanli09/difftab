@@ -39,6 +39,7 @@ import { SearchView } from './SearchView';
 import { SidebarSash } from './SidebarSash';
 import { SourceControl } from './SourceControl';
 import { ThemeToggle } from './ThemeToggle';
+import { TREE_SCOPE } from './tree-row';
 import { WatchBadge } from './WatchBadge';
 
 /**
@@ -258,8 +259,11 @@ export function App() {
             line-height 撑而不是各行自己 `py-*` 凑，「左栏所有行 24px」于是是容器的一条属性，不是
             每个元素各抄一遍的约定。24px 取 JetBrains / Zed 树行那档；VS Code 是 22px，但 Tailwind
             预设里没有 13px / 22px，不为 2px 另加 token。**分组标题是例外**：它自己写 `text-xs`，而
-            Tailwind 的 `text-*` 会把 line-height 一并重设（`--tw-leading` 不继承），得自带 `/6` */}
-        <nav class={`min-h-0 flex-1 text-sm/6 ${tab === 'files' ? 'overflow-auto' : ''}`}>
+            Tailwind 的 `text-*` 会把 line-height 一并重设（`--tw-leading` 不继承），得自带 `/6`。
+            `TREE_SCOPE` 是两棵树缩进引导线的悬停作用域：指针进了列表区，各层的线一起亮 */}
+        <nav
+          class={`${TREE_SCOPE} min-h-0 flex-1 text-sm/6 ${tab === 'files' ? 'overflow-auto' : ''}`}
+        >
           {tab === 'files' ? <FileTree /> : tab === 'search' ? <SearchView /> : <SourceControl />}
         </nav>
 

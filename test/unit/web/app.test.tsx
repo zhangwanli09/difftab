@@ -13,6 +13,7 @@ import { render } from 'preact';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RepoState } from '../../../src/server/shared/protocol';
 import { App } from '../../../src/web/components/App';
+import { TREE_SCOPE } from '../../../src/web/components/tree-row';
 import { changeView } from '../../../src/web/state/change-tree';
 import { activeEditorKey, editors } from '../../../src/web/state/editors';
 import { activeTab, diffStates, fileStates, repoState } from '../../../src/web/state/store';
@@ -151,6 +152,13 @@ describe('侧栏那三个 tab', () => {
     repoState.value = stateWith('demo');
     render(<App />, container);
     expect(container.querySelector('nav')?.classList.contains('text-sm/6')).toBe(true);
+  });
+
+  // 缩进引导线的悬停作用域挂在列表区 `<nav>` 上：这一条掉了不报错，只是两棵树的线永远不显形
+  it('列表区那一层带 TREE_SCOPE——引导线的悬停作用域', () => {
+    repoState.value = stateWith('demo');
+    render(<App />, container);
+    expect(container.querySelector('nav')?.classList.contains(TREE_SCOPE)).toBe(true);
   });
 
   it('切到 Files 换的是左栏列什么', async () => {
