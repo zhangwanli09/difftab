@@ -33,26 +33,24 @@ jobs:
       # 标题经 env 传入，不直接插进 run:——标题由 PR 作者控制，`${{ }}` 是在 shell 解析之前
       # 做的文本替换，直接插进去就是脚本注入
       - env:
-          EVENT_TITLE: ${{ github.event.pull_request.title }}
+          TITLE: ${{ github.event.pull_request.title }}
           GH_TOKEN: ${{ github.token }}
         run: |
           if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
             TITLE=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$GITHUB_REF_NAME" --state open \
               --json title --jq '.[0].title // empty')
             [ -n "$TITLE" ] || { echo "::error::no open PR has $GITHUB_REF_NAME as its head branch"; exit 1; }
-          else
-            TITLE=$EVENT_TITLE
           fi
-          re='^(feat|fix|docs|refactor|perf|test|build|ci|chore)(\([a-z0-9-]+\))?!?: [^ ](.*[^.])?$'
+          types='feat|fix|docs|refactor|perf|test|build|ci|chore'
+          re="^($types)(\\([a-z0-9-]+\\))?!?: [^ ](.*[^.])?\$"
           if [[ $TITLE =~ $re ]]; then
             echo "OK: $TITLE"
             exit 0
           fi
           echo "::error::PR title is not a Conventional Commits subject: $TITLE"
           echo "Expected: <type>(<scope>)!: <description>"
-          echo "  type: feat | fix | docs | refactor | perf | test | build | ci | chore"
+          echo "  type: ${types//|/ | }"
           echo "  scope and ! are optional; scope is lowercase; no trailing period"
           echo "  write a revert as an ordinary change, e.g. fix(web): revert the folded diff lines"
-          echo "The title becomes the commit subject on main, which release-please reads to"
-          echo "write CHANGELOG.md and pick the next version."
+          echo "The title becomes the commit subject on main; release-please reads it for CHANGELOG.md."
           exit 1

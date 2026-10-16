@@ -80,6 +80,7 @@ more often than you would expect.
 | `pnpm check:css` | CSS cascade ordering |
 | `pnpm check:pack` | published tarball contents |
 | `pnpm check:bin` | `bin/difftab.js` is committed as `100755` and untouched by the build |
+| `pnpm check:gates` | the `all gates passed` job in `ci.yml` still covers every job and fails closed |
 
 `pnpm test:smoke` runs against build output, so a stale `dist/` fails in ways that look
 like three separate gates broke at once. Build first.

@@ -34,6 +34,10 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
 
+      # 不需要安装依赖，排在最前面：gates-passed 写坏时几秒内就红，不等装完依赖
+      - name: gates-passed covers every job and fails closed
+        run: node scripts/check-ci-gate.mjs
+
       # pnpm/action-setup 必须排在 actions/setup-node 之前，
       # 否则后者的 cache: 'pnpm' 找不到 pnpm 可执行文件，缓存步骤直接失败。
       # 不传 version——让它读 package.json 的 packageManager 字段（唯一事实来源）；
@@ -74,31 +78,6 @@ jobs:
           if [ -f .npmrc ]; then
             grep -vE '^\s*(#|$)' .npmrc | grep -vE '^(registry|@[^:]+:registry|//)' && { echo '.npmrc contains settings other than registry/auth'; exit 1; } || true
           fi
-
-      # ruleset 只要求 gates-passed 这一个 CI 检查，它失效的三种方式都不会响，逐条断言：
-      #   - needs 漏列一个作业：那个作业红了也挡不住合并；
-      #   - if 不是 always()：依赖红了或运行被取消时它被跳过，而跳过的 required check 算通过；
-      #   - 不再要求每个依赖都是 success：skipped 的依赖被当成绿的。
-      # 只在 gates-passed 自己那一段里找（切到下一个作业键为止），否则会读到别的作业的 needs。
-      # 先断言确实解析出了不止一个作业：正则一旦失配，两边都是空表，照样「相等」。
-      # `$` 与 `{{` 拆开拼：run 里出现完整的表达式语法会先被 Actions 求值成 true。
-      - name: gates-passed covers every other job and fails closed
-        run: |
-          node -e '
-            const fail = (msg) => { console.error(`FAIL ${msg}`); process.exit(1); };
-            const y = require("fs").readFileSync(".github/workflows/ci.yml", "utf8");
-            const body = y.slice(y.indexOf("\njobs:"));
-            const jobs = [...body.matchAll(/^  ([a-z][a-z0-9-]*):\s*$/gm)].map((m) => m[1]);
-            const block = body.split(/^(?=  [a-z][a-z0-9-]*:\s*$)/m).find((b) => b.startsWith("  gates-passed:")) ?? "";
-            const m = block.match(/^    needs: \[([^\]]*)\]/m);
-            if (jobs.length < 2 || !m) fail("could not find the jobs, or gates-passed needs written as a one-line [a, b] list");
-            const needs = m[1].split(",").map((s) => s.trim()).sort().join(" ");
-            const want = jobs.filter((j) => j !== "gates-passed").sort().join(" ");
-            if (needs !== want) fail(`gates-passed needs [${needs}], expected [${want}]`);
-            if (!block.includes("    if: $" + "{{ always() }}\n")) fail("gates-passed must run with if: always(); a skipped required check counts as passing");
-            if (!block.includes("all(.[]; .result == \"success\")")) fail("gates-passed no longer requires every dependency to be success");
-            console.log(`PASS gates-passed needs ${want}, runs always, fails unless all succeeded`);
-          '
 
       - run: pnpm exec biome ci
       - run: pnpm run typecheck
@@ -330,12 +309,10 @@ jobs:
           echo 'PASS version guard works as expected on a real old Node'
 
   # ruleset 里唯一一个来自 ci.yml 的 required check。只要求这一个名字，矩阵改档位、作业改名
-  # 时就不用去同步 ruleset；代价是它的写法必须对，由 build 档的那一步断言兜着。
+  # 时就不用去同步 ruleset；代价是它的写法必须对，由 scripts/check-ci-gate.mjs 断言。
   #
-  # 必须是 always()，不能是 !cancelled() 或默认条件：被跳过的作业对 required check 而言算
-  # 通过。有人取消 PR head 上的那次运行、或某个依赖红了时，它一旦被跳过，PR 就带着没跑完
-  # 或红着的门禁照样能合。always() 下它照常运行，任何一个依赖不是 success（含 skipped、
-  # cancelled）都算红。代价是被 concurrency 顶掉的旧运行也会亮一个红叉，那是旧 commit 上的。
+  # 必须是 always()：被跳过的作业对 required check 而言算通过，取消运行或某个依赖红了时它
+  # 一旦被跳过，PR 照样能合。代价是被 concurrency 顶掉的旧运行也会亮一个红叉，那是旧 commit 上的。
   gates-passed:
     name: all gates passed
     if: ${{ always() }}
