@@ -18,6 +18,7 @@ import {
   CopyPathButton,
   ExpandChevron,
   indent,
+  PlaceholderRow,
   ROW_BASE,
   SELECTED,
   TreeRow,
@@ -136,21 +137,13 @@ function Level({ path, depth }: { path: string; depth: number }) {
   const entries = useComputed(() => treeCache.value.get(path)).value;
   const error = useComputed(() => treeErrors.value.get(path)).value;
 
-  /**
-   * 三种占位是同一行字，只是内容不同：还没取到（或没取到且有原因）、取回来是空的。
-   *
-   * **手上已经有这一层时，出错就不画那句话**：`loadDir` 失败只写 `treeErrors`、不动
-   * `treeCache`，而刷新途中的一次失败（后端重启、dev 代理抖一下）是常态。先看错误的写法会让
-   * 一个已经画出来的目录连同它底下展开的一切，被一行红字换掉，直到下一个 `change` 恰好成功
-   * ——陈旧的内容比消失的内容有用得多，而它下一拍就会被换新。
-   */
-  const placeholder =
-    entries === undefined ? (error ?? 'Loading…') : entries.length === 0 ? 'Empty' : null;
-  if (entries === undefined || placeholder !== null) {
+  // 三种占位是同一行字，只是内容不同：还没取到（或没取到且有原因）、取回来是空的
+  if (entries === undefined || entries.length === 0) {
+    const text = entries === undefined ? (error ?? 'Loading…') : 'Empty';
     return (
-      <p class="pr-3 break-words text-description-foreground" style={indent(depth)}>
-        {placeholder}
-      </p>
+      <ul>
+        <PlaceholderRow text={text} depth={depth} />
+      </ul>
     );
   }
 

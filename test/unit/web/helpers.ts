@@ -229,3 +229,17 @@ export function expectEdgeAnchored(row: Element | null | undefined) {
   expect(revealSlotsIn(row)).toHaveLength(1);
   expect(shellOf(row)?.className).toBe(`${ACTION_SHELL} ${SHELL_AT_EDGE}`);
 }
+
+/**
+ * 层内占位（`PlaceholderRow`）的形状：目录树与提交展开后的文件列表共用一份断言，两处各抄一份时改
+ * 一处不报错，只是另一处钉的已不是真骨架。只钉决定文字落点的布局类——少了 gap 文字比文件名往左
+ * 差 6px，少了行首等宽占位差 18px；`ROW_BASE` 里焦点环那几样是给按钮行的，在 li 上不起作用。
+ * 按 `title` 找行，于是「全文进 title」这一条也在里面。
+ */
+export function expectPlaceholderRow(container: Element, text: string) {
+  const row = container.querySelector<HTMLLIElement>(`li[title="${text}"]`);
+  if (!row) throw new Error(`没有画出占位那一行：${text}`);
+  for (const cls of ['flex', 'gap-1.5', 'pr-3']) expect(row.classList.contains(cls)).toBe(true);
+  expect(row.firstElementChild?.classList.contains('w-3')).toBe(true);
+  expect(row.querySelector('.truncate')?.textContent).toBe(text);
+}

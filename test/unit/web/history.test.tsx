@@ -52,6 +52,7 @@ import {
   actionOf,
   branch,
   expectEdgeAnchored,
+  expectPlaceholderRow,
   hideHistory,
   ref,
   repo,
@@ -378,6 +379,8 @@ describe('HistoryList 组件', () => {
     render(<HistoryList />, container);
     (container.querySelector('[aria-expanded]') as HTMLElement).click();
     await waitFor(() => expect(container.textContent).toContain('Shallow clone'));
+    // 占位与目录树同一副行骨架
+    expectPlaceholderRow(container, 'Shallow clone — parent not available');
   });
 
   test('单击展开才取详情；文件行单击开预览 commit tab、双击固定', async () => {

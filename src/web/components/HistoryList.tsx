@@ -31,6 +31,7 @@ import {
   CopyPathButton,
   ExpandChevron,
   indent,
+  PlaceholderRow,
   ROW_BASE,
   SELECTED,
   TreeRow,
@@ -159,15 +160,15 @@ function CommitFiles({ sha }: { sha: string }) {
   // 整个重画一遍
   const state = useComputed(() => commitDetails.value.get(sha)).value;
   const placeholder = (text: string) => (
-    <li class="truncate pr-3 text-description-foreground" style={indent(1)}>
-      {text}
-    </li>
+    <ul>
+      <PlaceholderRow text={text} depth={1} />
+    </ul>
   );
-  if (state === undefined || state.status === 'loading') return <ul>{placeholder('Loading…')}</ul>;
-  if (state.status === 'error') return <ul>{placeholder(state.message)}</ul>;
+  if (state === undefined || state.status === 'loading') return placeholder('Loading…');
+  if (state.status === 'error') return placeholder(state.message);
   // 浅克隆的边界：父提交不在本地，比不出这次改了什么——如实说，而不是画一列「全部新增」
-  if (state.detail.shallow) return <ul>{placeholder('Shallow clone — parent not available')}</ul>;
-  if (state.detail.files.length === 0) return <ul>{placeholder('No file changes')}</ul>;
+  if (state.detail.shallow) return placeholder('Shallow clone — parent not available');
+  if (state.detail.files.length === 0) return placeholder('No file changes');
   return (
     <ul>
       {state.detail.files.map((file) => (
