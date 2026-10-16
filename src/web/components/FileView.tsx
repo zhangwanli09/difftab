@@ -110,6 +110,18 @@ const NEEDS_WIDE_BOX: Record<FilePayload['kind'], boolean> = {
   'too-large': false,
 };
 
+/**
+ * 这一路要不要铺满面板的高（`Panel` 的 `fill` + 包裹那层 `flex-1`），给图片按高缩、上下居中。
+ * 穷举成 `Record` 的理由同上。
+ */
+const FILLS_PANEL: Record<FilePayload['kind'], boolean> = {
+  text: false,
+  symlink: false,
+  binary: false,
+  image: true,
+  'too-large': false,
+};
+
 function Payload({ path, payload }: { path: string; payload: FilePayload }) {
   switch (payload.kind) {
     case 'text': {
@@ -154,22 +166,24 @@ export function FileView({ path }: { path: string }) {
    * 句不断。
    */
   const wide = state.status === 'ready' && NEEDS_WIDE_BOX[state.payload.kind];
+  const fill = state.status === 'ready' && FILLS_PANEL[state.payload.kind];
 
-  // 按内容撑宽的那个盒子在滚动容器**里面**（滚动那一层由 `Panel` 给），它只管正文
-  return (
-    <Panel>
-      <div class={wide ? 'w-max' : ''}>
-        {state.status === 'loading' && <Notice>Loading…</Notice>}
-        {state.status === 'error' && (
-          <Notice>
-            Could not load this file
-            <ErrorDetail message={state.message} />
-          </Notice>
-        )}
-        {/* 换文件走的是卸载重挂——`App` 按 tab 键给本组件 `key`，两份正文因此不可能落在同一棵
-            子树上 */}
-        {state.status === 'ready' && <Payload path={path} payload={state.payload} />}
-      </div>
-    </Panel>
+  const body = (
+    <>
+      {state.status === 'loading' && <Notice>Loading…</Notice>}
+      {state.status === 'error' && (
+        <Notice>
+          Could not load this file
+          <ErrorDetail message={state.message} />
+        </Notice>
+      )}
+      {/* 换文件走的是卸载重挂——`App` 按 tab 键给本组件 `key`，两份正文因此不可能落在同一棵
+          子树上 */}
+      {state.status === 'ready' && <Payload path={path} payload={state.payload} />}
+    </>
   );
+
+  // 按内容撑宽的那个盒子在滚动容器**里面**（滚动那一层由 `Panel` 给），它只管正文，**别的几路
+  // 不套这一层**：图片那一支要的高从 `Panel` 直接给到 `ImageRow`，中间多一层就得多一层 flex 转手
+  return <Panel fill={fill}>{wide ? <div class="w-max">{body}</div> : body}</Panel>;
 }

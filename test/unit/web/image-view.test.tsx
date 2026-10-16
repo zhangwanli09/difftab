@@ -65,6 +65,8 @@ describe('ImageDiff', () => {
     // 两张一组在面板里水平居中
     const row = images()[0]?.closest('figure')?.parentElement;
     expect(row?.className.split(' ')).toContain('justify-center');
+    // diff 那侧同样铺满面板的高
+    expect(container.querySelector('.overflow-auto')?.className.split(' ')).toContain('flex-col');
   });
 
   it('删除只有 Before、新增只有 After；重命名的旧侧 path 原样用 payload 给的', async () => {
@@ -147,6 +149,8 @@ describe('ImageDiff', () => {
     const img = images()[0] as HTMLImageElement;
     expect(img.className.split(' ')).toContain('max-w-full');
     expect(img.parentElement?.className.split(' ')).toContain('checkerboard');
+    // 图比 caption 窄时 stretch 会把棋盘拉到 caption 宽：贴右、不拉伸
+    expect(img.parentElement?.className.split(' ')).toContain('self-end');
     expect(container.textContent).not.toContain('KB');
   });
 
@@ -221,5 +225,26 @@ describe('ImageFile', () => {
     const root = images()[0]?.closest('figure')?.parentElement?.className.split(' ');
     expect(root).toContain('flex');
     expect(root).toContain('justify-center');
+  });
+
+  it('图那一支铺满面板的高：滚动层成一列 flex、外层 size 容器 flex-1、内层 m-auto 上下居中', async () => {
+    readyFile('img/a.png', { kind: 'image', size: 10, version: 'v1' });
+    render(<FileView path="img/a.png" />, container);
+    await waitFor(() => expect(images()).toHaveLength(1));
+    const img = images()[0] as HTMLImageElement;
+    // 只限宽时高图要往下滚：高的上限以放图那一层（size 容器）为基准
+    expect(img.className).toContain('max-h-[calc(100cqh');
+    // 拿不到高（漏带 fill、面板太矮）时退回只限宽，不让 calc 钳成 0 把图整张吞掉
+    expect(img.className).toContain('[@container(height<8rem)]:max-h-none');
+    const inner = img.closest('figure')?.parentElement;
+    // 居中靠 auto margin：内容比面板高时归零、从顶部起排，不像 items-center 把顶上那截切掉
+    expect(inner?.className.split(' ')).toContain('m-auto');
+    const outer = inner?.parentElement?.className.split(' ');
+    expect(outer).toContain('flex-1');
+    expect(outer).toContain('@container-size');
+    // 高得一路传下来：滚动层是一列 flex，放图那层直接是它的子项、不再隔一层包裹
+    const scroller = container.querySelector('.overflow-auto');
+    expect(scroller?.className.split(' ')).toContain('flex-col');
+    expect(inner?.parentElement?.parentElement).toBe(scroller);
   });
 });
