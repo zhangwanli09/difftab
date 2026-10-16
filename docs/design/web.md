@@ -10,7 +10,7 @@
 - **变更列表的组标题与状态字母照 VS Code Source Control 的默认**：组是 `Merge Changes` / `Staged Changes` / `Changes`，未跟踪文件混在 `Changes` 里，字母未跟踪印 `U`、冲突印 `!`。读者每天在编辑器里看的就是那一套，两边各说一种话时同一个 `U` 在两处意思相反。协议层不跟着改：`StatusCode` 仍是 git 的字母，换字只发生在徽章那一张展示映射里（`ChangeList.tsx` 的 `BADGE_LETTERS`）。
 - **判据是「`dist/web/` 三个产物里的 CJK 字符数为 0」**，不是逐个文件翻源码：漏网的最可能形态是**不长在 JSX 上的那几条**（`state/store.ts` 的错误文案就这么漏过一次）。
 - **后端产物用不了这个判据**：`dist/server/main.js` 刻意保留中文注释以便审计。那一侧的用户可见文案是 `sendError` 与各 `*Error` 的字面量，归 `test/unit/server/`。
-- **句点只跟句子走**：标签式的短片段（`No changes` / `Empty` / `Loading…`）末尾不加句点，说明性的完整句子（`Binary file — contents are not compared.`）才加。判据是「它是一个标签还是一句话」，不是长短。
+- **句点只跟句子走**：标签式的短片段（`No commits yet` / `Empty` / `Loading…`）末尾不加句点，说明性的完整句子（`Binary file — contents are not compared.`）才加。判据是「它是一个标签还是一句话」，不是长短。
 - **出错提示分两段：引导句（`Could not load this file`）与原因逐字各占一行，不拼成一句**——原因的来处不止一个（后端 `sendError`、浏览器的 `TypeError: Failed to fetch`、500 转发的 `ENOENT: …`），大小写与句点各成一派，接在冒号后总有一种读起来像两句话撞在一起。
 - **too-large 提示的主语随视图走**：diff 视图说 `Diff too large to show (file is 3.0 MB).`，文件视图说 `File too large to show (3.0 MB).`——diff 那侧 5MB 卡的是补丁字节、`size` 却是文件体积，两边都说「File too large」时同一个文件会在 Files 档里照常显示、在 diff 里说太大。文案在 `tooLargeNotice` 里只写一次，两个视图共用。
 
@@ -66,7 +66,8 @@
 - **不画重命名来源**（照 VS Code，只显示新路径）：`RM` 条目在 `Changes` 组那一行印的是 `M`，再标「`← old`」读起来像在说这一侧的改动是改名。改名只在点开后的 diff 里说（`RenameNotice`）；**取 diff 照样带 `oldPath`**，那是 git 配对用的，不是展示。
 - **不做文件类型图标**：要么引一套 SVG 去顶体积门禁，要么自维护一张扩展名→颜色表，换来的只是观感。
 - **状态位的外壳是 `STATUS_SLOT` 一个常量**，三种记号（字母、冲突两位、目录圆点）共用，不一致时冲突组那一列会横着挪一截。记号比文件名淡一档（照 VS Code），**淡一档必须走 `opacity`，不能走 token 的 `/75` 修饰符**——双值 token 经 `color-mix()` 会让整条声明作废（红线）。
-- **列表区的三句占位（`Loading…`、取不到、`No changes`）共用 `SidebarPlaceholder`，一起居中在列表区正中**：它们轮流占同一个 `<nav>`，各摆各的位置时每次启动都是「贴左上 → 跳到正中」闪一下。`<nav>` 是块盒，占位得 `h-full` 才真的居中（有断言）。不配图标，也不与右侧面板的空态合成一个组件。
+- **工作区干净时列表区什么都不画**，不说 `No changes`：空着的列表本身就是答案，再加一句只是噪音（有断言）。
+- **列表区的两句占位（`Loading…`、取不到）共用 `SidebarPlaceholder`，一起居中在列表区正中**：它们轮流占同一个 `<nav>`，各摆各的位置时首次加载失败就是「贴左上 → 跳到正中」闪一下。`History` 分区的几句占位也用它。`<nav>` 是块盒，占位得 `h-full` 才真的居中（有断言）。不配图标，也不与右侧面板的空态合成一个组件。
 - **左栏所有行一律 24px，行高由列表区 `<nav>` 的 `text-sm/6` 给、底下全靠继承，行自己不写字号也不给纵向内边距**：一行里嵌着小一号的片段，行高由 line-height 定时它们共用同一个行盒；靠 `py-*` 凑时两个视图曾各凑各的，切一次 tab 行高跳一截（有断言）。**唯一例外是分组标题**：它自带 `text-xs`，Tailwind 的 `text-*` 会重设 line-height，得自带 `/6`。
 - **两棵树的行骨架只在 `tree-row.tsx` 一份**：`ROW_BASE`（间距、焦点环）、`indent()`（左内边距，平铺列表取第 0 层）、展开三角与它等宽的占位、`TreeRow` 本身。各写一份时改一处不报错，只是切一次 tab 缩进或间距跳一截（有断言）。它独立成文件是因为 `FileTree` 已 import `ChangeList`，反向会成环。
 - **两棵树的每个子层左侧画一条缩进引导线，指针在列表区时才显形**（照 VS Code 的 `workbench.tree.renderIndentGuides: onHover`，颜色 token 照 `tree.inactiveIndentGuidesStroke`——不做活动高亮，每条线都是 inactive 那档）：每层只缩进 12px，agent 的改动又常在四五层深的路径里，没有线时 320px 侧栏里看不出一行属于哪个目录。机制只在 `tree-row.tsx` 一份（`TreeLevelList`），各条均有断言：
