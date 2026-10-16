@@ -106,6 +106,16 @@ describe('两个分区', () => {
     expect(body()).toBe(before);
   });
 
+  // 撑满分区是居中成立的前提：宿主是块盒，少了 `h-full` 不报错，只是 `Loading…` 贴回左上、
+  // 首次加载失败时跳到正中。happy-dom 没有排版引擎，能钉的只有类名
+  it('Changes 那块的占位居中，且撑满分区', () => {
+    const placeholder = header('Changes').closest('h2')?.nextElementSibling?.querySelector('p');
+    expect(placeholder?.textContent).toBe('Loading…');
+    for (const cls of ['h-full', 'items-center', 'justify-center']) {
+      expect(placeholder?.classList.contains(cls)).toBe(true);
+    }
+  });
+
   it('分隔条是一个可聚焦、带取值范围的横向 separator', () => {
     const el = sash();
     expect(el?.getAttribute('aria-orientation')).toBe('horizontal');

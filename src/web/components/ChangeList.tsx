@@ -31,7 +31,6 @@ import {
   openFile,
   selectFile,
 } from '../state/store';
-import { SidebarPlaceholder } from './EmptyState';
 import { IconButton } from './IconButton';
 import {
   ChevronPlaceholder,
@@ -357,9 +356,6 @@ export function ChangeList({ files }: { files: readonly FileEntry[] }) {
   // 分组只在 `files` 换新时重算：`groupFiles` 每次都回三份新数组，直接在渲染体里调的话
   // `GroupTree` 那个按 `group.files` 记忆的树在每次切 tab / 换 pane 时都白建一遍
   const groups = useMemo(() => groupFiles(files), [files]);
-  if (files.length === 0) {
-    return <SidebarPlaceholder>No changes</SidebarPlaceholder>;
-  }
   return (
     <div>
       {groups.map((group) => (

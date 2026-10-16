@@ -13,9 +13,10 @@ import { type ComponentChildren, Fragment } from 'preact';
 import { SHORTCUTS, shortcutKeys } from '../state/shortcuts';
 
 /**
- * 左栏列表区的占位：`Loading…`、「取不到列表」与「工作区干净」三句共用。**三句一起居中而不是只
- * 居中干净那句**：它们轮流占同一个 `<nav>`，各摆各的位置时，干净仓库一启动就是「Loading…」贴
- * 左上、几百毫秒后跳到正中——不报错，只是每次启动闪一下。不配图标：320px 里那枚比一行字更抢。
+ * 左栏列表区的占位：`Loading…` 与「取不到列表」两句共用。**两句一起居中**：它们轮流占同一个
+ * `<nav>`，各摆各的位置时，首次加载失败就是「Loading…」贴左上、随即跳到正中——不报错，只是闪
+ * 一下。`History` 分区的 `Loading…` / 取不到 / `No commits yet` 同理也用它。不配图标：320px 里
+ * 那枚比一行字更抢。
  */
 export function SidebarPlaceholder({ children }: { children: ComponentChildren }) {
   return (
@@ -34,7 +35,7 @@ export function SidebarPlaceholder({ children }: { children: ComponentChildren }
  * 照 VS Code 的空编辑区列一列全局快捷键，**不说「点左边一个文件」**——左栏就在旁边，这句不带
  * 信息。VS Code 在列表上方还有一枚大号 logo 水印，这里不画：放在这个面板里看着突兀。
  *
- * 也不说「工作区干净」：左栏 `Changes` 档那句 `No changes` 已经答了「为什么没得看」。
+ * 也不说「工作区干净」：左栏 `Changes` 档空着已经答了「为什么没得看」。
  */
 export function PanelEmptyState() {
   return (
