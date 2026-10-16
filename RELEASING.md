@@ -16,12 +16,14 @@ Don't bump the version, edit `CHANGELOG.md`, tag, or publish by hand.
    only if every job is green, `npm publish`es it with npm trusted publishing (OIDC — no
    token, no OTP).
 
-The release PR is opened with `GITHUB_TOKEN`, and GitHub does not trigger `pull_request`
-workflows for it. So whenever release-please opens or updates the PR, the workflow
-dispatches `ci.yml` and `pr-title.yml` on the release branch itself, which is how the PR
-gets its two required checks. The re-run before publishing is still not redundant: the PR's CI
-tested the PR head, while the tag lands on the squash commit created at merge time, and the
-two differ if another PR merged in between.
+The release PR is opened with `GITHUB_TOKEN`, so its `pull_request` runs wait for
+approval: they show up as "action required" and the PR has no checks until then. **Before
+merging the release PR, approve those runs** ("Approve and run workflows" on the PR, or
+re-run the waiting CI and PR title runs from the Actions tab) and wait for the two
+required checks. Only the runs on the PR's latest commit matter, so this is done once per
+release. The re-run before publishing is still not redundant: the PR's CI tested the PR
+head, while the tag lands on the squash commit created at merge time, and the two differ
+if another PR merged in between.
 
 ## Versioning
 

@@ -12,13 +12,15 @@
   - **因此每条设置都要一次正面对照**：当年的 `publishBranch: main` 是这么验的——它直接过检查并打印 `📦 name@version → <registry>`，改成 `release` 后同一条命令停在分支确认上，**即那个 camelCase 键确实被读到了**。没有对照时「没报错」与「设置生效了」长得一模一样。
   - **`pnpm publish` 不再委托 npm CLI**（`login` / `view` 等同理），于是它**不认 npm 的登录态**，而那时的报错完全不像认证问题：`npm whoami` 有回应、`~/.npmrc` 里有 `_authToken`，`pnpm publish` 仍回 `[E404] 404 Not Found - PUT …`——**npm 对「不允许的写」在包还不存在时回 404 而不是 403**。判据是 `pnpm whoami`；补 `pnpm login` 之后错误换成 `ERR_PNPM_OTP_NON_INTERACTIVE`，那条才说实话。它另自带 git 检查、照常执行 `prepublishOnly`，2FA 为 `auth-and-writes` 时无法非交互跑。
   - **manifest obfuscation 的实测范围比想象的窄**：剥掉的只有 `packageManager` 与 `prepublishOnly` 两项，其余 `scripts` 与整份 `devDependencies` 原样发布。现在改由 `npm publish` 发，这两项会随包发出——无害，用户侧不读它们。
-- **发布由 release-please + npm trusted publishing 承担**（`.github/workflows/release.yml`）：合并 release PR 即打 tag、建 Release、写 `CHANGELOG.md`，再复跑整份 `ci.yml` 后经 OIDC 发布，无 token、无 OTP。**复跑不能省**：release PR 上的检查测的是 PR 的 head，被打 tag 的是合并时新生成的 squash 提交，中间有别的 PR 落进 main 时两者内容不同，不复跑时三平台冒烟对要发出去的 commit 一次都没跑过。用 `npm publish` 是因为 trusted publishing 走 npm CLI（≥ 11.5.1），而 pnpm 不委托 npm、拿不到这层鉴权。
+- **发布由 release-please + npm trusted publishing 承担**（`.github/workflows/release.yml`）：合并 release PR 即打 tag、建 Release、写 `CHANGELOG.md`，再复跑整份 `ci.yml` 后经 OIDC 发布，无 token、无 OTP。release PR 由 `GITHUB_TOKEN` 创建，GitHub **会**为它建 `pull_request` 运行，但运行停在 `action_required`、要维护者批准才跑（实测：release 分支上 22 次 `pull_request` 运行里 14 次是这个状态；6 次以「workflow file issue」结束、一个作业都没建，原因未查明；2 次跑通，其中一次是维护者在 Actions 里重跑了停住的那次）——此前「GitHub 不为它触发 `pull_request`」的说法不准确。**复跑不能省**：release PR 上的检查测的是 PR 的 head，被打 tag 的是合并时新生成的 squash 提交，中间有别的 PR 落进 main 时两者内容不同，不复跑时三平台冒烟对要发出去的 commit 一次都没跑过。用 `npm publish` 是因为 trusted publishing 走 npm CLI（≥ 11.5.1），而 pnpm 不委托 npm、拿不到这层鉴权。
 
 ## 被排除的做法
 
 | 做法 | 排除原因 |
 |---|---|
 | 用 tarball 里的 bin mode（`check:pack` / `check:global` 那两道）来保证可执行位 | pnpm pack 无条件把 bin 归一成 0755，查它等于查一个恒真命题；真正会丢的是**仓库自己记的 mode**，而它不经过 tarball。**只查 index 同样不够**：`--chmod=+x` 只写暂存区，而 fresh clone 与 CI 拿的都是 HEAD——只查 index 的版本恰好在它唯一要保护的地方（开发者本机）最弱 |
+| release-please 开出或更新 release PR 后，由 `release.yml` 以 `workflow_dispatch` 在 release 分支上派发 `ci.yml` 与 `pr-title.yml`，省掉合并前的手动批准 | 每次合并进 main 都会更新 release PR，于是每次都在 release 分支上多跑一整套 16 个作业的 CI，换来的只是每次发版少点一次；还要给一个作业 `actions: write`，并让 `pr-title.yml` 多一条「按分支查 PR 标题」的派发路径 |
+| 用 GitHub App token 跑 release-please，让 release PR 像普通 PR 一样直接触发检查 | 要建 App、把私钥存成 secret，发布 workflow 里多一份长期有效的凭据；一人维护时省下的只是每次发版的一次点击 |
 | 本机手工 `pnpm publish` 发版 | 要 pnpm 单独登录、2FA 的 OTP 只能交互输入、本机全局 registry 可能是镜像源、本地 main 与 squash 后的远端分叉——每一项都是手工流程本身带来的，而发出去的 commit 是否跑过三平台冒烟只能靠人记得去查 |
 | 依赖 Node 原生 type stripping 直接运行 `.ts` 产品代码 | 会把运行时下限从 22.0.0 顶到 22.18，且每次启动都要付一次转换开销，挤占 300ms 冷启动预算 |
 | pnpm 开 `shamefullyHoist: true` 或 `nodeLinker: hoisted` | 用扁平化掩盖 phantom dependency：本机构建通过，换到别人机器、CI 或改依赖版本后才 resolve 失败。深导入 diff2html 内部模块的方案更需要这层校验 |

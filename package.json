@@ -56,7 +56,6 @@
     "check:pack": "node scripts/check-pack.mjs",
     "check:css": "node scripts/check-css-cascade.mjs",
     "check:bin": "node scripts/check-bin-untouched.mjs",
-    "check:gates": "node scripts/check-ci-gate.mjs",
     "check:global": "node scripts/check-global-install.mjs",
     "check:inotify": "node scripts/check-inotify-degrade.mjs"
   },
