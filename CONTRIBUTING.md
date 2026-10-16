@@ -116,9 +116,9 @@ and why rather than how.
 `main` takes squash merges only, so **a pull request lands as one commit**. One pull
 request does one thing — don't mix a refactor into a feature change. Two consequences:
 
-- **The PR title follows the same format.** For a PR with more than one commit, the title
-  becomes the subject of the commit on `main`.
-  That subject is also what lands in `CHANGELOG.md`, and its type decides the next
+- **The PR title follows the same format.** It becomes the subject of the commit on
+  `main`, however many commits the PR has, and a CI check rejects a title that does not
+  parse. That subject is also what lands in `CHANGELOG.md`, and its type decides the next
   version, so write it for users.
 - **Branch commit messages end up in `main` too.** They are concatenated into the body of
   the squashed commit, so a `wip` or `address review` stays in the history unless it is

@@ -15,7 +15,7 @@
 
 ## 2. 提交约定
 
-- **英文** + **Conventional Commits**：`<type>(<scope>): <description>`，type 取 `feat`/`fix`/`docs`/`refactor`/`perf`/`test`/`build`/`ci`/`chore`，破坏性加 `!`；PR 标题同此格式——main 只收 squash 合并，多提交 PR 的标题就是 main 上那个提交的 subject
+- **英文** + **Conventional Commits**：`<type>(<scope>): <description>`，type 取 `feat`/`fix`/`docs`/`refactor`/`perf`/`test`/`build`/`ci`/`chore`，破坏性加 `!`；PR 标题同此格式——main 只收 squash 合并，PR 标题就是 main 上那个提交的 subject（不论几个提交，`pr-title.yml` 校验格式）
 - 祈使语气，subject 不加句号，body 折 72 只写 what 与 why
 - Agent 会话里用户要求提交时，**先建分支**（main 只收 PR，在 main 上提交时推送被拒，且 squash 改写 SHA 后本地 main 分叉），再把本会话自上次提交以来的改动合成**一个**提交、不按事项拆（对外贡献者按 `CONTRIBUTING.md` 的「一个 PR 一件事」）
 - 合成的提交 subject 取其中影响最大那件的 type（`feat` > `fix` > 其余），任一件破坏性即加 `!`；body 逐条写每件的 what 与 why

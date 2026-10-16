@@ -1,0 +1,44 @@
+name: PR title
+
+# main 只收 squash 合并，且 squash 的 subject 取 PR 标题，所以 PR 标题就是 main 上那一行。
+# release-please 只认 Conventional Commits：标题不合格式时它不报错，只是把这次改动从
+# CHANGELOG 和版本号里静默漏掉。
+#
+# 单独成一个 workflow 而不进 ci.yml：改标题只触发 `edited`，给 ci.yml 加上它的话，改一下
+# PR 描述就会把三平台矩阵整套重跑一遍。
+#
+# 不设为 required check：release PR 由 GITHUB_TOKEN 创建，GitHub 不为它触发 pull_request，
+# 设成 required 后 release PR 就永远合不进去。
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  conventional:
+    name: Conventional Commits title
+    runs-on: ubuntu-latest
+    steps:
+      # 标题经 env 传入，不直接插进 run:——标题由 PR 作者控制，`${{ }}` 是在 shell 解析之前
+      # 做的文本替换，直接插进去就是脚本注入
+      - env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          re='^(feat|fix|docs|refactor|perf|test|build|ci|chore)(\([a-z0-9-]+\))?!?: [^ ].*[^.]$'
+          if [[ $TITLE =~ $re ]]; then
+            echo "OK: $TITLE"
+            exit 0
+          fi
+          echo "::error::PR title is not a Conventional Commits subject: $TITLE"
+          echo "Expected: <type>(<scope>)!: <description>"
+          echo "  type: feat | fix | docs | refactor | perf | test | build | ci | chore"
+          echo "  scope and ! are optional; scope is lowercase; no trailing period"
+          echo "The title becomes the commit subject on main, which release-please reads to"
+          echo "write CHANGELOG.md and pick the next version."
+          exit 1
