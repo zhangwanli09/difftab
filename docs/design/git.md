@@ -32,6 +32,24 @@
 - **numstat 可以回不止一条记录：按路径挑、按合计算，不能取 `[0]`**。`git mv` 后重写内容却不 add 时（status 仍报 `R100`），git 拆成「删旧」+「增新」两条：取第一条拿到的是几十行的删除，行数闸放行一份 6 万行的补丁；二进制同理会被挑错。
 - 字面量 pathspec 与按路径挑记录**各自都有只有它才拦得住的形态**，不可相互替代。
 
+### 补丁的两个可选档：忽略空白、整份上下文
+
+`/api/diff` 与 `/api/commit-diff` 各多两个开关（`ignoreWhitespace=1` / `fullContext=1`，协议在 [`server.md`](server.md)），两条路共用 `gatedPatch` 那一份实现。**取补丁那次调用的 argv 形态固定为**：
+
+```
+git diff --no-ext-diff --no-textconv <range> --unified=<3|50000> --inter-hunk-context=0 [-w] [-M] -- <路径> [<旧路径>]
+```
+
+- **请求参数只决定挑哪个字面量，自己不进 argv**：`--unified` 的值只有 `3` 与 `MAX_LINES` 两个常量，`-w` 只以它自己出现。参数值来自 URL query，原样拼进去就是一处把选项面交给请求方的口子——`--output=<路径>` 在那个位置就是一次写文件。冒烟逐段钉着（见 [`../gates.md`](../gates.md)）。
+- **`--unified=3` 与 `--inter-hunk-context=0` 必须显式写，不能靠默认**：用户配了 `diff.context` / `diff.interHunkContext` 时 git 照配置给 hunk（实测 `diff.context=0` 下上下文整个消失）。前端按「上下文恰为 3 行、相邻 hunk 不并」推断文件末尾在哪、并在整份上下文里重算出与 `-U3` 逐行相同的折叠（机制在 [`diff-render.md`](diff-render.md)），两条默认任一被配置改掉，推断都静默错位。
+- **忽略空白用 `-w`（`--ignore-all-space`），不用 `-b` 或 `--ignore-space-at-eol`**：VS Code 的 `ignoreTrimWhitespace` 忽略行首行尾的空白，git 没有逐字对应的开关。`-b` 拦不住缩进从无到有（实测 `x` → `  x` 照报一删一增），而那正是把代码包进一层块时最常见的形态；`-w` 是 VS Code 那档的超集，与 GitHub 的 `Hide whitespace` 同口径。
+- **`-w` 只给取补丁那一次，`--numstat` 那次永远不带**：只改了空白的文件在 `-w` 下补丁与 numstat **都是空输出**（实测），numstat 的 `null` 于是从「这条路径不在差异里」变成「没有非空白的改动」。而它同时是三件事的判据：已跟踪判定只剩 `ls-files` 那一半（`git rm` 之后已暂存的删除就靠它）；`stat` 为 `null` 时 `gatedPatch` 连二进制与行数两道闸一起跳过。今天的路径组合里碰巧不出错，但一个显示开关不该改写分流判据的含义。代价是行数闸量的是不忽略空白的改动量：一次 6 万行的纯格式化在 `-w` 下其实很小，照样说太大。
+- **`-w` 下没有剩余改动是正常结果**：exit 0、stdout 为空，payload 照常是 `text`，补丁为空串（前端说 `Only whitespace changes.`）。老 git 在这里可能还留着 `diff --git` 头而没有 hunk，前端看到的同样是零个 hunk。
+- **`-w` 下上下文行的正文取自新侧**（实测：缩进从 2 改到 4 之后，上下文行是 4 个空格那一版）。并排时旧侧那几行显示的是新侧的空白，行号照旧是旧侧的——已知取舍，不另取旧侧正文。
+- **整份上下文是 `--unified=<MAX_LINES>`，判据是「补丁行数不超过 `MAX_LINES`」**：补丁若没有包住整份文件，必有一侧连续 `MAX_LINES` 行上下文被收进来，加上至少一行改动就超了。所以过了这道闸的补丁一定是整份文件，不必另问文件有多少行。**这道行数闸在取完之后数**（numstat 量的是改动量，量不到上下文），字节闸照旧由 `maxStdoutBytes` 撞。
+- **整份上下文过不了闸时，退回 `--unified=3` 再取一次，payload 标 `full: false`，不回 `too-large`**：一个 6MB 的数据文件改一行，`-U3` 的补丁照样看得见，不能因为「想多看几行」就整个看不了。退回那次照常过三道闸。前端据此知道这个文件展开不了。
+- **两个开关对未跟踪文件、二进制、图片都不起作用**：未跟踪的补丁本来就是整份文件，空白也无从比；后两者不取补丁。未跟踪那一路的 payload 不带 `full`。
+
 ## 已跟踪与未跟踪的分流
 
 - **「已跟踪」的判据是 HEAD ∪ index，不是 index**：`git rm` 后路径已从 index 摘掉，但 status 照报 `1 D.`、基准侧还在——只查 `ls-files` 会误判成未跟踪，去读一个不存在的文件。`--numstat` 那次调用兼任这个判据，并顺带给出二进制与行数。

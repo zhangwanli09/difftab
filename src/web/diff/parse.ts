@@ -19,8 +19,13 @@ export interface PatchLine {
 }
 
 export interface Hunk {
-  /** `@@ -a,b +c,d @@ …` 那一行，原样 */
-  header: string;
+  /**
+   * 这段在旧侧的**第一行**（1 起）与旧侧行数。起点取 diff2html 解析好的 `oldStartLine`，行数数这段
+   * 里的上下文与删除行——不再自己解析一遍 hunk 头。git 对行数为 0 的一侧写的是「插入点之前那一行」
+   * （新文件的 `-0,0`），这里统一换成这段若有行时的第一行，下游算两段之间隔了几行时不必再分情况。
+   */
+  oldFirst: number;
+  oldCount: number;
   lines: PatchLine[];
 }
 
@@ -34,15 +39,19 @@ export interface Hunk {
  */
 export function parsePatch(patch: string): Hunk[][] {
   return parse(patch).map((file) =>
-    file.blocks.map((block) => ({
-      header: block.header,
-      lines: block.lines.map((line) => ({
-        kind: line.type as LineKind,
-        oldNo: line.oldNumber,
-        newNo: line.newNumber,
-        // 我们的补丁全是两方 diff（组合 diff 不做），前缀恒为一个字符
-        text: line.content.slice(1),
-      })),
-    })),
+    file.blocks.map((block) => {
+      const lines = block.lines.map(
+        (line): PatchLine => ({
+          kind: line.type as LineKind,
+          oldNo: line.oldNumber,
+          newNo: line.newNumber,
+          // 我们的补丁全是两方 diff（组合 diff 不做），前缀恒为一个字符
+          text: line.content.slice(1),
+        }),
+      );
+      const oldCount = lines.filter((line) => line.kind !== 'insert').length;
+      const oldFirst = oldCount === 0 ? block.oldStartLine + 1 : block.oldStartLine;
+      return { oldFirst, oldCount, lines };
+    }),
   );
 }

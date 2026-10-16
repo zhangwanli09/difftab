@@ -158,11 +158,13 @@ export async function resolveInRepo(
  * 在 **Buffer 上数**而不是 `split('\n').length`：后者为了得到一个数字，把整份文件又切成 N 个
  * 字符串立刻丢掉，而超限那一路根本不需要正文。
  */
-export function countLines(buffer: Buffer): number {
-  if (buffer.length === 0) return 0;
+export function countLines(text: Buffer | string): number {
+  if (text.length === 0) return 0;
+  // 字符串那一路是补丁正文（`runGit` 的 stdout）：整份上下文那道闸按同一个口径数。`Buffer` 与字符串
+  // 的 `indexOf` / `lastIndexOf` 都认 `'\n'`，各按各的单位（字节 / UTF-16）给下标，不必分情况
   let lines = 0;
-  for (let i = buffer.indexOf(10); i !== -1; i = buffer.indexOf(10, i + 1)) lines += 1;
-  return buffer[buffer.length - 1] === 10 ? lines : lines + 1;
+  for (let i = text.indexOf('\n'); i !== -1; i = text.indexOf('\n', i + 1)) lines += 1;
+  return text.lastIndexOf('\n') === text.length - 1 ? lines : lines + 1;
 }
 
 /**

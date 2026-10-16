@@ -2,7 +2,7 @@
 // 状态在 `state/search.ts`；搜什么、怎么截、命中区间怎么算都在后端（`server/git/search.ts`）。
 
 import { useComputed } from '@preact/signals';
-import { CaseSensitive, type LucideIcon, WholeWord } from 'lucide-preact';
+import { CaseSensitive, WholeWord } from 'lucide-preact';
 import type { ComponentChildren } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
 import { MAX_SEARCH_LINES, type SearchFile, type SearchMatch } from '../../server/shared/protocol';
@@ -25,7 +25,7 @@ import {
 import { openFile } from '../state/store';
 import { splitForDisplay } from './ChangeList';
 import { ErrorDetail } from './DiffView';
-import { Icon } from './Icon';
+import { Toggle } from './Toggle';
 import {
   ChevronPlaceholder,
   CopyPathButton,
@@ -38,40 +38,6 @@ import {
 
 const FILE_ROW_CLASS = `${ROW_BASE} items-center`;
 const MATCH_ROW_CLASS = `${ROW_BASE} items-baseline`;
-
-/**
- * 输入框里的切换钮。**`aria-pressed` 表态**，按下时垫选中底色并描一圈焦点色边（照 VS Code 的
- * inputOption）；边是常驻的透明边、按下时只换颜色，按下前后宽度不跳。不复用 `IconButton`：那枚
- * 没有「按下」这一态，为一处加一个可选开关就是又一个不填也不报错的参数。
- */
-function Toggle({
-  icon,
-  label,
-  pressed,
-  onClick,
-}: {
-  icon: LucideIcon;
-  label: string;
-  pressed: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      aria-pressed={pressed}
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      class={`mr-0.5 shrink-0 rounded-sm border p-px focus-visible:outline-2 focus-visible:outline-focus-border ${
-        pressed
-          ? 'border-focus-border bg-list-active-selection-background text-editor-foreground'
-          : 'border-transparent text-description-foreground hover:bg-toolbar-hover-background'
-      }`}
-    >
-      <Icon icon={icon} />
-    </button>
-  );
-}
 
 function SearchBox() {
   const input = useRef<HTMLInputElement>(null);

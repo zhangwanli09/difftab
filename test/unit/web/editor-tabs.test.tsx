@@ -27,6 +27,8 @@ import {
 import {
   type DiffRequestState,
   type FileRequestState,
+  ignoreWhitespace,
+  PATCH_DEFAULTS,
   repoState,
 } from '../../../src/web/state/store';
 import {
@@ -389,11 +391,16 @@ describe('Copy file contents', () => {
 
 describe('版式切换', () => {
   const SHA = 'a'.repeat(40);
-  const PATCH: DiffPayload = { kind: 'text', patch: 'diff --git a/src/a.ts b/src/a.ts\n' };
+  const PATCH: DiffPayload = {
+    kind: 'text',
+    patch: 'diff --git a/src/a.ts b/src/a.ts\n',
+    full: false,
+  };
   /** 一份就绪的补丁状态（只造值、不写缓存，写由 `setDiffState` / `setCommitDiffState` 做）。 */
   const readyDiff = (payload: DiffPayload): DiffRequestState => ({
     status: 'ready',
     rename: null,
+    options: PATCH_DEFAULTS,
     payload,
   });
   const labelOf = () => formatButton()?.getAttribute('aria-label') ?? null;
@@ -407,7 +414,7 @@ describe('版式切换', () => {
     const button = formatButton();
     expect(strip()?.contains(button ?? null)).toBe(false);
     expect(bar()?.contains(button ?? null)).toBe(true);
-    // 同一时刻动作区至多一枚：diff tab 上没有复制全文
+    // diff tab 上没有复制全文
     expect(copyButton()).toBeNull();
 
     button?.click();
@@ -432,7 +439,7 @@ describe('版式切换', () => {
   it('没有补丁表格时不画：加载中、出错、二进制、图片、过大，以及全文 tab', async () => {
     pinned('diff', 'src/a.ts');
     const noPatch: DiffRequestState[] = [
-      { status: 'loading', rename: null },
+      { status: 'loading', rename: null, options: PATCH_DEFAULTS },
       { status: 'error', rename: null, message: 'gone' },
       readyDiff({ kind: 'binary' }),
       readyDiff({ kind: 'image', old: null, new: null }),
@@ -462,6 +469,69 @@ describe('版式切换', () => {
     await waitFor(() => expect(formatButton()).not.toBeNull());
     await waitFor(() => expect(scrolled).toHaveBeenCalledTimes(2));
     expect(scrolled.mock.instances[1]).toBe(shellOf(tabByTitle('src/a.ts')));
+  });
+});
+
+describe('忽略空白', () => {
+  const SHA = 'a'.repeat(40);
+  const PATCH: DiffPayload = {
+    kind: 'text',
+    patch: 'diff --git a/src/a.ts b/src/a.ts\n',
+    full: false,
+  };
+  const readyDiff = (payload: DiffPayload): DiffRequestState => ({
+    status: 'ready',
+    rename: null,
+    options: PATCH_DEFAULTS,
+    payload,
+  });
+  const toggle = () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label="Hide whitespace changes"]');
+
+  it('git 出的补丁（diff 与 commit tab）就绪时画，排在版式按钮左边；全新增的补丁不画', async () => {
+    pinned('diff', 'src/a.ts');
+    expect(toggle()).toBeNull();
+    setDiffState('src/a.ts', readyDiff(PATCH));
+    await waitFor(() => expect(toggle()).not.toBeNull());
+    expect(toggle()?.nextElementSibling).toBe(formatButton());
+
+    // 版式按钮照画，忽略空白不画：全新增的文件没有旧侧可比
+    setDiffState('src/a.ts', readyDiff({ kind: 'untracked-text', patch: PATCH.patch }));
+    await waitFor(() => expect(toggle()).toBeNull());
+    expect(formatButton()).not.toBeNull();
+
+    openCommitEditor(SHA, 'src/b.ts', undefined, true);
+    setCommitDiffState(SHA, 'src/b.ts', readyDiff(PATCH));
+    await waitFor(() => expect(toggle()).not.toBeNull());
+  });
+
+  it('是一枚带按下态的开关，文案恒定；点一下翻全局开关并只重取活动 tab', async () => {
+    // 重取回来的仍是一份 git 补丁：桩缺省回的 binary 会让按钮随之消失
+    calls = stubJson(PATCH);
+    pinned('diff', 'src/a.ts');
+    setDiffState('src/a.ts', readyDiff(PATCH));
+    await waitFor(() => expect(toggle()?.getAttribute('aria-pressed')).toBe('false'));
+    const before = calls.length;
+
+    toggle()?.click();
+    expect(ignoreWhitespace.value).toBe(true);
+    await waitFor(() => expect(toggle()?.getAttribute('aria-pressed')).toBe('true'));
+    expect(toggle()?.getAttribute('aria-label')).toBe('Hide whitespace changes');
+    await waitFor(() => expect(calls.length).toBe(before + 1));
+    expect(calls.at(-1)).toContain('/api/diff?');
+    expect(calls.at(-1)).toContain('ignoreWhitespace=1');
+  });
+
+  it('按钮数变了活动 tab 再滚一次：从全新增的补丁切到 git 的补丁，多出忽略空白那一枚', async () => {
+    const scrolled = vi.spyOn(HTMLElement.prototype, 'scrollIntoView');
+    pinned('diff', 'src/a.ts');
+    setDiffState('src/a.ts', readyDiff({ kind: 'untracked-text', patch: PATCH.patch }));
+    // 打开一次、版式按钮挤进来一次
+    await waitFor(() => expect(scrolled).toHaveBeenCalledTimes(2));
+
+    setDiffState('src/a.ts', readyDiff(PATCH));
+    await waitFor(() => expect(toggle()).not.toBeNull());
+    await waitFor(() => expect(scrolled).toHaveBeenCalledTimes(3));
   });
 });
 

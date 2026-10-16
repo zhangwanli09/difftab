@@ -87,4 +87,10 @@ describe('countLines（全仓唯一一份行数口径）', () => {
     // 没有末尾换行时最后那截照样算一行
     expect(countLines(Buffer.from('a\nb'))).toBe(2);
   });
+
+  test('字符串（补丁正文）与 Buffer 同一个口径', () => {
+    for (const text of ['', 'a\n', 'a\nb\n', 'a\nb', '\n\n']) {
+      expect(countLines(text)).toBe(countLines(Buffer.from(text)));
+    }
+  });
 });

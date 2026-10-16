@@ -330,6 +330,11 @@ export async function runFullFlow(cwd, { env } = {}) {
       if (file.oldPath) query.set('oldPath', file.oldPath);
       const diff = await authedGet(server.port, server.token, `/api/diff?${query}`);
       diffs.push(diff);
+      // 两个补丁开关一起开再取一次：`-w` 与整份上下文那条 `--unified` 是取补丁 argv 的另两种形态，
+      // 不打一遍的话只读门禁对着从没出现过的形态通过。结果并进 `diffs`，与其余各条同样要 200
+      diffs.push(
+        await authedGet(server.port, server.token, `/api/diff?${withPatchOptions(query)}`),
+      );
       // 图片的字节是另一个端点、另一条 git 调用（`cat-file`）：payload 里有哪一侧就打哪一侧，
       // 否则白名单里那条 `cat-file` 就是一条没人走过的路
       const payload = diff.status === 200 ? JSON.parse(diff.body) : null;
@@ -393,6 +398,9 @@ export async function runFullFlow(cwd, { env } = {}) {
         if (file.oldPath) query.set('oldPath', file.oldPath);
         const diff = await authedGet(server.port, server.token, `/api/commit-diff?${query}`);
         commitDiffs.push(diff);
+        commitDiffs.push(
+          await authedGet(server.port, server.token, `/api/commit-diff?${withPatchOptions(query)}`),
+        );
         const payload = diff.status === 200 ? JSON.parse(diff.body) : null;
         if (payload?.kind !== 'image') continue;
         for (const side of ['old', 'new']) {
@@ -444,6 +452,14 @@ export async function runFullFlow(cwd, { env } = {}) {
   } finally {
     await server.stop();
   }
+}
+
+/** 同一个 query 再带上两个补丁开关（`ignoreWhitespace=1&fullContext=1`），不动原来那份。 */
+function withPatchOptions(query) {
+  const optioned = new URLSearchParams(query);
+  optioned.set('ignoreWhitespace', '1');
+  optioned.set('fullContext', '1');
+  return optioned;
 }
 
 /** 带上会话 cookie 的请求。cookie 头的构造见 `cookieHeader`。 */

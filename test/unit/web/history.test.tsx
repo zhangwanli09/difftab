@@ -15,8 +15,10 @@ import { badgesBySha, findUpstream, refBadges } from '../../../src/web/state/bad
 import {
   activeEditor,
   activeEditorPath,
+  contextOf,
   editorKey,
   editors,
+  findEditor,
   keyOf,
   openCommitEditor,
   openEditor,
@@ -44,9 +46,12 @@ import {
   activateEditor,
   activeTab,
   commitDiffStates,
+  expandContext,
+  PATCH_DEFAULTS,
   refresh,
   repoState,
   selectCommitFile,
+  toggleIgnoreWhitespace,
 } from '../../../src/web/state/store';
 import {
   actionOf,
@@ -392,7 +397,7 @@ describe('HistoryList 组件', () => {
     const calls = stubJsonBy((url) =>
       url.pathname === '/api/commit'
         ? { payload: detail }
-        : { payload: { kind: 'text', patch: 'p\n' } },
+        : { payload: { kind: 'text', patch: 'p\n', full: false } },
     );
     render(<HistoryList />, container);
     expect(calls).toEqual([]);
@@ -452,7 +457,9 @@ describe('同一时刻只有一次在途', () => {
       vi.fn(async (url: string) => {
         calls.push(url);
         await gate;
-        return new Response(JSON.stringify({ kind: 'text', patch: 'p\n' }), { status: 200 });
+        return new Response(JSON.stringify({ kind: 'text', patch: 'p\n', full: false }), {
+          status: 200,
+        });
       }),
     );
     selectCommitFile(sha(1), { path: 'a.ts', status: 'M' });
@@ -485,7 +492,7 @@ describe('commit tab', () => {
   });
 
   test('已经取到过就不再取：一次提交不可变', async () => {
-    const calls = stubJsonBy(() => ({ payload: { kind: 'text', patch: 'p\n' } }));
+    const calls = stubJsonBy(() => ({ payload: { kind: 'text', patch: 'p\n', full: false } }));
     selectCommitFile(sha(1), { path: 'a.ts', status: 'M' });
     await waitFor(() =>
       expect(commitDiffStates.value.get(editorKey('commit', 'a.ts', sha(1)))?.status).toBe('ready'),
@@ -498,7 +505,7 @@ describe('commit tab', () => {
     commitDiffStates.value = new Map([
       [
         editorKey('commit', 'a.ts', sha(2)),
-        { status: 'ready', rename: null, payload: { kind: 'binary' } },
+        { status: 'ready', rename: null, payload: { kind: 'binary' }, options: PATCH_DEFAULTS },
       ],
     ]);
     const ready = (parents: string[]) =>
@@ -520,7 +527,7 @@ describe('commit tab', () => {
     const calls = stubJsonBy(() =>
       fail
         ? { payload: { error: { code: 'internal', message: 'boom' } }, status: 500 }
-        : { payload: { kind: 'text', patch: 'p\n' } },
+        : { payload: { kind: 'text', patch: 'p\n', full: false } },
     );
     selectCommitFile(sha(1), { path: 'b.ts', oldPath: 'a.ts', status: 'R' });
     const key = editorKey('commit', 'b.ts', sha(1));
@@ -530,6 +537,71 @@ describe('commit tab', () => {
     activateEditor(editorKey('commit', 'b.ts', sha(1)));
     await waitFor(() => expect(commitDiffStates.value.get(key)?.status).toBe('ready'));
     expect(query(calls.at(-1) as string).get('oldPath')).toBe('a.ts');
+  });
+});
+
+describe('commit tab 的两个补丁开关', () => {
+  const key = editorKey('commit', 'a.ts', sha(1));
+  const stateOf = () => commitDiffStates.value.get(key);
+  const diffCalls = (calls: readonly string[]) =>
+    calls.filter((url) => url.startsWith('/api/commit-diff'));
+
+  test('切了忽略空白：照常显示旧补丁、记一笔在取；在取期间 SSE 不再发第二趟', async () => {
+    let release: (() => void) | undefined;
+    const calls = stubJsonBy(() => ({ payload: { kind: 'text', patch: 'p\n', full: false } }));
+    selectCommitFile(sha(1), { path: 'a.ts', status: 'M' });
+    await waitFor(() => expect(stateOf()?.status).toBe('ready'));
+
+    // 下一趟挂住不回：看「在取」那一段
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        calls.push(url);
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return new Response(JSON.stringify({ kind: 'text', patch: 'q\n', full: false }));
+      }),
+    );
+    toggleIgnoreWhitespace();
+    await waitFor(() => expect(diffCalls(calls)).toHaveLength(2));
+    expect(query(diffCalls(calls)[1] as string).get('ignoreWhitespace')).toBe('1');
+    // 不回退 loading：回退会把表格连同展开状态一起卸掉
+    expect(stateOf()).toMatchObject({ status: 'ready', pending: { ignoreWhitespace: true } });
+
+    activateEditor(key);
+    expect(diffCalls(calls)).toHaveLength(2);
+
+    release?.();
+    await waitFor(() =>
+      expect(stateOf()).toMatchObject({
+        status: 'ready',
+        options: { ignoreWhitespace: true, fullContext: false },
+      }),
+    );
+    expect(stateOf()).not.toHaveProperty('pending');
+    // 落地之后这一档与此刻一致：再切回来也不取
+    activateEditor(key);
+    expect(diffCalls(calls)).toHaveLength(2);
+  });
+
+  test('点开折叠行：带 fullContext=1 重取；回来的不是整份上下文就记成 unavailable', async () => {
+    const calls = stubJsonBy(() => ({ payload: { kind: 'text', patch: 'p\n', full: false } }));
+    selectCommitFile(sha(1), { path: 'a.ts', status: 'M' });
+    await waitFor(() => expect(stateOf()?.status).toBe('ready'));
+
+    expandContext(key);
+    await waitFor(() => expect(diffCalls(calls)).toHaveLength(2));
+    expect(query(diffCalls(calls)[1] as string).get('fullContext')).toBe('1');
+    await waitFor(() => expect(contextOf(findEditor(key))).toBe('unavailable'));
+
+    // 手上那份记成 3 行那一档：后端退回的正是它，再取一趟只会拿到逐字相同的补丁
+    expect(stateOf()).toMatchObject({ options: { fullContext: false } });
+    // unavailable 之后再点什么都不做；切回来也不再取
+    expandContext(key);
+    activateEditor(key);
+    expect(stateOf()?.status).toBe('ready');
+    expect(diffCalls(calls)).toHaveLength(2);
   });
 });
 
@@ -543,7 +615,7 @@ describe('refresh 对 History 那一半', () => {
     commitDiffStates.value = new Map([
       [
         editorKey('commit', 'a.ts', sha(1)),
-        { status: 'ready', rename: null, payload: { kind: 'binary' } },
+        { status: 'ready', rename: null, payload: { kind: 'binary' }, options: PATCH_DEFAULTS },
       ],
     ]);
     const calls = stubJsonBy(() => ({ payload: state }));

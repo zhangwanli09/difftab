@@ -16,21 +16,36 @@ interface EditorBase {
 }
 
 /**
+ * 一个补丁 tab 要多少上下文：`hunks` 是 3 行（起步）；`full` 是用户点开过一段折叠行，此后每次重取都
+ * 带 `fullContext=1`；`unavailable` 是带着它取回来的补丁说过不了闸，此后退回 3 行、折叠行不可点。
+ * **住在 tab 上，不住在缓存里**：缓存每次 `forget` 都会把「用户点开过」一并忘掉。`unavailable` 不会
+ * 自己回到 `full`——否则每个 SSE 都要先撞一次闸再退回；文件后来变小了要关掉重开。
+ */
+export type DiffContext = 'hunks' | 'full' | 'unavailable';
+
+/** 补丁 tab 才有的那一格。缺省即 `hunks`：新开的 tab 都从这里起，不必每个构造点都写一遍。 */
+interface PatchEditor {
+  readonly context?: DiffContext;
+}
+
+/**
  * 按 `kind` 判别的联合：`commit` 才有、且一定有 `sha`。写成「`sha?` 挂在所有种类上」时类型允许
  * 没有 sha 的 commit tab 与带 sha 的 diff tab，每个消费者只好自己挑一个判别字段去守，挑法还不一致。
  */
 export type Editor =
-  | (EditorBase & { readonly kind: 'diff' | 'file' })
-  | (EditorBase & {
-      readonly kind: 'commit';
-      /**
-       * 这个文件是哪次提交里的那一版。**单独一个字段而不是拼进 `path`**——`path` 的消费者（两栏
-       * 高亮、tab 上的名字与目录、`title`）照旧读文件路径，不必学会拆一个复合字符串。
-       */
-      readonly sha: string;
-      /** 重命名的旧路径。取补丁要带上它（只传新路径会退化成全新增），所以跟着 tab 走。 */
-      readonly oldPath?: string | undefined;
-    });
+  | (EditorBase & { readonly kind: 'file' })
+  | (EditorBase & PatchEditor & { readonly kind: 'diff' })
+  | (EditorBase &
+      PatchEditor & {
+        readonly kind: 'commit';
+        /**
+         * 这个文件是哪次提交里的那一版。**单独一个字段而不是拼进 `path`**——`path` 的消费者（两栏
+         * 高亮、tab 上的名字与目录、`title`）照旧读文件路径，不必学会拆一个复合字符串。
+         */
+        readonly sha: string;
+        /** 重命名的旧路径。取补丁要带上它（只传新路径会退化成全新增），所以跟着 tab 走。 */
+        readonly oldPath?: string | undefined;
+      });
 
 export type EditorKind = Editor['kind'];
 
@@ -207,8 +222,9 @@ export function removeEditor(key: EditorKey): Editor | null {
 }
 
 /**
- * 原地改路径（重命名跟着走）：`pinned` 不变，活动键跟着走。**新路径上已经开着一个 tab 时并入
- * 它**：幸存者保位置，`pinned` 取或，活动键移过去——两个同键的 tab 并排在栏里没有意义。
+ * 原地改路径（重命名跟着走）：`pinned` 与上下文档不变，活动键跟着走。**新路径上已经开着一个 tab
+ * 时并入它**：幸存者保位置，`pinned` 取或，上下文档取靠后的那档，活动键移过去——两个同键的 tab
+ * 并排在栏里没有意义。
  */
 export function renameEditor(kind: 'diff' | 'file', from: string, to: string): void {
   const fromKey = editorKey(kind, from);
@@ -223,9 +239,38 @@ export function renameEditor(kind: 'diff' | 'file', from: string, to: string): v
     if (survivor === undefined) {
       editors.value = replaceAt(list, index, { ...renamed, path: to });
     } else {
-      const merged: Editor = { ...survivor, pinned: survivor.pinned || renamed.pinned };
+      const pinned = survivor.pinned || renamed.pinned;
+      const merged: Editor =
+        survivor.kind === 'file'
+          ? { ...survivor, pinned }
+          : { ...survivor, pinned, context: laterContext(survivor, renamed) };
       editors.value = replaceAt(list, survivorIndex, merged).filter((_, i) => i !== index);
     }
     if (activeEditorKey.value === fromKey) activeEditorKey.value = toKey;
   });
+}
+
+/** 三档的先后：并入同名 tab 时取靠后的那个——「用户点开过」与「试过、展开不了」都不该被并没了。 */
+const CONTEXT_RANK: Record<DiffContext, number> = { hunks: 0, full: 1, unavailable: 2 };
+
+/** 按键找栏里那个 tab，不在栏里回 `undefined`。 */
+export const findEditor = (key: EditorKey): Editor | undefined =>
+  editors.value[indexOfKey(editors.value, key)];
+
+/** 一个 tab 的上下文档。不在栏里（`undefined`）与 file tab 都按 `hunks`。 */
+export const contextOf = (editor: Editor | undefined): DiffContext =>
+  editor === undefined || editor.kind === 'file' ? 'hunks' : (editor.context ?? 'hunks');
+
+function laterContext(a: Editor, b: Editor): DiffContext {
+  const [x, y] = [contextOf(a), contextOf(b)];
+  return CONTEXT_RANK[y] > CONTEXT_RANK[x] ? y : x;
+}
+
+/** 改一个补丁 tab 的上下文档。键不在栏里、是 file tab、或档位没变时什么都不做。 */
+export function setEditorContext(key: EditorKey, context: DiffContext): void {
+  const list = editors.value;
+  const index = indexOfKey(list, key);
+  const editor = list[index];
+  if (editor === undefined || editor.kind === 'file' || contextOf(editor) === context) return;
+  editors.value = replaceAt(list, index, { ...editor, context });
 }

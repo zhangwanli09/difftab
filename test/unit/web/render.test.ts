@@ -15,7 +15,8 @@
 //
 // **每条否定式断言都配一条正面断言**：什么都没画出来的时候，「没有重复 span」全都自动成立。
 
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { getHljs } from '../../../src/web/diff/hljs';
 import { type DiffLine, prepareDiff } from '../../../src/web/diff/render';
 import { MAX_WORD_DIFF_LENGTH, unifiedLines } from '../../../src/web/diff/rows';
 
@@ -134,9 +135,15 @@ beforeEach(() => {
   document.body.appendChild(host);
 });
 
+const OPTIONS = { ignoreWhitespace: false, full: false } as const;
+
+/** 照常画的那几串行（折叠段不算），按出现顺序。 */
+const hunksOf = (path: string, patch: string) =>
+  prepareDiff(path, patch, OPTIONS).flatMap((block) => (block.kind === 'lines' ? [block] : []));
+
 /** 全部行，按 hunk、组的顺序摊平（一组里先删后增）。 */
 const allLines = (path: string, patch: string): DiffLine[] =>
-  prepareDiff(path, patch).flatMap((hunk) => unifiedLines(hunk.groups));
+  hunksOf(path, patch).flatMap((hunk) => unifiedLines(hunk.groups));
 
 /** 把每行的 HTML 照 DiffView 的挂法写进 host，好用选择器数。 */
 const paint = (path: string, patch: string) => {
@@ -212,7 +219,7 @@ describe('prepareDiff', () => {
   });
 
   it('重命名的补丁是一份 hunk，正文照常（不退化成全新增）', () => {
-    const hunks = prepareDiff('src/kept-renamed.txt', RENAME_PATCH);
+    const hunks = hunksOf('src/kept-renamed.txt', RENAME_PATCH);
 
     expect(hunks).toHaveLength(1);
     // 全新增的样子是一组只有插入、没有上下文：这里两行上下文都在
@@ -222,7 +229,7 @@ describe('prepareDiff', () => {
   });
 
   it('配上对的一删一增带词级标记，多出来的那行不带', () => {
-    const [hunk] = prepareDiff('src/a.ts', TS_PATCH);
+    const [hunk] = hunksOf('src/a.ts', TS_PATCH);
     const change = hunk?.groups.find((g) => g.kind === 'change');
     if (change?.kind !== 'change') throw new Error('补丁里应当有一组改动');
 
@@ -251,5 +258,31 @@ describe('prepareDiff', () => {
     // 正面断言：这一行确实画出来了
     expect(line?.kind).toBe('delete');
     expect(line?.html).not.toMatch(/<del\b/);
+  });
+});
+
+describe('折着的行不上色', () => {
+  it('整份上下文里折起来的那几段，读到 html 之前一次 hljs 都不跑', () => {
+    const lines = Array.from({ length: 40 }, (_, i) => `const v${i + 1} = ${i + 1};`);
+    const body = lines.map((line, i) => (i === 19 ? `-${line}\n+${line} // edited` : ` ${line}`));
+    const patch = `--- a/a.ts\n+++ b/a.ts\n@@ -1,40 +1,40 @@\n${body.join('\n')}\n`;
+    const highlight = vi.spyOn(getHljs(), 'highlight');
+    try {
+      const blocks = prepareDiff('a.ts', patch, { ignoreWhitespace: false, full: true });
+      const gaps = blocks.flatMap((block) => (block.kind === 'gap' ? [block] : []));
+      expect(gaps.map((gap) => gap.lines.length)).toEqual([16, 17]);
+      // 上色留到第一次读：准备一遍什么都没高亮
+      expect(highlight).not.toHaveBeenCalled();
+
+      for (const block of blocks) {
+        if (block.kind === 'lines') for (const line of unifiedLines(block.groups)) void line.html;
+      }
+      // 可见的是改动前后各 3 行加一删一增
+      expect(highlight).toHaveBeenCalledTimes(8);
+      void gaps[0]?.lines[0]?.html;
+      expect(highlight).toHaveBeenCalledTimes(9);
+    } finally {
+      highlight.mockRestore();
+    }
   });
 });

@@ -35,7 +35,7 @@ describe('parsePatch', () => {
 `);
 
     expect(rest).toHaveLength(0);
-    expect(hunk?.header).toBe('@@ -3,3 +3,3 @@ function f() {');
+    expect(hunk).toMatchObject({ oldFirst: 3, oldCount: 3 });
     expect(hunk?.lines).toEqual([
       { kind: 'context', oldNo: 3, newNo: 3, text: 'keep' },
       { kind: 'delete', oldNo: 4, newNo: undefined, text: 'old' },
@@ -152,5 +152,22 @@ describe('wordRanges', () => {
     // 正面断言：同样的改动在不超长时是有标记的
     expect(wordRanges('a b', 'a c').deleted).not.toHaveLength(0);
     expect(wordRanges(long, `${long}c`)).toEqual({ deleted: [], inserted: [] });
+  });
+
+  it('忽略空白时缩进不算差异，两侧的下标仍各按各的原文', () => {
+    const before = '  foo(a, b)';
+    const after = '      foo(a,  c)';
+    const pick = (line: string, ranges: { start: number; end: number }[]) =>
+      ranges.map((r) => line.slice(r.start, r.end));
+
+    // 正面对照：不忽略时缩进本身就是一处差异
+    expect(pick(after, wordRanges(before, after).inserted)).toContain('      ');
+    // 两侧的空白宽度不同：共用一个偏移累加时，旧侧从第一处缩进起就整体错开、标到别的字上
+    const { deleted, inserted } = wordRanges(before, after, true);
+    // 标记里可以带着词前那个空格（`diff` 包把它算进词里），但不会落到缩进或别的字上
+    expect(pick(before, deleted).map((part) => part.trim())).toEqual(['b']);
+    expect(pick(after, inserted).map((part) => part.trim())).toEqual(['c']);
+    expect(deleted[0]?.start).toBeGreaterThan(before.indexOf(','));
+    expect(inserted[0]?.start).toBeGreaterThan(after.indexOf(','));
   });
 });

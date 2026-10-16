@@ -166,7 +166,15 @@ export interface ImageSide {
  * `/api/blob?path=&side=old|new`；`old` / `new` 为 `null` 即那一侧不存在（新增无旧、删除无新）。
  */
 export type DiffPayload =
-  | { kind: 'text'; patch: string }
+  | {
+      kind: 'text';
+      patch: string;
+      /**
+       * 补丁是不是带着整份文件作上下文。它说的是「这份补丁是什么」，不是「请求里问了什么」：
+       * `fullContext=1` 过不了闸时后端退回 3 行上下文并给 `false`，前端只认这个字段。
+       */
+      full: boolean;
+    }
   | { kind: 'untracked-text'; patch: string }
   | { kind: 'binary' }
   | { kind: 'image'; old: ImageSide | null; new: ImageSide | null }
@@ -333,6 +341,12 @@ export interface SearchFile {
  * 一份时改了一边，页面上说的就不是真的。
  */
 export const MAX_SEARCH_LINES = 2000;
+
+/**
+ * 补丁每处改动前后留几行上下文。**放在协议里**：后端把它显式写进 `--unified`，前端按同一个数推断与
+ * 重开折叠窗，两边各写一份时改了一边，折出来的位置就与 git 给的那份错开一行。
+ */
+export const DIFF_CONTEXT_LINES = 3;
 
 /**
  * `GET /api/search` 的响应体。**`truncated` 即「后面还有，没给全」**：stdout 或行数上限任一触发，

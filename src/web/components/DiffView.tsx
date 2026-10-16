@@ -7,21 +7,33 @@
 // 五个 `kind` 全部在这里分支：前端不区分 binary / too-large 来自哪条路，它拿到的就是同一个
 // 判别联合；图片那一支交给 `ImageView`。
 
-import { type ComponentChildren, Fragment } from 'preact';
-import { useLayoutEffect, useMemo, useRef } from 'preact/hooks';
+import { UnfoldVertical } from 'lucide-preact';
+import type { ComponentChildren } from 'preact';
+import { useLayoutEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { DiffPayload } from '../../server/shared/protocol';
+import type { Gap } from '../diff/fold';
 import type { LineKind } from '../diff/parse';
-import { type DiffLine, type PreparedHunk, prepareDiff } from '../diff/render';
+import { type DiffLine, type PreparedBlock, prepareDiff } from '../diff/render';
 import { splitRows, unifiedLines } from '../diff/rows';
-import { editorKey } from '../state/editors';
+import {
+  contextOf,
+  type DiffContext,
+  type EditorKey,
+  editorKey,
+  findEditor,
+} from '../state/editors';
 import { commitDetails } from '../state/history';
 import { diffOutputFormat } from '../state/layout';
 import {
   commitDiffStates,
   type DiffRequestState,
   diffStates,
+  expandContext,
+  PATCH_DEFAULTS,
+  type PatchRequest,
   type RenameInfo,
 } from '../state/store';
+import { Icon } from './Icon';
 import { ImageDiff } from './ImageView';
 
 /**
@@ -48,28 +60,78 @@ export function ErrorDetail({ message }: { message: string }) {
 /**
  * 一段 unified diff。
  *
- * **解析与上色只按 `[path, patch]` 重算**，版式不在依赖里：两种版式共用 `prepareDiff()` 的同一
- * 份结果，拖窗口跨过阈值只是换一种排法，不再重新高亮。`path` 只用来判语言（`languageOf`）。
+ * **解析与上色只按 `[path, patch, 两个选项]` 重算**，版式不在依赖里：两种版式共用 `prepareDiff()`
+ * 的同一份结果，拖窗口跨过阈值只是换一种排法，不再重新高亮。`path` 只用来判语言（`languageOf`）。
+ * 两个选项都取自**这份补丁取的时候**（请求状态里记的那一档、payload 的 `full`），不读此刻的开关。
  *
- * **整张表的 vnode 也按 `[hunks, format]` 缓存**：本组件订阅的是整个 `diffStates`，别的 tab 加
- * 载、关掉，以及每次 SSE 重取到逐字相同的补丁，都会让它重渲染。缓存命中时 Preact 拿到同一个 vnode
- * 直接跳过，不必把几万行再建一遍、比一遍。
+ * **整张表的 vnode 也按 `[blocks, format, 展开状态, 上下文档]` 缓存**：本组件订阅的是整个
+ * `diffStates`，别的 tab 加载、关掉，以及每次 SSE 重取到逐字相同的补丁，都会让它重渲染。缓存命中
+ * 时 Preact 拿到同一个 vnode 直接跳过，不必把几万行再建一遍、比一遍。
  *
  * **同一个文件拿到新补丁**（SSE 刷新）时组件留在原地，Preact 按行比对着改，滚动位置随之保留。这
  * 条路径要成立，`loadDiff` 就不能在同一个文件重新取时回退到 loading 态：一回退，子树先卸载再重
  * 挂，滚动位置随之丢失。换文件那一路走的是卸载重挂（`key` 由调用方按 path 给）。
+ *
+ * **展开了哪几段住在这里**（按每段的旧侧起始行认）：切 tab 是卸载重挂，回来时全部折起，与「滚动
+ * 位置不保留」同一个样子；整份上下文还在缓存里，再点是即时的。
  */
-function Patch({ path, patch }: { path: string; patch: string }) {
-  const hunks = useMemo(() => prepareDiff(path, patch), [path, patch]);
-  const digits = useMemo(() => maxDigits(hunks), [hunks]);
-  const format = diffOutputFormat.value;
-  const table = useMemo(
-    () =>
-      format === 'side-by-side' ? <SplitPatch hunks={hunks} /> : <UnifiedPatch hunks={hunks} />,
-    [hunks, format],
+function Patch({
+  path,
+  patch,
+  full,
+  ignoreWhitespace,
+  tab,
+}: {
+  path: string;
+  patch: string;
+  full: boolean;
+  ignoreWhitespace: boolean;
+  /** 这份补丁属于哪个 tab：上下文档住在 tab 上，手上只有 3 行上下文时点开一段要按它去取整份。 */
+  tab: EditorKey;
+}) {
+  const blocks = useMemo(
+    () => prepareDiff(path, patch, { ignoreWhitespace, full }),
+    [path, patch, ignoreWhitespace, full],
   );
-  // 没有 hunk：只改了权限位，或一个空的新文件。不是错误，也没有正文可画
-  if (hunks.length === 0) return <Notice>File without changes.</Notice>;
+  const digits = useMemo(() => maxDigits(blocks), [blocks]);
+  /**
+   * 展开了哪几段，**连同记下它们时补丁是不是按 `-w` 取的**：一段的身份是它的旧侧起始行，而 `-w`
+   * 一翻 hunk 就挪位，记着的行号会落到另一段上、让它没点就展开。所以档位对不上时一律当作全部折起
+   *——派生出来，不另起 effect 去清（effect 晚一拍，中间那一帧照样会错开）。
+   */
+  const [opened, setOpened] = useState<{ ignoreWhitespace: boolean; ids: ReadonlySet<number> }>({
+    ignoreWhitespace,
+    ids: NONE_EXPANDED,
+  });
+  const expanded = opened.ignoreWhitespace === ignoreWhitespace ? opened.ids : NONE_EXPANDED;
+  const format = diffOutputFormat.value;
+  // 在渲染体里读：理由同 `DiffView` 读 map——prop 换了而 signal 没写时 `useComputed` 会停在上一个
+  const context = contextOf(findEditor(tab));
+  const table = useMemo(() => {
+    const fold: Fold = {
+      expanded,
+      context,
+      full,
+      expand: (id) => {
+        setOpened({ ignoreWhitespace, ids: new Set(expanded).add(id) });
+        if (!full) expandContext(tab);
+      },
+    };
+    return format === 'side-by-side' ? (
+      <SplitPatch blocks={blocks} fold={fold} />
+    ) : (
+      <UnifiedPatch blocks={blocks} fold={fold} />
+    );
+  }, [blocks, format, expanded, context, full, ignoreWhitespace, tab]);
+  // 没有 hunk：只改了权限位、一个空的新文件，或忽略空白之后什么都不剩。不是错误，也没有正文可画。
+  // 只有 git 一个字节都没给（`-w` 下只改了空白）才说是空白：`-w` 下只改权限位的仍有文件头、没有 hunk
+  if (blocks.length === 0) {
+    return (
+      <Notice>
+        {ignoreWhitespace && patch === '' ? 'Only whitespace changes.' : 'File without changes.'}
+      </Notice>
+    );
+  }
   // 外面这层在两种版式之间不换：换版式、SSE 刷新都落在同一个元素里
   return (
     <div class="font-mono text-[13px] leading-5" style={{ '--diff-digits': digits }}>
@@ -78,14 +140,20 @@ function Patch({ path, patch }: { path: string; patch: string }) {
   );
 }
 
-/** 这份补丁里最大的行号有几位。行号格据此定宽，见 `NUMBER_WIDTH`。 */
-function maxDigits(hunks: readonly PreparedHunk[]): number {
+const NONE_EXPANDED: ReadonlySet<number> = new Set();
+
+/** 这份补丁里最大的行号有几位（折着的行也算：展开时格宽不该再跳）。行号格据此定宽，见 `NUMBER_WIDTH`。 */
+function maxDigits(blocks: readonly PreparedBlock[]): number {
   let max = 0;
   const see = (line: DiffLine) => {
     max = Math.max(max, line.oldNo ?? 0, line.newNo ?? 0);
   };
-  for (const hunk of hunks) {
-    for (const group of hunk.groups) {
+  for (const block of blocks) {
+    if (block.kind === 'gap') {
+      block.lines.forEach(see);
+      continue;
+    }
+    for (const group of block.groups) {
       if (group.kind === 'context') see(group.line);
       else {
         group.deleted.forEach(see);
@@ -158,32 +226,80 @@ const UNIFIED_NUMBER = `inline-block px-[0.5em] ${NUMBER_WIDTH.unified}`;
 const UNIFIED_NEW_NUMBER = `ml-[0.5em] ${UNIFIED_NUMBER}`;
 
 /**
- * 表里的一行。**`key` 跟着行号走，不跟下标**：SSE 刷新时文件开头多一行，按下标比对会让其后每一
- * 行的正文都换一遍（`innerHTML` 先序列化再解析），按行号比对时没变的行原样留着。上下文与删除行
- * 认旧行号、插入行认新行号；并排时的空位认对面那一行。
+ * 表里的一行：一行代码、并排时的空位（`line: null`），或一段折叠行。**`key` 跟着行号走，不跟下标**：
+ * SSE 刷新时文件开头多一行，按下标比对会让其后每一行的正文都换一遍（`innerHTML` 先序列化再解析），
+ * 按行号比对时没变的行原样留着。上下文与删除行认旧行号、插入行认新行号；并排时的空位认对面那一行；
+ * 折叠行认它的旧侧起始行（`g<行>`）。
  */
-interface Row {
-  key: string;
-  line: DiffLine | null;
-}
+type Row = { key: string; line: DiffLine | null } | { key: string; gap: Gap<DiffLine> };
 
 const keyOf = (line: DiffLine) =>
   line.kind === 'insert' ? `i${line.newNo}` : `${line.kind[0]}${line.oldNo}`;
 
-interface Section {
-  /** 并排时新侧传空串：hunk 头只在旧侧写一次 */
-  header: string;
-  rows: Row[];
+/** 两种版式共用的折叠状态：展开了哪几段、tab 的上下文档、这份补丁是不是整份上下文，以及点开一段。 */
+interface Fold {
+  expanded: ReadonlySet<number>;
+  context: DiffContext;
+  full: boolean;
+  expand: (id: number) => void;
 }
 
-/** 两种版式共用的表格骨架：hunk 头一行，然后逐行。行号格里画什么由调用方给。 */
+/** 这一段此刻画成什么：展开成行，或一行折叠行。展开要有正文，3 行上下文时得先等整份上下文回来。 */
+const isOpen = (gap: Gap<DiffLine>, fold: Fold) =>
+  fold.expanded.has(gap.id) && gap.lines.length > 0;
+
+/**
+ * 一行折叠行里写什么、点不点得动。**`unavailable` 时所有折叠行都只是文本**（后端说整份上下文过不了
+ * 闸）；点过、而整份上下文还没回来的那一行是 `Loading…`。
+ */
+function gapLabel(gap: Gap<DiffLine>, fold: Fold): { text: string; clickable: boolean } {
+  const lines =
+    gap.count === null
+      ? 'Show remaining lines'
+      : `${gap.count} hidden ${gap.count === 1 ? 'line' : 'lines'}`;
+  if (fold.context === 'unavailable') {
+    return {
+      text: `${gap.count === null ? 'Remaining lines' : lines} · too large to expand`,
+      clickable: false,
+    };
+  }
+  if (fold.expanded.has(gap.id) && !fold.full) return { text: 'Loading…', clickable: false };
+  return { text: lines, clickable: true };
+}
+
+/** 折叠行的正文格。**并排时只在旧侧画**，新侧那一行留空占高（`h-5` 来自行号槽）。 */
+function GapCell({ gap, fold }: { gap: Gap<DiffLine>; fold: Fold }) {
+  const { text, clickable } = gapLabel(gap, fold);
+  const body = (
+    <>
+      <Icon icon={UnfoldVertical} size={14} />
+      {text}
+    </>
+  );
+  // 整宽的 `<button>`：正文格里哪儿都点得到，键盘也够得着。悬停时字色升到正文色，告诉人这一行能点
+  return clickable ? (
+    <button
+      type="button"
+      onClick={() => fold.expand(gap.id)}
+      class="flex w-full items-center gap-1.5 text-left hover:text-editor-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus-border"
+    >
+      {body}
+    </button>
+  ) : (
+    <span class="flex items-center gap-1.5">{body}</span>
+  );
+}
+
+/** 两种版式共用的表格骨架：逐行，折叠行在其间。行号格里画什么由调用方给。 */
 function PatchTable({
-  sections,
+  rows,
+  fold,
   cells,
   numbers,
   side,
 }: {
-  sections: Section[];
+  rows: Row[];
+  fold: Fold;
   cells: (typeof CELLS)[keyof typeof CELLS];
   numbers: (line: DiffLine) => ComponentChildren;
   side?: 'old' | 'new';
@@ -191,35 +307,32 @@ function PatchTable({
   return (
     <table data-diff-side={side} class={TABLE}>
       <tbody>
-        {sections.map((section, i) => (
-          <Fragment key={i}>
-            <tr data-line="hunk">
+        {rows.map((row) =>
+          'gap' in row ? (
+            <tr key={row.key} data-line="hunk">
               <td class={cells.gutter} />
-              <td class={cells.code}>{section.header}</td>
+              <td class={cells.code}>{side !== 'new' && <GapCell gap={row.gap} fold={fold} />}</td>
             </tr>
-            {section.rows.map(({ key, line }) =>
-              line ? (
-                <tr key={key} data-line={line.kind}>
-                  <td class={cells.gutter}>{numbers(line)}</td>
-                  {/* 前缀 `select-none`，复制出来的是代码本身 */}
-                  <td class={cells.code}>
-                    <span class="select-none">{PREFIX[line.kind]}</span>
-                    <span
-                      data-code
-                      class={line.language ? `hljs ${line.language}` : 'hljs'}
-                      dangerouslySetInnerHTML={{ __html: line.html }}
-                    />
-                  </td>
-                </tr>
-              ) : (
-                <tr key={key} data-line="empty">
-                  <td class={cells.gutter} />
-                  <td class={cells.code} />
-                </tr>
-              ),
-            )}
-          </Fragment>
-        ))}
+          ) : row.line ? (
+            <tr key={row.key} data-line={row.line.kind}>
+              <td class={cells.gutter}>{numbers(row.line)}</td>
+              {/* 前缀 `select-none`，复制出来的是代码本身 */}
+              <td class={cells.code}>
+                <span class="select-none">{PREFIX[row.line.kind]}</span>
+                <span
+                  data-code
+                  class={row.line.language ? `hljs ${row.line.language}` : 'hljs'}
+                  dangerouslySetInnerHTML={{ __html: row.line.html }}
+                />
+              </td>
+            </tr>
+          ) : (
+            <tr key={row.key} data-line="empty">
+              <td class={cells.gutter} />
+              <td class={cells.code} />
+            </tr>
+          ),
+        )}
       </tbody>
     </table>
   );
@@ -234,24 +347,33 @@ const unifiedNumbers = (line: DiffLine) => (
 const oldNumber = (line: DiffLine) => line.oldNo;
 const newNumber = (line: DiffLine) => line.newNo;
 
+/** 一段折叠行在表里占的行：展开了就是那几行上下文，否则一行折叠行。两种版式共用。 */
+const gapRows = (gap: Gap<DiffLine>, fold: Fold): Row[] =>
+  isOpen(gap, fold)
+    ? gap.lines.map((line) => ({ key: keyOf(line), line }))
+    : [{ key: `g${gap.id}`, gap }];
+
 /**
  * 逐行版式：一张表，行号槽里新旧两个号并列。外层自己横向滚动（不交给 `Panel`），让改名标注之类
  * 排在补丁上面的东西不跟着横滚出去。
  */
-function UnifiedPatch({ hunks }: { hunks: PreparedHunk[] }) {
-  const sections = hunks.map((hunk) => ({
-    header: hunk.header,
-    rows: unifiedLines(hunk.groups).map((line) => ({ key: keyOf(line), line })),
-  }));
+function UnifiedPatch({ blocks, fold }: { blocks: PreparedBlock[]; fold: Fold }) {
+  const rows = blocks.flatMap((block): Row[] => {
+    if (block.kind === 'lines') {
+      return unifiedLines(block.groups).map((line) => ({ key: keyOf(line), line }));
+    }
+    return gapRows(block, fold);
+  });
   return (
     <div data-diff-layout="line-by-line" class="overflow-x-auto">
-      <PatchTable sections={sections} cells={CELLS.unified} numbers={unifiedNumbers} />
+      <PatchTable rows={rows} fold={fold} cells={CELLS.unified} numbers={unifiedNumbers} />
     </div>
   );
 }
 
 /**
  * 并排版式：左旧右新两张表，各自是一个横向滚动容器，行数相同、行高相同，于是竖直方向天然对齐。
+ * 折叠行两侧各占一行，文案与按钮只在旧侧。
  *
  * **两侧横向联动**：横滚一侧看长行时另一侧跟到同一个 `scrollLeft`，否则同一行的新旧内容错开成两
  * 个列位置——并排存在的理由正好在需要横滚时失效。**与 diff2html 的 `synchronisedScroll` 同语义、
@@ -259,20 +381,23 @@ function UnifiedPatch({ hunks }: { hunks: PreparedHunk[] }) {
  * 之后继续正常滚。两个元素在本组件挂着期间不换（换版式是卸载），监听器只绑一次；用 layout
  * effect 是为了与元素同一次提交就绑上，中间没有一帧「滚了不跟」。
  */
-function SplitPatch({ hunks }: { hunks: PreparedHunk[] }) {
-  const left: Section[] = [];
-  const right: Section[] = [];
-  for (const hunk of hunks) {
-    const rows = splitRows(hunk.groups);
-    // 空位认对面那一行的 key：它就是为那一行占的位
-    const side = (pick: (row: (typeof rows)[number]) => DiffLine | null) =>
-      rows.map((row) => {
-        const line = pick(row);
-        const anchor = (row.left ?? row.right) as DiffLine;
-        return { key: line ? keyOf(line) : `e${keyOf(anchor)}`, line };
-      });
-    left.push({ header: hunk.header, rows: side((row) => row.left) });
-    right.push({ header: '', rows: side((row) => row.right) });
+function SplitPatch({ blocks, fold }: { blocks: PreparedBlock[]; fold: Fold }) {
+  const left: Row[] = [];
+  const right: Row[] = [];
+  for (const block of blocks) {
+    if (block.kind === 'gap') {
+      // 上下文行与折叠行两侧各占一行、同一个 key；折叠行的文案只在旧侧画（`PatchTable` 按 `side` 判）
+      const rows = gapRows(block, fold);
+      left.push(...rows);
+      right.push(...rows);
+      continue;
+    }
+    for (const row of splitRows(block.groups)) {
+      // 空位认对面那一行的 key：它就是为那一行占的位
+      const anchor = (row.left ?? row.right) as DiffLine;
+      left.push({ key: row.left ? keyOf(row.left) : `e${keyOf(anchor)}`, line: row.left });
+      right.push({ key: row.right ? keyOf(row.right) : `e${keyOf(anchor)}`, line: row.right });
+    }
   }
   const leftRef = useRef<HTMLDivElement>(null);
   const rightRef = useRef<HTMLDivElement>(null);
@@ -301,10 +426,10 @@ function SplitPatch({ hunks }: { hunks: PreparedHunk[] }) {
   return (
     <div data-diff-layout="side-by-side" class="flex">
       <div ref={leftRef} class={half}>
-        <PatchTable sections={left} cells={CELLS.split} numbers={oldNumber} side="old" />
+        <PatchTable rows={left} fold={fold} cells={CELLS.split} numbers={oldNumber} side="old" />
       </div>
       <div ref={rightRef} class={`${half} border-l border-panel-border`}>
-        <PatchTable sections={right} cells={CELLS.split} numbers={newNumber} side="new" />
+        <PatchTable rows={right} fold={fold} cells={CELLS.split} numbers={newNumber} side="new" />
       </div>
     </div>
   );
@@ -404,15 +529,30 @@ function Payload({
   path,
   payload,
   sha,
+  options,
+  tab,
 }: {
   path: string;
   payload: DiffPayload;
   sha?: string | undefined;
+  options: PatchRequest;
+  tab: EditorKey;
 }) {
+  const patch = (text: string, full: boolean) => (
+    <Patch
+      path={path}
+      patch={text}
+      full={full}
+      ignoreWhitespace={options.ignoreWhitespace}
+      tab={tab}
+    />
+  );
   switch (payload.kind) {
     case 'text':
+      return patch(payload.patch, payload.full);
+    // 未跟踪的补丁按构造就是整份文件
     case 'untracked-text':
-      return <Patch path={path} patch={payload.patch} />;
+      return patch(payload.patch, true);
     case 'binary':
       return <Notice>Binary file — contents are not compared.</Notice>;
     case 'image':
@@ -431,7 +571,13 @@ function Payload({
 export function DiffView({ path }: { path: string }) {
   // 缓存里没有这一项就按加载中画：`openEditor` 与写 loading 在同一个同步 tick 里，产品里到不了，
   // 兜底只为让组件对每个状态都有答案
-  return <DiffBody path={path} state={diffStates.value.get(path) ?? LOADING} />;
+  return (
+    <DiffBody
+      path={path}
+      state={diffStates.value.get(path) ?? LOADING}
+      tab={editorKey('diff', path)}
+    />
+  );
 }
 
 /**
@@ -440,11 +586,12 @@ export function DiffView({ path }: { path: string }) {
  * 展开的那一列点出来，详情必然在；万一不在（不该发生）就按普通提交处理。
  */
 export function CommitDiffView({ sha, path }: { sha: string; path: string }) {
-  const state = commitDiffStates.value.get(editorKey('commit', path, sha)) ?? LOADING;
+  const key = editorKey('commit', path, sha);
+  const state = commitDiffStates.value.get(key) ?? LOADING;
   const detail = commitDetails.value.get(sha);
   const merge = detail?.status === 'ready' && detail.detail.parents.length > 1;
   return (
-    <DiffBody path={path} state={state} sha={sha}>
+    <DiffBody path={path} state={state} sha={sha} tab={key}>
       {merge && (
         <p class="border-b border-panel-border px-4 py-1 text-xs text-description-foreground">
           Merge commit · compared with first parent
@@ -454,17 +601,19 @@ export function CommitDiffView({ sha, path }: { sha: string; path: string }) {
   );
 }
 
-const LOADING: DiffRequestState = { status: 'loading', rename: null };
+const LOADING: DiffRequestState = { status: 'loading', rename: null, options: PATCH_DEFAULTS };
 
 function DiffBody({
   path,
   state,
   sha,
+  tab,
   children,
 }: {
   path: string;
   state: DiffRequestState;
   sha?: string;
+  tab: EditorKey;
   children?: ComponentChildren;
 }) {
   return (
@@ -482,7 +631,9 @@ function DiffBody({
       )}
       {/* 换文件走的是卸载重挂——`App` 按 tab 键给本组件 `key`，本组件挂着期间 `path` 不会变，
           一个文件的表格因此不会就地改画成另一个文件的 */}
-      {state.status === 'ready' && <Payload path={path} payload={state.payload} sha={sha} />}
+      {state.status === 'ready' && (
+        <Payload path={path} payload={state.payload} sha={sha} options={state.options} tab={tab} />
+      )}
     </Panel>
   );
 }

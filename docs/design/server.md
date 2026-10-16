@@ -71,13 +71,13 @@
 |---|---|---|
 | `GET /` | `dist/web` 静态资源 | 固定文件名不加 hash |
 | `GET /api/state` | `{ repoName, branch, files, watch }` | 对应**单次** status 调用 |
-| `GET /api/diff?path=&oldPath=` | `DiffPayload` | 按文件懒加载；`oldPath` 仅重命名条目传 |
+| `GET /api/diff?path=&oldPath=&ignoreWhitespace=1&fullContext=1` | `DiffPayload` | 按文件懒加载；`oldPath` 仅重命名条目传；后两个开关缺省即关，**只认 `1`、其余值 400** |
 | `GET /api/tree?path=` | `TreePayload` | **按目录懒加载**，一次只回一层；`path` 缺省即仓库根 |
 | `GET /api/file?path=` | `FilePayload` | 单个文件的只读内容 |
 | `GET /api/blob?path=&side=old\|new&commit=` | 图片字节 | **只服务图片扩展名表里的路径**；`old` 读 diff 基准、`new` 读工作区；**带 `commit` 时两侧都读对象库**（第一父 / 该提交） |
 | `GET /api/commits?head=&skip=` | `CommitPage` | 一页 50 条；`head` 缺省即从 HEAD 起并回传锚点 |
 | `GET /api/commit?sha=` | `CommitDetail` | 一次提交的元数据 + 改了哪些文件 |
-| `GET /api/commit-diff?sha=&path=&oldPath=` | `DiffPayload` | 相对第一父，三道闸与 `/api/diff` 同一套 |
+| `GET /api/commit-diff?sha=&path=&oldPath=&ignoreWhitespace=1&fullContext=1` | `DiffPayload` | 相对第一父，三道闸与两个开关都与 `/api/diff` 同一套 |
 | `GET /api/refs` | `RefList` | 本地分支、远程分支、标签，无参数 |
 | `GET /api/files` | `FileList` | Quick Open 用的全仓文件路径（已跟踪 + 未跟踪，不含被忽略的与 submodule），无参数 |
 | `GET /api/search?q=&case=1&word=1` | `SearchPayload` | 全仓字面量搜索；`q` 必填、≤ 1,000 字符、不得含 `\n` / `\r` / `\0`，否则 400 |
@@ -89,6 +89,8 @@
 - `FileEntry { path; oldPath?; kind: 'tracked' | 'untracked'; staged; unstaged; conflicted? }`——**`conflicted` 是「这条来自 `u` 记录」这一事实本身**，不从状态位推：`DD` / `AA` 都不是 `U`，归属留给前端等于让它重写一遍 porcelain 的记录类型。
 - `BranchState { head; detached; upstream: null | { name; ahead; behind }; oid?; operation? }`——`oid` 是 HEAD 指向的提交（缺省即未出生），前端拿它判提交列表要不要重取。**`upstream: null` 即「无上游」**，编码进类型前端就漏不掉；`name` 供 History 在 `/api/refs` 里找上游。`operation` 缺省即没有进行中的操作。
 - `DiffPayload` 为判别联合：`text` / `binary` / `image { old, new }` / `too-large { size, reason: 'size' | 'lines' }` / `untracked-text`。
+  - **`text` 带 `full: boolean`**：`true` 即补丁带着整份文件作上下文。它回答的是「这份补丁是什么」，不是「请求里问了什么」——`fullContext=1` 过不了闸时后端退回 3 行上下文并给 `false`（判据在 [`git.md`](git.md)），前端只认这个字段，不拿自己发出去的参数推。`untracked-text` 不带：它按构造就是整份文件。
+  - **开关值只认 `1`、其余值 400**，与 `/api/search` 的 `case` / `word`（非 `1` 即关）刻意不同：唯一的调用方是前端，写成 `true` 的笔误在宽松解析下是一个静默不生效的开关。
   - **`too-large` 必须带 `reason`**：两个触发口，只带 `size` 时行数那一路可能只有几百 KB，前端会说出「文件过大（0 MB）」。
   - **`size` 只用于展示，可以是 0**（已删除的文件）：前端此时不显示体积，不编一个数出来。
   - **`image` 只带元数据，字节走 `/api/blob`**：`old` / `new` 各是 `ImageSide { path; size; version } | null`。`version` 是内容身份，前端只比对不解读；`path` 由后端填好（重命名旧侧是 `oldPath`），前端不自己拼。不内联 base64：大 33% 且没法按侧懒加载。

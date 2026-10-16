@@ -16,7 +16,13 @@ import { App } from '../../../src/web/components/App';
 import { TREE_SCOPE } from '../../../src/web/components/tree-row';
 import { changeView } from '../../../src/web/state/change-tree';
 import { activeEditorKey, editors } from '../../../src/web/state/editors';
-import { activeTab, diffStates, fileStates, repoState } from '../../../src/web/state/store';
+import {
+  activeTab,
+  diffStates,
+  fileStates,
+  PATCH_DEFAULTS,
+  repoState,
+} from '../../../src/web/state/store';
 import { PRODUCT_NAME } from '../../../src/web/state/title';
 import { expandedDirs, ROOT, treeCache, treeErrors } from '../../../src/web/state/tree';
 import { hideHistory, openPinned, resetEditors, waitFor } from './helpers';
@@ -64,7 +70,7 @@ const section = () => container.querySelector('section');
 function openBinaryDiff(path: string): void {
   openPinned('diff', path);
   diffStates.value = new Map([
-    [path, { status: 'ready', rename: null, payload: { kind: 'binary' } }],
+    [path, { status: 'ready', rename: null, payload: { kind: 'binary' }, options: PATCH_DEFAULTS }],
   ]);
 }
 
@@ -413,6 +419,7 @@ describe('右侧面板', () => {
     diffStates.value = new Map(diffStates.value).set('src/b.ts', {
       status: 'ready',
       rename: null,
+      options: PATCH_DEFAULTS,
       payload: { kind: 'binary' },
     });
     activeEditorKey.value = 'diff:src/a.ts';
@@ -428,6 +435,7 @@ describe('右侧面板', () => {
     diffStates.value = new Map(diffStates.value).set('src/b.ts', {
       status: 'ready',
       rename: null,
+      options: PATCH_DEFAULTS,
       payload: { kind: 'too-large', size: 0, reason: 'size' },
     });
     await waitFor(() => expect(section()?.textContent).toContain('Diff too large'));
