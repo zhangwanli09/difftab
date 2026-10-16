@@ -75,6 +75,23 @@ jobs:
             grep -vE '^\s*(#|$)' .npmrc | grep -vE '^(registry|@[^:]+:registry|//)' && { echo '.npmrc contains settings other than registry/auth'; exit 1; } || true
           fi
 
+      # ruleset 只要求 gates-passed 这一个检查，所以它的 needs 必须恰好是其余全部作业。
+      # 新增一个作业却忘了列进去时，那个作业红了也挡不住合并，而且什么都不会响。
+      # 先断言确实解析出了不止一个作业：正则一旦失配，两边都是空表，照样「相等」。
+      - name: gates-passed needs every other job
+        run: |
+          node -e '
+            const y = require("fs").readFileSync(".github/workflows/ci.yml", "utf8");
+            const jobs = [...y.slice(y.indexOf("\njobs:")).matchAll(/^  ([a-z][a-z0-9-]*):\s*$/gm)].map((m) => m[1]);
+            const i = y.indexOf("\n  gates-passed:");
+            const m = i < 0 ? null : y.slice(i).match(/^    needs: \[([^\]]*)\]/m);
+            if (jobs.length < 2 || !m) { console.error("FAIL could not find the jobs or gates-passed needs in ci.yml"); process.exit(1); }
+            const needs = m[1].split(",").map((s) => s.trim()).sort().join(" ");
+            const want = jobs.filter((j) => j !== "gates-passed").sort().join(" ");
+            if (needs !== want) { console.error(`FAIL gates-passed needs [${needs}], expected [${want}]`); process.exit(1); }
+            console.log(`PASS gates-passed needs ${want}`);
+          '
+
       - run: pnpm exec biome ci
       - run: pnpm run typecheck
       - run: pnpm run test
@@ -303,3 +320,20 @@ jobs:
           case "$err" in *SyntaxError*) echo 'FAIL crashed at parse time; the guard never got to run'; exit 1;; esac
           case "$err" in *'requires Node.js'*) ;; *) echo 'FAIL no friendly message printed'; exit 1;; esac
           echo 'PASS version guard works as expected on a real old Node'
+
+  # 唯一被 ruleset 设为 required 的检查。只要求这一个名字，矩阵改档位、作业改名时就不用
+  # 去同步 ruleset；代价是它的 needs 必须列全，由 build 档的那一步断言兜着。
+  #
+  # 用 !cancelled() 而不是 always()：被 concurrency 顶掉的旧运行不必再亮一个红叉，
+  # 它自己是 cancelled，同样不算通过。任何一个依赖不是 success（含 skipped）都算红。
+  gates-passed:
+    name: all gates passed
+    if: ${{ !cancelled() }}
+    needs: [build, matrix, inotify-quota, global-install, old-node-guard]
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          echo "$NEEDS" | jq -e 'all(.[]; .result == "success")' > /dev/null

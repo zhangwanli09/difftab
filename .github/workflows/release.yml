@@ -3,9 +3,9 @@ name: Release
 # 合并 release-please 开出的 release PR 即发版：本 workflow 打 tag、建 GitHub Release、
 # 更新 CHANGELOG.md，再在 release commit 上复跑整份 CI，全绿才发 npm。
 #
-# 复跑那一步不能省：release PR 由 GITHUB_TOKEN 创建，GitHub 不为它触发 pull_request
-# workflow，于是那份 PR 上一个检查都没有；三平台冒烟矩阵只在这里才会对发出去的那个
-# commit 跑一遍。
+# 复跑那一步不能省：release PR 上的 CI 跑的是 PR 的 head，而被打 tag 的是合并后新生成的
+# squash 提交，两者之间若有别的 PR 落进 main，内容就不一样了。三平台冒烟矩阵只有在这里
+# 才会对发出去的那个 commit 跑一遍。
 
 on:
   push:
@@ -23,6 +23,12 @@ concurrency:
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    # 作业级 permissions 会整份替换工作流级的那份，所以前三项要重新列一遍
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: write # 下面派发 CI 用
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       # 被打 tag 的那个提交。它不一定是本次运行的 github.sha：合并 release PR 那次运行若在
@@ -32,6 +38,18 @@ jobs:
     steps:
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         id: release
+
+      # release PR 由 GITHUB_TOKEN 创建和更新，GitHub 不为它触发 pull_request，PR 上一个检查
+      # 都没有，ruleset 要求的「all gates passed」也就永远等不到。GITHUB_TOKEN 发起的
+      # workflow_dispatch 是这条限制的例外：在 release 分支上派发一次 CI，检查结果按 commit
+      # 挂到 PR 的 head 上。PR 没有变化时 release-please 不输出 pr，head 没动，上一次的
+      # 结果仍然有效。
+      - name: run CI on the release PR
+        if: ${{ steps.release.outputs.pr }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ fromJSON(steps.release.outputs.pr || '{}').headBranchName }}
+        run: gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$BRANCH"
 
   gates:
     needs: release-please

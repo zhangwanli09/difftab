@@ -12,7 +12,7 @@
   - **因此每条设置都要一次正面对照**：当年的 `publishBranch: main` 是这么验的——它直接过检查并打印 `📦 name@version → <registry>`，改成 `release` 后同一条命令停在分支确认上，**即那个 camelCase 键确实被读到了**。没有对照时「没报错」与「设置生效了」长得一模一样。
   - **`pnpm publish` 不再委托 npm CLI**（`login` / `view` 等同理），于是它**不认 npm 的登录态**，而那时的报错完全不像认证问题：`npm whoami` 有回应、`~/.npmrc` 里有 `_authToken`，`pnpm publish` 仍回 `[E404] 404 Not Found - PUT …`——**npm 对「不允许的写」在包还不存在时回 404 而不是 403**。判据是 `pnpm whoami`；补 `pnpm login` 之后错误换成 `ERR_PNPM_OTP_NON_INTERACTIVE`，那条才说实话。它另自带 git 检查、照常执行 `prepublishOnly`，2FA 为 `auth-and-writes` 时无法非交互跑。
   - **manifest obfuscation 的实测范围比想象的窄**：剥掉的只有 `packageManager` 与 `prepublishOnly` 两项，其余 `scripts` 与整份 `devDependencies` 原样发布。现在改由 `npm publish` 发，这两项会随包发出——无害，用户侧不读它们。
-- **发布由 release-please + npm trusted publishing 承担**（`.github/workflows/release.yml`）：合并 release PR 即打 tag、建 Release、写 `CHANGELOG.md`，再复跑整份 `ci.yml` 后经 OIDC 发布，无 token、无 OTP。**复跑不能省**：release PR 由 `GITHUB_TOKEN` 创建，GitHub 不为它触发 `pull_request` workflow，那份 PR 上一个检查都没有；不复跑时三平台冒烟对要发出去的 commit 一次都没跑过。用 `npm publish` 是因为 trusted publishing 走 npm CLI（≥ 11.5.1），而 pnpm 不委托 npm、拿不到这层鉴权。
+- **发布由 release-please + npm trusted publishing 承担**（`.github/workflows/release.yml`）：合并 release PR 即打 tag、建 Release、写 `CHANGELOG.md`，再复跑整份 `ci.yml` 后经 OIDC 发布，无 token、无 OTP。**复跑不能省**：release PR 由 `GITHUB_TOKEN` 创建，GitHub 不为它触发 `pull_request` workflow，它上面的检查是 `release.yml` 用 `workflow_dispatch` 在 release 分支上补跑的，测的是 PR 的 head；被打 tag 的是合并时新生成的 squash 提交，中间有别的 PR 落进 main 时两者内容不同，不复跑时三平台冒烟对要发出去的 commit 一次都没跑过。用 `npm publish` 是因为 trusted publishing 走 npm CLI（≥ 11.5.1），而 pnpm 不委托 npm、拿不到这层鉴权。
 
 ## 被排除的做法
 
