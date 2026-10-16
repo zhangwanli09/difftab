@@ -137,5 +137,5 @@ Vite dev server 在 `localhost:5173`，后端在 `127.0.0.1:<随机端口>`，�
    - **判定必须要求每个依赖都是 success**：只排除 failure 的话，skipped 的依赖被当成绿的。
 
    另有一条是响的：**它的显示名就是 ruleset 里的那个字符串**，改了名所有 PR 都会卡在「等待检查」。
-6. **release PR 上的 required check 要手动批准才会跑**：release PR 由 `GITHUB_TOKEN` 创建，它的 `pull_request` 运行停在 `action_required`，PR 上一个检查都没有，ruleset 就挡着它。合并前由维护者批准（或在 Actions 里重跑）PR 最新 commit 上停住的那两次运行，`ci.yml` 与 `pr-title.yml` 才会跑出那两个 required check；每次发版做一次，步骤写在 `RELEASING.md`。
+6. **release PR 上的 required check 要手动批准才会跑**：release PR 由 `GITHUB_TOKEN` 创建，它的 `pull_request` 运行停在 `action_required`，PR 上一个检查都没有，ruleset 就挡着它。合并前由维护者批准（或在 Actions 里重跑）PR 最新 commit 上停住的那两次运行，`ci.yml` 与 `pr-title.yml` 才会跑出那两个 required check；要在合并前一刻做：之后每有 PR 落进 main，release-please 都会更新 release PR，新 commit 上的运行又得批准一次。步骤写在 `RELEASING.md`。
 7. **PR 标题校验单列一个 workflow（`pr-title.yml`），不进 `ci.yml`**：标题改了只触发 `edited`，给 `ci.yml` 加上这个类型，改一下 PR 描述就会把三平台矩阵整套重跑一遍。它成立的前提是仓库设置 `squash_merge_commit_title = PR_TITLE`——设成 `COMMIT_OR_PR_TITLE` 时，单提交 PR 落到 main 的是那个提交的 subject，校验 PR 标题就校验错了对象，而且没有任何东西会响。标题经 `env` 传入、不直接插进 `run:`（`${{ }}` 是在 shell 解析之前做的文本替换，直接插进去就是脚本注入）。它也是 required check，只有 `pull_request` 一个触发入口。

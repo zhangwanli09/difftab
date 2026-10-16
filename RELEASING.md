@@ -20,10 +20,11 @@ The release PR is opened with `GITHUB_TOKEN`, so its `pull_request` runs wait fo
 approval: they show up as "action required" and the PR has no checks until then. **Before
 merging the release PR, approve those runs** ("Approve and run workflows" on the PR, or
 re-run the waiting CI and PR title runs from the Actions tab) and wait for the two
-required checks. Only the runs on the PR's latest commit matter, so this is done once per
-release. The re-run before publishing is still not redundant: the PR's CI tested the PR
-head, while the tag lands on the squash commit created at merge time, and the two differ
-if another PR merged in between.
+required checks. Do this right before merging: every PR that lands on `main` afterwards
+makes release-please update the release PR, and the runs on the new commit wait for
+approval again. The re-run before publishing is still not redundant: a `pull_request` run
+tests the PR merged into `main` as `main` was when the run started, while the tag lands on
+the squash commit created at merge time, and the two differ if `main` moved in between.
 
 ## Versioning
 

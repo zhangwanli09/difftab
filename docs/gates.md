@@ -46,7 +46,7 @@
 | `pnpm check:inotify` | Linux 上压低 `fs.inotify.max_user_watches` 至 ENOSPC 后没能降级。**不进冒烟套件**，非 Linux 直接 SKIP | 专用作业（ubuntu，需免密 sudo） |
 | old-node-guard | 低于下限的 Node 上拿到的是 `SyntaxError` 而不是友好提示。**单列一档**，因为 build 与 matrix 都跑在 ≥22 上，解析期失败那条路径在那里永远测不到。**只跑 ubuntu + windows**：那句提示丢不丢只在 Windows 上看得见，macOS 与 ubuntu 同属 POSIX 的同一种行为 | 专用作业（Node 20 × 两平台） |
 | 只读性门禁确实进了调用参数 | `readonly.test.js` / `readonly-git-dir.test.js` 被改名、搬走、误删，或那条 glob 在某个平台上没展开到它们——两种都让「只读承诺的唯一自动化保护」变成一个什么都没跑的绿勾（`node --test` 一个文件都没匹配上时是 0 用例、exit 0）。判据与为什么不数用例数，见 `design/build.md` 的「CI 分层」 | matrix |
-| 发布前复跑整份 CI（`release.yml` 的 `gates` 作业） | 发出去的那个 commit 从没跑过三平台冒烟：release PR 上的 CI 跑的是 PR 的 head，被打 tag 的却是合并时新生成的 squash 提交，中间有别的 PR 落进 main 时两者内容不同。`publish` 依赖它，红了不发 | 发布 workflow（`workflow_call` 调 `ci.yml`） |
+| 发布前复跑整份 CI（`release.yml` 的 `gates` 作业） | 发出去的那个 commit 从没跑过三平台冒烟：release PR 上的 `pull_request` 运行测的是「PR 合进运行开始时的 main」，被打 tag 的却是合并时新生成的 squash 提交，那之后 main 若又动过，两者内容不同。`publish` 依赖它，红了不发 | 发布 workflow（`workflow_call` 调 `ci.yml`） |
 | ruleset 的 required check `all gates passed` | CI 红着也能合进 main。它来自汇总作业 `gates-passed`，**它自己写错时没有门禁**：`needs` 漏列作业、`if` 不是 `always()`、不再要求依赖全为 success，三种都静默放行（被跳过的作业对 required check 而言算通过）。改 `ci.yml` 时的规则与 release PR 怎么拿到检查，见 `design/build.md` 的「CI 分层」 | ruleset |
 | PR 标题格式（`pr-title.yml`） | PR 标题不符合 Conventional Commits。squash 的 subject 取 PR 标题，release-please 读的就是它；格式不对时**不报错，只是这次改动从 CHANGELOG 和版本号里静默漏掉**。它是 required check | 专用 workflow + ruleset |
 | 后端产物 import 检查 | 后端引了标准库以外的模块（断言 `dist/server/main.js` 的 import 说明符全部以 `node:` 开头） | matrix |

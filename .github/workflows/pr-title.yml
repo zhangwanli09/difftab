@@ -28,15 +28,17 @@ jobs:
           TITLE: ${{ github.event.pull_request.title }}
         run: |
           types='feat|fix|docs|refactor|perf|test|build|ci|chore'
-          re="^($types)(\\([a-z0-9-]+\\))?!?: [^ ](.*[^.])?\$"
-          if [[ $TITLE =~ $re ]]; then
+          re="^($types)(\\([a-z0-9-]+\\))?!?: [^ ](.*[^. ])?\$"
+          # 标题原样进 CHANGELOG.md，而它按约定是英文：可打印 ASCII 以外的字节一律不收
+          if [[ $TITLE =~ $re ]] && ! printf '%s' "$TITLE" | LC_ALL=C grep -q '[^ -~]'; then
             echo "OK: $TITLE"
             exit 0
           fi
           echo "::error::PR title is not a Conventional Commits subject: $TITLE"
           echo "Expected: <type>(<scope>)!: <description>"
           echo "  type: ${types//|/ | }"
-          echo "  scope and ! are optional; scope is lowercase; no trailing period"
+          echo "  scope and ! are optional; scope is lowercase; no trailing period or space"
+          echo "  English, printable ASCII only: the title goes into CHANGELOG.md verbatim"
           echo "  write a revert as an ordinary change, e.g. fix(web): revert the folded diff lines"
           echo "The title becomes the commit subject on main; release-please reads it for CHANGELOG.md."
           exit 1

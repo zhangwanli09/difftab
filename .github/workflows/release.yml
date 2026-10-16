@@ -3,9 +3,9 @@ name: Release
 # 合并 release-please 开出的 release PR 即发版：本 workflow 打 tag、建 GitHub Release、
 # 更新 CHANGELOG.md，再在 release commit 上复跑整份 CI，全绿才发 npm。
 #
-# 复跑那一步不能省：release PR 上的 CI 跑的是 PR 的 head，而被打 tag 的是合并后新生成的
-# squash 提交，两者之间若有别的 PR 落进 main，内容就不一样了。三平台冒烟矩阵只有在这里
-# 才会对发出去的那个 commit 跑一遍。
+# 复跑那一步不能省：release PR 上的 pull_request 运行测的是「PR 合进运行开始时的 main」，
+# 而被打 tag 的是合并时新生成的 squash 提交，那之后 main 若又动过，内容就不一样了。三平台
+# 冒烟矩阵只有在这里才会对发出去的那个 commit 跑一遍。
 
 on:
   push:
