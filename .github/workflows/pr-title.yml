@@ -13,9 +13,9 @@ on:
 
 permissions: {}
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+# 不设 concurrency：它是 required check，而 GitHub 认同一 commit 上最新的那次运行。push 后
+# 紧接着改 PR 描述时，两次运行相隔一秒，cancel-in-progress 会把其中一次取消，取消的那次
+# 若是最新的，PR 就被挡住，直到手动重跑。这一跑只要几秒，取消旧运行省不下任何东西。
 
 jobs:
   conventional:
