@@ -184,7 +184,7 @@ if (hljsRules.length > 0 && d2hRules.length > 0) {
 
 // --- 2b. 覆写 --d2h-* 的块必须 unlayered ----------------------------------
 // 判据落在「声明变量的那个块」上，而不是「用变量的那条规则」上：压回默认值这件事发生在变量层，
-// 规则层看不出来。两侧的身份判据是 vscode-theme.css 那块里的**哨兵声明** MAP_SENTINEL，不是
+// 规则层看不出来。两侧的身份判据是 d2h-theme.css 那块里的**哨兵声明** MAP_SENTINEL，不是
 // 「值长什么样」——曾经按「值里有没有 var(--color-…)」分，那是个会给出**误导性红**的代理：深色
 // 下给某个 --d2h-* 补一条字面量覆写（完全正当）就会被归到 diff2html 那一侧，于是顺序断言报
 // 「检查 @import 顺序」，而 @import 顺序根本没问题。
@@ -202,7 +202,7 @@ for (const block of d2hVarBlocks) {
 
 if (ourBlocks.length === 0) {
   failures.push(
-    `产物里找不到带哨兵 ${MAP_SENTINEL} 的 --d2h-* 映射块——要么 vscode-theme.css 没被打进来（配色整片是 diff2html 的默认值），要么哨兵那行被删了`,
+    `产物里找不到带哨兵 ${MAP_SENTINEL} 的 --d2h-* 映射块——要么 d2h-theme.css 没被打进来（配色整片是 diff2html 的默认值），要么哨兵那行被删了`,
   );
 } else if (theirBlocks.length === 0) {
   failures.push(
@@ -225,7 +225,7 @@ if (ourBlocks.length === 0) {
   const firstOurs = firstOf(ourBlocks);
   if (firstOurs.start < lastTheirs.start) {
     failures.push(
-      `--d2h-* 的覆写块排在了 diff2html 的默认值之前（覆写 @${firstOurs.start} < 默认值 @${lastTheirs.start}）——两者特异性同为 (0,1,0)，胜出全靠顺序，现在整片覆写静默失效。检查 app.css 里 @import "./vscode-theme.css" 是否还在 diff2html.min.css 之后`,
+      `--d2h-* 的覆写块排在了 diff2html 的默认值之前（覆写 @${firstOurs.start} < 默认值 @${lastTheirs.start}）——两者特异性同为 (0,1,0)，胜出全靠顺序，现在整片覆写静默失效。检查 app.css 里 @import "./d2h-theme.css" 是否还在 diff2html.min.css 之后`,
     );
   } else {
     notes.push('--d2h-* 覆写：整块排在 diff2html 默认值之后');

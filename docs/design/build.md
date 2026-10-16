@@ -20,9 +20,9 @@ src/server/
 src/web/
   brand/               logo 的几何（纯 JS，组件与 scripts/logo.mjs 共用同一份）
   components/          变更列表、分支状态、diff 容器
-  diff/                diff2html 深导入 + hljs 语言注册
+  diff/                diff2html 深导入（前端唯一可 import 它的目录）+ hljs 语言注册
   state/               signals
-  styles/              app.css / vscode-theme.css
+  styles/              app.css / d2h-theme.css / vscode-theme.css / hljs-theme.css
 test/unit/             Vitest，跑 TS 源码
 test/smoke/            纯 JS，跑 dist/ 产物（含只读性两层验证）
 test/fixtures/         测试仓库生成脚本

@@ -10,14 +10,15 @@
 /* src/web/app.css */
 @import "tailwindcss";                              /* preflight → @layer base；utilities → @layer utilities */
 @import "./hljs-theme.css";                         /* unlayered，且必须排在 d2h 之前 */
-@import "diff2html/bundles/css/diff2html.min.css";  /* unlayered → 结构上不可能被 preflight 压过 */
-@import "./vscode-theme.css";                       /* unlayered，覆写 --d2h-* 与 VS Code token */
+@import "./d2h-theme.css";                          /* unlayered：先引 diff2html.min.css，再覆写 --d2h-* 与四条选择器例外 */
+@import "./vscode-theme.css";                       /* unlayered，明暗开关的三条 color-scheme 规则 */
 ```
 
 - **hljs 主题必须排在 `diff2html.min.css` 之前**（diff2html 官方要求）。`diff2html.min.css` 里没有任何 hljs 配色。
 - **hljs 主题是我们自己那份 `hljs-theme.css`**，不直接引上游两份（见下文）。
 - **hljs 主题与 `diff2html.min.css` 不得放进任何 `@layer`**，否则这层保障就拆掉了。
 - **diff2html 渲染出的元素只能通过覆写 `--d2h-*` 改配色，不得用 Tailwind 工具类去压**——无层的 diff2html CSS 胜过 `@layer utilities`，写了也不生效。
+- **认识 `.d2h-*` 与 `--d2h-*` 的样式只许写在 `d2h-theme.css`**，`diff2html.min.css` 也由它引入：`.d2h-*` 选择器和 `--d2h-*` 声明散到别的样式文件里时不报错，但换掉 diff2html 渲染那天就得逐个文件去挑，漏掉的那条留在产物里成了死规则。
 
 ## 明暗切换：只翻 `color-scheme` 一处
 
@@ -78,7 +79,7 @@
 
 ## 四条选择器规则的例外
 
-`vscode-theme.css` 末尾四条在「只能改 `--d2h-*`」之外，**且只有这四条**：`.d2h-diff-table { font-family }`、`.d2h-file-header { display: none }`、`.d2h-file-wrapper { border: none; margin-bottom: 0 }`、最左那列行号的 `border-left: none`。`--d2h-*` 全是颜色，字体、显隐、盒子、留白、某一条边框都没有变量可覆。四条胜出同样**靠排在 `diff2html.min.css` 之后**。藏掉文件头的理由见 [`diff-render.md`](diff-render.md)。
+`d2h-theme.css` 末尾四条在「只能改 `--d2h-*`」之外，**且只有这四条**：`.d2h-diff-table { font-family }`、`.d2h-file-header { display: none }`、`.d2h-file-wrapper { border: none; margin-bottom: 0 }`、最左那列行号的 `border-left: none`。`--d2h-*` 全是颜色，字体、显隐、盒子、留白、某一条边框都没有变量可覆。四条胜出同样**靠排在 `diff2html.min.css` 之后**。藏掉文件头的理由见 [`diff-render.md`](diff-render.md)。
 
 - **被架空的变量仍要留在映射块里**（`--d2h-file-header-*`、`--d2h-border-color`）：覆盖率断言从 diff2html 那块推导全部变量名，删掉即红。
 - **补丁外框与底下留白一起去掉**：文件头藏掉后外框只剩副作用（与标签栏下沿画出第二条平行线），留白是为「一次画多个文件」准备的。**不写成 `--d2h-border-color: transparent`**：透明边框仍占 1px，那个变量还被别的规则读到，且等于把版式决定藏在颜色映射里。

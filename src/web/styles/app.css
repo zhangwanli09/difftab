@@ -13,7 +13,7 @@
 
 @import "tailwindcss";
 @import "./hljs-theme.css";
-@import "diff2html/bundles/css/diff2html.min.css";
+@import "./d2h-theme.css";
 @import "./vscode-theme.css";
 
 /* 扫描范围写死成 src/web——Tailwind v4 的自动探测以最近的项目根为基准，探测范围一旦与预期
@@ -172,7 +172,7 @@
   --color-scm-graph-history-item-ref: #59a4f9;
   --color-scm-graph-history-item-remote-ref: #b180d7;
 
-  /* --- diff 底色：由 vscode-theme.css 映射到 --d2h-* --------------------- */
+  /* --- diff 底色：由 d2h-theme.css 映射到 --d2h-* ------------------------ */
   /* 整行底色与词级高亮，增删各一套，全是半透明叠加。四个都是双值：Dark 2026 换了一套更沉的
    * 绿与红；Light 2026 只改了词级那两个，整行那两个它没写，取的是 VS Code 的默认值。
    * VS Code 没有「diff 行边框」这个键，diff2html 的两个边框变量借用词级高亮这一档。 */

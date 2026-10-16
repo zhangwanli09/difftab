@@ -13,7 +13,7 @@
 //    量 `'plaintext'` 再无条件调 hljs，漏注册时异常从 `highlightCode()` 冒到调用方，**炸的是整
 //    个 diff 视图**，不是那一个文件；
 // 4. `colorScheme` 必须是 `'light'`——传 `'auto'` 会让 `.d2h-auto-color-scheme` 前缀规则(特异
-//    性 0,2,0)压过基础规则、读回 diff2html 自带的 `--d2h-dark-*`，vscode-theme.css 覆写的那 23
+//    性 0,2,0)压过基础规则、读回 diff2html 自带的 `--d2h-dark-*`，d2h-theme.css 覆写的那 23
 //    个变量在深色下一条都不生效；
 // 5. `outputFormat` 由调用方按 diff 面板宽度给。两种版式的判据是一对正反计数：并排下一个文件是
 //    **两张** `.d2h-diff-table`（各裹在一个 `.d2h-file-side-diff` 里），逐行下是**一张**且
@@ -236,7 +236,7 @@ describe('renderDiff', () => {
     // 正面断言：colorScheme 确实生效了，只是生效成那个空 class
     expect(host.querySelector('.d2h-light-color-scheme')).not.toBeNull();
 
-    // 这两个一旦出现，vscode-theme.css 里 23 个 --d2h-* 覆写在深色下会被整块旁路，
+    // 这两个一旦出现，d2h-theme.css 里 23 个 --d2h-* 覆写在深色下会被整块旁路，
     // 而页面只是"深色不太像 VS Code"，测试和 CI 都不会红——所以钉在这里
     expect(host.querySelectorAll('.d2h-auto-color-scheme')).toHaveLength(0);
     expect(host.querySelectorAll('.d2h-dark-color-scheme')).toHaveLength(0);
