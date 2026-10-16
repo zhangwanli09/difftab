@@ -29,16 +29,20 @@ jobs:
         run: |
           types='feat|fix|docs|refactor|perf|test|build|ci|chore'
           re="^($types)(\\([a-z0-9-]+\\))?!?: [^ ](.*[^. ])?\$"
-          # 标题原样进 CHANGELOG.md，而它按约定是英文：可打印 ASCII 以外的字节一律不收
-          if [[ $TITLE =~ $re ]] && ! printf '%s' "$TITLE" | LC_ALL=C grep -q '[^ -~]'; then
+          if ! [[ $TITLE =~ $re ]]; then
+            echo "::error::PR title is not a Conventional Commits subject: $TITLE"
+            echo "Expected: <type>(<scope>)!: <description>"
+            echo "  type: ${types//|/ | }"
+            echo "  scope and ! are optional; scope is lowercase; no trailing period or space"
+            echo "  write a revert as an ordinary change, e.g. fix(web): revert the folded diff lines"
+            echo "The title becomes the commit subject on main; release-please reads it for CHANGELOG.md."
+            exit 1
+          fi
+          # 标题原样进 CHANGELOG.md，按约定是英文。只拦中日文字符（CJK 标点、假名、汉字与扩展 A、
+          # 全角形式），不拦整个非 ASCII：`—`、`→`、带重音的字母都是合法的英文标题
+          if printf '%s' "$TITLE" | perl -CI -ne 'exit 1 if /[\x{3000}-\x{30ff}\x{3400}-\x{4dbf}\x{4e00}-\x{9fff}\x{ff00}-\x{ffef}]/'; then
             echo "OK: $TITLE"
             exit 0
           fi
-          echo "::error::PR title is not a Conventional Commits subject: $TITLE"
-          echo "Expected: <type>(<scope>)!: <description>"
-          echo "  type: ${types//|/ | }"
-          echo "  scope and ! are optional; scope is lowercase; no trailing period or space"
-          echo "  English, printable ASCII only: the title goes into CHANGELOG.md verbatim"
-          echo "  write a revert as an ordinary change, e.g. fix(web): revert the folded diff lines"
-          echo "The title becomes the commit subject on main; release-please reads it for CHANGELOG.md."
+          echo "::error::PR title contains Chinese or Japanese text; write it in English: $TITLE"
           exit 1

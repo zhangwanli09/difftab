@@ -131,11 +131,11 @@ Vite dev server 在 `localhost:5173`，后端在 `127.0.0.1:<随机端口>`，�
    - **体积门禁不进本档**：matrix 下载的是同一份 `dist/`，字节完全相同，再跑 9 遍不增加覆盖，反而引入方差——gzip 输出长度取决于各 Node 大版本自带的 zlib，贴着预算的行会只在某一个 Node 上红。
 3. **old-node-guard 作业**（Node 20，即**低于下限**；ubuntu + windows 两档）：不下载产物，直接 `node bin/difftab.js`，断言 exit 1 + 打印友好提示 + stderr 无 `SyntaxError` + stdout 为空。单列一档是因为守卫要防的是**解析期**失败，在 22+ 上永远测不到；冒烟里那条按语法逐条列举的正则清单只是替身，`catch {}`、class 静态块等一律漏网。**取 stderr 必须经管道**——文件重定向在 Windows 上是同步写、恒绿。不列 macOS：提示丢不丢只在 Windows 上看得见。
 4. **冒烟测试不得依赖 `node:test` 的顶层 `before()` / `after()`**：下限档 Node 22.0.0 的 runner **不等顶层异步 `before()` 完成就开跑该文件的用例**，`after()` 同样提早触发。准备工作要写成记忆化的 Promise、由各用例自己 `await`。这条只在下限档红，24 / 26 全绿——正是 matrix 要有一档真跑在下限上的理由。
-5. **`ci.yml` 在 ruleset 里只有一个 required check：汇总作业 `gates-passed`（显示名 `all gates passed`）**，它 `needs` 其余全部作业，以 `always()` 运行，任何一个依赖不是 success（含 skipped、cancelled）就红。只要求一个名字，矩阵改档位、作业改名时不用同步 ruleset；代价是它的写法必须对，而写错的三种方式都不响，**也没有门禁**（一人维护、很少改 `ci.yml`，自动断言的成本高过它防的风险），改 `ci.yml` 时靠这三条自觉：
+5. **`ci.yml` 在 ruleset 里只有一个 required check：汇总作业 `gates-passed`（显示名 `all gates passed`）**。只要求一个名字，矩阵改档位、作业改名时不用同步 ruleset；代价是它的写法必须对，而写错的三种方式都不响，**也没有门禁**（一人维护、很少改 `ci.yml`，自动断言的成本高过它防的风险），改 `ci.yml` 时靠这三条自觉：
    - **新增作业必须列进它的 `needs`**：漏列的那个红了也挡不住合并；
-   - **`if` 必须是 `always()`**，写成 `!cancelled()` 或省掉时：**被跳过的作业对 required check 而言算通过**，有人取消 PR head 上的运行、或某个依赖红了时它被跳过，PR 照样能合；
+   - **`if` 在 `pull_request` 上必须恒为真**（现为 `!cancelled() || github.event_name == 'pull_request'`）：**被跳过的作业对 required check 而言算通过**，写成 `!cancelled()` 或省掉时，有人取消 PR 上的运行、或某个依赖红了时它被跳过，PR 照样能合。push 上被取消时跳过它是有意的：没有 ruleset 读那里的结果；
    - **判定必须要求每个依赖都是 success**：只排除 failure 的话，skipped 的依赖被当成绿的。
 
    另有一条是响的：**它的显示名就是 ruleset 里的那个字符串**，改了名所有 PR 都会卡在「等待检查」。
-6. **release PR 上的 required check 要手动批准才会跑**：release PR 由 `GITHUB_TOKEN` 创建，它的 `pull_request` 运行停在 `action_required`，PR 上一个检查都没有，ruleset 就挡着它。合并前由维护者批准（或在 Actions 里重跑）PR 最新 commit 上停住的那两次运行，`ci.yml` 与 `pr-title.yml` 才会跑出那两个 required check；要在合并前一刻做：之后每有 PR 落进 main，release-please 都会更新 release PR，新 commit 上的运行又得批准一次。步骤写在 `RELEASING.md`。
-7. **PR 标题校验单列一个 workflow（`pr-title.yml`），不进 `ci.yml`**：标题改了只触发 `edited`，给 `ci.yml` 加上这个类型，改一下 PR 描述就会把三平台矩阵整套重跑一遍。它成立的前提是仓库设置 `squash_merge_commit_title = PR_TITLE`——设成 `COMMIT_OR_PR_TITLE` 时，单提交 PR 落到 main 的是那个提交的 subject，校验 PR 标题就校验错了对象，而且没有任何东西会响。标题经 `env` 传入、不直接插进 `run:`（`${{ }}` 是在 shell 解析之前做的文本替换，直接插进去就是脚本注入）。它也是 required check，只有 `pull_request` 一个触发入口。
+6. **release PR 上的 required check 要手动批准才会跑**：release PR 由 `GITHUB_TOKEN` 创建，它的 `pull_request` 运行停在 `action_required`，PR 上一个检查都没有，ruleset 就挡着它，直到维护者批准那两次运行。处理步骤（含何时要重新批准）写在 `RELEASING.md`。
+7. **PR 标题校验单列一个 workflow（`pr-title.yml`），不进 `ci.yml`**：标题改了只触发 `edited`，给 `ci.yml` 加上这个类型，改一下 PR 描述就会把三平台矩阵整套重跑一遍。它成立的前提是仓库设置 `squash_merge_commit_title = PR_TITLE`——设成 `COMMIT_OR_PR_TITLE` 时，单提交 PR 落到 main 的是那个提交的 subject，校验 PR 标题就校验错了对象，而且没有任何东西会响。标题经 `env` 传入、不直接插进 `run:`（`${{ }}` 是在 shell 解析之前做的文本替换，直接插进去就是脚本注入）。

@@ -21,11 +21,9 @@ on:
 #   matrix——测的是**用户真正拿到的产物**，三平台 × Node 22.0.x / 24 / 26，
 #              完全不执行安装、也不需要 pnpm。
 
-# 只取消 PR 上的旧运行。main 上的 push 运行不取消：gates-passed 以 always() 运行，被取消的
-# 运行里它照样跑、照样红，连着合并两个 PR 时，main 上那个从没真正测红的 commit 会挂一个红叉
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -309,12 +307,15 @@ jobs:
   # ruleset 里唯一一个来自 ci.yml 的 required check。只要求这一个名字，矩阵改档位、作业改名
   # 时就不用去同步 ruleset；代价是下面三处写错时都不报错，只是静默放行：
   #   - needs 必须列全其余作业：漏列的那个红了也挡不住合并；
-  #   - 必须是 always()：被跳过的作业对 required check 而言算通过，取消运行或某个依赖红了时它
-  #     一旦被跳过，PR 照样能合。代价是 PR 上被 concurrency 顶掉的旧运行也会亮一个红叉；
+  #   - 在 pull_request 上必须恒为真：被跳过的作业对 required check 而言算通过，取消运行或某个
+  #     依赖红了时它一旦被跳过，PR 照样能合。push 等其他事件上，运行被取消时跳过它——没有 ruleset
+  #     读那里的结果，跑起来只会给一个从没测红的 commit 挂红叉。表达式里含 cancelled()，GitHub
+  #     就不再隐式加 success()，所以依赖红了时它照样运行、照样红。代价是 PR 上被顶掉的旧运行
+  #     也会亮一个红叉；
   #   - 必须要求每个依赖都是 success：只排除 failure 的话，skipped 的依赖被当成绿的。
   gates-passed:
     name: all gates passed
-    if: ${{ always() }}
+    if: ${{ !cancelled() || github.event_name == 'pull_request' }}
     needs: [build, matrix, inotify-quota, global-install, old-node-guard]
     runs-on: ubuntu-latest
     steps:
