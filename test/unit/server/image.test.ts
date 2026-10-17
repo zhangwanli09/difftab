@@ -275,8 +275,8 @@ describe('SVG 预览——文本那一支上挂的两侧元数据', () => {
 
   test('对照面：非 svg 文本不带 preview；含 NUL 的 .svg 仍是 binary', async () => {
     expect(await readDiff(root, { path: 'fake.png' })).not.toHaveProperty('preview');
-    expect(await readDiff(root, { path: 'nul.svg' })).toEqual({ kind: 'binary' });
-    expect(await readFileContent(root, 'nul.svg')).toEqual({ kind: 'binary' });
+    expect(await readDiff(root, { path: 'binary.svg' })).toEqual({ kind: 'binary' });
+    expect(await readFileContent(root, 'binary.svg')).toEqual({ kind: 'binary' });
   });
 
   test('文件视图：text 照旧给原文，另带工作区那份的 size / version', async () => {
@@ -294,7 +294,7 @@ describe('SVG 预览——文本那一支上挂的两侧元数据', () => {
     expect(fresh).toEqual({ buffer: Buffer.from(SVG_BLUE), mime: 'image/svg+xml' });
     const base = await readImageBytes(repo, 'img/logo.svg', 'old');
     expect(base.buffer.toString('utf8')).toBe(SVG_RED);
-    expect(await codeOf(readImageBytes(repo, 'nul.svg', 'new'))).toBe('invalid-path');
+    expect(await codeOf(readImageBytes(repo, 'binary.svg', 'new'))).toBe('invalid-path');
   });
 
   test('任一侧超过 5MB 时补丁照给、只是不带预览', async () => {

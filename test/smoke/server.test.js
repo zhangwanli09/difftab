@@ -506,7 +506,7 @@ test('图片：payload 只带两侧元数据，字节由 /api/blob 以精确 MIM
     // 内容是文本的 .png：新侧走的是 inspectFile 那条链，与 payload 同一个答案
     `/api/blob?${q('fake.png')}&side=new`,
     // 含 NUL 的 .svg 在 payload 里是 binary，字节端点同一个答案
-    `/api/blob?${q('nul.svg')}&side=new`,
+    `/api/blob?${q('binary.svg')}&side=new`,
     '/api/blob?side=new',
   ]) {
     const res = await onImages(path);

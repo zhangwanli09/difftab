@@ -604,7 +604,7 @@ export function makeFixtures(destDir, only) {
   //     `git mv`（旧侧在 oldPath）、未跟踪（只有新、走 NUL 探测那条路）、外加两个对照面——非图片
   //     扩展名的二进制（不放行）与内容是文本的 `.png`（判据是「二进制 ∧ 扩展名」，单看扩展名会
   //     把它画成破图）。SVG 是文本那一支上挂的预览：改写的 `img/logo.svg` 两侧都有、未跟踪的
-  //     `new.svg` 只有新侧，含 NUL 的 `nul.svg` 仍是二进制（svg 不进图片表）
+  //     `new.svg` 只有新侧，含 NUL 的 `binary.svg` 仍是二进制（svg 不进图片表）
   if (wanted('images')) {
     const cwd = init('images');
     write(cwd, 'README.md', '# images\n');
@@ -614,7 +614,7 @@ export function makeFixtures(destDir, only) {
     write(cwd, 'blob.bin', binaryBytes('v1'));
     write(cwd, 'fake.png', 'not really a png\n');
     write(cwd, 'img/logo.svg', SVG_RED);
-    write(cwd, 'nul.svg', Buffer.from('<svg>\0</svg>\n'));
+    write(cwd, 'binary.svg', Buffer.from('<svg>\0</svg>\n'));
     commit(cwd, 'add images');
 
     write(cwd, 'img/a.png', tinyPng(PNG_BLUE));
@@ -625,7 +625,7 @@ export function makeFixtures(destDir, only) {
     write(cwd, 'fake.png', 'still not a png\n');
     write(cwd, 'img/logo.svg', SVG_BLUE);
     write(cwd, 'new.svg', SVG_RED);
-    write(cwd, 'nul.svg', Buffer.from('<svg>\0\0</svg>\n'));
+    write(cwd, 'binary.svg', Buffer.from('<svg>\0\0</svg>\n'));
     repos.images = cwd;
   }
 
