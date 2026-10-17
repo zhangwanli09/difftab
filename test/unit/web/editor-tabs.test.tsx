@@ -28,8 +28,10 @@ import {
   type DiffRequestState,
   type FileRequestState,
   ignoreWhitespace,
+  openFile,
   PATCH_DEFAULTS,
   repoState,
+  svgPreview,
 } from '../../../src/web/state/store';
 import {
   file,
@@ -531,6 +533,92 @@ describe('忽略空白', () => {
 
     setDiffState('src/a.ts', readyDiff(PATCH));
     await waitFor(() => expect(toggle()).not.toBeNull());
+    await waitFor(() => expect(scrolled).toHaveBeenCalledTimes(3));
+  });
+});
+
+describe('SVG 预览', () => {
+  const SHA = 'a'.repeat(40);
+  const SIDE = { path: 'logo.svg', size: 120, version: 'v1' };
+  const PATCH: DiffPayload = {
+    kind: 'text',
+    patch: 'diff --git a/logo.svg b/logo.svg\n',
+    full: false,
+    preview: { old: SIDE, new: SIDE },
+  };
+  const readyDiff = (payload: DiffPayload): DiffRequestState => ({
+    status: 'ready',
+    rename: null,
+    options: PATCH_DEFAULTS,
+    payload,
+  });
+  const toggle = () => container.querySelector<HTMLButtonElement>('button[aria-label="Preview"]');
+  const whitespace = () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label="Hide whitespace changes"]');
+
+  it('判据只认 payload 上的 preview：diff、commit、file 三种 tab 都画，排在最左', async () => {
+    pinned('diff', 'logo.svg');
+    setDiffState(
+      'logo.svg',
+      readyDiff({ kind: 'text', patch: 'diff --git a/logo.svg b/logo.svg\n', full: false }),
+    );
+    await waitFor(() => expect(formatButton()).not.toBeNull());
+    expect(toggle()).toBeNull();
+
+    setDiffState('logo.svg', readyDiff(PATCH));
+    await waitFor(() => expect(toggle()).not.toBeNull());
+    expect(toggle()?.nextElementSibling).toBe(whitespace());
+
+    openCommitEditor(SHA, 'logo.svg', undefined, true);
+    setCommitDiffState(SHA, 'logo.svg', readyDiff(PATCH));
+    await waitFor(() => expect(toggle()).not.toBeNull());
+
+    pinned('file', 'logo.svg');
+    setFileState('logo.svg', {
+      status: 'ready',
+      payload: { kind: 'text', content: '<svg/>', preview: { size: 6, version: 'v1' } },
+    });
+    await waitFor(() => expect(toggle()?.nextElementSibling).toBe(copyButton()));
+    setFileState('logo.svg', { status: 'ready', payload: { kind: 'text', content: '<svg/>' } });
+    await waitFor(() => expect(toggle()).toBeNull());
+    expect(copyButton()).not.toBeNull();
+  });
+
+  it('按下后版式与忽略空白两枚不画、也不重取；复制照留', async () => {
+    calls = stubJson(PATCH);
+    pinned('diff', 'logo.svg');
+    setDiffState('logo.svg', readyDiff(PATCH));
+    await waitFor(() => expect(toggle()?.getAttribute('aria-pressed')).toBe('false'));
+    const before = calls.length;
+
+    toggle()?.click();
+    expect(svgPreview.value).toBe(true);
+    await waitFor(() => expect(toggle()?.getAttribute('aria-pressed')).toBe('true'));
+    expect(formatButton()).toBeNull();
+    expect(whitespace()).toBeNull();
+    expect(calls.length).toBe(before);
+
+    toggle()?.click();
+    await waitFor(() => expect(formatButton()).not.toBeNull());
+    expect(whitespace()).not.toBeNull();
+  });
+
+  it('跳到某一行（全仓搜索的命中）时关掉预览：那一行要在文本里才看得见', () => {
+    svgPreview.value = true;
+    openFile('logo.svg');
+    expect(svgPreview.value).toBe(true);
+    openFile('logo.svg', { line: 3 });
+    expect(svgPreview.value).toBe(false);
+  });
+
+  it('按钮数变了活动 tab 再滚一次：开预览时版式与忽略空白一起退场', async () => {
+    const scrolled = vi.spyOn(HTMLElement.prototype, 'scrollIntoView');
+    pinned('diff', 'logo.svg');
+    setDiffState('logo.svg', readyDiff(PATCH));
+    await waitFor(() => expect(scrolled).toHaveBeenCalledTimes(2));
+
+    toggle()?.click();
+    await waitFor(() => expect(formatButton()).toBeNull());
     await waitFor(() => expect(scrolled).toHaveBeenCalledTimes(3));
   });
 });

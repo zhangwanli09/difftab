@@ -3,21 +3,23 @@
 // 的参数都是「删掉照样全绿」的那种，只有真仓库能证伪。
 
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { readDiff } from '../../../src/server/git/diff.ts';
+import { readCommitDiff, readDiff } from '../../../src/server/git/diff.ts';
 import { readFileContent } from '../../../src/server/git/file.ts';
 import { baseBlobSize, readImageBytes } from '../../../src/server/git/image.ts';
 import { locateRepo, type RepoInfo, resolveDiffBase } from '../../../src/server/git/repo.ts';
-import { imageMimeOf, WorktreeError } from '../../../src/server/git/worktree.ts';
+import { imageMimeOf, previewMimeOf, WorktreeError } from '../../../src/server/git/worktree.ts';
 import {
   type FixtureRepos,
   makeFixtures,
   PNG_BLUE,
   PNG_GREEN,
   PNG_RED,
+  SVG_BLUE,
+  SVG_RED,
   tinyPng,
 } from '../../fixtures/make.mjs';
 
@@ -228,5 +230,168 @@ describe('baseBlobSize——cat-file -s', () => {
   test('空仓库的基准是空树，任何路径都是 null', async () => {
     const { ref } = await resolveDiffBase(repos.empty);
     expect(await baseBlobSize(repos.empty, ref, 'anything.png')).toBeNull();
+  });
+});
+
+describe('SVG 预览——文本那一支上挂的两侧元数据', () => {
+  test('previewMimeOf 是图片表并上 svg；imageMimeOf 照旧不认 svg', () => {
+    expect(previewMimeOf('img/Logo.SVG')).toBe('image/svg+xml');
+    expect(previewMimeOf('a.png')).toBe('image/png');
+    expect(previewMimeOf('a.txt')).toBeNull();
+    expect(imageMimeOf('a.svg')).toBeNull();
+  });
+
+  test('改写的 SVG 仍是文本补丁，另带两侧预览，口径与图片同一份', async () => {
+    const payload = await readDiff(root, { path: 'img/logo.svg' });
+    if (payload.kind !== 'text') throw new Error(`期望 text，拿到 ${payload.kind}`);
+    expect(payload.patch).toContain('+<rect width="4" height="4" fill="blue"/>');
+    const info = statSync(join(root, 'img/logo.svg'));
+    expect(payload.preview).toEqual({
+      old: {
+        path: 'img/logo.svg',
+        size: SVG_RED.length,
+        version: (await resolveDiffBase(root)).oid,
+      },
+      new: { path: 'img/logo.svg', size: SVG_BLUE.length, version: `${info.size}-${info.mtimeMs}` },
+    });
+  });
+
+  test('整份上下文与忽略空白那两档同样带预览', async () => {
+    const payload = await readDiff(root, {
+      path: 'img/logo.svg',
+      fullContext: true,
+      ignoreWhitespace: true,
+    });
+    expect(payload).toMatchObject({ kind: 'text', full: true, preview: { old: {}, new: {} } });
+  });
+
+  test('未跟踪的 SVG 只有新侧', async () => {
+    const payload = await readDiff(root, { path: 'new.svg' });
+    expect(payload).toMatchObject({
+      kind: 'untracked-text',
+      preview: { old: null, new: { path: 'new.svg', size: SVG_RED.length } },
+    });
+  });
+
+  test('对照面：非 svg 文本不带 preview；含 NUL 的 .svg 仍是 binary', async () => {
+    expect(await readDiff(root, { path: 'fake.png' })).not.toHaveProperty('preview');
+    expect(await readDiff(root, { path: 'binary.svg' })).toEqual({ kind: 'binary' });
+    expect(await readFileContent(root, 'binary.svg')).toEqual({ kind: 'binary' });
+  });
+
+  test('文件视图：text 照旧给原文，另带工作区那份的 size / version', async () => {
+    const info = statSync(join(root, 'img/logo.svg'));
+    expect(await readFileContent(root, 'img/logo.svg')).toEqual({
+      kind: 'text',
+      content: SVG_BLUE,
+      preview: { size: SVG_BLUE.length, version: `${info.size}-${info.mtimeMs}` },
+    });
+    expect(await readFileContent(root, 'README.md')).not.toHaveProperty('preview');
+  });
+
+  test('/api/blob 两侧给 svg 的字节与 image/svg+xml；含 NUL 的 .svg 不当图发', async () => {
+    const fresh = await readImageBytes(repo, 'img/logo.svg', 'new');
+    expect(fresh).toEqual({ buffer: Buffer.from(SVG_BLUE), mime: 'image/svg+xml' });
+    const base = await readImageBytes(repo, 'img/logo.svg', 'old');
+    expect(base.buffer.toString('utf8')).toBe(SVG_RED);
+    expect(await codeOf(readImageBytes(repo, 'binary.svg', 'new'))).toBe('invalid-path');
+  });
+
+  test('任一侧超过 5MB 时补丁照给、只是不带预览', async () => {
+    const big = mkdtempSync(join(tmpdir(), 'difftab-bigsvg-'));
+    try {
+      execFileSync('git', ['init', '--quiet', '--initial-branch=main'], { cwd: big });
+      // 6MB、四万行，只改最后一行：补丁只有几行、过得了全部三道闸，而两侧都过不了 /api/blob
+      const body = `<!-- ${'padding '.repeat(18)}-->\n`.repeat(40_000);
+      const svg = (fill: string) => `<svg>\n${body}<rect fill="${fill}"/>\n</svg>\n`;
+      writeFileSync(join(big, 'huge.svg'), svg('red'));
+      execFileSync('git', ['add', '-A'], { cwd: big });
+      execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'i'], {
+        cwd: big,
+      });
+      writeFileSync(join(big, 'huge.svg'), svg('blue'));
+      expect(statSync(join(big, 'huge.svg')).size).toBeGreaterThan(5 * 1024 * 1024);
+      const payload = await readDiff(big, { path: 'huge.svg' });
+      expect(payload.kind).toBe('text');
+      expect(payload).not.toHaveProperty('preview');
+    } finally {
+      rmSync(big, { recursive: true, force: true });
+    }
+  });
+
+  test('五万行以上、只改几行的 SVG：带预览，新侧的字节端点也不数行', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'difftab-longsvg-'));
+    const git = (...args: string[]) =>
+      execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd: dir });
+    try {
+      git('init', '--quiet', '--initial-branch=main');
+      const svg = (fill: string) =>
+        `<svg>\n${'<g/>\n'.repeat(60_000)}<rect fill="${fill}"/>\n</svg>\n`;
+      writeFileSync(join(dir, 'long.svg'), svg('red'));
+      git('add', '-A');
+      git('commit', '-qm', 'i');
+      writeFileSync(join(dir, 'long.svg'), svg('blue'));
+      expect(await readDiff(dir, { path: 'long.svg' })).toMatchObject({
+        kind: 'text',
+        preview: { old: {}, new: {} },
+      });
+      const longRepo = await locateRepo(dir);
+      expect((await readImageBytes(longRepo, 'long.svg', 'new')).buffer.toString('utf8')).toBe(
+        svg('blue'),
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('符号链接的 .svg 不带预览：两侧取到的都是链接目标字符串', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'difftab-linksvg-'));
+    const git = (...args: string[]) =>
+      execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd: dir });
+    try {
+      git('init', '--quiet', '--initial-branch=main');
+      writeFileSync(join(dir, 'a.svg'), SVG_RED);
+      writeFileSync(join(dir, 'b.svg'), SVG_BLUE);
+      symlinkSync('a.svg', join(dir, 'logo.svg'));
+      git('add', '-A');
+      git('commit', '-qm', 'i');
+      rmSync(join(dir, 'logo.svg'));
+      symlinkSync('b.svg', join(dir, 'logo.svg'));
+      const payload = await readDiff(dir, { path: 'logo.svg' });
+      expect(payload.kind).toBe('text');
+      expect(payload).not.toHaveProperty('preview');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('提交里的 SVG：两侧都读对象库，version 是两端的对象名', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'difftab-commitsvg-'));
+    const git = (...args: string[]) =>
+      execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], {
+        cwd: dir,
+        encoding: 'utf8',
+      }).trim();
+    try {
+      git('init', '--quiet', '--initial-branch=main');
+      writeFileSync(join(dir, 'a.svg'), SVG_RED);
+      git('add', '-A');
+      git('commit', '-qm', 'add');
+      writeFileSync(join(dir, 'a.svg'), SVG_BLUE);
+      git('commit', '-qam', 'recolor');
+      const [sha, parent] = [git('rev-parse', 'HEAD'), git('rev-parse', 'HEAD~1')];
+      const commitRepo = await locateRepo(dir);
+      expect(await readCommitDiff(commitRepo, sha, { path: 'a.svg' })).toMatchObject({
+        kind: 'text',
+        preview: {
+          old: { path: 'a.svg', size: SVG_RED.length, version: parent },
+          new: { path: 'a.svg', size: SVG_BLUE.length, version: sha },
+        },
+      });
+      const bytes = await readImageBytes(commitRepo, 'a.svg', 'old', sha);
+      expect(bytes.buffer.toString('utf8')).toBe(SVG_RED);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

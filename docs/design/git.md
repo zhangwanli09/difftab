@@ -69,12 +69,14 @@ git diff --no-ext-diff --no-textconv <range> --unified=<3|50000> --inter-hunk-co
 
 **判据是「二进制 ∧ 扩展名在表里」，缺一不可**。表是 `server/git/worktree.ts` 的 `imageMimeOf`（png / jpg / jpeg / gif / webp / bmp / ico / avif；**SVG 不在**——它是文本，文本 diff 更有信息量）。单看扩展名会把内容是文本的 `.png` 画成一张破图。
 
+**SVG 是文本那一支上挂的预览**：分类照旧是文本（补丁、全文、行数与体积闸都不变），扩展名为 `svg` 时 payload 另带一份 `preview` 两侧元数据，形状与图片的 `ImageSide` 相同、算法也是同一份（旧侧 `cat-file -s` + 基准 oid，新侧 `lstat` + `worktreeVersion`，提交里两侧都是对象名）。**任一侧超过 `MAX_BYTES` 即不带 `preview`**：补丁可以只有几行，而 `/api/blob` 会拒那张图。**补丁头里任一侧是 mode 120000（符号链接）也不带**：两侧取到的都是链接目标字符串。**行数闸只对 svg 的字节端点放宽**（`inspectFile` 的 `maxLines`）：它挡的是表格画不动的长文本，对图没有意义；旧侧的 `cat-file blob` 本就不数行，不放宽时五万行以上、只改几行的 SVG 有预览而 After 那张永远取不回来。含 NUL 的 `.svg` 仍是 `binary`——svg 不进 `imageMimeOf` 的表，否则它会从二进制那支被当成图放行。`/api/blob` 认的是另一张并集（`previewMimeOf`）：新侧的判据是「`inspectFile` 给 `image`」或「给 `text` ∧ 扩展名 svg」，两半缺一不可。
+
 - **旧侧读 diff 基准里的 blob：`git cat-file blob <base>:<path>`，存在性与体积用 `cat-file -s`。只允许这两种字面参数**：`--filters` / `--textconv` 会跑 smudge / textconv 驱动（LFS 的写 `.git/lfs`），而白名单只看子命令；不用 `git show <rev>:<path>`——字节相同，但它的参数面大到「参数只能是字面量」那条断言钉不住。`cat-file -s` 非零退出即「这一侧不存在」，不是错误。
 - **内容身份 `ImageSide.version`**：旧侧是基准的 oid（`resolveDiffBase` 顺手带回的 `DiffBase { ref; oid }`），新侧是体积 + mtime（`worktreeVersion`，与 git 的 stat 缓存同一判据与同一边界）。
 - **`<rev>:<path>` 是 revision 语法，`GIT_LITERAL_PATHSPECS` 管不到**：拼进去的 `path` 一律取 `resolveInRepo` 归一化后的那份。
 - 重命名的旧侧在 `oldPath`，payload 的 `old.path` 由后端填好。
 - **5MB 按侧卡**：任一侧超过 `MAX_BYTES` 即 `too-large`，`size` 取**两侧里大的那个**（只报工作区那份时，8MB 换成 120KB 的图会被说成「file is 120 KB」）。`/api/blob` 自己再卡一次——payload 与取字节是两次请求，中间文件可以长大。
-- **`/api/blob` 只服务表里的扩展名**，非图片一律 400；取新侧**就是 `inspectFile` 那条链**，不另写副本——上一份副本连 NUL 那道都没有，同一个文件在 payload 里是文本、在字节端点上被当图发出去。
+- **`/api/blob` 只服务表里的扩展名（外加 svg）**，其余一律 400；取新侧**就是 `inspectFile` 那条链**，不另写副本——上一份副本连 NUL 那道都没有，同一个文件在 payload 里是文本、在字节端点上被当图发出去。
 
 ## 提交历史
 

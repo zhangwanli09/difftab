@@ -54,7 +54,7 @@
 3. **token 落地**：URL 携带 → 首访置换为 `HttpOnly; SameSite=Strict` cookie 并 302 掉 query。**cookie 的作用域是 host 不隔离端口**，同机其他 localhost 服务也会收到它，因此校验 token 时**一并绑定本次会话的端口**。
 4. **所有端点（含 SSE）统一校验，且这三道排在其余一切判定之前**——包括「只接受 GET / HEAD」这类廉价判定。排在前面时 POST 会在 Host 那道之前拿到 `method-not-allowed`，rebinding 页面读得到它，漏的是**服务本身的存在性**。响应带 `Cache-Control: no-store`、`X-Content-Type-Options: nosniff`。
 5. **严格 CSP**：`default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'`。后三个**不回退到 `default-src`**，不写就等于没设。
-6. **`/api/blob` 只服务图片扩展名表里的路径，按表给精确 MIME**：`nosniff` 下类型错一个字浏览器就不画；不限扩展名时它就是一个「下载工作区任意文件」的端点，比带闸的 `/api/file` 还宽。**不开 `blob:`**。
+6. **`/api/blob` 只服务图片扩展名表里的路径（外加 svg），按表给精确 MIME**：`nosniff` 下类型错一个字浏览器就不画；不限扩展名时它就是一个「下载工作区任意文件」的端点，比带闸的 `/api/file` 还宽。**不开 `blob:`**。**svg 的响应把 CSP 换成 `default-src 'none'; style-src 'unsafe-inline'; sandbox`**：`<img>` 里的 SVG 本就不跑脚本、不取外链，可直接打开这条 URL 时它是一份同源文档——`sandbox` 把它放进不透明源，内联脚本与事件属性一律不跑。
 7. **静态资源按内存清单白名单映射**，不得用 `path.join(root, req.url)` 拼接。文件名因此固定、不加 hash（响应本就 `no-store`）。
 
 **后端零 dev 分支**：Vite dev server 撞上 Host、Origin、token 三道门时，解法一律放在 dev server 的代理层（改写 `Host` / `Origin`、注入 cookie），**后端不得为此新增任何环境变量或分支**——那等于把正面防御做成一个可被误开的开关。
@@ -74,7 +74,7 @@
 | `GET /api/diff?path=&oldPath=&ignoreWhitespace=1&fullContext=1` | `DiffPayload` | 按文件懒加载；`oldPath` 仅重命名条目传；后两个开关缺省即关，**只认 `1`、其余值 400** |
 | `GET /api/tree?path=` | `TreePayload` | **按目录懒加载**，一次只回一层；`path` 缺省即仓库根 |
 | `GET /api/file?path=` | `FilePayload` | 单个文件的只读内容 |
-| `GET /api/blob?path=&side=old\|new&commit=` | 图片字节 | **只服务图片扩展名表里的路径**；`old` 读 diff 基准、`new` 读工作区；**带 `commit` 时两侧都读对象库**（第一父 / 该提交） |
+| `GET /api/blob?path=&side=old\|new&commit=` | 图片与 SVG 字节 | **只服务图片扩展名表里的路径与 svg**；`old` 读 diff 基准、`new` 读工作区；**带 `commit` 时两侧都读对象库**（第一父 / 该提交） |
 | `GET /api/commits?head=&skip=` | `CommitPage` | 一页 50 条；`head` 缺省即从 HEAD 起并回传锚点 |
 | `GET /api/commit?sha=` | `CommitDetail` | 一次提交的元数据 + 改了哪些文件 |
 | `GET /api/commit-diff?sha=&path=&oldPath=&ignoreWhitespace=1&fullContext=1` | `DiffPayload` | 相对第一父，三道闸与两个开关都与 `/api/diff` 同一套 |
@@ -94,10 +94,11 @@
   - **`too-large` 必须带 `reason`**：两个触发口，只带 `size` 时行数那一路可能只有几百 KB，前端会说出「文件过大（0 MB）」。
   - **`size` 只用于展示，可以是 0**（已删除的文件）：前端此时不显示体积，不编一个数出来。
   - **`image` 只带元数据，字节走 `/api/blob`**：`old` / `new` 各是 `ImageSide { path; size; version } | null`。`version` 是内容身份，前端只比对不解读；`path` 由后端填好（重命名旧侧是 `oldPath`），前端不自己拼。不内联 base64：大 33% 且没法按侧懒加载。
+  - **`text` / `untracked-text` 可带 `preview { old; new }`**（两侧同 `ImageSide`），只在 `.svg` 上、两侧都不超 5MB 时出现；缺省即「没有可预览的」。前端只认这个字段，不判扩展名。
 - `InstanceInfo { repoRoot; pid }`——**唯一正文里带绝对路径的响应**：路径就是被问的那件事，而拿着 token 本就能读遍整个仓库。前端不消费它。
 - `repoName: string`——工作区根目录的 **basename**，回答「这个标签属于哪个项目」的最小一份；**不复用 `InstanceInfo.repoRoot`**。空串即根目录没有 basename，显示什么归前端。
 - `TreeEntry { name; path; kind: 'directory' | 'file'; ignored }` 与 `TreePayload { path; entries }`——`path: ''` 即仓库根。**`ignored` 由后端给**：前端没有 `.gitignore` 的语义。一次只回一层。
-- `FilePayload` 为判别联合：`text` / `symlink { target }` / `binary` / `image { size, version }` / `too-large { size, reason }`。**`symlink` 单独成一支**：「这是一个指向 X 的链接」与「这是 X 的内容」是两句话。
+- `FilePayload` 为判别联合：`text { content; preview? }` / `symlink { target }` / `binary` / `image { size, version }` / `too-large { size, reason }`。**`symlink` 单独成一支**：「这是一个指向 X 的链接」与「这是 X 的内容」是两句话。`preview { size; version }` 与 diff 那侧同一条口径，只在 `.svg` 上出现。
 - `CommitSummary { sha; parents; author; time; subject }`、`CommitPage { head; commits; hasMore }`、`CommitDetail { …CommitSummary; files; shallow? }`、`CommitFileEntry { path; oldPath?; status: 'A' | 'M' | 'D' | 'R' | 'T' }`：
   - **`sha` 与 `head` 都是完整对象名**，前端原样回传，截断只是展示。
   - **`shallow`** 即浅克隆边界：`files` 为空不代表「没改东西」。**`head: null` 即空仓库**。

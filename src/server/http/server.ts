@@ -16,7 +16,7 @@ import { GitError } from '../git/run.ts';
 import { MAX_QUERY_LENGTH, searchRepo } from '../git/search.ts';
 import { readStatus, readStatusRaw } from '../git/status.ts';
 import { listFiles, readTree } from '../git/tree.ts';
-import { WorktreeError } from '../git/worktree.ts';
+import { isSvg, WorktreeError } from '../git/worktree.ts';
 import type { ErrorPayload, RepoState, WatchState } from '../shared/protocol.ts';
 import { forcedTierWarning, initialMode, resolveTier } from '../watch/tier.ts';
 import { createWatcher, type WatchHandle } from '../watch/watcher.ts';
@@ -30,6 +30,7 @@ import {
   isOriginAllowed,
   readCookieToken,
   SECURITY_HEADERS,
+  SVG_CSP,
   sessionUrl,
   tokenCookie,
   tokensMatch,
@@ -74,10 +75,17 @@ export function sanitizeMessage(message: string, repoRoot: string): string {
   return out.split('\n')[0]?.trim() ?? '';
 }
 
-function send(res: ServerResponse, status: number, body: Buffer | string, contentType: string) {
+function send(
+  res: ServerResponse,
+  status: number,
+  body: Buffer | string,
+  contentType: string,
+  headers: Readonly<Record<string, string>> = {},
+) {
   const payload = typeof body === 'string' ? Buffer.from(body, 'utf8') : body;
   res.writeHead(status, {
     ...SECURITY_HEADERS,
+    ...headers,
     'Content-Type': contentType,
     'Content-Length': payload.byteLength,
   });
@@ -337,10 +345,11 @@ export async function startServer(
       }
 
       /**
-       * 图片字节，**唯一一个正文不是 JSON 的 API 端点**。`path` / `side` 都必填：`old` 是
-       * diff 基准里的 blob、`new` 是工作区那份；带 `commit` 时两侧都读对象库（第一父 / 提交本身）。只服务图片扩展名表里的路径、`Content-Type`
-       * 按表给精确 MIME（`nosniff` 之下类型错一个字浏览器就不画），非图片一律 400——判据与
-       * 5MB 那道闸都在 git 那侧，这里只把字节发出去。前端加的 `v=` 戳这里不看。
+       * 图片与 SVG 预览的字节，**唯一一个正文不是 JSON 的 API 端点**。`path` / `side` 都必填：
+       * `old` 是 diff 基准里的 blob、`new` 是工作区那份；带 `commit` 时两侧都读对象库（第一父 /
+       * 提交本身）。只服务图片扩展名表里的路径与 svg、`Content-Type` 按表给精确 MIME（`nosniff`
+       * 之下类型错一个字浏览器就不画），其余一律 400——判据与 5MB 那道闸都在 git 那侧，这里只把
+       * 字节发出去。前端加的 `v=` 戳这里不看。
        */
       case '/api/blob': {
         const path = url.searchParams.get('path');
@@ -355,7 +364,9 @@ export async function startServer(
         }
         const commit = url.searchParams.get('commit');
         const image = await readImageBytes(repo, path, side, commit ?? undefined);
-        send(res, 200, image.buffer, image.mime);
+        // SVG 是一份能跑脚本的文档，直接打开这条 URL 时要沙箱住
+        const headers = isSvg(path) ? { 'Content-Security-Policy': SVG_CSP } : {};
+        send(res, 200, image.buffer, image.mime, headers);
         return;
       }
 

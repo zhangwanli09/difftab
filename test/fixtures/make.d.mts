@@ -15,6 +15,8 @@ export declare function tinyPng(rgb: readonly [number, number, number]): Buffer;
 export declare const PNG_RED: readonly [number, number, number];
 export declare const PNG_GREEN: readonly [number, number, number];
 export declare const PNG_BLUE: readonly [number, number, number];
+export declare const SVG_RED: string;
+export declare const SVG_BLUE: string;
 
 export interface FixtureRepos {
   /** 路径含非 ASCII / 空格 / 引号，外加一个未跟踪文件。 */

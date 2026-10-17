@@ -12,8 +12,10 @@ import {
   type DiffPayload,
   type FileEntry,
   type FilePayload,
+  type FilePreview,
   hasStagedChange,
   hasUnstagedChange,
+  type ImagePreview,
   isConflicted,
   isUntracked,
   type RepoState,
@@ -101,6 +103,38 @@ const samePatchRequest = (a: PatchRequest, b: PatchRequest) =>
  * 端口随机，记了也跨不了实例，理由同版式 override。写入方只有 `toggleIgnoreWhitespace`。
  */
 export const ignoreWhitespace = signal(false);
+
+/**
+ * SVG 预览的开关。全局一份、不进 `localStorage`，理由同忽略空白。写入方只有 `toggleSvgPreview`。
+ */
+export const svgPreview = signal(false);
+
+/**
+ * payload 上那份 SVG 预览，不看开关。**判据只认字段**，不判扩展名——那张表只在后端。动作区画不画
+ * `Preview` 由它定。
+ */
+export function previewOf(payload: DiffPayload): ImagePreview | undefined;
+export function previewOf(payload: FilePayload): FilePreview | undefined;
+export function previewOf(
+  payload: DiffPayload | FilePayload,
+): ImagePreview | FilePreview | undefined;
+export function previewOf(
+  payload: DiffPayload | FilePayload,
+): ImagePreview | FilePreview | undefined {
+  return 'preview' in payload ? payload.preview : undefined;
+}
+
+/**
+ * 此刻要按图画的那份预览：payload 带着、且开关开着。视图画什么、`Panel` 要不要 `fill`、文件视图套
+ * 不套宽盒都读它——几处各判时，开着预览的面板会不居中，或宽图把滚动区撑到原始像素宽。
+ */
+export function shownPreview(payload: DiffPayload): ImagePreview | undefined;
+export function shownPreview(payload: FilePayload): FilePreview | undefined;
+export function shownPreview(
+  payload: DiffPayload | FilePayload,
+): ImagePreview | FilePreview | undefined {
+  return svgPreview.value ? previewOf(payload) : undefined;
+}
 
 /** 这个 tab 此刻该按哪一档取：开关是全局的，上下文档是 tab 自己的。 */
 const patchRequestOf = (editor: Editor | undefined): PatchRequest => ({
@@ -611,6 +645,9 @@ export function openFile(
   const replaced = openEditor('file', path, pinned);
   if (replaced !== null) forget(replaced);
   setReveal(path, line);
+  // 跳到某一行要看的是文本：预览开着时那一行根本不在面板上，而跳行请求会一直挂着、等关掉预览时
+  // 冷不丁滚过去
+  if (line !== undefined) svgPreview.value = false;
   void loadFile(path);
 }
 
@@ -678,6 +715,13 @@ export function toggleIgnoreWhitespace(): void {
   ignoreWhitespace.value = !ignoreWhitespace.value;
   const editor = activeEditor.value;
   if (editor !== null && editor.kind !== 'file') void refetch(editor);
+}
+
+/**
+ * 切换 SVG 预览。**不重取**：`preview` 本来就在已到的 payload 上，开关只换一种画法。
+ */
+export function toggleSvgPreview(): void {
+  svgPreview.value = !svgPreview.value;
 }
 
 /**

@@ -139,6 +139,11 @@ export const PNG_RED = [255, 0, 0];
 export const PNG_GREEN = [0, 255, 0];
 export const PNG_BLUE = [0, 0, 255];
 
+/** 两份只差填充色的 SVG：文本 diff 只改一行，预览两侧画得出来。 */
+export const SVG_RED =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4">\n<rect width="4" height="4" fill="red"/>\n</svg>\n';
+export const SVG_BLUE = SVG_RED.replace('red', 'blue');
+
 /**
  * 两个阈值各自的超标量。**唯一事实来源是 `src/server/git/diff.ts`，这里只是「远超」**——断言压
  * 在 `kind` / `reason` 上，不压在数字上；阈值调大到超过这两个值时集成用例会**变红**而不是变绿。
@@ -598,7 +603,8 @@ export function makeFixtures(destDir, only) {
   // 10. 图片：二进制里被放行的那一支。**五种形态各钉一件事**：修改（两侧都有）、删除（只有旧）、
   //     `git mv`（旧侧在 oldPath）、未跟踪（只有新、走 NUL 探测那条路）、外加两个对照面——非图片
   //     扩展名的二进制（不放行）与内容是文本的 `.png`（判据是「二进制 ∧ 扩展名」，单看扩展名会
-  //     把它画成破图）
+  //     把它画成破图）。SVG 是文本那一支上挂的预览：改写的 `img/logo.svg` 两侧都有、未跟踪的
+  //     `new.svg` 只有新侧，含 NUL 的 `binary.svg` 仍是二进制（svg 不进图片表）
   if (wanted('images')) {
     const cwd = init('images');
     write(cwd, 'README.md', '# images\n');
@@ -607,6 +613,8 @@ export function makeFixtures(destDir, only) {
     write(cwd, 'img/old.png', tinyPng(PNG_BLUE));
     write(cwd, 'blob.bin', binaryBytes('v1'));
     write(cwd, 'fake.png', 'not really a png\n');
+    write(cwd, 'img/logo.svg', SVG_RED);
+    write(cwd, 'binary.svg', Buffer.from('<svg>\0</svg>\n'));
     commit(cwd, 'add images');
 
     write(cwd, 'img/a.png', tinyPng(PNG_BLUE));
@@ -615,6 +623,9 @@ export function makeFixtures(destDir, only) {
     write(cwd, 'new.png', tinyPng(PNG_GREEN));
     write(cwd, 'blob.bin', binaryBytes('v2 with different length'));
     write(cwd, 'fake.png', 'still not a png\n');
+    write(cwd, 'img/logo.svg', SVG_BLUE);
+    write(cwd, 'new.svg', SVG_RED);
+    write(cwd, 'binary.svg', Buffer.from('<svg>\0\0</svg>\n'));
     repos.images = cwd;
   }
 

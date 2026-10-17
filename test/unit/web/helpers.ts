@@ -46,11 +46,13 @@ import {
   type FileRequestState,
   fileStates,
   ignoreWhitespace,
+  svgPreview,
 } from '../../../src/web/state/store';
 
-/** 清空标签栏、三张缓存与忽略空白的开关。用到右侧状态的用例都从这里起。 */
+/** 清空标签栏、三张缓存与忽略空白、SVG 预览两个开关。用到右侧状态的用例都从这里起。 */
 export function resetEditors(): void {
   ignoreWhitespace.value = false;
+  svgPreview.value = false;
   editors.value = [];
   activeEditorKey.value = null;
   diffStates.value = new Map();

@@ -30,7 +30,8 @@ export const MAX_LINES = 50_000;
  * 只在**已判定为二进制之后**才查——单看扩展名会把一个内容是文本的 `.png`（占位符、被 LFS
  * 换成指针的图）送去 `<img>` 里画成一张破图，而它本来有一份能看的文本 diff。
  *
- * **SVG 刻意不在表里**：它是文本，走文本 diff 更有信息量。表也是 `/api/blob` 的 `Content-Type`
+ * **SVG 刻意不在表里**：它是文本，走文本 diff 更有信息量；进了表，含 NUL 的 `.svg` 会从二进制
+ * 那支被当成图放行。它的预览走 `isSvg` / `previewMimeOf` 那一路。表也是 `/api/blob` 的 `Content-Type`
  * 来源——`nosniff` 之下类型错一个字浏览器就不画，所以值必须是精确的 MIME。
  */
 const IMAGE_MIME: Readonly<Record<string, string>> = {
@@ -46,7 +47,27 @@ const IMAGE_MIME: Readonly<Record<string, string>> = {
 
 /** 这条路径按扩展名算图片时给 MIME，否则 `null`。`posix.extname` 对 `.png` 这种点开头的名字给空串。 */
 export function imageMimeOf(path: string): string | null {
-  return IMAGE_MIME[posix.extname(path).slice(1).toLowerCase()] ?? null;
+  return IMAGE_MIME[extensionOf(path)] ?? null;
+}
+
+function extensionOf(path: string): string {
+  return posix.extname(path).slice(1).toLowerCase();
+}
+
+/**
+ * 这条路径的文本 payload 要不要带 `preview`。只看扩展名——它挂在**已判定为文本**的那一支上，
+ * 与图片表「二进制之后才查」是对称的两半。
+ */
+export function isSvg(path: string): boolean {
+  return extensionOf(path) === 'svg';
+}
+
+/**
+ * `/api/blob` 认的 MIME：图片表并上 svg。**只给字节端点用**，分类链仍只认 `imageMimeOf`——两张
+ * 表合成一张时，含 NUL 的 `.svg` 在 payload 里成了图。
+ */
+export function previewMimeOf(path: string): string | null {
+  return isSvg(path) ? 'image/svg+xml' : imageMimeOf(path);
 }
 
 /**
@@ -177,7 +198,14 @@ export type WorktreeFile =
   | { kind: 'binary' }
   | { kind: 'image'; buffer: Buffer; size: number; version: string }
   | { kind: 'too-large'; size: number; reason: 'size' | 'lines' }
-  | { kind: 'text'; buffer: Buffer; size: number; lines: number; executable: boolean };
+  | {
+      kind: 'text';
+      buffer: Buffer;
+      size: number;
+      lines: number;
+      executable: boolean;
+      version: string;
+    };
 
 /**
  * 工作区里一份内容的身份：体积 + mtime。**内容身份，不是时间戳**——前端拿它当 `<img>` 的
@@ -202,9 +230,17 @@ export function worktreeVersion(info: { size: number; mtimeMs: number }): string
  *   的一档。与 `text` 一样把 `buffer` 带出去：`/api/blob` 的新侧就是这条链，不另写一份「lstat →
  *   体积 → 读」的副本——上一份副本连 NUL 那道都没有，一个内容是文本的 `.png` 在 payload 里是
  *   文本、在字节端点上却被当图发出去。
- * - **`version` 是这份内容的身份**（`worktreeVersion`），前端拿它决定要不要重取。
+ * - **`version` 是这份内容的身份**（`worktreeVersion`），前端拿它决定要不要重取。`text` 也带：
+ *   SVG 的预览拿它当 `<img>` 的 `v=`。
+ * - **`maxLines` 只给 `/api/blob` 的 SVG 新侧放宽**：行数闸挡的是「文本太长、表格画不动」，对一张
+ *   图没有意义；旧侧的 `cat-file blob` 本就不数行，不放宽时一个五万行以上、只改了几行的 SVG
+ *   会拿到预览，而 After 那张永远取不回来。
  */
-export async function inspectFile(root: string, path: string): Promise<WorktreeFile> {
+export async function inspectFile(
+  root: string,
+  path: string,
+  { maxLines = MAX_LINES }: { maxLines?: number } = {},
+): Promise<WorktreeFile> {
   const { abs } = await resolveInRepo(root, path, { follow: false });
 
   let info: Awaited<ReturnType<typeof lstat>>;
@@ -228,7 +264,14 @@ export async function inspectFile(root: string, path: string): Promise<WorktreeF
   const lines = countLines(buffer);
   // 体积没超、行数超了——`reason` 区分的就是这条路径：文件可能只有几百 KB，
   // 光把体积报给前端解释不了为什么不预览
-  if (lines > MAX_LINES) return { kind: 'too-large', size: info.size, reason: 'lines' };
+  if (lines > maxLines) return { kind: 'too-large', size: info.size, reason: 'lines' };
 
-  return { kind: 'text', buffer, size: info.size, lines, executable: (info.mode & 0o111) !== 0 };
+  return {
+    kind: 'text',
+    buffer,
+    size: info.size,
+    lines,
+    executable: (info.mode & 0o111) !== 0,
+    version: worktreeVersion(info),
+  };
 }

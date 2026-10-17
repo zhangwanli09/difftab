@@ -1,6 +1,6 @@
-// `DiffPayload` / `FilePayload` 的 `image` 支，两个面板共用。
+// `DiffPayload` / `FilePayload` 的 `image` 支，以及文本 payload 上的 SVG 预览，两个面板共用。
 //
-// **前端不判「这是不是图片」，只认 `payload.kind === 'image'`**：判据（二进制 ∧ 扩展名）与扩展名
+// **前端不判「这是不是图片」，只认 `payload.kind === 'image'` 与 `payload.preview`**：判据（二进制 ∧ 扩展名）与扩展名
 // 表都在后端，页面上没有第二份——与 `languageOf` 必须只有一份是同一条取向，两份表漂开的症状
 // 是后端说这是图、前端按二进制画一句提示。
 //
@@ -9,11 +9,8 @@
 
 import type { ComponentChildren } from 'preact';
 import { useState } from 'preact/hooks';
-import type { DiffPayload, FilePayload, ImageSide } from '../../server/shared/protocol';
+import type { FilePreview, ImagePreview, ImageSide } from '../../server/shared/protocol';
 import { formatSize, Notice } from './DiffView';
-
-type ImageDiffPayload = Extract<DiffPayload, { kind: 'image' }>;
-type ImageFilePayload = Extract<FilePayload, { kind: 'image' }>;
 
 /**
  * `v=` 是后端给的**内容身份**（`ImageSide.version`），不是时间戳。URL 字串相同时 Preact 不改
@@ -133,42 +130,37 @@ function ImageRow({ children }: { children: ComponentChildren }) {
 
 /**
  * diff 那侧：`Before` / `After` 各一张，`null` 的那侧不画——新增只有右、删除只有左。`key` 是
- * 内容身份：内容没变的那一侧不重挂、不重取。
+ * 内容身份：内容没变的那一侧不重挂、不重取。收的是两侧而不是整份 `image` payload：SVG 预览的
+ * 两侧挂在文本 payload 上，形状相同。
  */
 export function ImageDiff({
-  payload,
+  sides,
   sha,
 }: {
-  payload: ImageDiffPayload;
+  sides: ImagePreview;
   /** 提交历史里的那份 diff：两侧的字节都按这次提交去取。 */
   sha?: string | undefined;
 }) {
   return (
     <ImageRow>
-      {payload.old && (
+      {sides.old && (
         <ImageFigure
-          key={payload.old.version}
-          side={payload.old}
+          key={sides.old.version}
+          side={sides.old}
           which="old"
           label="Before"
           sha={sha}
         />
       )}
-      {payload.new && (
-        <ImageFigure
-          key={payload.new.version}
-          side={payload.new}
-          which="new"
-          label="After"
-          sha={sha}
-        />
+      {sides.new && (
+        <ImageFigure key={sides.new.version} side={sides.new} which="new" label="After" sha={sha} />
       )}
     </ImageRow>
   );
 }
 
-/** 文件视图那侧：工作区那一张，不带标题。 */
-export function ImageFile({ path, payload }: { path: string; payload: ImageFilePayload }) {
+/** 文件视图那侧：工作区那一张，不带标题。`payload` 是 `image` 那支或文本上的 SVG 预览。 */
+export function ImageFile({ path, payload }: { path: string; payload: FilePreview }) {
   return (
     <ImageRow>
       <ImageFigure
