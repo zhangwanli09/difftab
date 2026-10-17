@@ -104,6 +104,13 @@ export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
 };
 
 /**
+ * `/api/blob` 回 SVG 时换上的 CSP。`<img>` 里的 SVG 本就不跑脚本、不取外链，但直接打开那条 URL
+ * 时它是一份同源文档：`sandbox` 把它放进不透明源，内联脚本与事件属性一律不跑；`style-src
+ * 'unsafe-inline'` 只为 SVG 自带的 `<style>` 与 `style=` 属性——它们是画图的一部分。
+ */
+export const SVG_CSP = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
+
+/**
  * 把 token 落成 cookie 的 Set-Cookie 值。`HttpOnly; SameSite=Strict` + 随后 302 掉 query，
  * 避免 token 长期滞留在浏览器历史、地址栏和日志中。不设 `Secure`——那会让
  * http://127.0.0.1 上的 cookie 直接不生效。

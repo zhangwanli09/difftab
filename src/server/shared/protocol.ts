@@ -157,6 +157,22 @@ export interface ImageSide {
 }
 
 /**
+ * SVG 的预览两侧，挂在文本 payload 上。**SVG 的分类照旧是文本**——agent 改它多半是改几个坐标，
+ * 文本 diff 说得出改了哪一行；这一份只让页面能把它再画成图。形状与 `image` 那支相同、字节同样
+ * 走 `/api/blob`。缺省即「没有可预览的」：不是 svg，或任一侧超过 5MB（`/api/blob` 会拒）。
+ */
+export interface ImagePreview {
+  old: ImageSide | null;
+  new: ImageSide | null;
+}
+
+/** 文件视图那侧的 SVG 预览：只有工作区一侧。`FilePayload` 的 `image` 那支也是这个形状。 */
+export interface FilePreview {
+  size: number;
+  version: string;
+}
+
+/**
  * `GET /api/diff` 的响应体，判别联合。`text` 是已跟踪文件的 `git diff` 补丁正文；
  * `untracked-text` 是未跟踪文件手工构造的 unified diff（不走 `--no-index`）——两者分开是
  * 因为后者的补丁不来自 git，前端将来若要做「以 git 输出为准」的断言，得能区分。
@@ -174,10 +190,11 @@ export type DiffPayload =
        * `fullContext=1` 过不了闸时后端退回 3 行上下文并给 `false`，前端只认这个字段。
        */
       full: boolean;
+      preview?: ImagePreview;
     }
-  | { kind: 'untracked-text'; patch: string }
+  | { kind: 'untracked-text'; patch: string; preview?: ImagePreview }
   | { kind: 'binary' }
-  | { kind: 'image'; old: ImageSide | null; new: ImageSide | null }
+  | ({ kind: 'image' } & ImagePreview)
   | {
       kind: 'too-large';
       /** 文件字节数。**不足以解释拒绝的原因**，见 `reason`。 */
@@ -229,13 +246,14 @@ export interface TreePayload {
  * 50,000 行），只给 `size` 时行数那一路解释不了拒绝的原因。
  *
  * `image` 与 `DiffPayload` 的同名分支同一条判据（二进制 ∧ 扩展名），字节由
- * `/api/blob?side=new` 给——文件视图看的永远是工作区那一份。
+ * `/api/blob?side=new` 给——文件视图看的永远是工作区那一份。`text` 上的 `preview` 与
+ * `DiffPayload` 的同名字段同一条口径（只在 svg 上、不超 5MB），只有工作区这一侧。
  */
 export type FilePayload =
-  | { kind: 'text'; content: string }
+  | { kind: 'text'; content: string; preview?: FilePreview }
   | { kind: 'symlink'; target: string }
   | { kind: 'binary' }
-  | { kind: 'image'; size: number; version: string }
+  | ({ kind: 'image' } & FilePreview)
   | { kind: 'too-large'; size: number; reason: 'size' | 'lines' };
 
 /**

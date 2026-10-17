@@ -5,7 +5,7 @@
 
 import type { Stats } from 'node:fs';
 import { lstat } from 'node:fs/promises';
-import { DIFF_CONTEXT_LINES, type DiffPayload, type ImageSide } from '../shared/protocol.ts';
+import { DIFF_CONTEXT_LINES, type DiffPayload, type ImagePreview } from '../shared/protocol.ts';
 import { requireParent, resolveCommit } from './history.ts';
 import { baseBlobSize } from './image.ts';
 import { type DiffBase, type RepoInfo, resolveDiffBase } from './repo.ts';
@@ -14,6 +14,7 @@ import {
   countLines,
   imageMimeOf,
   inspectFile,
+  isSvg,
   literalRepoPath,
   MAX_BYTES,
   MAX_LINES,
@@ -138,46 +139,59 @@ async function worktreeSize(abs: string): Promise<number | null> {
 }
 
 /**
- * 已跟踪图片的两侧元数据。**判据的二进制那一半是调用方给的（numstat 的 `-\t-`）**，这里只管
- * 扩展名命中之后的事：旧侧问基准（`cat-file -s`，不存在即 `null`——新增、或基准是空树），新侧
- * `lstat` 工作区（不存在即 `null`——已删除）。重命名的旧侧在 `oldPath`，`old.path` 填成它，前端
- * 拿着直接问 `/api/blob`，不自己拼。
+ * 已跟踪图片（以及 SVG 预览）的两侧元数据。**判据是调用方给的**（图片是 numstat 的 `-\t-` ∧
+ * 扩展名，SVG 是文本 ∧ 扩展名），这里只管命中之后的事：旧侧问基准（`cat-file -s`，不存在即
+ * `null`——新增、或基准是空树），新侧 `lstat` 工作区（不存在即 `null`——已删除）。重命名的旧侧在
+ * `oldPath`，`old.path` 填成它，前端拿着直接问 `/api/blob`，不自己拼。
  *
  * **`version` 是内容身份，前端拿它决定要不要重取**：旧侧是基准的 oid（`<base>:<path>` 那个 blob
  * 只在基准换了之后才可能变，而 oid 是 `resolveDiffBase` 那次 `rev-parse` 顺手就有的），新侧是
  * 体积 + mtime（`worktreeVersion`）。
  *
- * **5MB 按侧卡**：任一侧超过就整个回 `too-large`——一张 8MB 的 PNG 说「太大」是真话；`size`
- * 取**两侧里大的那个**（取不到给 0）：固定报工作区那份时，HEAD 里 8MB 的图被换成 120KB 的，提示
- * 会说「too large (file is 120 KB)」，而 Files 里同一个文件正常显示——自相矛盾。
+ * 5MB 那道闸不在这里，在 `imagePayload` / `previewOf`：图片超限是整个 `too-large`，SVG 超限只是
+ * 不带预览。
  */
-async function imageDiff(
+async function worktreeImageSides(
   root: string,
   base: DiffBase,
   path: string,
   abs: string,
   oldPath: string | undefined,
-): Promise<DiffPayload> {
+): Promise<ImagePreview> {
   const basePath = oldPath ?? path;
   const [oldSize, info] = await Promise.all([
     baseBlobSize(root, base.ref, basePath),
     worktreeStat(abs),
   ]);
-  return imagePayload(
-    oldSize === null ? null : { path: basePath, size: oldSize, version: base.oid },
-    info === null ? null : { path, size: info.size, version: worktreeVersion(info) },
-  );
+  return {
+    old: oldSize === null ? null : { path: basePath, size: oldSize, version: base.oid },
+    new: info === null ? null : { path, size: info.size, version: worktreeVersion(info) },
+  };
+}
+
+/** 两侧里大的那个，取不到给 0。 */
+function largestSide({ old, new: fresh }: ImagePreview): number {
+  return Math.max(old?.size ?? 0, fresh?.size ?? 0);
 }
 
 /**
- * 两侧元数据 → payload，工作区与提交两条路共用。**5MB 按侧卡**：任一侧超过就整个回 `too-large`；
- * `size` 取两侧里大的那个（取不到给 0）。两份各写时阈值或取哪一侧的体积漂开，同一张图在两个视图
- * 里一个说太大、一个照常画。
+ * 两侧元数据 → payload，工作区与提交两条路共用。**5MB 按侧卡**：任一侧超过就整个回 `too-large`
+ * ——一张 8MB 的 PNG 说「太大」是真话；`size` 取**两侧里大的那个**：固定报工作区那份时，HEAD 里
+ * 8MB 的图被换成 120KB 的，提示会说「too large (file is 120 KB)」，而 Files 里同一个文件正常显示
+ * ——自相矛盾。两份各写时阈值或取哪一侧的体积漂开，同一张图在两个视图里一个说太大、一个照常画。
  */
-function imagePayload(old: ImageSide | null, fresh: ImageSide | null): DiffPayload {
-  const largest = Math.max(old?.size ?? 0, fresh?.size ?? 0);
+function imagePayload(sides: ImagePreview): DiffPayload {
+  const largest = largestSide(sides);
   if (largest > MAX_BYTES) return { kind: 'too-large', size: largest, reason: 'size' };
-  return { kind: 'image', old, new: fresh };
+  return { kind: 'image', ...sides };
+}
+
+/**
+ * SVG 的预览两侧，与 `imagePayload` 同一道 5MB 闸，**超限只是不带预览**：补丁可以只有几行、照常
+ * 能看，而 `/api/blob` 会拒那张图——带上它等于给一枚点了必失败的开关。
+ */
+function previewOf(sides: ImagePreview): ImagePreview | undefined {
+  return largestSide(sides) > MAX_BYTES ? undefined : sides;
 }
 
 /**
@@ -191,7 +205,7 @@ function imagePayload(old: ImageSide | null, fresh: ImageSide | null): DiffPaylo
  * 顺序：二进制(numstat)→ 行数(numstat)→ 取补丁并卡字节。二进制先答是因为它比「太大」
  * 更具体（一个 8MB 的 PNG 说「文件过大」等于把原因说错了）；行数排在取补丁之前，是因为它
  * 不用付出取补丁的代价就能拦下 5 万行以上的改动。二进制里扩展名在表里的那一支放行成
- * `image`（`imageDiff`）——扩展名只在 git 已判定二进制之后才查，单看扩展名会把一个内容是
+ * `image`（`imagePayload`）——扩展名只在 git 已判定二进制之后才查，单看扩展名会把一个内容是
  * 文本的 `.png` 画成破图。
  *
  * `path` / `oldPath` 是 `resolveInRepo` 归一化后的：图片那一路要把它拼进 `<base>:<path>`，
@@ -218,14 +232,14 @@ async function trackedDiff(
     oldPath,
     stat,
     options,
-    image: () => imageDiff(root, base, path, abs, oldPath),
+    sides: () => worktreeImageSides(root, base, path, abs, oldPath),
     size: async () => (await worktreeSize(abs)) ?? 0,
   });
 }
 
 /**
  * 三道闸本身，工作区 diff 与提交 diff 共用这一份——两份阈值漂开后同一个文件在两个视图里一个
- * 说太大、一个照常渲染。两者只差三样：比的是哪一段（`range`）、图片两侧从哪来（`image`）、
+ * 说太大、一个照常渲染。两者只差三样：比的是哪一段（`range`）、图片与 SVG 预览的两侧从哪来（`sides`）、
  * 拒绝时报的体积从哪取（`size`，提交那侧没有工作区体积可取，给 0）。
  */
 interface PatchSource {
@@ -234,7 +248,7 @@ interface PatchSource {
   oldPath: string | undefined;
   stat: { binary: boolean; lines: number } | null;
   options: PatchOptions;
-  image: () => Promise<DiffPayload>;
+  sides: () => Promise<ImagePreview>;
   size: () => Promise<number>;
 }
 
@@ -284,10 +298,33 @@ async function fetchPatch(root: string, args: string[]): Promise<string | null> 
   return result.stdout;
 }
 
+/**
+ * 补丁头里任一侧是符号链接（mode 120000）。git 对链接给的「正文」是目标字符串，`/api/blob` 取到的
+ * 也是它——带上预览只会是两张取不回来的图。只看第一个 hunk 之前的头部：正文里出现这串数字不算。
+ */
+function touchesSymlink(patch: string): boolean {
+  const end = patch.indexOf('\n@@');
+  const header = end === -1 ? patch : patch.slice(0, end);
+  return /^(?:(?:old|new|new file|deleted file) mode 120000|index \S+ 120000)$/m.test(header);
+}
+
+/**
+ * 文本补丁出来之后，SVG 再挂上预览两侧。**只对 svg 才去问两侧**：那是一次 `cat-file -s` 加一次
+ * `lstat`，其余文本一次都不欠。符号链接不带（`touchesSymlink`）。
+ */
+async function withPreview(
+  source: PatchSource,
+  payload: Extract<DiffPayload, { kind: 'text' }>,
+): Promise<DiffPayload> {
+  if (!isSvg(source.path) || touchesSymlink(payload.patch)) return payload;
+  const preview = previewOf(await source.sides());
+  return preview === undefined ? payload : { ...payload, preview };
+}
+
 async function gatedPatch(root: string, source: PatchSource): Promise<DiffPayload> {
   const { path, stat } = source;
   if (stat?.binary) {
-    return imageMimeOf(path) === null ? { kind: 'binary' } : source.image();
+    return imageMimeOf(path) === null ? { kind: 'binary' } : imagePayload(await source.sides());
   }
   if (stat && stat.lines > MAX_LINES) {
     // 行数这一路的 size 可能只有几百 KB，前端因此必须靠 reason 而不是 size 说话
@@ -303,12 +340,12 @@ async function gatedPatch(root: string, source: PatchSource): Promise<DiffPayloa
   if (source.options.fullContext) {
     const full = await fetchPatch(root, patchArgs(source, MAX_LINES));
     if (full !== null && countLines(full) <= MAX_LINES) {
-      return { kind: 'text', patch: full, full: true };
+      return withPreview(source, { kind: 'text', patch: full, full: true });
     }
   }
   const patch = await fetchPatch(root, patchArgs(source, DIFF_CONTEXT_LINES));
   if (patch === null) return { kind: 'too-large', size: await source.size(), reason: 'size' };
-  return { kind: 'text', patch, full: false };
+  return withPreview(source, { kind: 'text', patch, full: false });
 }
 
 /** unified diff 的头四行。未跟踪的一切都是「新增」，左侧恒为 /dev/null。 */
@@ -365,8 +402,15 @@ export async function untrackedDiff(root: string, path: string): Promise<DiffPay
   const body = lines.map((line) => `+${line}`);
   if (!endsWithNewline) body.push('\\ No newline at end of file');
 
-  const patch = [...head, `@@ -0,0 +1,${lines.length} @@`, ...body].join('\n');
-  return { kind: 'untracked-text', patch: `${patch}\n` };
+  const patch = `${[...head, `@@ -0,0 +1,${lines.length} @@`, ...body].join('\n')}\n`;
+  // 未跟踪的 SVG 只有新侧；体积已过 `inspectFile` 那道 5MB 闸
+  return {
+    kind: 'untracked-text',
+    patch,
+    ...(isSvg(path) && {
+      preview: { old: null, new: { path, size: file.size, version: file.version } },
+    }),
+  };
 }
 
 export interface DiffQuery extends PatchOptions {
@@ -423,7 +467,7 @@ export async function readCommitDiff(
     oldPath,
     stat,
     options: query,
-    image: () => commitImageDiff(root, parent, commit.sha, path, oldPath),
+    sides: () => commitImageSides(root, parent, commit.sha, path, oldPath),
     // 拒绝时报的体积取新侧那个 blob（删除则取旧侧）——同一个文件在工作区 diff 里会说「file is
     // 6 MB」，这里给 0 两个视图就对不上了。`cat-file -s` 只在要拒绝的那两条分支上才问
     size: async () =>
@@ -434,24 +478,24 @@ export async function readCommitDiff(
 }
 
 /**
- * 提交里图片的两侧，**都读对象库**：旧侧 `<parent>:<旧路径或路径>`、新侧 `<sha>:<路径>`，与
+ * 提交里图片（以及 SVG 预览）的两侧，**都读对象库**：旧侧 `<parent>:<旧路径或路径>`、新侧 `<sha>:<路径>`，与
  * 工作区 diff 的旧侧同一条 `cat-file -s`。`version` 是两端的对象名——提交不可变，这两个身份
  * 永远不会换内容。
  */
-async function commitImageDiff(
+async function commitImageSides(
   root: string,
   parent: string,
   sha: string,
   path: string,
   oldPath: string | undefined,
-): Promise<DiffPayload> {
+): Promise<ImagePreview> {
   const basePath = oldPath ?? path;
   const [oldSize, newSize] = await Promise.all([
     baseBlobSize(root, parent, basePath),
     baseBlobSize(root, sha, path),
   ]);
-  return imagePayload(
-    oldSize === null ? null : { path: basePath, size: oldSize, version: parent },
-    newSize === null ? null : { path, size: newSize, version: sha },
-  );
+  return {
+    old: oldSize === null ? null : { path: basePath, size: oldSize, version: parent },
+    new: newSize === null ? null : { path, size: newSize, version: sha },
+  };
 }

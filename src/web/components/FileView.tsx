@@ -3,13 +3,14 @@
 // **这不是 diff**：每一行前面不挂 `+`、底色不是新增绿——「看项目整体面貌」正是要摆脱补丁
 // 视角。因此它不走 diff 的表格，只用 hljs 高亮一次，行号另起一栏。
 //
-// 五个 `kind` 全部在这里分支，提示行与 DiffView 共用同一个 `Notice`，图片与它共用 `ImageView`。
+// 五个 `kind` 全部在这里分支，提示行与 DiffView 共用同一个 `Notice`，图片与 SVG 预览与它共用
+// `ImageView`。
 
 import { useLayoutEffect, useMemo, useRef } from 'preact/hooks';
 import type { FilePayload } from '../../server/shared/protocol';
 import { getHljs, languageOf } from '../diff/hljs';
 import { revealRequest } from '../state/editors';
-import { fileStates } from '../state/store';
+import { fileStates, shownPreview } from '../state/store';
 import { ErrorDetail, Notice, Panel, tooLargeNotice } from './DiffView';
 import { ImageFile } from './ImageView';
 
@@ -123,6 +124,8 @@ const FILLS_PANEL: Record<FilePayload['kind'], boolean> = {
 };
 
 function Payload({ path, payload }: { path: string; payload: FilePayload }) {
+  const preview = shownPreview(payload);
+  if (preview !== undefined) return <ImageFile path={path} payload={preview} />;
   switch (payload.kind) {
     case 'text': {
       // 只认路径对得上的那一份：别的文件的跳行与这里无关
@@ -165,8 +168,10 @@ export function FileView({ path }: { path: string }) {
    * 径带着 `break-all` 也救不了：`break-all` 只把 min-content 降到一个字符，max-content 仍是整
    * 句不断。
    */
-  const wide = state.status === 'ready' && NEEDS_WIDE_BOX[state.payload.kind];
-  const fill = state.status === 'ready' && FILLS_PANEL[state.payload.kind];
+  const payload = state.status === 'ready' ? state.payload : null;
+  const previewing = payload !== null && shownPreview(payload) !== undefined;
+  const wide = payload !== null && NEEDS_WIDE_BOX[payload.kind] && !previewing;
+  const fill = payload !== null && (FILLS_PANEL[payload.kind] || previewing);
 
   const body = (
     <>

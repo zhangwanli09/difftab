@@ -1,4 +1,4 @@
-// `/api/blob` 两侧的图片字节，以及 diff 那侧要的「基准里这个 blob 在不在、多大」。
+// `/api/blob` 两侧的图片（与 SVG 预览）字节，以及 diff 那侧要的「基准里这个 blob 在不在、多大」。
 //
 // **这是本目录唯一一处读对象库的调用。** 判「这是不是图片」不在这里——那是分类链的一环，
 // 归 `worktree.ts`：新侧的字节就是 `inspectFile` 那条链本身（`image` 支带着 `buffer`），本文件
@@ -12,10 +12,11 @@ import { requireParent, resolveCommit } from './history.ts';
 import { type RepoInfo, resolveDiffBase } from './repo.ts';
 import { GitError, type GitResult, runGit, runGitRaw } from './run.ts';
 import {
-  imageMimeOf,
   inspectFile,
+  isSvg,
   literalRepoPath,
   MAX_BYTES,
+  previewMimeOf,
   resolveInRepo,
   WorktreeError,
 } from './worktree.ts';
@@ -52,12 +53,12 @@ export interface ImageBytes {
 }
 
 /**
- * 取一侧的字节。**非图片扩展名一律 400**——不限扩展名的话它就是一个「下载工作区任意文件」
+ * 取一侧的字节。**图片表与 svg 之外的扩展名一律 400**——不限扩展名的话它就是一个「下载工作区任意文件」
  * 的端点，而 `/api/file` 读任意文本时至少还经过分类链与两道闸。
  *
  * 两侧都再卡一次 5MB（`MAX_BYTES`）：payload 已经按侧卡过，但字节是第二次请求，中间文件可以
- * 长大。`new` 侧走 `inspectFile`——与 payload 同一条链，NUL ∧ 扩展名两半都过；`old` 侧带
- * `maxStdoutBytes` 去撞，超限即就地掐断 git。
+ * 长大。`new` 侧走 `inspectFile`——与 payload 同一条链：图片要 `image`（NUL ∧ 扩展名），svg 要
+ * `text`，两种分类与扩展名必须对得上；`old` 侧带 `maxStdoutBytes` 去撞，超限即就地掐断 git。
  */
 export async function readImageBytes(
   repo: RepoInfo,
@@ -66,7 +67,7 @@ export async function readImageBytes(
   commit?: string,
 ): Promise<ImageBytes> {
   const { root } = repo;
-  const mime = imageMimeOf(path);
+  const mime = previewMimeOf(path);
   if (mime === null) throw new WorktreeError('invalid-path', 'not an image');
 
   // 提交历史那一侧两边都在对象库里：旧侧是第一父、新侧是提交本身。路径只过字面量那道——
@@ -78,10 +79,15 @@ export async function readImageBytes(
   }
 
   if (side === 'new') {
-    const file = await inspectFile(root, path);
+    const svg = isSvg(path);
+    // 行数闸对图没有意义，svg 放宽它——旧侧的 `cat-file blob` 本就不数行，两侧要对得上
+    const file = await inspectFile(root, path, svg ? { maxLines: Infinity } : {});
     if (file.kind === 'too-large') throw new WorktreeError('too-large', 'image too large');
-    if (file.kind !== 'image') throw new WorktreeError('invalid-path', 'not an image');
-    return { buffer: file.buffer, mime };
+    // 含 NUL 的 `.svg` 在 payload 里是 `binary`，这里也不能把它当图发出去
+    if ((file.kind === 'image' && !svg) || (file.kind === 'text' && svg)) {
+      return { buffer: file.buffer, mime };
+    }
+    throw new WorktreeError('invalid-path', 'not an image');
   }
 
   // 基准与边界校验彼此不依赖，并发跑——串行等于把一次进程启动的开销直接叠在每张旧图上

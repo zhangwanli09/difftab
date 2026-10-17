@@ -32,6 +32,7 @@ import {
   PATCH_DEFAULTS,
   type PatchRequest,
   type RenameInfo,
+  shownPreview,
 } from '../state/store';
 import { Icon } from './Icon';
 import { ImageDiff } from './ImageView';
@@ -532,7 +533,7 @@ function RenameNotice({ rename }: { rename: RenameInfo }) {
  * 面板的 chrome 只有 `EditorTabs` 那一条，它排在滚动区域之外，因此这里既不需要 `sticky top-0`
  * 也不需要 `z-10`：文件视图里 `sticky` 的行号槽被滚动容器的 `overflow` 裁掉，够不着标签栏。
  *
- * **`fill` 只给图片那一支**：成一列 flex，让 `ImageRow` 用 `flex-1` 拿到面板剩余的高、把图按高缩、
+ * **`fill` 只给图片那一支与 SVG 预览**：成一列 flex，让 `ImageRow` 用 `flex-1` 拿到面板剩余的高、把图按高缩、
  * 上下居中。正文与提示行不带它，滚动层的类名照旧。
  */
 export function Panel({ children, fill = false }: { children: ComponentChildren; fill?: boolean }) {
@@ -576,6 +577,8 @@ function Payload({
       tab={tab}
     />
   );
+  const preview = shownPreview(payload);
+  if (preview !== undefined) return <ImageDiff sides={preview} sha={sha} />;
   switch (payload.kind) {
     case 'text':
       return patch(payload.patch, payload.full);
@@ -585,7 +588,7 @@ function Payload({
     case 'binary':
       return <Notice>Binary file — contents are not compared.</Notice>;
     case 'image':
-      return <ImageDiff payload={payload} sha={sha} />;
+      return <ImageDiff sides={payload} sha={sha} />;
     case 'too-large':
       return <Notice>{tooLargeNotice(payload, 'diff')}</Notice>;
   }
@@ -646,7 +649,12 @@ function DiffBody({
   children?: ComponentChildren;
 }) {
   return (
-    <Panel fill={state.status === 'ready' && FILLS_PANEL[state.payload.kind]}>
+    <Panel
+      fill={
+        state.status === 'ready' &&
+        (FILLS_PANEL[state.payload.kind] || shownPreview(state.payload) !== undefined)
+      }
+    >
       {children}
       {/* 三个状态下都标注：标注属于「选了哪个条目」，与补丁取到没有无关。它跟着补丁一起滚
           ——这一行说的是这份补丁的来历，不是「我在看哪个文件」，后者由标签栏答 */}

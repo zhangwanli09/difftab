@@ -8,7 +8,7 @@
 // 时就已经漂开（行数口径差一），正是「阈值不得写两份」那条红线说的那种漂移。
 
 import type { FilePayload } from '../shared/protocol.ts';
-import { inspectFile } from './worktree.ts';
+import { inspectFile, isSvg } from './worktree.ts';
 
 /** 读一个文件用于只读展示。 */
 export async function readFileContent(root: string, path: string): Promise<FilePayload> {
@@ -23,7 +23,12 @@ export async function readFileContent(root: string, path: string): Promise<FileP
     // 与 text 一样只把元数据带出去，字节由 /api/blob 再走一遍同一条链
     case 'image':
       return { kind: 'image', size: file.size, version: file.version };
+    // SVG 照旧是文本，另带一份预览元数据；体积已过 5MB 那道闸，`/api/blob` 不会拒它
     case 'text':
-      return { kind: 'text', content: file.buffer.toString('utf8') };
+      return {
+        kind: 'text',
+        content: file.buffer.toString('utf8'),
+        ...(isSvg(path) && { preview: { size: file.size, version: file.version } }),
+      };
   }
 }

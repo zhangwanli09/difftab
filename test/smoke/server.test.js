@@ -9,7 +9,14 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } 
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { test } from 'node:test';
-import { makeFixtures, OUTSIDE_SECRET, PNG_BLUE, PNG_RED, tinyPng } from '../fixtures/make.mjs';
+import {
+  makeFixtures,
+  OUTSIDE_SECRET,
+  PNG_BLUE,
+  PNG_RED,
+  SVG_BLUE,
+  tinyPng,
+} from '../fixtures/make.mjs';
 import {
   authedGet,
   BIN,
@@ -466,6 +473,24 @@ test('图片：payload 只带两侧元数据，字节由 /api/blob 以精确 MIM
   assert.deepEqual([file.kind, file.size], ['image', tinyPng(PNG_BLUE).length]);
   assert.ok(file.version);
 
+  // SVG：仍是文本补丁，另带预览两侧；字节以 image/svg+xml 给，且沙箱住——直接打开那条 URL 时
+  // 它是一份同源文档
+  const svg = JSON.parse((await onImages(`/api/diff?${q('img/logo.svg')}`)).body);
+  assert.equal(svg.kind, 'text');
+  assert.deepEqual([svg.preview.old.path, svg.preview.new.path], ['img/logo.svg', 'img/logo.svg']);
+  for (const side of ['old', 'new']) {
+    const res = await onImages(`/api/blob?${q('img/logo.svg')}&side=${side}`);
+    assert.equal(res.status, 200, `svg 的 ${side} 侧回了 ${res.status}`);
+    assert.equal(res.headers['content-type'], 'image/svg+xml');
+    assert.match(res.headers['content-security-policy'], /(^|; )sandbox($|;)/);
+    assert.match(res.headers['content-security-policy'], /default-src 'none'/);
+  }
+  assert.ok(
+    (await onImages(`/api/blob?${q('img/logo.svg')}&side=new`)).bytes.equals(Buffer.from(SVG_BLUE)),
+  );
+  // 图片的响应照旧是页面那份 CSP，没被 svg 那条串过去
+  assert.doesNotMatch(old.headers['content-security-policy'], /sandbox/);
+
   // 对照面：非图片扩展名的二进制不放行；内容是文本的 .png 走文本
   assert.deepEqual(JSON.parse((await onImages(`/api/diff?${q('blob.bin')}`)).body), {
     kind: 'binary',
@@ -480,6 +505,8 @@ test('图片：payload 只带两侧元数据，字节由 /api/blob 以精确 MIM
     `/api/blob?${q('README.md')}&side=old`,
     // 内容是文本的 .png：新侧走的是 inspectFile 那条链，与 payload 同一个答案
     `/api/blob?${q('fake.png')}&side=new`,
+    // 含 NUL 的 .svg 在 payload 里是 binary，字节端点同一个答案
+    `/api/blob?${q('nul.svg')}&side=new`,
     '/api/blob?side=new',
   ]) {
     const res = await onImages(path);
