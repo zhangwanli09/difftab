@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.9.0](https://github.com/zhangwanli09/difftab/compare/v0.8.1...v0.9.0) (2026-10-18)
+
+
+### Features
+
+* **web:** add a preview toggle for SVG files ([#131](https://github.com/zhangwanli09/difftab/issues/131)) ([73ab0e2](https://github.com/zhangwanli09/difftab/commit/73ab0e20a50e2a9228b187267fefa8321993cca5))
+* **web:** badge every branch and tag in the history list ([#134](https://github.com/zhangwanli09/difftab/issues/134)) ([6724873](https://github.com/zhangwanli09/difftab/commit/67248730c18cbd33df46f2a0278f2fc2e7aeb038))
+* **web:** fit images to the panel and center them ([#126](https://github.com/zhangwanli09/difftab/issues/126)) ([fdc8853](https://github.com/zhangwanli09/difftab/commit/fdc88538be7d0bdf78c78fddef8761426e2e4267))
+* **web:** fold unchanged lines and add a whitespace toggle to diffs ([#127](https://github.com/zhangwanli09/difftab/issues/127)) ([f486d94](https://github.com/zhangwanli09/difftab/commit/f486d94e67da318aa261c8b9768194b113e7aa4c))
+* **web:** keep line numbers out of the diff's horizontal scroll ([#129](https://github.com/zhangwanli09/difftab/issues/129)) ([8059a0d](https://github.com/zhangwanli09/difftab/commit/8059a0d46c50040143e859ba93ffbfdb1a8e33b4))
+* **web:** open a whole commit in one tab from the history list ([#136](https://github.com/zhangwanli09/difftab/issues/136)) ([0db7c61](https://github.com/zhangwanli09/difftab/commit/0db7c6152e1d094c4f76ec9e13a2cc24749d9b37))
+* **web:** open SVG files in preview mode by default ([#133](https://github.com/zhangwanli09/difftab/issues/133)) ([90da5f7](https://github.com/zhangwanli09/difftab/commit/90da5f7d65233f1e5afacf5eb237688ef7401620))
+* **web:** show incoming commits at the top of the history list ([#135](https://github.com/zhangwanli09/difftab/issues/135)) ([d32424d](https://github.com/zhangwanli09/difftab/commit/d32424da0cc6e030c2bfa491c062ea7d409d5826))
+* **web:** show indent guides in both trees on hover ([#124](https://github.com/zhangwanli09/difftab/issues/124)) ([1bec194](https://github.com/zhangwanli09/difftab/commit/1bec1947fff0403fa19efa6480a6fc17daf27874))
+
+
+### Bug Fixes
+
+* **web:** align tree placeholders with file names ([#122](https://github.com/zhangwanli09/difftab/issues/122)) ([b19170a](https://github.com/zhangwanli09/difftab/commit/b19170a0a8d070e152514a039d99ebf1ec51d7ff))
+* **web:** drop the border from pressed toggle buttons ([#132](https://github.com/zhangwanli09/difftab/issues/132)) ([b3b1372](https://github.com/zhangwanli09/difftab/commit/b3b137253caea2f6d488c5f1924bced79fb5d56f))
+* **web:** leave the change list blank when the working tree is clean ([#128](https://github.com/zhangwanli09/difftab/issues/128)) ([76c3caf](https://github.com/zhangwanli09/difftab/commit/76c3caf66e2a75b30723046c56e48e820193213f))
+* **web:** lighten tree indent guides ([#125](https://github.com/zhangwanli09/difftab/issues/125)) ([711734d](https://github.com/zhangwanli09/difftab/commit/711734d3f38c18798ab6f7021064f09e41c7093a))
+
 ## [0.8.1](https://github.com/zhangwanli09/difftab/compare/v0.8.0...v0.8.1) (2026-10-15)
 
 
