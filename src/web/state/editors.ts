@@ -45,7 +45,17 @@ export type Editor =
         readonly sha: string;
         /** 重命名的旧路径。取补丁要带上它（只传新路径会退化成全新增），所以跟着 tab 走。 */
         readonly oldPath?: string | undefined;
-      });
+      })
+  | (EditorBase & {
+      /**
+       * 一次提交的全部文件排在一个 tab 里。`path` 存的也是 sha，只用于比对；上下文档按段记在
+       * `store.ts`，不挂在这里——点开一段的折叠行不该让其余几百段都按整份上下文取。
+       */
+      readonly kind: 'commit-changes';
+      readonly sha: string;
+      /** tab 上的主题。打开时从 History 那一行带进来：详情可能还没取，现找就是先画一拍空名字。 */
+      readonly subject: string;
+    });
 
 export type EditorKind = Editor['kind'];
 
@@ -62,24 +72,33 @@ export type EditorKey = `${EditorKind}:${string}`;
  */
 export function editorKey(kind: 'diff' | 'file', path: string): EditorKey;
 export function editorKey(kind: 'commit', path: string, sha: string): EditorKey;
-// 重载把「commit 必须带 sha、另两种不许带」钉在类型上：漏传 sha 的 `editorKey('commit', path)`
+/** `commit-changes` 的键是 `commit-changes:<sha>`：一次提交只有一个这种 tab。 */
+export function editorKey(kind: 'commit-changes', sha: string): EditorKey;
+// 重载把「commit 必须带 sha、diff / file 不许带」钉在类型上：漏传 sha 的 `editorKey('commit', path)`
 // 编得过时，得到的是一个谁都不匹配的键，高亮与关闭静默失效
 export function editorKey(kind: EditorKind, path: string, sha?: string): EditorKey {
   return sha === undefined ? `${kind}:${path}` : `${kind}:${sha}:${path}`;
 }
-export const keyOf = (editor: Editor): EditorKey =>
-  editor.kind === 'commit'
-    ? editorKey(editor.kind, editor.path, editor.sha)
-    : editorKey(editor.kind, editor.path);
+export function keyOf(editor: Editor): EditorKey {
+  switch (editor.kind) {
+    case 'commit':
+      return editorKey(editor.kind, editor.path, editor.sha);
+    case 'commit-changes':
+      return editorKey(editor.kind, editor.sha);
+    default:
+      return editorKey(editor.kind, editor.path);
+  }
+}
 
 /**
- * 这个 tab 显示的是不是工作区里 `path` 那一份：是就回 `path`，不是回 `null`。**commit tab 是唯一的
- * 「不是」**——它是历史上的某一版，与左栏同名那一行、与工作区此刻的状态说的都不是同一份内容。两栏
- * 高亮（`activeEditorPath`）与 tab 名染色都按它判：各写一遍 `kind === 'commit'` 时，多一种显示非工作区
- * 内容的 tab 只改了一处，症状是 tab 染着工作区的色、左栏却不亮，或者反过来。
+ * 这个 tab 显示的是不是工作区里 `path` 那一份：是就回 `path`，不是回 `null`。**commit 与
+ * commit-changes 两种是「不是」**——它们是历史上的某一版，与左栏同名那一行、与工作区此刻的状态说的
+ * 都不是同一份内容（commit-changes 的 `path` 更是一个 sha）。两栏高亮（`activeEditorPath`）与 tab 名
+ * 染色都按它判：各写一遍 `kind === 'commit'` 时，多一种显示非工作区内容的 tab 只改了一处，症状是 tab
+ * 染着工作区的色、左栏却不亮，或者反过来。
  */
 export const worktreePathOf = (editor: Editor): string | null =>
-  editor.kind === 'commit' ? null : editor.path;
+  editor.kind === 'diff' || editor.kind === 'file' ? editor.path : null;
 
 /** 换掉第 `index` 项，回一份新数组。`Array.prototype.with` 是 ES2023，前端 lib 停在 ES2022。 */
 const replaceAt = (list: readonly Editor[], index: number, editor: Editor): Editor[] =>
@@ -159,6 +178,15 @@ export function openCommitEditor(
   pinned = false,
 ): Editor | null {
   return open({ kind: 'commit', path, pinned, sha, oldPath });
+}
+
+/** 同 `openEditor`，开的是一次提交的全部文件。 */
+export function openCommitChangesEditor(
+  sha: string,
+  subject: string,
+  pinned = false,
+): Editor | null {
+  return open({ kind: 'commit-changes', path: sha, pinned, sha, subject });
 }
 
 function open(next: Editor): Editor | null {
@@ -244,9 +272,9 @@ export function renameEditor(kind: 'diff' | 'file', from: string, to: string): v
     } else {
       const pinned = survivor.pinned || renamed.pinned;
       const merged: Editor =
-        survivor.kind === 'file'
-          ? { ...survivor, pinned }
-          : { ...survivor, pinned, context: laterContext(survivor, renamed) };
+        survivor.kind === 'diff'
+          ? { ...survivor, pinned, context: laterContext(survivor, renamed) }
+          : { ...survivor, pinned };
       editors.value = replaceAt(list, survivorIndex, merged).filter((_, i) => i !== index);
     }
     if (activeEditorKey.value === fromKey) activeEditorKey.value = toKey;
@@ -260,20 +288,29 @@ const CONTEXT_RANK: Record<DiffContext, number> = { hunks: 0, full: 1, unavailab
 export const findEditor = (key: EditorKey): Editor | undefined =>
   editors.value[indexOfKey(editors.value, key)];
 
-/** 一个 tab 的上下文档。不在栏里（`undefined`）与 file tab 都按 `hunks`。 */
+/**
+ * 补丁 tab：diff 与 commit 两种，上下文档挂在 tab 上、忽略空白切换时按 tab 重取的就是它们。各处各写
+ * 一遍 `kind === 'diff' || kind === 'commit'` 时，多一种补丁 tab 只改了几处，漏掉的那处静默不响应。
+ */
+export const isPatchEditor = (
+  editor: Editor | null | undefined,
+): editor is Extract<Editor, { kind: 'diff' | 'commit' }> =>
+  editor?.kind === 'diff' || editor?.kind === 'commit';
+
+/** 一个 tab 的上下文档。不在栏里（`undefined`）与没有这一格的 tab（file、commit-changes）都按 `hunks`。 */
 export const contextOf = (editor: Editor | undefined): DiffContext =>
-  editor === undefined || editor.kind === 'file' ? 'hunks' : (editor.context ?? 'hunks');
+  isPatchEditor(editor) ? (editor.context ?? 'hunks') : 'hunks';
 
 function laterContext(a: Editor, b: Editor): DiffContext {
   const [x, y] = [contextOf(a), contextOf(b)];
   return CONTEXT_RANK[y] > CONTEXT_RANK[x] ? y : x;
 }
 
-/** 改一个补丁 tab 的上下文档。键不在栏里、是 file tab、或档位没变时什么都不做。 */
+/** 改一个补丁 tab 的上下文档。键不在栏里、不是补丁 tab、或档位没变时什么都不做。 */
 export function setEditorContext(key: EditorKey, context: DiffContext): void {
   const list = editors.value;
   const index = indexOfKey(list, key);
   const editor = list[index];
-  if (editor === undefined || editor.kind === 'file' || contextOf(editor) === context) return;
+  if (!isPatchEditor(editor) || contextOf(editor) === context) return;
   editors.value = replaceAt(list, index, { ...editor, context });
 }

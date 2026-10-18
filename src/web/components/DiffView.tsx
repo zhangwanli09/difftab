@@ -81,14 +81,17 @@ function Patch({
   patch,
   full,
   ignoreWhitespace,
-  tab,
+  context,
+  onExpand,
 }: {
   path: string;
   patch: string;
   full: boolean;
   ignoreWhitespace: boolean;
-  /** 这份补丁属于哪个 tab：上下文档住在 tab 上，手上只有 3 行上下文时点开一段要按它去取整份。 */
-  tab: EditorKey;
+  /** 这份补丁此刻的上下文档。住在哪（tab 上 / 整次提交视图里按段）归调用方，这里只读。 */
+  context: DiffContext;
+  /** 手上只有 3 行上下文时点开了一段：调用方去取整份上下文。 */
+  onExpand: () => void;
 }) {
   const blocks = useMemo(
     () => prepareDiff(path, patch, { ignoreWhitespace, full }),
@@ -106,8 +109,9 @@ function Patch({
   });
   const expanded = opened.ignoreWhitespace === ignoreWhitespace ? opened.ids : NONE_EXPANDED;
   const format = diffOutputFormat.value;
-  // 在渲染体里读：理由同 `DiffView` 读 map——prop 换了而 signal 没写时 `useComputed` 会停在上一个
-  const context = contextOf(findEditor(tab));
+  // 按 ref 读最新的那个：调用方每次渲染都给一个新闭包，进了依赖就让下面那份表格缓存次次落空
+  const expandRef = useRef(onExpand);
+  expandRef.current = onExpand;
   const table = useMemo(() => {
     const fold: Fold = {
       expanded,
@@ -115,7 +119,7 @@ function Patch({
       full,
       expand: (id) => {
         setOpened({ ignoreWhitespace, ids: new Set(expanded).add(id) });
-        if (!full) expandContext(tab);
+        if (!full) expandRef.current();
       },
     };
     return format === 'side-by-side' ? (
@@ -123,7 +127,7 @@ function Patch({
     ) : (
       <UnifiedPatch blocks={blocks} fold={fold} />
     );
-  }, [blocks, format, expanded, context, full, ignoreWhitespace, tab]);
+  }, [blocks, format, expanded, context, full, ignoreWhitespace]);
   // 没有 hunk：只改了权限位、一个空的新文件，或忽略空白之后什么都不剩。不是错误，也没有正文可画。
   // 只有 git 一个字节都没给（`-w` 下只改了空白）才说是空白：`-w` 下只改权限位的仍有文件头、没有 hunk
   if (blocks.length === 0) {
@@ -536,9 +540,20 @@ function RenameNotice({ rename }: { rename: RenameInfo }) {
  * **`fill` 只给图片那一支与 SVG 预览**：成一列 flex，让 `ImageRow` 用 `flex-1` 拿到面板剩余的高、把图按高缩、
  * 上下居中。正文与提示行不带它，滚动层的类名照旧。
  */
-export function Panel({ children, fill = false }: { children: ComponentChildren; fill?: boolean }) {
+export function Panel({
+  children,
+  fill = false,
+  scrollRef = null,
+}: {
+  children: ComponentChildren;
+  fill?: boolean;
+  /** 滚动层的 ref：整次提交视图拿它当懒加载那个观察者的 root。显式命名，理由同 `TreeRow`。 */
+  scrollRef?: Ref<HTMLDivElement>;
+}) {
   return (
-    <div class={`${fill ? 'flex flex-col ' : ''}min-h-0 flex-1 overflow-auto`}>{children}</div>
+    <div ref={scrollRef} class={`${fill ? 'flex flex-col ' : ''}min-h-0 flex-1 overflow-auto`}>
+      {children}
+    </div>
   );
 }
 
@@ -555,18 +570,28 @@ const FILLS_PANEL: Record<DiffPayload['kind'], boolean> = {
   'too-large': false,
 };
 
+/**
+ * 这份请求状态要不要 `Panel` 的 `fill`：图片那一支与按图画着的 SVG 预览。整次提交视图拿它判哪几段
+ * 要在段内限高——两处各判时，加一种占满面板的画法只改了一处。
+ */
+export const fillsPanel = (state: DiffRequestState): boolean =>
+  state.status === 'ready' &&
+  (FILLS_PANEL[state.payload.kind] || shownPreview(state.payload) !== undefined);
+
 function Payload({
   path,
   payload,
   sha,
   options,
-  tab,
+  context,
+  onExpand,
 }: {
   path: string;
   payload: DiffPayload;
   sha?: string | undefined;
   options: PatchRequest;
-  tab: EditorKey;
+  context: DiffContext;
+  onExpand: () => void;
 }) {
   const patch = (text: string, full: boolean) => (
     <Patch
@@ -574,7 +599,8 @@ function Payload({
       patch={text}
       full={full}
       ignoreWhitespace={options.ignoreWhitespace}
-      tab={tab}
+      context={context}
+      onExpand={onExpand}
     />
   );
   const preview = shownPreview(payload);
@@ -624,16 +650,26 @@ export function CommitDiffView({ sha, path }: { sha: string; path: string }) {
   const merge = detail?.status === 'ready' && detail.detail.parents.length > 1;
   return (
     <DiffBody path={path} state={state} sha={sha} tab={key}>
-      {merge && (
-        <p class="border-b border-panel-border px-4 py-1 text-xs text-description-foreground">
-          Merge commit · compared with first parent
-        </p>
-      )}
+      {merge && <MergeNotice />}
     </DiffBody>
   );
 }
 
-const LOADING: DiffRequestState = { status: 'loading', rename: null, options: PATCH_DEFAULTS };
+/** 合并提交顶上那一行。commit tab 与整次提交视图共用，文案只此一份。 */
+export function MergeNotice() {
+  return (
+    <p class="border-b border-panel-border px-4 py-1 text-xs text-description-foreground">
+      Merge commit · compared with first parent
+    </p>
+  );
+}
+
+/** 缓存里还没有这一项时按加载中画。整次提交视图里没进过视口的段也是它。 */
+export const LOADING: DiffRequestState = {
+  status: 'loading',
+  rename: null,
+  options: PATCH_DEFAULTS,
+};
 
 function DiffBody({
   path,
@@ -649,13 +685,39 @@ function DiffBody({
   children?: ComponentChildren;
 }) {
   return (
-    <Panel
-      fill={
-        state.status === 'ready' &&
-        (FILLS_PANEL[state.payload.kind] || shownPreview(state.payload) !== undefined)
-      }
-    >
+    <Panel fill={fillsPanel(state)}>
       {children}
+      <DiffContent
+        path={path}
+        state={state}
+        sha={sha}
+        // 在渲染体里读：理由同 `DiffView` 读 map——prop 换了而 signal 没写时 `useComputed` 会停在上一个
+        context={contextOf(findEditor(tab))}
+        onExpand={() => expandContext(tab)}
+      />
+    </Panel>
+  );
+}
+
+/**
+ * 一份补丁请求状态的正文：重命名标注 + 加载中 / 错误 / payload。diff 与 commit tab 包在 `Panel` 里，
+ * 整次提交视图的每一段直接放进段体——提示文案与分支只此一份。
+ */
+export function DiffContent({
+  path,
+  state,
+  sha,
+  context,
+  onExpand,
+}: {
+  path: string;
+  state: DiffRequestState;
+  sha?: string | undefined;
+  context: DiffContext;
+  onExpand: () => void;
+}) {
+  return (
+    <>
       {/* 三个状态下都标注：标注属于「选了哪个条目」，与补丁取到没有无关。它跟着补丁一起滚
           ——这一行说的是这份补丁的来历，不是「我在看哪个文件」，后者由标签栏答 */}
       {state.rename && <RenameNotice rename={state.rename} />}
@@ -669,8 +731,15 @@ function DiffBody({
       {/* 换文件走的是卸载重挂——`App` 按 tab 键给本组件 `key`，本组件挂着期间 `path` 不会变，
           一个文件的表格因此不会就地改画成另一个文件的 */}
       {state.status === 'ready' && (
-        <Payload path={path} payload={state.payload} sha={sha} options={state.options} tab={tab} />
+        <Payload
+          path={path}
+          payload={state.payload}
+          sha={sha}
+          options={state.options}
+          context={context}
+          onExpand={onExpand}
+        />
       )}
-    </Panel>
+    </>
   );
 }

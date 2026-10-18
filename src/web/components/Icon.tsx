@@ -19,6 +19,7 @@ import {
   FileDiff,
   GitBranch,
   GitCommitHorizontal,
+  GitCompare,
   type LucideIcon,
   Tag,
 } from 'lucide-preact';
@@ -45,13 +46,14 @@ export function Icon({
 }
 
 /**
- * 三种 tab 的种类图标，编辑器 tab 上画的那枚。写成 `Record` 是让加第四种 tab 时少填一格成为
- * 编译错误。
+ * 四种 tab 的种类图标，编辑器 tab 上画的那枚；commit-changes 那枚同时是 History 提交行上
+ * `Open Changes` 的图标。写成 `Record` 是让加第五种 tab 时少填一格成为编译错误。
  */
 export const KIND_ICON: Record<EditorKind, LucideIcon> = {
   diff: FileDiff,
   file: FileCode,
   commit: GitCommitHorizontal,
+  'commit-changes': GitCompare,
 };
 
 /**

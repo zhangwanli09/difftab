@@ -11,6 +11,7 @@ import { badgesBySha, type RefBadge } from '../state/badges';
 import { activeEditorKey, editorKey, pinEditor } from '../state/editors';
 import {
   commitDetails,
+  commitFilesOf,
   expandedCommits,
   historyError,
   historyList,
@@ -24,10 +25,11 @@ import {
   toggleCommit,
 } from '../state/history';
 import type { BranchKind } from '../state/refs';
-import { repoState, selectCommitFile } from '../state/store';
+import { openCommitChanges, repoState, selectCommitFile } from '../state/store';
 import { GROUP_HEADING, StatusBadge, splitForDisplay } from './ChangeList';
 import { SidebarPlaceholder } from './EmptyState';
-import { Icon, REF_ICON } from './Icon';
+import { Icon, KIND_ICON, REF_ICON } from './Icon';
+import { IconButton } from './IconButton';
 import {
   ChevronPlaceholder,
   CopyButton,
@@ -174,20 +176,17 @@ function CommitFileRow({ sha, file }: { sha: string; file: CommitFileEntry }) {
 function CommitFiles({ sha }: { sha: string }) {
   // 只订阅自己这一条：在组件体里读整张 map 时，任何一条提交的详情落地都会把每个展开着的文件列表
   // 整个重画一遍
-  const state = useComputed(() => commitDetails.value.get(sha)).value;
-  const placeholder = (text: string) => (
-    <ul>
-      <PlaceholderRow text={text} depth={1} />
-    </ul>
-  );
-  if (state === undefined || state.status === 'loading') return placeholder('Loading…');
-  if (state.status === 'error') return placeholder(state.message);
-  // 浅克隆的边界：父提交不在本地，比不出这次改了什么——如实说，而不是画一列「全部新增」
-  if (state.detail.shallow) return placeholder('Shallow clone — parent not available');
-  if (state.detail.files.length === 0) return placeholder('No file changes');
+  const view = commitFilesOf(useComputed(() => commitDetails.value.get(sha)).value);
+  if (view.kind !== 'files') {
+    return (
+      <ul>
+        <PlaceholderRow text={view.kind === 'error' ? view.message : view.text} depth={1} />
+      </ul>
+    );
+  }
   return (
     <ul>
-      {state.detail.files.map((file) => (
+      {view.files.map((file) => (
         <CommitFileRow key={file.path} sha={sha} file={file} />
       ))}
     </ul>
@@ -212,8 +211,18 @@ function CommitRow({ commit }: { commit: CommitSummary }) {
       aria-expanded={expanded}
       class={COMMIT_ROW_CLASS}
       style={indent(0)}
-      // 复制完整 sha 而不是短哈希：短哈希在仓库长大后可能有歧义，贴给 agent 的东西不该要它再去消歧
-      actions={<CopyButton text={commit.sha} label="Copy commit hash" />}
+      // `Open Changes` 把整次提交排进一个 tab（预览档，双击 tab 固定）；**单击行仍然是展开**——扫一眼
+      // 文件清单是更轻的那个动作。复制完整 sha 而不是短哈希：短哈希在仓库长大后可能有歧义，贴给 agent
+      // 的东西不该要它再去消歧
+      actions={[
+        <IconButton
+          key="open"
+          icon={KIND_ICON['commit-changes']}
+          label="Open Changes"
+          onClick={() => openCommitChanges(commit)}
+        />,
+        <CopyButton key="copy" text={commit.sha} label="Copy commit hash" />,
+      ]}
       sublevel={expanded && <CommitFiles sha={commit.sha} />}
     >
       <ExpandChevron expanded={expanded} />
