@@ -51,6 +51,8 @@ const NEEDED = [
   // `log` 唯一的来处：提交历史。两页、每条提交的文件清单、每个文件的提交 diff 与图片两侧；
   // 它也带着分支、标签与远程 ref，`for-each-ref` 在那里才列得出东西
   'history',
+  // `log` 的范围形态（incoming）唯一的来处：有上游且落后一条
+  'upstreamTracking',
 ];
 
 let workdir;
@@ -180,7 +182,7 @@ test('cat-file 之后只能是 blob 或 -s——白名单看不见参数，smudg
   }
 });
 
-test('log 的参数逐段等于两种字面量形态——gpg 与外部 diff 驱动都藏在它的参数面里', async () => {
+test('log 的参数逐段等于三种字面量形态——gpg 与外部 diff 驱动都藏在它的参数面里', async () => {
   const commands = await trace();
   const logs = commands.filter((c) => c.subcommand === 'log');
   // 正面断言：`history` 仓库翻两页、展开每条提交，必然走到这里
@@ -208,13 +210,24 @@ test('log 的参数逐段等于两种字面量形态——gpg 与外部 diff 驱
     const rest = argv.slice(6);
     if (rest.length === 3) assert.match(rest.shift(), /^--skip=\d+$/, `log 的第七段：${shown}`);
     assert.equal(rest.length, 2, `log 的参数段数不对：${shown}`);
-    // 起点只有两种：第一页的字面量 `HEAD`，或请求带来、已过完整对象名校验的锚点 / 提交
+    // 起点只有三种：第一页的字面量 `HEAD`，请求带来、已过完整对象名校验的锚点 / 提交，或 incoming
+    // 那两个完整对象名拼成的范围
+    const ends = rest[0].split('..');
     assert.ok(
-      rest[0] === 'HEAD' || OID.test(rest[0]),
-      `log 的起点不是 HEAD 或完整对象名：${shown}`,
+      rest[0] === 'HEAD' ||
+        OID.test(rest[0]) ||
+        (ends.length === 2 && ends.every((e) => OID.test(e))),
+      `log 的起点不是 HEAD、完整对象名或两个完整对象名的范围：${shown}`,
     );
     assert.equal(rest[1], '--', `log 没以 -- 收尾：${shown}`);
   }
+  // 正面断言：三种形态都真的出现过，否则上面那条对着没出现过的形态通过
+  const starts = logs.map((cmd) => unquote(cmd.argv.at(-2)));
+  assert.ok(starts.includes('HEAD'), '没有从 HEAD 起的 log——列表第一页没跑到');
+  assert.ok(
+    starts.some((rev) => rev.includes('..')),
+    '没有范围形态的 log——incoming 那条路没跑到',
+  );
 });
 
 test('for-each-ref 的参数逐段等于那条字面量——%(signature) 一族会起 gpg', async () => {

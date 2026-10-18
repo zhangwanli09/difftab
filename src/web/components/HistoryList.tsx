@@ -7,13 +7,15 @@
 import { useComputed } from '@preact/signals';
 import { useEffect, useRef } from 'preact/hooks';
 import type { CommitFileEntry, CommitSummary } from '../../server/shared/protocol';
-import { type BranchKind, badgesBySha, type RefBadge } from '../state/badges';
+import { badgesBySha, type RefBadge } from '../state/badges';
 import { activeEditorKey, editorKey, pinEditor } from '../state/editors';
 import {
   commitDetails,
   expandedCommits,
   historyError,
   historyList,
+  incomingError,
+  incomingList,
   type LoadedHistory,
   loadingMore,
   loadMore,
@@ -21,8 +23,9 @@ import {
   shortSha,
   toggleCommit,
 } from '../state/history';
-import { selectCommitFile } from '../state/store';
-import { StatusBadge, splitForDisplay } from './ChangeList';
+import type { BranchKind } from '../state/refs';
+import { repoState, selectCommitFile } from '../state/store';
+import { GROUP_HEADING, StatusBadge, splitForDisplay } from './ChangeList';
 import { SidebarPlaceholder } from './EmptyState';
 import { Icon, REF_ICON } from './Icon';
 import {
@@ -270,6 +273,35 @@ function LoadMore({ list }: { list: LoadedHistory }) {
   );
 }
 
+/**
+ * 落后上游时排在列表顶上的那一段：上游有、HEAD 走不到的提交，照 VS Code Graph 把 incoming 画在最上面。
+ * 小标题不可点，`↓N` 与状态条同一个数（status 的 `behind`），提示说明这是上次 fetch 时的样子——不替
+ * 用户 fetch。下面的行与主列表是同一个 `CommitRow`，展开、复制照常；上游那枚徽标按 sha 自然落在这里。
+ * **不翻页**：还有更多时末尾一行 `+M more`。`behind` 包成 computed 只订阅这一个数：直接读 `repoState`
+ * 时 agent 每改一个文件这一段就重画一次。
+ */
+function Incoming() {
+  const behind = useComputed(() => repoState.value?.branch.upstream?.behind ?? 0).value;
+  const list = incomingList.value;
+  const error = incomingError.value;
+  if (list === null && error === null) return null;
+  const more = list?.hasMore ? behind - list.commits.length : 0;
+  return (
+    <section class="border-b border-panel-border">
+      <h3 class={GROUP_HEADING} title="As of the last fetch">
+        Incoming · ↓{behind}
+      </h3>
+      <ul>
+        {error !== null && <PlaceholderRow text={error} depth={0} />}
+        {list?.commits.map((commit) => (
+          <CommitRow key={commit.sha} commit={commit} />
+        ))}
+        {more > 0 && <PlaceholderRow text={`+${more} more`} depth={0} />}
+      </ul>
+    </section>
+  );
+}
+
 export function HistoryList() {
   const list = historyList.value;
   const error = historyError.value;
@@ -282,11 +314,14 @@ export function HistoryList() {
   }
   if (list.commits.length === 0) return <SidebarPlaceholder>No commits yet</SidebarPlaceholder>;
   return (
-    <ul>
-      {list.commits.map((commit) => (
-        <CommitRow key={commit.sha} commit={commit} />
-      ))}
-      {list.hasMore && <LoadMore list={list} />}
-    </ul>
+    <>
+      <Incoming />
+      <ul>
+        {list.commits.map((commit) => (
+          <CommitRow key={commit.sha} commit={commit} />
+        ))}
+        {list.hasMore && <LoadMore list={list} />}
+      </ul>
+    </>
   );
 }

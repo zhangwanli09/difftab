@@ -254,10 +254,10 @@ test('A · 只读 .git 下，变更列表与每个文件的 diff 都照常返回
   const { skip, results } = await lockedRun();
   if (!ensureCovered(t, skip)) return;
 
-  for (const { cwd, state, diffs, commitPages, commitDiffs, refs } of results) {
-    // 提交历史那三个端点与分支列表同样只读：`log`、提交 diff、`for-each-ref` 在锁死的 `.git`
+  for (const { cwd, state, diffs, commitPages, commitDiffs, refs, incoming } of results) {
+    // 提交历史那几个端点与分支列表同样只读：`log`、提交 diff、`for-each-ref` 在锁死的 `.git`
     // 下也得照常返回
-    for (const res of [...commitPages, ...commitDiffs, refs]) {
+    for (const res of [...commitPages, ...commitDiffs, refs, ...incoming]) {
       assert.equal(
         res.status,
         200,

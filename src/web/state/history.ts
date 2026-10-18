@@ -9,11 +9,13 @@ import type {
   CommitDetail,
   CommitPage,
   CommitSummary,
+  IncomingPage,
+  RefEntry,
   RepoState,
 } from '../../server/shared/protocol';
 import { getJson, singleFlight, toMessage } from './http';
 import { setIn } from './immutable';
-import { ensureGraphRefs } from './refs';
+import { ensureGraphRefs, findUpstream, graphRefsFor } from './refs';
 
 export interface LoadedHistory {
   /** 列表顶上那条是哪个 HEAD 时取的。null 即空仓库。 */
@@ -96,17 +98,116 @@ function historyIsCurrent(state: RepoState): boolean {
 
 /**
  * `History` 分区变得可见、或它可见时来了一次 SSE：提交列表对不上 HEAD 才取，ref 徽标的 refs 对不上
- * 分支状态才取（`ensureGraphRefs`）。两样是这一个分区要的数据，从这一个入口进——调用方有两处
- * （`refresh` 与 `SourceControl` 的可见性 effect），各写一遍时将来加第三样漏一处不报错，只是那一样
- * 在某一种时机下不刷新。
+ * 分支状态才取（`ensureGraphRefs`），incoming 那一段对不上「HEAD + 上游 sha」才取。三样是这一个分区
+ * 要的数据，从这一个入口进——调用方有两处（`refresh` 与 `SourceControl` 的可见性 effect），各写一遍时
+ * 将来加第四样漏一处不报错，只是那一样在某一种时机下不刷新。incoming 排在 refs 之后：上游此刻指着
+ * 哪条要等 refs 回来才知道。**refs 回来时拿最近一次传进来的 state 判，不拿这一次的**：SSE 一个接一个
+ * 来时 `refresh` 并发，被后一次顶掉的那次 refs 可能最后才回来——拿它自己那份旧 state 判，pull 之后
+ * 已经清掉的这一段会按 pull 之前的两端又取回来、画在顶上，直到下一个 SSE。
  */
 export async function ensureHistory(state: RepoState | null): Promise<void> {
   // HEAD 还不知道就无从比对：此刻去取，state 一到又判一次「对不上」，`singleFlight` 补跑成两遍 `git log`
   if (state === null) return;
+  latestState = state;
+  // 不落后了（pull 之后）用不着等 refs：当场清掉，不让 `↓0` 配着已经并进 HEAD 的那几条画上一拍
+  if (incomingRange(state, null) === null) clearIncoming();
   await Promise.all([
     historyIsCurrent(state) ? undefined : refreshHistory(),
-    ensureGraphRefs(state),
+    ensureGraphRefs(state).then(() => ensureIncoming(latestState ?? state)),
   ]);
+}
+
+/** 最近一次交给 `ensureHistory` 的 state。incoming 等 refs 回来再判，判时拿的是它。 */
+let latestState: RepoState | null = null;
+
+/** incoming 那一段的两端：HEAD 此刻的 oid 与上游此刻指着的 sha。判据就是这两样。 */
+export interface IncomingRange {
+  head: string;
+  upstream: string;
+}
+
+/**
+ * 上游有、HEAD 走不到的那几条，画在列表顶上；`null` 即这一段不画（没落后、或还没取到）。**不翻页**：
+ * 至多一页，落后几百条时该做的是去终端 pull。
+ */
+export const incomingList = signal<IncomingPage | null>(null);
+
+/** 这一段取不到时的那句话。只坏这一段，主列表照常。 */
+export const incomingError = signal<string | null>(null);
+
+/** 最近一次判出来要取的两端；`null` 即这一段不该有。在途的请求回来时拿它判自己是不是还算数。 */
+let wanted: IncomingRange | null = null;
+
+/**
+ * 这一段该是哪两端。`null` 即不该有这一段：没有上游、不落后、HEAD 未出生，或 refs 里找不到上游
+ * （远端分支被删了而 status 还没反应过来）。`undefined` 即**还说不准**：refs 还没到、那次取失败了，
+ * 或手里那份是别的分支状态时取的——此时不动现有那段，等下一次判。上游的 sha 拿**此刻的**上游名
+ * 去找，与徽标同一个推法。
+ */
+export function incomingRange(
+  state: RepoState,
+  refs: readonly RefEntry[] | null,
+): IncomingRange | null | undefined {
+  const { oid, upstream } = state.branch;
+  if (upstream === null || upstream.behind === 0 || oid === undefined) return null;
+  if (refs === null) return undefined;
+  const target = findUpstream(refs, upstream.name);
+  return target === null ? null : { head: oid, upstream: target.sha };
+}
+
+/**
+ * 两端对不上上一次判的才取；上次失败也算对不上，下一次判即重试。同一时刻只有一次在途，在途期间
+ * 又被叫过就回来后补跑一次（`singleFlight`），理由同提交列表。调用方只有 `ensureHistory`。
+ */
+export function ensureIncoming(state: RepoState): Promise<void> {
+  const range = incomingRange(state, graphRefsFor(state));
+  if (range === undefined) return Promise.resolve();
+  if (range === null) {
+    clearIncoming();
+    return Promise.resolve();
+  }
+  if (
+    wanted?.head === range.head &&
+    wanted.upstream === range.upstream &&
+    incomingError.value === null
+  )
+    return Promise.resolve();
+  wanted = range;
+  return refreshIncoming();
+}
+
+const refreshIncoming = singleFlight(fetchIncoming);
+
+async function fetchIncoming(): Promise<void> {
+  const range = wanted;
+  if (range === null) return;
+  try {
+    const page = await getJson<IncomingPage>(
+      `/api/commits/incoming?${new URLSearchParams({ ...range })}`,
+    );
+    // 在途期间判据变了：变成另一对两端时 `singleFlight` 会补跑，变成「不该有」时这一份不再算数
+    if (wanted !== range) return;
+    incomingError.value = null;
+    incomingList.value = page;
+  } catch (cause) {
+    if (wanted !== range) return;
+    // 不与旧的那几条并排：看不出哪一样才是现在的
+    incomingList.value = null;
+    incomingError.value = toMessage(cause);
+  }
+}
+
+/** 这一段不该有：清掉，在途的那次回来时也不再算数。 */
+function clearIncoming(): void {
+  wanted = null;
+  incomingList.value = null;
+  incomingError.value = null;
+}
+
+/** 只给用例：模块级的「上一次判的」在用例之间清掉。 */
+export function resetIncoming(): void {
+  latestState = null;
+  clearIncoming();
 }
 
 /**
