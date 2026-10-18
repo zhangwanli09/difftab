@@ -64,7 +64,7 @@
   - **它是一枚带按下态的开关（`aria-pressed`），文案恒定**，与搜索框那两枚切换钮共用 `Toggle.tsx`（图标 Lucide `Pilcrow`）；与版式按钮「文案写目标版式」刻意不同：版式是什么一眼看得出，空白藏没藏看不出——开着而认不出来时，用户只会觉得 diff 少了几处改动。
   - **全局一个 signal，不分 tab，不进 `localStorage`**（照 VS Code 那是一个全局设置；不落盘的理由同版式 override）。切换后**只重取活动 tab**，其余切过去时按上一条的「取的那一档与此刻不同」重取。重取期间照常显示旧补丁、不回退 `loading`，与 SSE 刷新同一条。
   - **视图按请求状态里记的那一档渲染，不读此刻的开关**：否则切换后、新补丁回来前的那一段里，旧补丁会按新口径算词级、零 hunk 时说错话。
-- **SVG 预览（`Preview`）**：活动 tab 正文 `ready` 且 payload 带 `preview`（diff / commit 是 `text` / `untracked-text`，file 是 `text`）时画，三种 tab 都有。它是 `Toggle`（图标 Lucide `Eye`），**全局一个 signal、不进 `localStorage`**，与忽略空白同一条理由。开着时视图把那份 `preview` 交给图片视图（`ImageDiff` / `ImageFile`），版式与忽略空白两枚不画——没有补丁表格可换；复制照留，复制的仍是原文。**判据只认 `preview` 字段**，不判扩展名。不重取：`preview` 本来就在已到的 payload 上。**带行号打开文件（全仓搜索的命中）时把它关掉**：预览态下那一行不在面板上，跳行请求还会一直挂着，等关掉预览时冷不丁滚过去。
+- **SVG 预览（`Preview`）**：活动 tab 正文 `ready` 且 payload 带 `preview`（diff / commit 是 `text` / `untracked-text`，file 是 `text`）时画，三种 tab 都有。它是 `Toggle`（图标 Lucide `Eye`），**全局一个 signal、默认开、不进 `localStorage`**，与忽略空白同一条理由。开着时视图把那份 `preview` 交给图片视图（`ImageDiff` / `ImageFile`），版式与忽略空白两枚不画——没有补丁表格可换；复制照留，复制的仍是原文。**判据只认 `preview` 字段**，不判扩展名。不重取：`preview` 本来就在已到的 payload 上。**挂着跳行请求（全仓搜索的命中）的那个 file tab 按文本画、按钮显示未按下，全局开关不动**：预览态下那一行不在面板上，跳行请求会一直挂着、等关掉预览时冷不丁滚过去；而改全局开关会让此后打开的每个 SVG 都莫名回到文本。在这个 tab 上按下 `Preview` 即清掉跳行请求、按图画。「此刻按不按图画」只有 `shownPreview` 一处判，视图与按钮都读它。
 - **跳到行（全仓搜索的命中行）**：`openFile` 带 `line` 时在 `state/editors.ts` 记一份 `revealRequest { path, line }`，`FileView` 在 `text` 就绪且路径对得上时把那一行滚到面板竖直居中，并在那一行画一条绝对定位的整行高亮带。**行的位置按 `(line - 1) × 行高` 算**——行号槽靠同一个 `leading-5` 对齐，正文是一整块 hljs 输出、不按行切（理由同上）。每次请求都是一个新对象、跳行 effect 依赖它的身份，再点同一行也重新滚一次；高亮带留到下一次跳行或切走。**全文已 `ready` 时同样生效**，不等重取。
 
 ## 图片视图

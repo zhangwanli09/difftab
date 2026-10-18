@@ -35,6 +35,7 @@ import {
   openEditor,
   removeEditor,
   renameEditor,
+  revealPending,
   setEditorContext,
   setReveal,
 } from './editors';
@@ -105,9 +106,10 @@ const samePatchRequest = (a: PatchRequest, b: PatchRequest) =>
 export const ignoreWhitespace = signal(false);
 
 /**
- * SVG 预览的开关。全局一份、不进 `localStorage`，理由同忽略空白。写入方只有 `toggleSvgPreview`。
+ * SVG 预览的开关。全局一份、默认开、不进 `localStorage`，理由同忽略空白。写入方只有
+ * `toggleSvgPreview`。
  */
-export const svgPreview = signal(false);
+export const svgPreview = signal(true);
 
 /**
  * payload 上那份 SVG 预览，不看开关。**判据只认字段**，不判扩展名——那张表只在后端。动作区画不画
@@ -125,15 +127,20 @@ export function previewOf(
 }
 
 /**
- * 此刻要按图画的那份预览：payload 带着、且开关开着。视图画什么、`Panel` 要不要 `fill`、文件视图套
- * 不套宽盒都读它——几处各判时，开着预览的面板会不居中，或宽图把滚动区撑到原始像素宽。
+ * 此刻要按图画的那份预览：payload 带着、开关开着，且（file tab）这个文件没挂着跳行请求——那一行
+ * 要在文本里才看得见。视图画什么、`Panel` 要不要 `fill`、文件视图套不套宽盒、`Preview` 按没按下
+ * 都读它——几处各判时，开着预览的面板会不居中，或宽图把滚动区撑到原始像素宽。
  */
 export function shownPreview(payload: DiffPayload): ImagePreview | undefined;
-export function shownPreview(payload: FilePayload): FilePreview | undefined;
+export function shownPreview(payload: FilePayload, path: string): FilePreview | undefined;
 export function shownPreview(
   payload: DiffPayload | FilePayload,
+  path?: string,
 ): ImagePreview | FilePreview | undefined {
-  return svgPreview.value ? previewOf(payload) : undefined;
+  // 先看 payload：不带预览的 tab（绝大多数）就不订阅开关与跳行请求
+  const preview = previewOf(payload);
+  if (preview === undefined || !svgPreview.value) return undefined;
+  return path !== undefined && revealPending(path) ? undefined : preview;
 }
 
 /** 这个 tab 此刻该按哪一档取：开关是全局的，上下文档是 tab 自己的。 */
@@ -645,9 +652,6 @@ export function openFile(
   const replaced = openEditor('file', path, pinned);
   if (replaced !== null) forget(replaced);
   setReveal(path, line);
-  // 跳到某一行要看的是文本：预览开着时那一行根本不在面板上，而跳行请求会一直挂着、等关掉预览时
-  // 冷不丁滚过去
-  if (line !== undefined) svgPreview.value = false;
   void loadFile(path);
 }
 
@@ -719,9 +723,17 @@ export function toggleIgnoreWhitespace(): void {
 
 /**
  * 切换 SVG 预览。**不重取**：`preview` 本来就在已到的 payload 上，开关只换一种画法。
+ *
+ * **翻的是活动 tab 此刻画着的那一种（`shown`，即按钮的按下态），不是开关本身**：file tab 正因跳行
+ * 按文本画着时开关可能本就开着，照常取反会把它关掉、按钮却仍显示未按下。要看图时顺带清掉这个文件的
+ * 跳行请求，它不再压着预览。
  */
-export function toggleSvgPreview(): void {
-  svgPreview.value = !svgPreview.value;
+export function toggleSvgPreview(shown: boolean): void {
+  const editor = activeEditor.value;
+  batch(() => {
+    if (!shown && editor?.kind === 'file') setReveal(editor.path);
+    svgPreview.value = !shown;
+  });
 }
 
 /**

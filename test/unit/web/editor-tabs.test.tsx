@@ -17,6 +17,7 @@ import {
   editors,
   openCommitEditor,
   openEditor,
+  revealRequest,
 } from '../../../src/web/state/editors';
 import {
   diffFormatOverride,
@@ -557,6 +558,8 @@ describe('SVG 预览', () => {
     container.querySelector<HTMLButtonElement>('button[aria-label="Hide whitespace changes"]');
 
   it('判据只认 payload 上的 preview：diff、commit、file 三种 tab 都画，排在最左', async () => {
+    // 关着预览起步：开着时 diff tab 上没有忽略空白那一枚，排序就无从断言
+    svgPreview.value = false;
     pinned('diff', 'logo.svg');
     setDiffState(
       'logo.svg',
@@ -584,41 +587,57 @@ describe('SVG 预览', () => {
     expect(copyButton()).not.toBeNull();
   });
 
-  it('按下后版式与忽略空白两枚不画、也不重取；复制照留', async () => {
+  it('默认按下，此时版式与忽略空白两枚不画；切换不重取', async () => {
     calls = stubJson(PATCH);
     pinned('diff', 'logo.svg');
     setDiffState('logo.svg', readyDiff(PATCH));
-    await waitFor(() => expect(toggle()?.getAttribute('aria-pressed')).toBe('false'));
-    const before = calls.length;
-
-    toggle()?.click();
-    expect(svgPreview.value).toBe(true);
     await waitFor(() => expect(toggle()?.getAttribute('aria-pressed')).toBe('true'));
     expect(formatButton()).toBeNull();
     expect(whitespace()).toBeNull();
+    const before = calls.length;
+
+    toggle()?.click();
+    expect(svgPreview.value).toBe(false);
+    await waitFor(() => expect(toggle()?.getAttribute('aria-pressed')).toBe('false'));
+    expect(formatButton()).not.toBeNull();
+    expect(whitespace()).not.toBeNull();
     expect(calls.length).toBe(before);
 
     toggle()?.click();
-    await waitFor(() => expect(formatButton()).not.toBeNull());
-    expect(whitespace()).not.toBeNull();
+    await waitFor(() => expect(formatButton()).toBeNull());
+    expect(whitespace()).toBeNull();
   });
 
-  it('跳到某一行（全仓搜索的命中）时关掉预览：那一行要在文本里才看得见', () => {
-    svgPreview.value = true;
-    openFile('logo.svg');
-    expect(svgPreview.value).toBe(true);
+  it('跳到某一行（全仓搜索的命中）只让那个 file tab 按文本画，全局开关不动；按下即清掉跳行', async () => {
+    const svg: FilePayload = {
+      kind: 'text',
+      content: '<svg/>',
+      preview: { size: 6, version: 'v1' },
+    };
+    stubJson(svg);
     openFile('logo.svg', { line: 3 });
+    setFileState('logo.svg', { status: 'ready', payload: svg });
+    flush();
+    await waitFor(() => expect(toggle()?.getAttribute('aria-pressed')).toBe('false'));
+    expect(svgPreview.value).toBe(true);
+
+    toggle()?.click();
+    expect(revealRequest.value).toBeNull();
+    expect(svgPreview.value).toBe(true);
+    await waitFor(() => expect(toggle()?.getAttribute('aria-pressed')).toBe('true'));
+
+    toggle()?.click();
     expect(svgPreview.value).toBe(false);
   });
 
-  it('按钮数变了活动 tab 再滚一次：开预览时版式与忽略空白一起退场', async () => {
+  it('按钮数变了活动 tab 再滚一次：关预览时版式与忽略空白一起进场', async () => {
     const scrolled = vi.spyOn(HTMLElement.prototype, 'scrollIntoView');
     pinned('diff', 'logo.svg');
     setDiffState('logo.svg', readyDiff(PATCH));
     await waitFor(() => expect(scrolled).toHaveBeenCalledTimes(2));
 
     toggle()?.click();
-    await waitFor(() => expect(formatButton()).toBeNull());
+    await waitFor(() => expect(formatButton()).not.toBeNull());
     await waitFor(() => expect(scrolled).toHaveBeenCalledTimes(3));
   });
 });

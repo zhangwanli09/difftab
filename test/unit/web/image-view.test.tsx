@@ -9,9 +9,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { DiffPayload, FilePayload } from '../../../src/server/shared/protocol';
 import { DiffView } from '../../../src/web/components/DiffView';
 import { FileView } from '../../../src/web/components/FileView';
+import { revealRequest } from '../../../src/web/state/editors';
 import { diffPanelWidth, SIDE_BY_SIDE_MIN_WIDTH } from '../../../src/web/state/layout';
-import { diffStates, fileStates, PATCH_DEFAULTS, svgPreview } from '../../../src/web/state/store';
-import { setFileState, waitFor } from './helpers';
+import { diffStates, PATCH_DEFAULTS, svgPreview } from '../../../src/web/state/store';
+import { resetEditors, setFileState, waitFor } from './helpers';
 
 let container: HTMLElement;
 
@@ -33,9 +34,7 @@ beforeEach(() => {
   document.body.innerHTML = '';
   container = document.createElement('div');
   document.body.appendChild(container);
-  diffStates.value = new Map();
-  fileStates.value = new Map();
-  svgPreview.value = false;
+  resetEditors();
   diffPanelWidth.value = SIDE_BY_SIDE_MIN_WIDTH;
 });
 
@@ -263,6 +262,7 @@ describe('SVG 预览', () => {
   ].join('\n');
 
   it('开关关着画补丁表格；开着按 Before / After 画成图、铺满面板的高，不重取', async () => {
+    svgPreview.value = false;
     readyDiff('logo.svg', {
       kind: 'text',
       patch: SVG_PATCH,
@@ -289,7 +289,6 @@ describe('SVG 预览', () => {
   });
 
   it('不带 preview 的文本补丁，开关开着也照画补丁', async () => {
-    svgPreview.value = true;
     readyDiff('a.ts', {
       kind: 'text',
       patch: SVG_PATCH.replaceAll('logo.svg', 'a.ts'),
@@ -306,7 +305,6 @@ describe('SVG 预览', () => {
       content: '<svg fill="blue"/>\n',
       preview: { size: 19, version: 'v2' },
     });
-    svgPreview.value = true;
     render(<FileView path="logo.svg" />, container);
     await waitFor(() => expect(images()).toHaveLength(1));
     expect(srcOf(images()[0] as HTMLImageElement).searchParams.get('side')).toBe('new');
@@ -314,6 +312,21 @@ describe('SVG 预览', () => {
     expect(container.querySelector('.overflow-auto')?.className.split(' ')).toContain('flex-col');
 
     svgPreview.value = false;
+    await waitFor(() => expect(images()).toHaveLength(0));
+    expect(container.querySelector('.w-max')).not.toBeNull();
+  });
+
+  it('文件视图：这个文件挂着跳行请求时按文本画，别的文件的跳行不算', async () => {
+    readyFile('logo.svg', {
+      kind: 'text',
+      content: '<svg fill="blue"/>\n',
+      preview: { size: 19, version: 'v2' },
+    });
+    revealRequest.value = { path: 'other.ts', line: 1 };
+    render(<FileView path="logo.svg" />, container);
+    await waitFor(() => expect(images()).toHaveLength(1));
+
+    revealRequest.value = { path: 'logo.svg', line: 1 };
     await waitFor(() => expect(images()).toHaveLength(0));
     expect(container.querySelector('.w-max')).not.toBeNull();
   });

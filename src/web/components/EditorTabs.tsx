@@ -33,7 +33,7 @@ import {
   fileStates,
   ignoreWhitespace,
   previewOf,
-  svgPreview,
+  shownPreview,
   toggleIgnoreWhitespace,
   toggleSvgPreview,
 } from '../state/store';
@@ -101,10 +101,16 @@ const previewToggleShown = computed<boolean>(() => {
 });
 
 /**
- * 活动 tab 此刻按图画着：预览开关开着、且这个 tab 有预览可切。此时没有补丁表格，版式与忽略空白
- * 两枚都不画；复制照留——复制的仍是原文。
+ * 活动 tab 此刻按图画着，判据与视图同一个 `shownPreview`（file tab 挂着跳行时按文本画）。此时没有
+ * 补丁表格，版式与忽略空白两枚都不画；复制照留——复制的仍是原文。`Preview` 的按下态也读它。
  */
-const previewing = computed<boolean>(() => previewToggleShown.value && svgPreview.value);
+const previewing = computed<boolean>(() => {
+  const editor = activeEditor.value;
+  const file = activeFilePayload.value;
+  const patch = activePatchPayload.value;
+  if (editor !== null && file !== null) return shownPreview(file, editor.path) !== undefined;
+  return patch !== null && shownPreview(patch) !== undefined;
+});
 
 /** 活动 tab 有没有一张补丁表格摆在面板上：有补丁、且没在按图画。版式切换画不画由它定。 */
 const formatToggleShown = computed<boolean>(
@@ -301,7 +307,12 @@ function EditorActions() {
   // 预览与忽略空白同为带按下态的开关：开着时面板上是图而不是文本，一眼认得出，但认不出「这个 tab
   // 能切回文本」——按下态答的正是这一句
   const preview = previewToggleShown.value && (
-    <Toggle icon={Eye} label="Preview" pressed={svgPreview.value} onClick={toggleSvgPreview} />
+    <Toggle
+      icon={Eye}
+      label="Preview"
+      pressed={previewing.value}
+      onClick={() => toggleSvgPreview(previewing.value)}
+    />
   );
   const actions =
     text !== null ? (

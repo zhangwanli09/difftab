@@ -7,7 +7,7 @@
 // `ImageView`。
 
 import { useLayoutEffect, useMemo, useRef } from 'preact/hooks';
-import type { FilePayload } from '../../server/shared/protocol';
+import type { FilePayload, FilePreview } from '../../server/shared/protocol';
 import { getHljs, languageOf } from '../diff/hljs';
 import { revealRequest } from '../state/editors';
 import { fileStates, shownPreview } from '../state/store';
@@ -123,8 +123,15 @@ const FILLS_PANEL: Record<FilePayload['kind'], boolean> = {
   'too-large': false,
 };
 
-function Payload({ path, payload }: { path: string; payload: FilePayload }) {
-  const preview = shownPreview(payload);
+function Payload({
+  path,
+  payload,
+  preview,
+}: {
+  path: string;
+  payload: FilePayload;
+  preview: FilePreview | undefined;
+}) {
   if (preview !== undefined) return <ImageFile path={path} payload={preview} />;
   switch (payload.kind) {
     case 'text': {
@@ -169,7 +176,9 @@ export function FileView({ path }: { path: string }) {
    * 句不断。
    */
   const payload = state.status === 'ready' ? state.payload : null;
-  const previewing = payload !== null && shownPreview(payload) !== undefined;
+  // 只在这里判一次，交给 `Payload`：两处各判时宽盒与正文可能各按一种画
+  const preview = payload === null ? undefined : shownPreview(payload, path);
+  const previewing = preview !== undefined;
   const wide = payload !== null && NEEDS_WIDE_BOX[payload.kind] && !previewing;
   const fill = payload !== null && (FILLS_PANEL[payload.kind] || previewing);
 
@@ -184,7 +193,9 @@ export function FileView({ path }: { path: string }) {
       )}
       {/* 换文件走的是卸载重挂——`App` 按 tab 键给本组件 `key`，两份正文因此不可能落在同一棵
           子树上 */}
-      {state.status === 'ready' && <Payload path={path} payload={state.payload} />}
+      {state.status === 'ready' && (
+        <Payload path={path} payload={state.payload} preview={preview} />
+      )}
     </>
   );
 
