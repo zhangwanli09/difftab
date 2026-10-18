@@ -9,6 +9,7 @@
 import { batch, computed, type Signal, signal } from '@preact/signals';
 import {
   type CommitFileEntry,
+  type CommitSummary,
   type DiffPayload,
   type FileEntry,
   type FilePayload,
@@ -24,13 +25,16 @@ import {
 import {
   activeEditor,
   contextOf,
+  type DiffContext,
   type Editor,
   type EditorKey,
   editorKey,
   editors,
   findEditor,
   focusEditor,
+  isPatchEditor,
   keyOf,
+  openCommitChangesEditor,
   openCommitEditor,
   openEditor,
   removeEditor,
@@ -39,7 +43,7 @@ import {
   setEditorContext,
   setReveal,
 } from './editors';
-import { ensureHistory } from './history';
+import { ensureCommitDetail, ensureHistory } from './history';
 import { getJson, latestWins, type Tickets, toMessage } from './http';
 import { removeFrom, setIn } from './immutable';
 import { refreshSearch } from './search';
@@ -98,6 +102,22 @@ export const PATCH_DEFAULTS: PatchRequest = { ignoreWhitespace: false, fullConte
 
 const samePatchRequest = (a: PatchRequest, b: PatchRequest) =>
   a.ignoreWhitespace === b.ignoreWhitespace && a.fullContext === b.fullContext;
+
+/**
+ * 一份提交补丁要不要（再）取：没取过、上次失败了，或取的那一档与此刻要的不同。**在途也算取过**——
+ * 状态是 `loading`、或 `ready` 带着 `pending` 即有一次在途，判的是在途那一档：每次都重发时新票作废
+ * 旧票，一份几百毫秒才回来的补丁永远落不了地。commit tab 的 `refetch` 与整次提交视图的分段共用它。
+ */
+function needsFetch(state: DiffRequestState | undefined, wanted: PatchRequest): boolean {
+  // 在途的那一档优先：`ready` 带着 `pending` 时画面上是旧的、路上是新的
+  const settledAs =
+    state?.status === 'ready'
+      ? (state.pending ?? state.options)
+      : state?.status === 'loading'
+        ? state.options
+        : null;
+  return settledAs === null || !samePatchRequest(settledAs, wanted);
+}
 
 /**
  * 忽略空白的开关。**全局一份，不分 tab**（照 VS Code，那是一个全局设置）；**不进 `localStorage`**：
@@ -162,17 +182,14 @@ const fetchedAs = (request: PatchRequest, payload: DiffPayload): PatchRequest =>
 });
 
 /**
- * 带着 `fullContext=1` 取回来的却不是整份上下文：后端说过不了闸。这个 tab 从此记成 `unavailable`、
- * 退回 3 行上下文。`too-large` 同样记：文件长过了字节闸时后端先按整份上下文撞一次、退回 3 行再撞一
- * 次，留在 `full` 就是每个 SSE 白跑两趟 git。二进制与图片不记——它们与上下文无关，文件变回文本时照常
- * 能展开。
+ * 带着 `fullContext=1` 取回来的却不是整份上下文：后端说过不了闸。这个 tab（整次提交视图里是这一段）
+ * 从此记成 `unavailable`、退回 3 行上下文。`too-large` 同样记：文件长过了字节闸时后端先按整份上下文
+ * 撞一次、退回 3 行再撞一次，留在 `full` 就是每个 SSE 白跑两趟 git。二进制与图片不记——它们与上下文
+ * 无关，文件变回文本时照常能展开。
  */
-function noteUnavailable(key: EditorKey, request: PatchRequest, payload: DiffPayload): void {
-  if (!request.fullContext) return;
-  if ((payload.kind === 'text' && !payload.full) || payload.kind === 'too-large') {
-    setEditorContext(key, 'unavailable');
-  }
-}
+const unavailableAfter = (request: PatchRequest, payload: DiffPayload): boolean =>
+  request.fullContext &&
+  ((payload.kind === 'text' && !payload.full) || payload.kind === 'too-large');
 
 /**
  * `FileEntry` 的 `oldPath` → 一个可选对象。判据是 `oldPath` 存在，**不是比对新旧路径**——
@@ -197,6 +214,11 @@ interface PathCache<T> {
   readonly tickets: Tickets;
   set(path: string, state: T): void;
   forget(path: string): void;
+  /**
+   * 整批忘掉键满足 `owned` 的那几格，成对的规矩同 `forget`。**表只换一次**：逐键 `forget` 时每删一格就
+   * 复制一遍整张表，几百段就是几百次整表复制。状态里没有的键不会有在途请求——每次取都先写一格。
+   */
+  forgetWhere(owned: (path: string) => boolean): void;
 }
 
 function pathCache<T>(): PathCache<T> {
@@ -211,6 +233,13 @@ function pathCache<T>(): PathCache<T> {
     forget(path) {
       tickets.claim(path);
       states.value = removeFrom(states.value, path);
+    },
+    forgetWhere(owned) {
+      const all = [...states.value];
+      const kept = all.filter(([path]) => !owned(path));
+      if (kept.length === all.length) return;
+      for (const [path] of all) if (owned(path)) tickets.claim(path);
+      states.value = new Map(kept);
     },
   };
 }
@@ -375,18 +404,27 @@ export async function loadState(): Promise<boolean> {
   }
 }
 
-/** 一个 tab 归哪份缓存，按 `kind` 分派——这是 `kind` 在本文件里唯一要分支的地方。 */
-const cacheOf = (editor: Editor): PathCache<DiffRequestState> | PathCache<FileRequestState> =>
-  editor.kind === 'diff' ? diffCache : editor.kind === 'file' ? fileCache : commitDiffCache;
-
 /**
- * 缓存里的键：diff / file 按路径，commit 直接用 tab 的键——同一个文件在两次提交里是两份，而 tab 的
- * 身份本来就把 sha 编进去了，不另编一套。
+ * 忘掉一个 tab 的缓存与在途请求，按 `kind` 分派到它那份缓存。键：diff / file 按路径，commit 直接用
+ * tab 的键——同一个文件在两次提交里是两份，而 tab 的身份本来就把 sha 编进去了，不另编一套；
+ * commit-changes 是整组（这次提交的每一段）一起忘。
  */
-const cacheKeyOf = (editor: Editor): string =>
-  editor.kind === 'commit' ? keyOf(editor) : editor.path;
-
-const forget = (editor: Editor): void => cacheOf(editor).forget(cacheKeyOf(editor));
+function forget(editor: Editor): void {
+  switch (editor.kind) {
+    case 'diff':
+      diffCache.forget(editor.path);
+      return;
+    case 'file':
+      fileCache.forget(editor.path);
+      return;
+    case 'commit':
+      commitDiffCache.forget(keyOf(editor));
+      return;
+    case 'commit-changes':
+      forgetCommitChanges(editor.sha);
+      return;
+  }
+}
 
 /**
  * 取**一个**文件的 diff（按文件懒加载）。两处不能省的细节：
@@ -424,7 +462,7 @@ export async function loadDiff(entry: FileEntry): Promise<void> {
         payload,
         options: fetchedAs(options, payload),
       });
-      noteUnavailable(key, options, payload);
+      if (unavailableAfter(options, payload)) setEditorContext(key, 'unavailable');
     });
   } catch (cause) {
     if (!diffCache.tickets.isCurrent(ticket, path)) return;
@@ -536,27 +574,20 @@ export function activateEditor(key: EditorKey): void {
  * 重取一个 tab。diff 那一路条目取不到时什么都不发，回一个已完成的 promise。**commit tab 只在
  * 没取到时重取**：一次提交不可变，`ready` 的那份就是它的全部；而上次失败了（网络抖一下、后端
  * 重启）的话，切过来就是重试的时机——不然唯一的重试路径是回 `History` 重新展开再点一次。
+ * commit-changes 同理，只补取详情；各段由视图按可见性自己取。
  */
 function refetch(editor: Editor): Promise<void> {
+  if (editor.kind === 'commit-changes') {
+    ensureCommitDetail(editor.sha);
+    return Promise.resolve();
+  }
   if (editor.kind === 'commit') {
-    // 取到了就不再取；**在途也不再取**——每次 SSE 都重发一次时，新票作废旧票，一份几百毫秒才回来的
-    // 补丁在 agent 跑动期间永远轮不到落地，tab 就一直停在 `Loading…`。状态是 `loading` 即有一次在
-    // 途：作废一次请求的唯一途径是 `forget`，而它连状态一起删了
-    //
-    // **例外是取的那一档与此刻不同**（切了忽略空白、点开了折叠行）：这两样只在用户点了什么时才变，
-    // 不会有 SSE 那种饿死。已经按此刻这一档在取（`pending`）也算「在途」
-    const state = commitDiffStates.value.get(keyOf(editor));
-    const wanted = patchRequestOf(editor);
-    // 在途的那一档优先：`ready` 带着 `pending` 时画面上是旧的、路上是新的
-    const settledAs =
-      state?.status === 'ready'
-        ? (state.pending ?? state.options)
-        : state?.status === 'loading'
-          ? state.options
-          : null;
-    return settledAs !== null && samePatchRequest(settledAs, wanted)
-      ? Promise.resolve()
-      : loadCommitDiff(editor);
+    // 取到了就不再取，在途也不再取（`needsFetch`）：每次 SSE 都重发一次时，补丁在 agent 跑动期间永远
+    // 轮不到落地，tab 就一直停在 `Loading…`。**例外是取的那一档与此刻不同**（切了忽略空白、点开了
+    // 折叠行）：这两样只在用户点了什么时才变，不会有 SSE 那种饿死
+    return needsFetch(commitDiffStates.value.get(keyOf(editor)), patchRequestOf(editor))
+      ? loadCommitDiff(editor)
+      : Promise.resolve();
   }
   if (editor.kind === 'file') return loadFile(editor.path);
   const entry = entryOf(editor);
@@ -660,19 +691,31 @@ const commitDiffCache = pathCache<DiffRequestState>();
 /** 栏里每个 commit tab 的请求状态，按 tab 的键存。 */
 export const commitDiffStates = commitDiffCache.states;
 
+/** 一次提交里的一个文件：取它的补丁要的三样。 */
+interface CommitPatchTarget {
+  sha: string;
+  path: string;
+  oldPath?: string | undefined;
+}
+
 /**
- * 取一次提交里一个文件的补丁。重命名同样要把 `oldPath` 带上（只传新路径时退化成全新增）。
+ * 取一次提交里一个文件的补丁，写进 `cache` 的 `key` 那一格。commit tab 与整次提交视图的分段共用
+ * 这一份：请求、票、「不回退 loading」都只写一遍。重命名同样要把 `oldPath` 带上（只传新路径时退化成
+ * 全新增）。整份上下文过不了闸时调 `markUnavailable`——上下文档住在哪（tab 上 / 按段）归调用方。
  */
-async function loadCommitDiff(editor: Extract<Editor, { kind: 'commit' }>): Promise<void> {
-  const { sha, path, oldPath } = editor;
-  const key = keyOf(editor);
-  const ticket = commitDiffCache.tickets.claim(key);
+async function loadCommitPatch(
+  cache: PathCache<DiffRequestState>,
+  key: string,
+  { sha, path, oldPath }: CommitPatchTarget,
+  options: PatchRequest,
+  markUnavailable: () => void,
+): Promise<void> {
+  const ticket = cache.tickets.claim(key);
   const rename = oldPath === undefined ? null : { oldPath };
-  const options = patchRequestOf(editor);
   // 已有一份时照常显示它、记一笔「在取」，不回退 loading：回退会让表格卸载重挂，点开折叠行的那一刻
   // 展开状态（住在组件里）跟着没了
-  const current = commitDiffStates.value.get(key);
-  commitDiffCache.set(
+  const current = cache.states.value.get(key);
+  cache.set(
     key,
     current?.status === 'ready'
       ? { ...current, pending: options }
@@ -683,20 +726,22 @@ async function loadCommitDiff(editor: Extract<Editor, { kind: 'commit' }>): Prom
     if (oldPath) query.set('oldPath', oldPath);
     setPatchQuery(query, options);
     const payload = await getJson<DiffPayload>(`/api/commit-diff?${query}`);
-    if (!commitDiffCache.tickets.isCurrent(ticket, key)) return;
+    if (!cache.tickets.isCurrent(ticket, key)) return;
     batch(() => {
-      commitDiffCache.set(key, {
-        status: 'ready',
-        rename,
-        payload,
-        options: fetchedAs(options, payload),
-      });
-      noteUnavailable(key, options, payload);
+      cache.set(key, { status: 'ready', rename, payload, options: fetchedAs(options, payload) });
+      if (unavailableAfter(options, payload)) markUnavailable();
     });
   } catch (cause) {
-    if (!commitDiffCache.tickets.isCurrent(ticket, key)) return;
-    commitDiffCache.set(key, { status: 'error', rename, message: toMessage(cause) });
+    if (!cache.tickets.isCurrent(ticket, key)) return;
+    cache.set(key, { status: 'error', rename, message: toMessage(cause) });
   }
+}
+
+function loadCommitDiff(editor: Extract<Editor, { kind: 'commit' }>): Promise<void> {
+  const key = keyOf(editor);
+  return loadCommitPatch(commitDiffCache, key, editor, patchRequestOf(editor), () =>
+    setEditorContext(key, 'unavailable'),
+  );
 }
 
 /**
@@ -711,14 +756,90 @@ export function selectCommitFile(sha: string, entry: CommitFileEntry): void {
   if (opened !== null) void refetch(opened);
 }
 
+const commitChangesCache = pathCache<DiffRequestState>();
+
+/**
+ * 整次提交视图里每一段的请求状态，键是 `segmentKey`。tab 关掉、或作为预览被顶掉时整组忘掉；不跟
+ * SSE（提交不可变）。
+ */
+export const commitChangesStates = commitChangesCache.states;
+
+/**
+ * 整次提交视图里每一段的上下文档，键同上，缺项即 `hunks`。**按段记、不挂在 tab 上**：点开一段的折叠行
+ * 不该让同一个 tab 里其余几百段此后都按整份上下文取。随整组 `forget` 归零。
+ */
+export const segmentContexts = signal<ReadonlyMap<string, DiffContext>>(new Map());
+
+/** 一段的键：`<sha>:<path>`。sha 定长、不含 `:`，路径里的 `:` 不产生歧义。 */
+export const segmentKey = (sha: string, path: string): string => `${sha}:${path}`;
+
+/** 这个键是不是 `sha` 那次提交的一段。 */
+export const isSegmentOf = (sha: string, key: string): boolean =>
+  key.startsWith(segmentKey(sha, ''));
+
+/** 一段的上下文档，缺项即 `hunks`。同 tab 的 `contextOf`。 */
+export const segmentContextOf = (key: string): DiffContext =>
+  segmentContexts.value.get(key) ?? 'hunks';
+
+const segmentRequestOf = (key: string): PatchRequest => ({
+  ignoreWhitespace: ignoreWhitespace.value,
+  fullContext: segmentContextOf(key) === 'full',
+});
+
+function setSegmentContext(key: string, context: DiffContext): void {
+  segmentContexts.value = setIn(segmentContexts.value, key, context);
+}
+
+/**
+ * 一段进了视口（或它可见时切了忽略空白、点开了折叠行）：按需取它的补丁。判据与 commit tab 的 `refetch`
+ * 同一个 `needsFetch`——取到过就不再取，`error` 的重取，取的那一档不对的重取。
+ */
+export function ensureSegment(sha: string, file: CommitFileEntry): void {
+  const key = segmentKey(sha, file.path);
+  const wanted = segmentRequestOf(key);
+  if (!needsFetch(commitChangesStates.value.get(key), wanted)) return;
+  void loadCommitPatch(commitChangesCache, key, { sha, ...file }, wanted, () =>
+    setSegmentContext(key, 'unavailable'),
+  );
+}
+
+/** 点开一段的折叠行而这一段只有 3 行上下文：这一段从此要整份上下文，立刻重取。规则同 `expandContext`。 */
+export function expandSegmentContext(sha: string, file: CommitFileEntry): void {
+  const key = segmentKey(sha, file.path);
+  if (segmentContextOf(key) !== 'hunks') return;
+  setSegmentContext(key, 'full');
+  ensureSegment(sha, file);
+}
+
+/** 一次提交的整组分段：缓存、在途请求（`forget` 成对作废）与上下文档一起忘掉。 */
+function forgetCommitChanges(sha: string): void {
+  const owned = (key: string) => isSegmentOf(sha, key);
+  batch(() => {
+    commitChangesCache.forgetWhere(owned);
+    const contexts = [...segmentContexts.value].filter(([key]) => !owned(key));
+    if (contexts.length !== segmentContexts.value.size) segmentContexts.value = new Map(contexts);
+  });
+}
+
+/**
+ * History 提交行上那枚 `Open Changes`：开（或切到）这次提交的整次提交 tab，按需取详情（文件清单）。
+ * 各段的补丁不在这里取——视图按可见性逐段取。被顶掉的预览 tab 照常忘掉。
+ */
+export function openCommitChanges(commit: CommitSummary): void {
+  const replaced = openCommitChangesEditor(commit.sha, commit.subject);
+  if (replaced !== null) forget(replaced);
+  ensureCommitDetail(commit.sha);
+}
+
 /**
  * 切换忽略空白，**只重取活动 tab**：后台的 diff tab 切过去时本来就重取，commit tab 切过去时按「取的
- * 那一档与此刻不同」重取。重取期间照常显示旧补丁、不回退 loading，与 SSE 刷新同一条。
+ * 那一档与此刻不同」重取。重取期间照常显示旧补丁、不回退 loading，与 SSE 刷新同一条。整次提交视图
+ * 不在这里取：它的每一段订阅着开关，可见的那几段自己重取（`ensureSegment`）。
  */
 export function toggleIgnoreWhitespace(): void {
   ignoreWhitespace.value = !ignoreWhitespace.value;
   const editor = activeEditor.value;
-  if (editor !== null && editor.kind !== 'file') void refetch(editor);
+  if (isPatchEditor(editor)) void refetch(editor);
 }
 
 /**
@@ -742,7 +863,7 @@ export function toggleSvgPreview(shown: boolean): void {
  */
 export function expandContext(key: EditorKey): void {
   const editor = findEditor(key);
-  if (editor === undefined || contextOf(editor) !== 'hunks') return;
+  if (!isPatchEditor(editor) || contextOf(editor) !== 'hunks') return;
   // 这一下发不出请求（diff tab 的那一行已不在列表里，下一次 SSE 会关掉它）就不改档：改了时点的那一段
   // 停在 `Loading…`，而什么都不会来
   if (editor.kind === 'diff' && entryOf(editor) === undefined) return;

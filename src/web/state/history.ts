@@ -7,6 +7,7 @@
 import { signal } from '@preact/signals';
 import type {
   CommitDetail,
+  CommitFileEntry,
   CommitPage,
   CommitSummary,
   IncomingPage,
@@ -255,6 +256,27 @@ export type CommitDetailState =
 export const commitDetails = signal<ReadonlyMap<string, CommitDetailState>>(new Map());
 
 /**
+ * 一条提交的文件清单此刻怎么画：`files` 即那一列；`notice` 是没有文件可画时的那一句（加载中、浅克隆、
+ * 没有改动）；`error` 带原因，画法归调用方（History 展开那一层是一行原因，整次提交视图是引导句 + 原因）。
+ * History 展开那一层、整次提交视图与它的动作区共用：各判一遍时，多一种「没有文件可画」的情形只改了一处，
+ * 动作区与正文就各说各的。
+ */
+export type CommitFilesView =
+  | { kind: 'files'; files: readonly CommitFileEntry[] }
+  | { kind: 'notice'; text: string }
+  | { kind: 'error'; message: string };
+
+export function commitFilesOf(state: CommitDetailState | undefined): CommitFilesView {
+  if (state === undefined || state.status === 'loading')
+    return { kind: 'notice', text: 'Loading…' };
+  if (state.status === 'error') return { kind: 'error', message: state.message };
+  // 浅克隆的边界：父提交不在本地，比不出这次改了什么——如实说，而不是画一列「全部新增」
+  if (state.detail.shallow) return { kind: 'notice', text: 'Shallow clone — parent not available' };
+  if (state.detail.files.length === 0) return { kind: 'notice', text: 'No file changes' };
+  return { kind: 'files', files: state.detail.files };
+}
+
+/**
  * 展开着的提交。**记 expanded 而不是 collapsed**，与变更列表的树刻意相反：那边默认全展开、新冒
  * 出来的目录也要展开；这里默认全收起，新长出来的提交不该自己摊开一列文件。键是 sha，第一页被
  * 整体换掉时旧提交展开着照样展开着。
@@ -283,6 +305,14 @@ export function toggleCommit(sha: string): void {
   }
   next.add(sha);
   expandedCommits.value = next;
+  ensureCommitDetail(sha);
+}
+
+/**
+ * 详情没取过、或上次失败了就取，取到过（或在途）就不动。展开一条提交与整次提交视图共用：后者可能从
+ * 一条没展开过的提交打开，文件清单要它此刻去取；失败了切回那个 tab 即重试。
+ */
+export function ensureCommitDetail(sha: string): void {
   const state = commitDetails.value.get(sha);
   if (state === undefined || state.status === 'error') void loadCommit(sha);
 }

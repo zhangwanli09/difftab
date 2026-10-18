@@ -26,6 +26,7 @@ import { activeTab, loadError, repoState } from '../state/store';
 import { PRODUCT_NAME } from '../state/title';
 import { collapseAll, loadDir, ROOT, refreshTree, treeCache } from '../state/tree';
 import { BranchStatus } from './BranchStatus';
+import { CommitChangesView } from './CommitChangesView';
 import { CommitDiffView, DiffView } from './DiffView';
 import { EditorTabs } from './EditorTabs';
 import { PanelEmptyState } from './EmptyState';
@@ -298,6 +299,8 @@ export function App() {
             <EditorTabs />
             {active.kind === 'file' ? (
               <FileView key={keyOf(active)} path={active.path} />
+            ) : active.kind === 'commit-changes' ? (
+              <CommitChangesView key={keyOf(active)} sha={active.sha} />
             ) : active.kind === 'commit' ? (
               <CommitDiffView key={keyOf(active)} sha={active.sha} path={active.path} />
             ) : (

@@ -7,7 +7,7 @@
 // 完整路径挂在 `title` 上；栏下不再留一行路径横杠——每个文件的名字会在栏里与栏下各写一遍。
 //
 // **栏是两层，tablist 在里面**：右端那块编辑器动作区（SVG 的预览开关、全文 tab 的 `Copy file
-// contents`、diff 与 commit tab 的忽略空白与版式切换）与 tablist 并排而不是躺在它里面，切法与侧栏那行 tab 一样——躺进去时
+// contents`、diff / commit / 整次提交 tab 的忽略空白与版式切换）与 tablist 并排而不是躺在它里面，切法与侧栏那行 tab 一样——躺进去时
 // 读屏把按钮报成又一个 tab，而 tablist 是横向滚动容器，按钮还会跟着 tab 滚出视野。
 
 import { computed, useComputed } from '@preact/signals';
@@ -22,18 +22,21 @@ import {
   pinEditor,
   worktreePathOf,
 } from '../state/editors';
-import { shortSha } from '../state/history';
+import { commitDetails, commitFilesOf, shortSha } from '../state/history';
 import { type DiffOutputFormat, diffOutputFormat, toggleDiffOutputFormat } from '../state/layout';
 import {
   activateEditor,
   closeEditor,
   codeByPath,
+  commitChangesStates,
   commitDiffStates,
   diffStates,
   fileStates,
   ignoreWhitespace,
+  isSegmentOf,
   previewOf,
   shownPreview,
+  svgPreview,
   toggleIgnoreWhitespace,
   toggleSvgPreview,
 } from '../state/store';
@@ -55,94 +58,110 @@ import { CopyButton } from './tree-row';
 // `app.css` 那条 `@layer base` 规则收了它们。
 const TAB_CLASS = 'group flex shrink-0 items-center border-b text-sm';
 
-/** 活动 file tab 就绪的正文，其余（diff / commit tab、加载中、出错）为 `null`。 */
-const activeFilePayload = computed(() => {
-  const editor = activeEditor.value;
-  if (editor?.kind !== 'file') return null;
-  const state = fileStates.value.get(editor.path);
-  return state?.status === 'ready' ? state.payload : null;
-});
+/** 动作区此刻画哪几枚。 */
+interface EditorActionState {
+  /** `Copy file contents` 复制的那份原文；不画则 `null`。 */
+  copyText: string | null;
+  /** 画不画 `Preview`。 */
+  preview: boolean;
+  /** 此刻按图画着（`Preview` 的按下态）。 */
+  previewing: boolean;
+  /** 画不画版式切换。 */
+  format: boolean;
+  /** 画不画忽略空白。 */
+  whitespace: boolean;
+}
+
+const NO_ACTIONS: EditorActionState = {
+  copyText: null,
+  preview: false,
+  previewing: false,
+  format: false,
+  whitespace: false,
+};
 
 /**
- * 活动 tab 可复制的全文：活动的是 file tab、且正文 `ready` 为 `text` 时是那份原文，否则 `null`。
- * 动作区画不画那枚 `Copy file contents` 由它定，活动 tab 要不要再滚一次也由它定——同一个判据
- * 只写一份。
- */
-const activeFileText = computed<string | null>(() => {
-  const payload = activeFilePayload.value;
-  return payload?.kind === 'text' ? payload.content : null;
-});
-
-/**
- * 活动 tab 有没有一张补丁表格可换版式：活动的是 diff 或 commit tab、且补丁 `ready` 并带着
- * `patch` 时为真。动作区画不画版式切换由它定，与 `activeFileText` 一起决定活动 tab 要不要再滚一次。
+ * 活动 tab 的动作区，**按 `kind` 在这一处分派**：各枚按钮各写一个 computed、再各自拼一遍 kind 判据时，
+ * 多一种 tab 要改四处，漏一处只是那一枚静默不画。
  *
- * **判据是「payload 上有没有 `patch`」，不是列一遍 kind**：`DiffView` 交给 `Patch` 的正是带
- * `patch` 的那几支，按结构判时新增一种带补丁的 kind 自动算进来，另列一张表则要与那个 switch
- * 手动保持同步。
+ * - **file**：正文 `ready` 才有。`text` 时画复制（缓存里那份原文）；带 `preview` 时画 `Preview`，按下态
+ *   同视图的 `shownPreview`（挂着跳行时按文本画）。
+ * - **diff / commit**：补丁 `ready` 且带 `patch` 时才有——判据是 payload 上有没有 `patch`，不列 kind：
+ *   `DiffView` 交给 `Patch` 的正是那几支。按图画着时没有补丁表格，版式与忽略空白都不画；忽略空白只给
+ *   `text`（`untracked-text` 是全新增，没有旧侧可比）。
+ * - **commit-changes**：详情就绪且有文件即画版式与忽略空白，**不看已取到的段里有没有 `text`**——段是
+ *   懒加载的，按此刻取到的几段判时按钮会随滚动进出。`Preview` 只能看已取到的段（前端不判扩展名），
+ *   所以在第一段 SVG 落地时才出现；这种 tab 没有跳行请求可压它，按下态就是开关本身。按图画着的只是
+ *   SVG 那几段，其余段照样是表格，版式与忽略空白不因它撤掉。
  */
-const activePatchPayload = computed(() => {
+const editorActions = computed<EditorActionState>(() => {
   const editor = activeEditor.value;
-  if (editor === null || editor.kind === 'file') return null;
-  // 两份缓存的键与 `DiffView` / `CommitDiffView` 读的同一套：diff 按路径，commit 按 tab 键
-  const state =
-    editor.kind === 'commit'
-      ? commitDiffStates.value.get(keyOf(editor))
-      : diffStates.value.get(editor.path);
-  return state?.status === 'ready' && 'patch' in state.payload ? state.payload : null;
+  switch (editor?.kind) {
+    case undefined:
+      return NO_ACTIONS;
+    case 'file': {
+      const state = fileStates.value.get(editor.path);
+      if (state?.status !== 'ready') return NO_ACTIONS;
+      const { payload } = state;
+      return {
+        ...NO_ACTIONS,
+        copyText: payload.kind === 'text' ? payload.content : null,
+        preview: previewOf(payload) !== undefined,
+        previewing: shownPreview(payload, editor.path) !== undefined,
+      };
+    }
+    case 'diff':
+    case 'commit': {
+      // 两份缓存的键与 `DiffView` / `CommitDiffView` 读的同一套：diff 按路径，commit 按 tab 键
+      const state =
+        editor.kind === 'commit'
+          ? commitDiffStates.value.get(keyOf(editor))
+          : diffStates.value.get(editor.path);
+      if (state?.status !== 'ready' || !('patch' in state.payload)) return NO_ACTIONS;
+      const { payload } = state;
+      const previewing = shownPreview(payload) !== undefined;
+      return {
+        copyText: null,
+        preview: previewOf(payload) !== undefined,
+        previewing,
+        format: !previewing,
+        whitespace: payload.kind === 'text' && !previewing,
+      };
+    }
+    case 'commit-changes': {
+      if (commitFilesOf(commitDetails.value.get(editor.sha)).kind !== 'files') return NO_ACTIONS;
+      let preview = false;
+      for (const [key, state] of commitChangesStates.value) {
+        if (isSegmentOf(editor.sha, key) && state.status === 'ready' && previewOf(state.payload)) {
+          preview = true;
+          break;
+        }
+      }
+      return {
+        copyText: null,
+        preview,
+        previewing: preview && svgPreview.value,
+        format: true,
+        whitespace: true,
+      };
+    }
+  }
 });
-
-/** 活动 tab 有没有 SVG 预览可切：正文 `ready` 且 payload 带 `preview`，三种 tab 都算。 */
-const previewToggleShown = computed<boolean>(() => {
-  const file = activeFilePayload.value;
-  const patch = activePatchPayload.value;
-  if (file !== null) return previewOf(file) !== undefined;
-  return patch !== null && previewOf(patch) !== undefined;
-});
-
-/**
- * 活动 tab 此刻按图画着，判据与视图同一个 `shownPreview`（file tab 挂着跳行时按文本画）。此时没有
- * 补丁表格，版式与忽略空白两枚都不画；复制照留——复制的仍是原文。`Preview` 的按下态也读它。
- */
-const previewing = computed<boolean>(() => {
-  const editor = activeEditor.value;
-  const file = activeFilePayload.value;
-  const patch = activePatchPayload.value;
-  if (editor !== null && file !== null) return shownPreview(file, editor.path) !== undefined;
-  return patch !== null && shownPreview(patch) !== undefined;
-});
-
-/** 活动 tab 有没有一张补丁表格摆在面板上：有补丁、且没在按图画。版式切换画不画由它定。 */
-const formatToggleShown = computed<boolean>(
-  () => activePatchPayload.value !== null && !previewing.value,
-);
-
-/**
- * 活动 tab 的补丁有没有空白差异可藏：git 出的那一份（`text`）才有。`untracked-text` 是全新增，
- * 没有旧侧可比。
- */
-const whitespaceToggleShown = computed<boolean>(
-  () => activePatchPayload.value?.kind === 'text' && !previewing.value,
-);
 
 /**
  * 动作区此刻画几枚。活动 tab 要不要再滚一次跟的是它而不是「画不画」：在两个都有版式按钮的 tab 之间
  * 切换（`text` ↔ `untracked-text`）时，忽略空白那一枚照样会进出，动作区宽度随之变；开关预览时
- * 版式与忽略空白两枚一起进出。
+ * 版式与忽略空白两枚一起进出。单独一个 computed：数不变时不通知，tab 不因缓存变化重画。
  */
-const editorActionCount = computed<number>(
-  () =>
-    (previewToggleShown.value ? 1 : 0) +
-    (activeFileText.value !== null ? 1 : 0) +
-    (formatToggleShown.value ? 1 : 0) +
-    (whitespaceToggleShown.value ? 1 : 0),
-);
-
-/**
- * 动作区此刻有没有一枚按钮（`EditorActions` 画不画）。**由按钮数派生**，不再把判据拼一遍：两处各拼
- * 一遍时，多一种动作只改了一处就静默漂开。
- */
-const editorActionShown = computed<boolean>(() => editorActionCount.value > 0);
+const editorActionCount = computed<number>(() => {
+  const actions = editorActions.value;
+  return (
+    Number(actions.preview) +
+    Number(actions.copyText !== null) +
+    Number(actions.format) +
+    Number(actions.whitespace)
+  );
+});
 
 /**
  * 版式切换按**当前**版式查出要画的那枚。图标与文案表达的是**目标**版式，与变更列表的
@@ -195,7 +214,24 @@ export function distinguishingDirs(paths: readonly string[]): Map<string, string
  * 整栏一张表：撞不撞名要看邻居，单个 tab 自己算不出来——关掉一个同名 tab 时，另一个的目录得跟着
  * 消失。
  */
-const tabDirs = computed(() => distinguishingDirs(editors.value.map((editor) => editor.path)));
+const tabDirs = computed(() =>
+  distinguishingDirs(
+    // 整次提交 tab 没有文件名可撞：它的 `path` 是 sha，拿去比只会白占一格
+    editors.value.flatMap((editor) => (editor.kind === 'commit-changes' ? [] : [editor.path])),
+  ),
+);
+
+/** tab 的 `title`：完整路径；提交里的那两种带上完整 sha（整次提交 tab 以主题代路径）。 */
+function tabTitle(editor: Editor): string {
+  switch (editor.kind) {
+    case 'commit':
+      return `${editor.path} @ ${editor.sha}`;
+    case 'commit-changes':
+      return `${editor.subject} @ ${editor.sha}`;
+    default:
+      return editor.path;
+  }
+}
 
 function Tab({
   editor,
@@ -244,7 +280,7 @@ function Tab({
         type="button"
         role="tab"
         aria-selected={active}
-        title={editor.kind === 'commit' ? `${editor.path} @ ${editor.sha}` : editor.path}
+        title={tabTitle(editor)}
         onClick={() => activateEditor(key)}
         // 幂等的固定：一次双击是 click、click、dblclick 三个事件，前两个已经把 tab 开好并激活
         onDblClick={() => pinEditor(key)}
@@ -261,7 +297,17 @@ function Tab({
         {/* 文件名与目录同住一个 truncate span（名在前、目录作它的行内子元素），理由与变更列表
             那一行一字不差：省略号在右端天然先吃掉目录。预览 tab 斜体，固定之后转正 */}
         <span class={`max-w-64 min-w-0 truncate ${editor.pinned ? '' : 'italic'} ${color}`}>
-          {name}
+          {/* 整次提交 tab 没有文件名：短哈希在前、主题在后，照 History 那一行把主题当名字 */}
+          {editor.kind === 'commit-changes' ? (
+            <>
+              <span class="mr-1.5 font-mono text-xs text-description-foreground">
+                {shortSha(editor.sha)} ·
+              </span>
+              {editor.subject}
+            </>
+          ) : (
+            name
+          )}
           {/* commit tab 在名后跟一个短哈希：同一个文件在两次提交里是两个 tab，没有它两个长得一样 */}
           {editor.kind === 'commit' && (
             <span class="ml-1.5 font-mono text-xs text-description-foreground">
@@ -300,26 +346,26 @@ function Tab({
  */
 function EditorActions() {
   const editor = activeEditor.value;
-  if (editor === null || !editorActionShown.value) return null;
-  const text = activeFileText.value;
+  if (editor === null || editorActionCount.value === 0) return null;
+  const { copyText, preview, previewing, format, whitespace } = editorActions.value;
   // 忽略空白是一枚**带按下态的开关、文案恒定**，与版式按钮「文案写目标版式」刻意不同：版式是什么
   // 一眼看得出，空白藏没藏看不出——开着而认不出来时，用户只会觉得 diff 少了几处改动
   // 预览与忽略空白同为带按下态的开关：开着时面板上是图而不是文本，一眼认得出，但认不出「这个 tab
   // 能切回文本」——按下态答的正是这一句
-  const preview = previewToggleShown.value && (
+  const previewToggle = preview && (
     <Toggle
       icon={Eye}
       label="Preview"
-      pressed={previewing.value}
-      onClick={() => toggleSvgPreview(previewing.value)}
+      pressed={previewing}
+      onClick={() => toggleSvgPreview(previewing)}
     />
   );
   const actions =
-    text !== null ? (
-      <CopyButton key={keyOf(editor)} text={text} label="Copy file contents" />
+    copyText !== null ? (
+      <CopyButton key={keyOf(editor)} text={copyText} label="Copy file contents" />
     ) : (
       <>
-        {whitespaceToggleShown.value && (
+        {whitespace && (
           <Toggle
             icon={Pilcrow}
             label="Hide whitespace changes"
@@ -327,7 +373,7 @@ function EditorActions() {
             onClick={toggleIgnoreWhitespace}
           />
         )}
-        {formatToggleShown.value && (
+        {format && (
           <IconButton {...FORMAT_TOGGLE[diffOutputFormat.value]} onClick={toggleDiffOutputFormat} />
         )}
       </>
@@ -335,7 +381,7 @@ function EditorActions() {
   // `px-1.5` 与 tab 上那枚 × 的外壳同一个值：两枚 `IconButton` 离各自邻边一样远
   return (
     <span class="flex shrink-0 items-center px-1.5">
-      {preview}
+      {previewToggle}
       {actions}
     </span>
   );
