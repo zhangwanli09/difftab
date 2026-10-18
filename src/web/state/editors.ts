@@ -126,8 +126,11 @@ export const revealRequest = signal<{ readonly path: string; readonly line: numb
  */
 export function setReveal(path: string, line?: number): void {
   if (line !== undefined) revealRequest.value = { path, line };
-  else if (revealRequest.value?.path === path) revealRequest.value = null;
+  else if (revealPending(path)) revealRequest.value = null;
 }
+
+/** 这个文件挂着跳行请求。挂着时它的 file tab 按文本画（那一行要在文本里才看得见）。 */
+export const revealPending = (path: string): boolean => revealRequest.value?.path === path;
 
 /**
  * 打开（或切到）一个 tab。缺省开出来的是预览 tab，固定归双击那一路的 `pinEditor`。返回**被顶掉的

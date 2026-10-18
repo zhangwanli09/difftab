@@ -23,6 +23,7 @@ import {
   editors,
   openEditor,
   pinEditor,
+  revealRequest,
 } from '../../../src/web/state/editors';
 import {
   commitDetails,
@@ -49,12 +50,13 @@ import {
   svgPreview,
 } from '../../../src/web/state/store';
 
-/** 清空标签栏、三张缓存与忽略空白、SVG 预览两个开关。用到右侧状态的用例都从这里起。 */
+/** 清空标签栏、三张缓存与跳行请求，忽略空白、SVG 预览两个开关回到默认。用到右侧状态的用例都从这里起。 */
 export function resetEditors(): void {
   ignoreWhitespace.value = false;
-  svgPreview.value = false;
+  svgPreview.value = true;
   editors.value = [];
   activeEditorKey.value = null;
+  revealRequest.value = null;
   diffStates.value = new Map();
   fileStates.value = new Map();
   commitDiffStates.value = new Map();
