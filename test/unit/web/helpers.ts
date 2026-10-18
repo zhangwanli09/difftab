@@ -33,7 +33,7 @@ import {
   loadingMore,
   moreError,
 } from '../../../src/web/state/history';
-import { resetUpstreamRefs } from '../../../src/web/state/refs';
+import { resetGraphRefs } from '../../../src/web/state/refs';
 import {
   changesCollapsed,
   historyCollapsed,
@@ -62,7 +62,7 @@ export function resetEditors(): void {
   commitDiffStates.value = new Map();
 }
 
-/** 清空 `History` 那一档：列表、详情缓存、展开集合，以及上游徽标那个 ref。 */
+/** 清空 `History` 那一档：列表、详情缓存、展开集合，以及 ref 徽标那份 refs。 */
 export function resetHistory(): void {
   historyList.value = null;
   historyError.value = null;
@@ -70,7 +70,7 @@ export function resetHistory(): void {
   moreError.value = null;
   commitDetails.value = new Map();
   expandedCommits.value = new Set();
-  resetUpstreamRefs();
+  resetGraphRefs();
 }
 
 /** 两个分区回到默认：都展开、对半分。 */
