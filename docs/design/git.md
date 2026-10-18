@@ -82,7 +82,8 @@ git diff --no-ext-diff --no-textconv <range> --unified=<3|50000> --inter-hunk-co
 
 提交列表、一次提交改了哪些文件、其中一个文件的补丁——**只往只读白名单里加了 `log` 一条**：提交 diff 是 `diff <parent> <sha>`，图片两侧是 `cat-file`，校验是 `rev-parse`。禁引入 `show` / `diff-tree` / `rev-list`。代码在 `server/git/history.ts` 与 `diff.ts`。
 
-- **`log` 的 argv 整条是字面量，只有两种形态**：列表 `log --no-show-signature --no-color -z --format=%H%x00%P%x00%an%x00%at%x00%s%x00%b --max-count=<n> --skip=<n> <起点> --`，单条提交是同一串去掉 `--skip`、`--max-count=1`。冒烟逐段钉着它。
+- **`log` 的 argv 整条是字面量，只有三种形态**：列表 `log --no-show-signature --no-color -z --format=%H%x00%P%x00%an%x00%at%x00%s%x00%b --max-count=<n> --skip=<n> <起点> --`；单条提交是同一串去掉 `--skip`、`--max-count=1`；incoming 是同一串去掉 `--skip`、起点换成范围 `<head>..<upstream>`、`--max-count=51`。冒烟逐段钉着它。
+  - **incoming 的两端都是请求带来的完整对象名**（HEAD oid 与前端在 refs 里找到的上游 sha），各自过 `assertOid` 再拼成范围，**不写 `HEAD..@{u}`**：`@{u}` 是又一种要钉的 revision 语法，而上游的 sha 前端本来就在 refs 里有。回 `{ commits, hasMore }`，不翻页、不回锚点；任一端不是本仓库里的提交时 `log` 非零退出，一律 `not-found`。
   - **`--no-show-signature`**：`log.showSignature` 会对每条提交起一次 gpg。
   - **不带 `-p` / `--stat` / 任何 diff 选项**：`log` 一算 diff，`diff.external` 与 textconv 就在射程内。
   - **`-z` + 固定六段**：根提交的 `%P` 是空段不是缺段。正文含 NUL 也不错位——git 输出 `%b` 时在第一个 NUL 处截断，每条恒为六段（`history.test.ts` 拿真 git 钉着）。

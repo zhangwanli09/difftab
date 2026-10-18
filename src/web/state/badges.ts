@@ -4,7 +4,7 @@
 
 import { computed } from '@preact/signals';
 import type { RefEntry } from '../../server/shared/protocol';
-import { graphRefs } from './refs';
+import { type BranchKind, findUpstream, graphRefs } from './refs';
 import { repoState } from './store';
 
 /**
@@ -19,34 +19,6 @@ export type RefBadge =
   | { role: 'head'; kind: 'local'; name: string }
   | { role: 'upstream'; kind: BranchKind; name: string }
   | { role: 'group'; kind: RefEntry['kind']; names: string[] };
-
-/** 能当上游的那两种 ref。 */
-export type BranchKind = Exclude<RefEntry['kind'], 'tag'>;
-
-/** `/api/refs` 剥掉的前缀，拼回去就是完整的 refname。 */
-const REF_PREFIX: Record<BranchKind, string> = {
-  local: 'refs/heads/',
-  remote: 'refs/remotes/',
-};
-
-/**
- * git 把一个缩写的 refname 解析回完整名字的次序（`ref_rev_parse_rules`），去掉标签与
- * `refs/remotes/%s/HEAD` 两条——上游不会是它们。`# branch.upstream` 的值是 git 按同一套规则缩写
- * 出来的，**名字有歧义时会带上前缀**（实测 2.54：有个标签也叫 `main` 时写 `heads/main`，有个本地
- * 分支也叫 `origin/main` 时写 `remotes/origin/main`，全有歧义时是完整的 `refs/…`），按这几条依次
- * 拼回去就对得上，不必一种前缀写一个特例。
- */
-const PARSE_RULES = ['', 'refs/', 'refs/heads/', 'refs/remotes/'];
-
-/** 上游在 refs 里是哪一个：按 git 的解析次序找，标签不算。 */
-export function findUpstream(refs: readonly RefEntry[], upstream: string): RefEntry | null {
-  for (const rule of PARSE_RULES) {
-    const full = rule + upstream;
-    const ref = refs.find((r) => r.kind !== 'tag' && REF_PREFIX[r.kind] + r.name === full);
-    if (ref !== undefined) return ref;
-  }
-  return null;
-}
 
 /**
  * 哪条提交上画哪几枚徽标。**当前分支那枚不看 refs**——它就指着 HEAD；`branch` 为空串（detached、

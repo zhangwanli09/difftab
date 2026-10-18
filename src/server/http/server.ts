@@ -8,7 +8,7 @@ import type { Socket } from 'node:net';
 import { homedir } from 'node:os';
 import { type PatchOptions, readCommitDiff, readDiff } from '../git/diff.ts';
 import { readFileContent } from '../git/file.ts';
-import { listCommits, readCommit } from '../git/history.ts';
+import { listCommits, listIncoming, readCommit } from '../git/history.ts';
 import { readImageBytes } from '../git/image.ts';
 import { listRefs } from '../git/refs.ts';
 import { type RepoInfo, repoNameOf } from '../git/repo.ts';
@@ -387,6 +387,21 @@ export async function startServer(
           200,
           await listCommits(repo.root, { head: head ?? undefined, skip: Number(rawSkip) }),
         );
+        return;
+      }
+
+      /**
+       * 上游有、HEAD 走不到的提交，至多一页、不翻页。两个参数都必填；是不是完整对象名归 `assertOid`，
+       * 与 `/api/commits` 的 `head` 同一把钥匙。
+       */
+      case '/api/commits/incoming': {
+        const head = url.searchParams.get('head');
+        const upstream = url.searchParams.get('upstream');
+        if (!head || !upstream) {
+          sendError(res, 400, 'bad-request', 'head and upstream are required');
+          return;
+        }
+        sendJson(res, 200, await listIncoming(repo.root, { head, upstream }));
         return;
       }
 

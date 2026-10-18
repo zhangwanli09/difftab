@@ -32,6 +32,7 @@ import {
   historyList,
   loadingMore,
   moreError,
+  resetIncoming,
 } from '../../../src/web/state/history';
 import { resetGraphRefs } from '../../../src/web/state/refs';
 import {
@@ -71,6 +72,7 @@ export function resetHistory(): void {
   commitDetails.value = new Map();
   expandedCommits.value = new Set();
   resetGraphRefs();
+  resetIncoming();
 }
 
 /** 两个分区回到默认：都展开、对半分。 */

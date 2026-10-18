@@ -419,6 +419,22 @@ export async function runFullFlow(cwd, { env } = {}) {
     const refs = await authedGet(server.port, server.token, '/api/refs');
 
     /**
+     * 落后上游时取一次 incoming，与前端同一个走法：HEAD oid 来自 state，上游 sha 在 refs 里按名字找
+     * （fixture 的上游名没有歧义，直接比对即可）。`log` 的范围形态只从这里出来。
+     */
+    const incoming = [];
+    const branch = state.status === 200 ? JSON.parse(state.body).branch : null;
+    if (branch?.oid && branch.upstream?.behind > 0 && refs.status === 200) {
+      const target = JSON.parse(refs.body).refs.find(
+        (ref) => ref.kind !== 'tag' && ref.name === branch.upstream.name,
+      );
+      if (target) {
+        const query = new URLSearchParams({ head: branch.oid, upstream: target.sha });
+        incoming.push(await authedGet(server.port, server.token, `/api/commits/incoming?${query}`));
+      }
+    }
+
+    /**
      * Quick Open 的文件列表与全仓搜索。搜索把 argv 的每种形态各走一遍：默认（带 `-i`）、
      * `case=1`（不带）、`word=1`（带 `-w`），外加一个**以 `-` 开头、恰好是 grep 自己选项名**
      * 的查询——`-e` 漏了时它会被 git 当成 `-n` 吃掉，argv 那条字面量断言随之对不上。
@@ -445,6 +461,7 @@ export async function runFullFlow(cwd, { env } = {}) {
       commits,
       commitDiffs,
       refs,
+      incoming,
       fileList,
       searches,
       stderr: server.stderr,

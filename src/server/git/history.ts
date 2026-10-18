@@ -12,6 +12,7 @@ import type {
   CommitFileEntry,
   CommitPage,
   CommitSummary,
+  IncomingPage,
 } from '../shared/protocol.ts';
 import { atLeast, emptyTreeOf, headOid, isOid, type RepoInfo } from './repo.ts';
 import { runGit, runGitStrict } from './run.ts';
@@ -35,8 +36,9 @@ const FIELDS = 6;
  *   都在射程内，而白名单只看子命令；
  * - 末尾的 `--`：`rev` 之后的任何东西都不再被当成选项。
  *
- * `rev` 必须已过 `assertOid`——它拼在 revision 位置，`GIT_LITERAL_PATHSPECS` 管不到那里，
- * `--output=<路径>` 在那个位置就是一次写文件。
+ * `rev` 是一个完整对象名、字面量 `HEAD`，或两个完整对象名拼成的 `<a>..<b>`，每个对象名都必须已过
+ * `assertOid`——它拼在 revision 位置，`GIT_LITERAL_PATHSPECS` 管不到那里，`--output=<路径>` 在那个
+ * 位置就是一次写文件。
  */
 function logArgs(rev: string, count: number, skip?: number): string[] {
   return [
@@ -89,6 +91,12 @@ export function parseLog(output: string): CommitSummary[] {
   return commits;
 }
 
+/** 取了 `PAGE_SIZE + 1` 条的 `log` 输出切成一页：多出来的那一条只用来判 `hasMore`。 */
+function toPage(stdout: string): IncomingPage {
+  const commits = parseLog(stdout);
+  return { commits: commits.slice(0, PAGE_SIZE), hasMore: commits.length > PAGE_SIZE };
+}
+
 /**
  * 提交列表的一页。`head` 缺省即「从 HEAD 起」，并把 HEAD 此刻的 oid 回传当锚点；之后每一页
  * 都带着它再 `--skip`——按 HEAD 往下数时，agent 在两次翻页之间提交一次，第二页就重复第一页的
@@ -110,9 +118,24 @@ export async function listCommits(
     if ((await headOid(root)) === null) return { head: null, commits: [], hasMore: false };
     throw new Error('HEAD points to a commit that cannot be read');
   }
-  const commits = parseLog(result.stdout);
-  const head = query.head ?? commits[0]?.sha ?? null;
-  return { head, commits: commits.slice(0, PAGE_SIZE), hasMore: commits.length > PAGE_SIZE };
+  const page = toPage(result.stdout);
+  return { head: query.head ?? page.commits[0]?.sha ?? null, ...page };
+}
+
+/**
+ * 上游有、HEAD 走不到的提交（`<head>..<upstream>`），最新的在前，至多一页。两端都是请求带来的完整
+ * 对象名：前端拿 HEAD oid 与它在 refs 里找到的上游 sha 来问，**不写 `HEAD..@{u}`**——`@{u}` 是又一种
+ * 要钉的 revision 语法，而且解析的是此刻的上游，未必是前端徽标画着的那一个。任一端不是本仓库里的
+ * 提交时 `log` 非零退出，一律 `not-found`。
+ */
+export async function listIncoming(
+  root: string,
+  query: { head: string; upstream: string },
+): Promise<IncomingPage> {
+  const range = `${assertOid(query.head)}..${assertOid(query.upstream)}`;
+  const result = await runGit(logArgs(range, PAGE_SIZE + 1), root);
+  if (result.code !== 0) throw new WorktreeError('not-found', 'no such commit');
+  return toPage(result.stdout);
 }
 
 /** 一次提交与它的对比端。提交详情、单个文件的补丁、图片两侧三条路都从这一份出发。 */

@@ -40,6 +40,34 @@ export function filterRefs(refs: readonly RefEntry[], query: string): readonly R
   return needle === '' ? refs : refs.filter((ref) => ref.name.toLowerCase().includes(needle));
 }
 
+/** 能当上游的那两种 ref。 */
+export type BranchKind = Exclude<RefEntry['kind'], 'tag'>;
+
+/** `/api/refs` 剥掉的前缀，拼回去就是完整的 refname。 */
+const REF_PREFIX: Record<BranchKind, string> = {
+  local: 'refs/heads/',
+  remote: 'refs/remotes/',
+};
+
+/**
+ * git 把一个缩写的 refname 解析回完整名字的次序（`ref_rev_parse_rules`），去掉标签与
+ * `refs/remotes/%s/HEAD` 两条——上游不会是它们。`# branch.upstream` 的值是 git 按同一套规则缩写
+ * 出来的，**名字有歧义时会带上前缀**（实测 2.54：有个标签也叫 `main` 时写 `heads/main`，有个本地
+ * 分支也叫 `origin/main` 时写 `remotes/origin/main`，全有歧义时是完整的 `refs/…`），按这几条依次
+ * 拼回去就对得上，不必一种前缀写一个特例。
+ */
+const PARSE_RULES = ['', 'refs/', 'refs/heads/', 'refs/remotes/'];
+
+/** 上游在 refs 里是哪一个：按 git 的解析次序找，标签不算。 */
+export function findUpstream(refs: readonly RefEntry[], upstream: string): RefEntry | null {
+  for (const rule of PARSE_RULES) {
+    const full = rule + upstream;
+    const ref = refs.find((r) => r.kind !== 'tag' && REF_PREFIX[r.kind] + r.name === full);
+    if (ref !== undefined) return ref;
+  }
+  return null;
+}
+
 /**
  * History 徽标那半最近一次取到的整份 refs；`null` 即还没取到、或上一次取失败了。**与分支列表的
  * `refList` / `refsError` 分开存**，两边只共用 `/api/refs` 这个端点：共用状态时一边失败会抹掉另一边
@@ -55,6 +83,27 @@ const graphTickets = latestWins();
 let fetchedFor: string | null = null;
 
 /**
+ * `graphRefs` 此刻那份是按哪一个分支状态取回来的。与 `fetchedFor` 分开：后者在发请求时就记上，在途
+ * 期间它已是新的、而 `graphRefs` 还是旧的那份。
+ */
+let arrivedFor: string | null = null;
+
+/** 分支状态的判据：HEAD oid / 上游名 / ahead / behind 四样。 */
+function branchKey(state: RepoState): string {
+  const { oid, upstream } = state.branch;
+  return [oid ?? '', upstream?.name ?? '', upstream?.ahead ?? 0, upstream?.behind ?? 0].join('\0');
+}
+
+/**
+ * 按 `state` 这一份分支状态取回来的 refs；还在途、或手里那份是别的分支状态时取的，就是 `null`。
+ * 要拿上游 sha 去发请求的一方读它而不是 `graphRefs`：fetch 之后 behind 已变、新 refs 还在途时，旧的
+ * 那份里的上游还指着 fetch 之前那条。
+ */
+export function graphRefsFor(state: RepoState): readonly RefEntry[] | null {
+  return arrivedFor === branchKey(state) ? graphRefs.value : null;
+}
+
+/**
  * 分支状态与上一次取时对不上才取。**判据是 HEAD oid / 上游名 / ahead / behind 四样，不是「来过
  * SSE」**，也**不能只看 HEAD**——push 只挪上游、不挪 HEAD，ahead 那一项就是它在 status 里看得见的
  * 地方。**没有上游也取**：标签与其余分支的徽标要它。上游名以空串进判据，`--unset-upstream` 之后再
@@ -67,20 +116,19 @@ let fetchedFor: string | null = null;
  */
 export async function ensureGraphRefs(state: RepoState | null): Promise<void> {
   if (state === null) return;
-  const { oid, upstream } = state.branch;
-  const key = [oid ?? '', upstream?.name ?? '', upstream?.ahead ?? 0, upstream?.behind ?? 0].join(
-    '\0',
-  );
+  const key = branchKey(state);
   if (key === fetchedFor) return;
   fetchedFor = key;
   const ticket = graphTickets.claim();
   try {
     const { refs } = await getJson<RefList>('/api/refs');
-    if (graphTickets.isCurrent(ticket)) graphRefs.value = refs;
+    if (!graphTickets.isCurrent(ticket)) return;
+    graphRefs.value = refs;
+    arrivedFor = key;
   } catch {
     if (!graphTickets.isCurrent(ticket)) return;
     graphRefs.value = null;
-    fetchedFor = null;
+    invalidateGraphRefs();
   } finally {
     graphTickets.release(ticket);
   }
@@ -89,10 +137,12 @@ export async function ensureGraphRefs(state: RepoState | null): Promise<void> {
 /**
  * 作废判据，下一次 `ensureGraphRefs` 必取。History 每次变得看不见时调，于是再现身时必重取：别处打了
  * 标签、或挪了一条不是当前分支的分支时，四样一样都不变，没有这一下就要等到 HEAD 或上游再动。已取到
- * 的那份留着照画，回来再换。
+ * 的那份留着照画，回来再换。**`arrivedFor` 一并作废**：判据既然作废，手里那份就不再算「按此刻的分支
+ * 状态取的」——重取在途期间来一个 SSE 时，`graphRefsFor` 不能把藏起之前那份交给 incoming 去发请求。
  */
 export function invalidateGraphRefs(): void {
   fetchedFor = null;
+  arrivedFor = null;
 }
 
 /** 只给用例：模块级的「上一次取时」在用例之间清掉。 */

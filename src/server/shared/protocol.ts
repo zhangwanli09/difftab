@@ -285,6 +285,12 @@ export interface CommitPage {
 }
 
 /**
+ * `GET /api/commits/incoming` 的响应体：上游有、HEAD 走不到的提交，最新的在前。**不翻页、不回锚点**：
+ * 至多一页，`hasMore` 只说「还有没给的」，还有几条由前端拿 status 的 `behind` 去减。
+ */
+export type IncomingPage = Omit<CommitPage, 'head'>;
+
+/**
  * 一次提交里改动的一个文件（相对第一父）。**不复用 `FileEntry`**：后者的 `staged` /
  * `unstaged` / `kind` 是工作区的双状态位，一次提交只有一个状态字母。`oldPath` 只有 `R` 有。
  */

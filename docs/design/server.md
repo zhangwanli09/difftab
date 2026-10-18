@@ -76,6 +76,7 @@
 | `GET /api/file?path=` | `FilePayload` | 单个文件的只读内容 |
 | `GET /api/blob?path=&side=old\|new&commit=` | 图片与 SVG 字节 | **只服务图片扩展名表里的路径与 svg**；`old` 读 diff 基准、`new` 读工作区；**带 `commit` 时两侧都读对象库**（第一父 / 该提交） |
 | `GET /api/commits?head=&skip=` | `CommitPage` | 一页 50 条；`head` 缺省即从 HEAD 起并回传锚点 |
+| `GET /api/commits/incoming?head=&upstream=` | `IncomingPage` | 上游有、HEAD 走不到的提交，至多 50 条、不翻页；两个参数都必填且是完整对象名 |
 | `GET /api/commit?sha=` | `CommitDetail` | 一次提交的元数据 + 改了哪些文件 |
 | `GET /api/commit-diff?sha=&path=&oldPath=&ignoreWhitespace=1&fullContext=1` | `DiffPayload` | 相对第一父，三道闸与两个开关都与 `/api/diff` 同一套 |
 | `GET /api/refs` | `RefList` | 本地分支、远程分支、标签，无参数 |
@@ -99,7 +100,7 @@
 - `repoName: string`——工作区根目录的 **basename**，回答「这个标签属于哪个项目」的最小一份；**不复用 `InstanceInfo.repoRoot`**。空串即根目录没有 basename，显示什么归前端。
 - `TreeEntry { name; path; kind: 'directory' | 'file'; ignored }` 与 `TreePayload { path; entries }`——`path: ''` 即仓库根。**`ignored` 由后端给**：前端没有 `.gitignore` 的语义。一次只回一层。
 - `FilePayload` 为判别联合：`text { content; preview? }` / `symlink { target }` / `binary` / `image { size, version }` / `too-large { size, reason }`。**`symlink` 单独成一支**：「这是一个指向 X 的链接」与「这是 X 的内容」是两句话。`preview { size; version }` 与 diff 那侧同一条口径，只在 `.svg` 上出现。
-- `CommitSummary { sha; parents; author; time; subject }`、`CommitPage { head; commits; hasMore }`、`CommitDetail { …CommitSummary; files; shallow? }`、`CommitFileEntry { path; oldPath?; status: 'A' | 'M' | 'D' | 'R' | 'T' }`：
+- `CommitSummary { sha; parents; author; time; subject }`、`CommitPage { head; commits; hasMore }`、`IncomingPage { commits; hasMore }`、`CommitDetail { …CommitSummary; files; shallow? }`、`CommitFileEntry { path; oldPath?; status: 'A' | 'M' | 'D' | 'R' | 'T' }`：
   - **`sha` 与 `head` 都是完整对象名**，前端原样回传，截断只是展示。
   - **`shallow`** 即浅克隆边界：`files` 为空不代表「没改东西」。**`head: null` 即空仓库**。
   - **`time` 是作者时间的 Unix 秒**，只带作者不带提交者——回答的是「谁写的、什么时候写的」。

@@ -66,6 +66,12 @@
   - **与分支列表共用 `/api/refs` 端点、不共用状态**（`state/refs.ts` 另存一份 `graphRefs`，票各领各的）：共用时一边失败会抹掉另一边。存的是原样列表，上游是哪条由 `state/badges.ts` 拿**此刻的**上游名去推。失败只在那一次仍是最新时才算。
   - **徽标表只依赖分支状态里的三样字符串与 `graphRefs`**：直接依赖 `repoState` 时 agent 每改一个文件带徽标的行就重画一次。
   - **两样数据从同一个入口进**：`ensureHistory` 既判提交列表也判徽标那份 refs，`refresh` 与可见性 effect 只调它；可见性 effect 在 History 藏起时作废 refs 的判据——不在现身时作废：第一份 state 经 `refresh` 到达时已经取过一次，现身时再作废就是同一份取两遍。
+- **落后上游时，列表顶上另起一段 incoming：上游有、HEAD 走不到的那几条**，照 VS Code Graph 把 incoming 画在最上面。状态条上的 `3↓` 只回答「落后几条」，这一段回答「是哪几条」——上游那枚徽标指着的提交 HEAD 走不到，不另起一段它根本画不出来。为什么不合成一列见 [`../decisions/web.md`](../decisions/web.md)。
+  - **段首一行不可点的小标题 `Incoming · N↓`**，N 取 status 的 `behind`，**写法与状态条逐字一致**（数字在前、`N↓` 那一截同用 `font-mono`）——两处说的是同一个数，箭头一前一后、字形一宽一窄时读着像两件事；`title` 是 `As of the last fetch`：这几条是远端跟踪分支上次 fetch 时的样子，**不替用户 fetch**（fetch 写 `.git`）。下面用同一个 `CommitRow` 画，展开、`Copy commit hash` 照常——`resolveCommit` 对任意本地提交都成立。段末一条分隔线，之后才是主列表。
+  - **不翻页**：一次至多 50 条，还有更多时末尾一行 `+M more`（M = `behind` − 已画条数），不可点。落后几百条时该做的是去终端 pull，不是在侧栏里翻；主列表的锚点分页也因此一行不用改。
+  - **上游那枚徽标自然落在这一段里**：`badgesBySha` 按 sha 查、不分段，不为它改一行。
+  - **判据是「HEAD oid + 上游此刻的 sha」两样**，上游 sha 拿此刻的上游名在徽标那份 refs 里找（`findUpstream`），所以这一步排在 `ensureGraphRefs` 回来之后，仍从 `ensureHistory` 一个入口进。push 之后 HEAD 与上游都没挪就不重取；fetch 挪了上游时 `behind` 变了，refs 随之重取，sha 也就变了。**`behind` 为 0、没有上游、HEAD 未出生、或 refs 里找不到上游时清空、不取**；refs 还没到、那次取失败、或手里那份不是按此刻的分支状态取的（fetch 之后 `behind` 变了、新 refs 还在途，旧那份里的上游还指着 fetch 之前那条）时**不动现有那段**，等下一次判——判据是 refs 回来时记下的分支状态（`graphRefsFor`），不是「`graphRefs` 有值」。同一时刻只有一次在途，在途期间又被叫过就回来后补跑一次（`singleFlight`），理由同提交列表。
+  - **失败只坏这一段**：小标题照画，下面一行错误（`PlaceholderRow`），主列表照常；上次失败也算对不上，下一次判即重试。
 - **展开是懒加载的**：第一次展开才问 `/api/commit`，结果按 sha 缓存且**永不失效**（提交不可变）；失败了再展开即重试。浅克隆边界那一条写 `Shallow clone — parent not available`。展开后的占位文案（`Loading…` / 错误 / 浅克隆 / `No file changes`）与文件浏览器的层内占位是同一个组件，规矩同那一条。展开状态记 **expanded 集合**——与变更列表刻意相反：这里默认全收起，新长出来的提交不该自己摊开。
 - **文件行复用变更列表那一套**（`TreeRow` + `StatusBadge` + `Copy path`）。单击预览、双击固定。**不画 `Open file`**：它打开的是工作区此刻的全文，而这一行说的是历史上某一版。只平铺、不出树版式。
 - **合并提交在行上不另画记号**，说明画在 commit tab 顶上（见 [`editors.md`](editors.md)）。

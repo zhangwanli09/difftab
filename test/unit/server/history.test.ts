@@ -13,6 +13,7 @@ import {
   assertOid,
   isPartialCloneConfig,
   listCommits,
+  listIncoming,
   PAGE_SIZE,
   parseLog,
   parseNameStatus,
@@ -215,6 +216,42 @@ describe('listCommits——锚点分页', () => {
       code: 'invalid-path',
     });
     await expect(listCommits(root, { head: 'f'.repeat(40), skip: 0 })).rejects.toMatchObject({
+      code: 'not-found',
+    });
+  });
+});
+
+describe('listIncoming——上游有、HEAD 走不到的', () => {
+  test('只列上游那一侧：分叉时 HEAD 那侧的提交与共同祖先都不在里面', async () => {
+    // `side` 从 `recolor png` 分出去，`main work` 是之后主线上的那一条
+    const page = await listIncoming(root, {
+      head: shaOf('side work'),
+      upstream: shaOf('main work'),
+    });
+    expect(page).toMatchObject({ hasMore: false });
+    expect(page.commits.map((c) => c.subject)).toEqual(['main work']);
+  });
+
+  test('最新的在前；超过一页时只给一页、标 hasMore，不翻页', async () => {
+    const short = await listIncoming(root, { head: shaOf('step 49'), upstream: headOf(root) });
+    expect(short.commits.map((c) => c.subject)).toEqual(['step 51', 'step 50']);
+    expect(short.hasMore).toBe(false);
+    const long = await listIncoming(root, { head: shaOf('root commit'), upstream: headOf(root) });
+    expect(long.commits).toHaveLength(PAGE_SIZE);
+    expect(long.commits[0]?.subject).toBe('step 51');
+    expect(long.hasMore).toBe(true);
+  });
+
+  test('任一端不是完整对象名 → invalid-path；不存在的提交 → not-found', async () => {
+    const head = headOf(root);
+    for (const query of [
+      { head: 'HEAD', upstream: head },
+      { head, upstream: '@{u}' },
+      { head, upstream: `${head}..${head}` },
+    ]) {
+      await expect(listIncoming(root, query)).rejects.toMatchObject({ code: 'invalid-path' });
+    }
+    await expect(listIncoming(root, { head, upstream: 'f'.repeat(40) })).rejects.toMatchObject({
       code: 'not-found',
     });
   });

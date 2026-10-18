@@ -2,16 +2,17 @@
 // 断言请求的 query 而不是字符串拼法。
 
 import { render } from 'preact';
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from 'vitest';
 import type {
   CommitDetail,
   CommitPage,
   CommitSummary,
+  IncomingPage,
   RepoState,
 } from '../../../src/server/shared/protocol';
 import { CommitDiffView } from '../../../src/web/components/DiffView';
 import { commitTooltip, HistoryList, relativeTime } from '../../../src/web/components/HistoryList';
-import { badgesBySha, findUpstream, refBadges } from '../../../src/web/state/badges';
+import { badgesBySha, refBadges } from '../../../src/web/state/badges';
 import {
   activeEditor,
   activeEditorPath,
@@ -25,9 +26,14 @@ import {
 } from '../../../src/web/state/editors';
 import {
   commitDetails,
+  ensureHistory,
+  ensureIncoming,
   expandedCommits,
   historyError,
   historyList,
+  incomingError,
+  incomingList,
+  incomingRange,
   loadMore,
   mergeFirstPage,
   moreError,
@@ -36,6 +42,7 @@ import {
 } from '../../../src/web/state/history';
 import {
   ensureGraphRefs,
+  findUpstream,
   graphRefs,
   invalidateGraphRefs,
   loadRefs,
@@ -971,6 +978,226 @@ describe('ref 徽标', () => {
       // 分支状态与失败那次相同，照样重取
       await ensureGraphRefs(repo({ branch: tracking({ oid: sha(101) }) }));
       expect(refsCalls()).toBe(3);
+    });
+  });
+});
+
+describe('incoming 段', () => {
+  const behindBy = (behind: number, extra: Partial<RepoState['branch']> = {}) =>
+    branch({ upstream: { name: 'origin/main', ahead: 0, behind }, oid: sha(100), ...extra });
+  const remote = (n: number) => ref('remote', 'origin/main', { sha: sha(n) });
+  const incoming = (from: number, count: number, hasMore = false): IncomingPage => ({
+    commits: Array.from({ length: count }, (_, i) => commit(from - i)),
+    hasMore,
+  });
+
+  test('incomingRange：不落后、没有上游、HEAD 未出生、refs 里找不到上游都是 null；refs 没到是说不准', () => {
+    const refs = [remote(200)];
+    expect(incomingRange(repo({ branch: behindBy(2) }), refs)).toEqual({
+      head: sha(100),
+      upstream: sha(200),
+    });
+    expect(incomingRange(repo({ branch: behindBy(0) }), refs)).toBeNull();
+    expect(incomingRange(repo({ branch: branch({ oid: sha(100) }) }), refs)).toBeNull();
+    const { oid: _, ...unborn } = behindBy(2);
+    expect(incomingRange(repo({ branch: unborn }), refs)).toBeNull();
+    expect(incomingRange(repo({ branch: behindBy(2) }), [ref('tag', 'origin/main')])).toBeNull();
+    expect(incomingRange(repo({ branch: behindBy(2) }), null)).toBeUndefined();
+  });
+
+  describe('refresh 对 incoming 的取舍', () => {
+    let behind: number;
+    let upstreamSha: number;
+    let failIncoming: boolean;
+    let calls: string[];
+    const incomingCalls = () => calls.filter((url) => url.startsWith('/api/commits/incoming'));
+
+    beforeEach(() => {
+      behind = 2;
+      upstreamSha = 200;
+      failIncoming = false;
+      calls = stubJsonBy((url) => {
+        if (url.pathname === '/api/state') return { payload: repo({ branch: behindBy(behind) }) };
+        if (url.pathname === '/api/refs') return { payload: { refs: [remote(upstreamSha)] } };
+        if (url.pathname === '/api/commits/incoming')
+          return failIncoming
+            ? { payload: { error: { code: 'internal', message: 'busy' } }, status: 500 }
+            : { payload: incoming(upstreamSha, behind) };
+        return { payload: page(100, 100, 3, false) };
+      });
+    });
+    afterEach(() => {
+      repoState.value = null;
+    });
+
+    test('带着 HEAD oid 与 refs 里上游的 sha 去问；两样都没变就不重取，上游挪了（fetch）才重取', async () => {
+      await refresh();
+      expect(incomingCalls()).toHaveLength(1);
+      const asked = query(incomingCalls()[0] as string);
+      expect([asked.get('head'), asked.get('upstream')]).toEqual([sha(100), sha(200)]);
+      expect(incomingList.value?.commits.map((c) => c.sha)).toEqual([sha(200), sha(199)]);
+      await refresh();
+      expect(incomingCalls()).toHaveLength(1);
+      // fetch 之后上游多了一条：behind 变了 → refs 重取 → 上游 sha 变了
+      behind = 3;
+      upstreamSha = 201;
+      await refresh();
+      expect(incomingCalls()).toHaveLength(2);
+      expect(query(incomingCalls()[1] as string).get('upstream')).toBe(sha(201));
+      expect(incomingList.value?.commits).toHaveLength(3);
+    });
+
+    test('不再落后（pull 之后）：清空、不发请求', async () => {
+      await refresh();
+      expect(incomingList.value).not.toBeNull();
+      behind = 0;
+      await refresh();
+      expect(incomingList.value).toBeNull();
+      expect(incomingCalls()).toHaveLength(1);
+    });
+
+    test('History 看不见时一条都不发', async () => {
+      historyCollapsed.value = true;
+      onTestFinished(() => {
+        historyCollapsed.value = false;
+      });
+      await refresh();
+      expect(incomingCalls()).toHaveLength(0);
+    });
+
+    test('取失败：只记这一段的错误、主列表照常；两端没变也重试', async () => {
+      failIncoming = true;
+      await refresh();
+      expect(incomingError.value).toBe('busy');
+      expect(incomingList.value).toBeNull();
+      expect(historyList.value?.commits).toHaveLength(3);
+      failIncoming = false;
+      await refresh();
+      expect(incomingCalls()).toHaveLength(2);
+      expect(incomingError.value).toBeNull();
+      expect(incomingList.value?.commits).toHaveLength(2);
+    });
+
+    test('在途期间不再落后：回来的那份不算数，不把清掉的段又画回来', async () => {
+      let release: () => void = () => {};
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (url: string) => {
+          if (url.startsWith('/api/commits/incoming')) {
+            await new Promise<void>((resolve) => {
+              release = resolve;
+            });
+            return new Response(JSON.stringify(incoming(200, 2)));
+          }
+          return new Response(JSON.stringify({ refs: [remote(200)] }));
+        }),
+      );
+      await ensureGraphRefs(repo({ branch: behindBy(2) }));
+      const pending = ensureIncoming(repo({ branch: behindBy(2) }));
+      await ensureIncoming(repo({ branch: behindBy(0) }));
+      release();
+      await pending;
+      expect(incomingList.value).toBeNull();
+    });
+
+    test('fetch 之后新 refs 还在途：不拿旧 refs 里 fetch 之前的上游 sha 去问', async () => {
+      let release: () => void = () => {};
+      const asked: string[] = [];
+      let refsCalls = 0;
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (url: string) => {
+          asked.push(url);
+          if (url.startsWith('/api/refs') && refsCalls++ > 0)
+            await new Promise<void>((resolve) => {
+              release = resolve;
+            });
+          if (url.startsWith('/api/commits/incoming'))
+            return new Response(JSON.stringify(incoming(201, 3)));
+          return new Response(JSON.stringify({ refs: [remote(refsCalls > 1 ? 201 : 100)] }));
+        }),
+      );
+      await ensureGraphRefs(repo({ branch: behindBy(0) }));
+      // behind 变了：refs 重取并卡在途中，此刻手里那份还是 fetch 之前的
+      const pending = ensureGraphRefs(repo({ branch: behindBy(3) }));
+      await ensureIncoming(repo({ branch: behindBy(3) }));
+      expect(asked.filter((url) => url.startsWith('/api/commits/incoming'))).toHaveLength(0);
+      release();
+      await pending;
+      await ensureIncoming(repo({ branch: behindBy(3) }));
+      const incomingAsks = asked.filter((url) => url.startsWith('/api/commits/incoming'));
+      expect(incomingAsks).toHaveLength(1);
+      expect(query(incomingAsks[0] as string).get('upstream')).toBe(sha(201));
+    });
+  });
+
+  test('被顶掉的那次 refs 最后才回来：拿最新的 state 判，不把 pull 之前那一段画回来', async () => {
+    const calls: string[] = [];
+    let release: () => void = () => {};
+    let first = true;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        calls.push(url);
+        if (url === '/api/refs' && first) {
+          first = false;
+          await new Promise<void>((resolve) => {
+            release = resolve;
+          });
+        }
+        if (url === '/api/refs') return new Response(JSON.stringify({ refs: [remote(200)] }));
+        if (url.startsWith('/api/commits/incoming'))
+          return new Response(JSON.stringify(incoming(200, 2)));
+        return new Response(JSON.stringify(page(100, 100, 3, false)));
+      }),
+    );
+    const stale = ensureHistory(repo({ branch: behindBy(2) }));
+    await ensureHistory(repo({ branch: behindBy(0) }));
+    release();
+    await stale;
+    expect(incomingList.value).toBeNull();
+    expect(calls.filter((url) => url.startsWith('/api/commits/incoming'))).toHaveLength(0);
+  });
+
+  describe('HistoryList 里的那一段', () => {
+    beforeEach(() => {
+      historyList.value = mergeFirstPage(null, page(100, 100, 2, false));
+      repoState.value = repo({ branch: behindBy(5) });
+    });
+    afterEach(() => {
+      repoState.value = null;
+    });
+
+    test('没有 incoming 时不画小标题', () => {
+      render(<HistoryList />, container);
+      expect(container.textContent).not.toContain('Incoming');
+    });
+
+    test('小标题带 status 的 behind、提示是上次 fetch；行排在主列表之前；还有更多时末尾写 +M more', () => {
+      incomingList.value = incoming(203, 3, true);
+      render(<HistoryList />, container);
+      const heading = container.querySelector('h3') as HTMLElement;
+      expect(heading.textContent).toBe('Incoming · 5↓');
+      expect(heading.getAttribute('title')).toBe('As of the last fetch');
+      const subjects = [...container.querySelectorAll('[aria-expanded]')].map(
+        (row) => row.querySelector('.truncate')?.firstChild?.textContent,
+      );
+      expect(subjects).toEqual([
+        'commit 203',
+        'commit 202',
+        'commit 201',
+        'commit 100',
+        'commit 99',
+      ]);
+      expectPlaceholderRow(container, '+2 more');
+    });
+
+    test('取失败：小标题照画，下面一行错误，主列表照常', () => {
+      incomingError.value = 'busy';
+      render(<HistoryList />, container);
+      expect((container.querySelector('h3') as HTMLElement).textContent).toBe('Incoming · 5↓');
+      expectPlaceholderRow(container, 'busy');
+      expect(container.querySelectorAll('[aria-expanded]')).toHaveLength(2);
     });
   });
 });
