@@ -128,8 +128,7 @@ export async function ensureGraphRefs(state: RepoState | null): Promise<void> {
   } catch {
     if (!graphTickets.isCurrent(ticket)) return;
     graphRefs.value = null;
-    fetchedFor = null;
-    arrivedFor = null;
+    invalidateGraphRefs();
   } finally {
     graphTickets.release(ticket);
   }
@@ -138,15 +137,16 @@ export async function ensureGraphRefs(state: RepoState | null): Promise<void> {
 /**
  * 作废判据，下一次 `ensureGraphRefs` 必取。History 每次变得看不见时调，于是再现身时必重取：别处打了
  * 标签、或挪了一条不是当前分支的分支时，四样一样都不变，没有这一下就要等到 HEAD 或上游再动。已取到
- * 的那份留着照画，回来再换。
+ * 的那份留着照画，回来再换。**`arrivedFor` 一并作废**：判据既然作废，手里那份就不再算「按此刻的分支
+ * 状态取的」——重取在途期间来一个 SSE 时，`graphRefsFor` 不能把藏起之前那份交给 incoming 去发请求。
  */
 export function invalidateGraphRefs(): void {
   fetchedFor = null;
+  arrivedFor = null;
 }
 
 /** 只给用例：模块级的「上一次取时」在用例之间清掉。 */
 export function resetGraphRefs(): void {
   invalidateGraphRefs();
   graphRefs.value = null;
-  arrivedFor = null;
 }

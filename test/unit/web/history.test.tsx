@@ -1177,7 +1177,7 @@ describe('incoming 段', () => {
       incomingList.value = incoming(203, 3, true);
       render(<HistoryList />, container);
       const heading = container.querySelector('h3') as HTMLElement;
-      expect(heading.textContent).toBe('Incoming · ↓5');
+      expect(heading.textContent).toBe('Incoming · 5↓');
       expect(heading.getAttribute('title')).toBe('As of the last fetch');
       const subjects = [...container.querySelectorAll('[aria-expanded]')].map(
         (row) => row.querySelector('.truncate')?.firstChild?.textContent,
@@ -1195,7 +1195,7 @@ describe('incoming 段', () => {
     test('取失败：小标题照画，下面一行错误，主列表照常', () => {
       incomingError.value = 'busy';
       render(<HistoryList />, container);
-      expect((container.querySelector('h3') as HTMLElement).textContent).toBe('Incoming · ↓5');
+      expect((container.querySelector('h3') as HTMLElement).textContent).toBe('Incoming · 5↓');
       expectPlaceholderRow(container, 'busy');
       expect(container.querySelectorAll('[aria-expanded]')).toHaveLength(2);
     });

@@ -275,8 +275,9 @@ function LoadMore({ list }: { list: LoadedHistory }) {
 
 /**
  * 落后上游时排在列表顶上的那一段：上游有、HEAD 走不到的提交，照 VS Code Graph 把 incoming 画在最上面。
- * 小标题不可点，`↓N` 与状态条同一个数（status 的 `behind`），提示说明这是上次 fetch 时的样子——不替
- * 用户 fetch。下面的行与主列表是同一个 `CommitRow`，展开、复制照常；上游那枚徽标按 sha 自然落在这里。
+ * 小标题不可点，`N↓` 与状态条同一个数（status 的 `behind`），写法也照抄它（数字在前、等宽字体）——
+ * 箭头一前一后、字形一宽一窄时读着像两件事；提示说明这是上次 fetch 时的样子，不替用户 fetch。
+ * 下面的行与主列表是同一个 `CommitRow`，展开、复制照常；上游那枚徽标按 sha 自然落在这里。
  * **不翻页**：还有更多时末尾一行 `+M more`。`behind` 包成 computed 只订阅这一个数：直接读 `repoState`
  * 时 agent 每改一个文件这一段就重画一次。
  */
@@ -289,7 +290,7 @@ function Incoming() {
   return (
     <section class="border-b border-panel-border">
       <h3 class={GROUP_HEADING} title="As of the last fetch">
-        Incoming · ↓{behind}
+        Incoming · <span class="font-mono">{behind}↓</span>
       </h3>
       <ul>
         {error !== null && <PlaceholderRow text={error} depth={0} />}

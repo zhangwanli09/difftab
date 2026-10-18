@@ -109,7 +109,7 @@ export async function ensureHistory(state: RepoState | null): Promise<void> {
   // HEAD 还不知道就无从比对：此刻去取，state 一到又判一次「对不上」，`singleFlight` 补跑成两遍 `git log`
   if (state === null) return;
   latestState = state;
-  // 不落后了（pull 之后）用不着等 refs：当场清掉，不让 `↓0` 配着已经并进 HEAD 的那几条画上一拍
+  // 不落后了（pull 之后）用不着等 refs：当场清掉，不让 `0↓` 配着已经并进 HEAD 的那几条画上一拍
   if (incomingRange(state, null) === null) clearIncoming();
   await Promise.all([
     historyIsCurrent(state) ? undefined : refreshHistory(),
@@ -159,21 +159,21 @@ export function incomingRange(
  * 两端对不上上一次判的才取；上次失败也算对不上，下一次判即重试。同一时刻只有一次在途，在途期间
  * 又被叫过就回来后补跑一次（`singleFlight`），理由同提交列表。调用方只有 `ensureHistory`。
  */
-export function ensureIncoming(state: RepoState): Promise<void> {
+export async function ensureIncoming(state: RepoState): Promise<void> {
   const range = incomingRange(state, graphRefsFor(state));
-  if (range === undefined) return Promise.resolve();
+  if (range === undefined) return;
   if (range === null) {
     clearIncoming();
-    return Promise.resolve();
+    return;
   }
   if (
     wanted?.head === range.head &&
     wanted.upstream === range.upstream &&
     incomingError.value === null
   )
-    return Promise.resolve();
+    return;
   wanted = range;
-  return refreshIncoming();
+  await refreshIncoming();
 }
 
 const refreshIncoming = singleFlight(fetchIncoming);
