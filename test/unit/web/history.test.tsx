@@ -35,11 +35,12 @@ import {
   toggleCommit,
 } from '../../../src/web/state/history';
 import {
-  ensureUpstreamRefs,
+  ensureGraphRefs,
+  graphRefs,
+  invalidateGraphRefs,
   loadRefs,
   refList,
   refsError,
-  upstreamRefs,
 } from '../../../src/web/state/refs';
 import { historyCollapsed } from '../../../src/web/state/sidebar';
 import {
@@ -690,28 +691,66 @@ describe('ref 徽标', () => {
     branch({ upstream: { name: 'origin/main', ahead: 2, behind: 0 }, oid: sha(100), ...extra });
   const remote = (n: number) => ref('remote', 'origin/main', { sha: sha(n) });
 
-  test('本地那枚画在 HEAD 上、不看 refs；上游那枚画在它指着的那条', () => {
-    const badges = refBadges('main', sha(100), remote(98));
-    expect(badges.get(sha(100))).toEqual([{ kind: 'local', name: 'main', upstream: false }]);
-    expect(badges.get(sha(98))).toEqual([{ kind: 'remote', name: 'origin/main', upstream: true }]);
-    expect(refBadges('main', sha(100), null).get(sha(100))).toEqual([
-      { kind: 'local', name: 'main', upstream: false },
-    ]);
-    // 上游是本地分支时 kind 也是 local，靠 upstream 那一位认出它是上游（只画图标的是它）
+  const head = (name: string) => ({ role: 'head', kind: 'local', name });
+  const up = (kind: 'local' | 'remote', name: string) => ({ role: 'upstream', kind, name });
+  const group = (kind: 'local' | 'remote' | 'tag', ...names: string[]) => ({
+    role: 'group',
+    kind,
+    names,
+  });
+
+  test('当前分支那枚画在 HEAD 上、不看 refs；上游那枚画在它指着的那条', () => {
+    const badges = refBadges('main', sha(100), remote(98), []);
+    expect(badges.get(sha(100))).toEqual([head('main')]);
+    expect(badges.get(sha(98))).toEqual([up('remote', 'origin/main')]);
+    expect(refBadges('main', sha(100), null, []).get(sha(100))).toEqual([head('main')]);
+    // 上游是本地分支时 kind 也是 local，靠角色认出它是上游（只画图标的是它）
     expect(
-      refBadges('main', sha(100), ref('local', 'base', { sha: sha(95) })).get(sha(95)),
-    ).toEqual([{ kind: 'local', name: 'base', upstream: true }]);
+      refBadges('main', sha(100), ref('local', 'base', { sha: sha(95) }), []).get(sha(95)),
+    ).toEqual([up('local', 'base')]);
   });
 
   test('已同步时两枚落在同一条上，本地在前；没有分支（detached）时没有本地那枚', () => {
     expect(
-      refBadges('main', sha(100), remote(100))
+      refBadges('main', sha(100), remote(100), [])
         .get(sha(100))
-        ?.map((b) => b.kind),
-    ).toEqual(['local', 'remote']);
-    expect(refBadges('', sha(100), remote(100)).get(sha(100))).toEqual([
-      { kind: 'remote', name: 'origin/main', upstream: true },
+        ?.map((b) => b.role),
+    ).toEqual(['head', 'upstream']);
+    expect(refBadges('', sha(100), remote(100), []).get(sha(100))).toEqual([
+      up('remote', 'origin/main'),
     ]);
+  });
+
+  test('其余的 ref 按种类合成，次序本地、远程、标签，排在带色那两枚之后', () => {
+    const refs = [
+      ref('local', 'feature', { sha: sha(100) }),
+      ref('remote', 'origin/feature', { sha: sha(100) }),
+      ref('tag', 'v1.1', { sha: sha(100) }),
+      ref('tag', 'v1.0', { sha: sha(100) }),
+      ref('tag', 'v0.9', { sha: sha(97) }),
+    ];
+    const badges = refBadges('main', sha(100), null, refs);
+    expect(badges.get(sha(100))).toEqual([
+      head('main'),
+      group('local', 'feature'),
+      group('remote', 'origin/feature'),
+      group('tag', 'v1.1', 'v1.0'),
+    ]);
+    expect(badges.get(sha(97))).toEqual([group('tag', 'v0.9')]);
+  });
+
+  test('与当前分支、上游同名的那条不再进合成那枚——按名字认，refs 里的 sha 可能已经过时', () => {
+    const refs = [
+      // HEAD 已经挪到 100，refs 还是 HEAD 在 99 时取的
+      ref('local', 'main', { sha: sha(99) }),
+      remote(98),
+      // 名字相同、种类不同的不算：同名标签照样画
+      ref('tag', 'main', { sha: sha(99) }),
+    ];
+    const badges = refBadges('main', sha(100), remote(98), refs);
+    expect(badges.get(sha(100))).toEqual([head('main')]);
+    expect(badges.get(sha(99))).toEqual([group('tag', 'main')]);
+    expect(badges.get(sha(98))).toEqual([up('remote', 'origin/main')]);
   });
 
   test('按 git 解析缩写 refname 的次序找上游：名字有歧义时 git 带的前缀照样对得上；标签不算', () => {
@@ -735,10 +774,16 @@ describe('ref 徽标', () => {
   test('徽标排在 truncate span 之后，不在里面——省略号吃不到它', () => {
     historyList.value = mergeFirstPage(null, page(100, 100, 3, false));
     repoState.value = repo({ branch: tracking() });
-    upstreamRefs.value = [remote(98)];
+    graphRefs.value = [
+      remote(98),
+      ref('tag', 'v1.0', { sha: sha(99) }),
+      ref('tag', 'v0.9', { sha: sha(98) }),
+      ref('tag', 'v0.8', { sha: sha(98) }),
+    ];
     render(<HistoryList />, container);
     const rows = [...container.querySelectorAll('[aria-expanded]')] as HTMLElement[];
-    // [title, aria-label, 印出来的字]：上游那枚只画图标，名字只在 title 与 aria-label 里
+    // [title, aria-label, 印出来的字]：只有当前分支那枚印名字；上游只画图标；合成那枚多于一条时印条数，
+    // 名字在 title 里一行一个
     const badges = (row: HTMLElement) =>
       [...row.querySelectorAll(':scope > [role="img"]')].map((el) => [
         el.getAttribute('title'),
@@ -747,8 +792,11 @@ describe('ref 徽标', () => {
       ]);
     expect(rows.map(badges)).toEqual([
       [['main', 'main', 'main']],
-      [],
-      [['origin/main', 'origin/main', '']],
+      [['v1.0', 'v1.0', '']],
+      [
+        ['origin/main', 'origin/main', ''],
+        ['v0.9\nv0.8', 'v0.9, v0.8', '2'],
+      ],
     ]);
     const label = rows[0]?.querySelector('.truncate') as HTMLElement;
     expect(label.textContent).toBe('commit 100Ann');
@@ -758,15 +806,14 @@ describe('ref 徽标', () => {
   });
 
   test('上游名换了、新的 refs 还没回来：拿此刻的名字去推，不把上一个上游的位置画成这一个', () => {
-    upstreamRefs.value = [remote(98)];
+    graphRefs.value = [remote(98)];
     repoState.value = repo({ branch: tracking() });
-    expect(badgesBySha.value.get(sha(98))).toEqual([
-      { kind: 'remote', name: 'origin/main', upstream: true },
-    ]);
+    expect(badgesBySha.value.get(sha(98))).toEqual([up('remote', 'origin/main')]);
     repoState.value = repo({
       branch: tracking({ upstream: { name: 'origin/dev', ahead: 1, behind: 0 } }),
     });
-    expect(badgesBySha.value.has(sha(98))).toBe(false);
+    // origin/main 不再是上游：退回成合成的那枚，而不是继续顶着上游的角色
+    expect(badgesBySha.value.get(sha(98))).toEqual([group('remote', 'origin/main')]);
     repoState.value = null;
   });
 
@@ -780,7 +827,21 @@ describe('ref 徽标', () => {
     repoState.value = null;
   });
 
-  describe('refresh 对上游 refs 的取舍', () => {
+  test('refs 重取回来内容没变、或 HEAD 挪了：没挪的那几格还是原来那个数组，行不重画', () => {
+    repoState.value = repo({ branch: tracking() });
+    graphRefs.value = [remote(98), ref('tag', 'v1.0', { sha: sha(97) })];
+    const before = badgesBySha.value;
+    const tag = before.get(sha(97));
+    graphRefs.value = [remote(98), ref('tag', 'v1.0', { sha: sha(97) })];
+    expect(badgesBySha.value).toBe(before);
+    repoState.value = repo({ branch: tracking({ oid: sha(101) }) });
+    expect(badgesBySha.value).not.toBe(before);
+    expect(badgesBySha.value.get(sha(97))).toBe(tag);
+    expect(badgesBySha.value.get(sha(101))).toEqual([head('main')]);
+    repoState.value = null;
+  });
+
+  describe('refresh 对徽标 refs 的取舍', () => {
     let upstream: RepoState['branch']['upstream'];
     let oid: string;
     let failRefs: boolean;
@@ -810,9 +871,7 @@ describe('ref 徽标', () => {
     test('分支状态没变就不重取；push 只挪了上游（HEAD 没动）也要重取', async () => {
       await refresh();
       expect(refsCalls()).toBe(1);
-      expect(badgesBySha.value.get(sha(98))).toEqual([
-        { kind: 'remote', name: 'origin/main', upstream: true },
-      ]);
+      expect(badgesBySha.value.get(sha(98))).toEqual([up('remote', 'origin/main')]);
       await refresh();
       await refresh();
       expect(refsCalls()).toBe(1);
@@ -824,34 +883,46 @@ describe('ref 徽标', () => {
       expect(refsCalls()).toBe(3);
     });
 
-    test('看不见、或没有上游时一条都不发', async () => {
+    test('看不见时一条都不发；没有上游也照样取——标签与其余分支要它', async () => {
       historyCollapsed.value = true;
       await refresh();
       expect(refsCalls()).toBe(0);
       historyCollapsed.value = false;
       upstream = null;
       await refresh();
-      expect(refsCalls()).toBe(0);
+      expect(refsCalls()).toBe(1);
+      await refresh();
+      expect(refsCalls()).toBe(1);
     });
 
-    test('上游被取消后再设回、四样与当初一字不差：照样重取', async () => {
+    test('判据被作废（History 藏起过）：分支状态没变也重取，旧的那份回来之前照画', async () => {
+      await refresh();
+      expect(refsCalls()).toBe(1);
+      invalidateGraphRefs();
+      expect(graphRefs.value).toHaveLength(1);
+      await refresh();
+      expect(refsCalls()).toBe(2);
+    });
+
+    test('上游被取消后再设回、四样与当初一字不差：照样重取——没有上游那一刻判据已经变过', async () => {
       await refresh();
       expect(refsCalls()).toBe(1);
       upstream = null;
       await refresh();
+      expect(refsCalls()).toBe(2);
       upstream = { name: 'origin/main', ahead: 2, behind: 0 };
       await refresh();
-      expect(refsCalls()).toBe(2);
+      expect(refsCalls()).toBe(3);
     });
 
     test('上一次取失败了：分支状态没变也重试', async () => {
       failRefs = true;
       await refresh();
-      expect(upstreamRefs.value).toBeNull();
+      expect(graphRefs.value).toBeNull();
       failRefs = false;
       await refresh();
       expect(refsCalls()).toBe(2);
-      expect(upstreamRefs.value).toHaveLength(1);
+      expect(graphRefs.value).toHaveLength(1);
     });
 
     test('与分支列表不共用状态：徽标那次失败不碰列表，列表那次失败不碰徽标', async () => {
@@ -863,11 +934,11 @@ describe('ref 徽标', () => {
 
       failRefs = false;
       await refresh();
-      expect(upstreamRefs.value).toHaveLength(1);
+      expect(graphRefs.value).toHaveLength(1);
       failRefs = true;
       await loadRefs();
       expect(refsError.value).toBe('busy');
-      expect(upstreamRefs.value).toHaveLength(1);
+      expect(graphRefs.value).toHaveLength(1);
     });
 
     test('被后一次顶掉、而后一次失败了：仍按失败算，下一次判即重试', async () => {
@@ -892,13 +963,13 @@ describe('ref 徽标', () => {
           return new Response(JSON.stringify(repo({ branch: tracking({ upstream, oid }) })));
         }),
       );
-      const pending = ensureUpstreamRefs(repo({ branch: tracking() }));
-      await ensureUpstreamRefs(repo({ branch: tracking({ oid: sha(101) }) }));
+      const pending = ensureGraphRefs(repo({ branch: tracking() }));
+      await ensureGraphRefs(repo({ branch: tracking({ oid: sha(101) }) }));
       release();
       await pending;
-      expect(upstreamRefs.value).toBeNull();
+      expect(graphRefs.value).toBeNull();
       // 分支状态与失败那次相同，照样重取
-      await ensureUpstreamRefs(repo({ branch: tracking({ oid: sha(101) }) }));
+      await ensureGraphRefs(repo({ branch: tracking({ oid: sha(101) }) }));
       expect(refsCalls()).toBe(3);
     });
   });

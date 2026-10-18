@@ -9,6 +9,7 @@ import type { ReadonlySignal, Signal } from '@preact/signals';
 import type { ComponentChildren } from 'preact';
 import { useEffect } from 'preact/hooks';
 import { ensureHistory } from '../state/history';
+import { invalidateGraphRefs } from '../state/refs';
 import {
   changesCollapsed,
   historyCollapsed,
@@ -123,10 +124,17 @@ export function SourceControl() {
 
   // 提交历史只给看得见的时候付钱：没取过、上次没取到、或看不见期间 HEAD 挪过，变回看得见（切到
   // 这一档、展开 `History` 分区、第一份 state 到了）那一刻才判一次。看得见期间的判定在 `store.ts`
-  // 的 `refresh`。effect 挂在这里而不是 `App`：`App` 是整棵树，订阅分区折叠就是每点一下标题整页重画
+  // 的 `refresh`。effect 挂在这里而不是 `App`：`App` 是整棵树，订阅分区折叠就是每点一下标题整页重画。
+  // 徽标的 refs 在变得看不见那一刻作废判据，回来时必重取：别处打了标签、挪了别的分支时分支状态一样
+  // 都不变，判据看不见。作废放在藏起时而不是现身时：第一份 state 经 `refresh` 到达时它已经取过一次，
+  // 现身那一刻再作废就是同一份 refs 取两遍
   const showHistory = historyVisible.value;
   useEffect(() => {
-    if (showHistory) void ensureHistory(repoState.peek());
+    if (!showHistory) {
+      invalidateGraphRefs();
+      return;
+    }
+    void ensureHistory(repoState.peek());
   }, [showHistory]);
 
   return (

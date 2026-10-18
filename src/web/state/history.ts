@@ -13,7 +13,7 @@ import type {
 } from '../../server/shared/protocol';
 import { getJson, singleFlight, toMessage } from './http';
 import { setIn } from './immutable';
-import { ensureUpstreamRefs } from './refs';
+import { ensureGraphRefs } from './refs';
 
 export interface LoadedHistory {
   /** 列表顶上那条是哪个 HEAD 时取的。null 即空仓库。 */
@@ -95,8 +95,8 @@ function historyIsCurrent(state: RepoState): boolean {
 }
 
 /**
- * `History` 分区变得可见、或它可见时来了一次 SSE：提交列表对不上 HEAD 才取，上游徽标的 refs 对不上
- * 分支状态才取（`ensureUpstreamRefs`）。两样是这一个分区要的数据，从这一个入口进——调用方有两处
+ * `History` 分区变得可见、或它可见时来了一次 SSE：提交列表对不上 HEAD 才取，ref 徽标的 refs 对不上
+ * 分支状态才取（`ensureGraphRefs`）。两样是这一个分区要的数据，从这一个入口进——调用方有两处
  * （`refresh` 与 `SourceControl` 的可见性 effect），各写一遍时将来加第三样漏一处不报错，只是那一样
  * 在某一种时机下不刷新。
  */
@@ -105,7 +105,7 @@ export async function ensureHistory(state: RepoState | null): Promise<void> {
   if (state === null) return;
   await Promise.all([
     historyIsCurrent(state) ? undefined : refreshHistory(),
-    ensureUpstreamRefs(state),
+    ensureGraphRefs(state),
   ]);
 }
 

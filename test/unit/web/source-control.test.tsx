@@ -187,6 +187,19 @@ describe('History 看得见时才取', () => {
     await waitFor(() => expect(commitCalls()).toBe(1));
   });
 
+  it('徽标的 refs 每次重新变得可见都重取一次——别处打了标签时分支状态一样都不变', async () => {
+    const refsCalls = () =>
+      vi.mocked(fetch).mock.calls.filter(([url]) => String(url) === '/api/refs').length;
+    repoState.value = STATE;
+    render(<App />, container);
+    await waitFor(() => expect(refsCalls()).toBe(1));
+
+    header('History').click();
+    await waitFor(() => expect(header('History').getAttribute('aria-expanded')).toBe('false'));
+    header('History').click();
+    await waitFor(() => expect(refsCalls()).toBe(2));
+  });
+
   it('停在 Files 档时不发，切回 Changes 档才取', async () => {
     activeTab.value = 'files';
     repoState.value = STATE;
