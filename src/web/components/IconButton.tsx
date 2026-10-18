@@ -16,6 +16,13 @@ import { useMemo } from 'preact/hooks';
 import { type Shortcut, withShortcut } from '../state/shortcuts';
 import { Icon } from './Icon';
 
+/**
+ * 外壳里与颜色无关的那半：圆角、内边距、焦点环。`Toggle` 与这枚并排坐在同一排动作区里，共用它才
+ * 一样大；颜色各自加——两枚的前景色在按下态会冲突，收进来就得靠 CSS 先后顺序定胜负。
+ */
+export const ICON_BUTTON_SHELL =
+  'shrink-0 rounded-sm p-0.5 focus-visible:outline-2 focus-visible:outline-focus-border';
+
 export function IconButton({
   icon,
   label,
@@ -51,7 +58,7 @@ export function IconButton({
       type="button"
       ref={buttonRef}
       onClick={onClick}
-      class="shrink-0 rounded-sm p-0.5 text-description-foreground hover:bg-toolbar-hover-background focus-visible:outline-2 focus-visible:outline-focus-border"
+      class={`${ICON_BUTTON_SHELL} text-description-foreground hover:bg-toolbar-hover-background`}
       title={withShortcut(label, shortcut)}
       aria-label={label}
       aria-haspopup={popup ? 'dialog' : undefined}
