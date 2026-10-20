@@ -39,7 +39,7 @@ export function SidebarPlaceholder({ children }: { children: ComponentChildren }
  */
 export function PanelEmptyState() {
   return (
-    // 宿主 `<section>`（`App`）是一列 flex，撑满靠 `flex-1 min-h-0`——后者与面板里别的直接子项
+    // 宿主（`EditorGroupView` 的根元素）是一列 flex，撑满靠 `flex-1 min-h-0`——后者与面板里别的直接子项
     // 同款，flex 的自动最小尺寸在这里一样会作怪。
     //
     // **居中靠里层的 `m-auto`，不靠外层的 `justify-center`**：面板比这一块矮时 `justify-center`

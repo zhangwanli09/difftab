@@ -42,6 +42,7 @@
   - **拖动时一个组件都不重渲染**：宽度以 signal 本身交给 `style`，由 `@preact/signals` 直接改 DOM；在 `App` 里读 `.value` 等于每个 pointermove 重渲整棵树。
   - **宽度不跨会话记忆**（`localStorage` 跨不了实例，见「主题开关」）。
   - 拖宽左栏可能让 diff 面板跨过并排阈值而换版式：**不为此做任何事**，`outputFormat` 量的本来就是面板自身的 border box；手动固定过版式就不再跟（见 [`diff-render.md`](diff-render.md) 的「版式：按面板宽度自动切，可手动固定」）。
+- **右侧 `<section>` 里是一到两个编辑器组**（`EditorGroup.tsx`，分屏规则见 [`editors.md`](editors.md) 的「分屏」）。两组时左组宽度是 `splitPercent` 百分比、以 signal 本身交给 `style`（同左栏，拖动时不重渲染），左组右边框上叠一把竖向把手，与左栏那把同一个 `Sash.tsx`。**把手挂在 `App` 里两组之间一个零宽的 `relative` 槽里，不挂进左组**：挂进去时左组「被点到即成为焦点组」那条会把拖把手也算进去，焦点组跟着跳。**`sashDragging` 记的是哪一把（`sidebar` / `pane` / `split`）连同轴向，不只记轴向**：两把竖向把手同轴，按轴向判时拖一把、另一把的握把也跟着常亮。
 
 ## Quick Open 与全局快捷键
 

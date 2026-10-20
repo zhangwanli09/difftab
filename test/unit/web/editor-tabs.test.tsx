@@ -13,18 +13,15 @@ import type { DiffPayload, FilePayload } from '../../../src/server/shared/protoc
 import { distinguishingDirs, EditorTabs } from '../../../src/web/components/EditorTabs';
 import {
   activeEditorKey,
+  activeGroup,
   editorKey,
   editors,
+  focusEditor,
   openCommitEditor,
   openEditor,
   revealRequest,
 } from '../../../src/web/state/editors';
-import {
-  diffFormatOverride,
-  diffOutputFormat,
-  diffPanelWidth,
-  SIDE_BY_SIDE_MIN_WIDTH,
-} from '../../../src/web/state/layout';
+import { diffFormatOverride, SIDE_BY_SIDE_MIN_WIDTH } from '../../../src/web/state/layout';
 import {
   type DiffRequestState,
   type FileRequestState,
@@ -81,7 +78,7 @@ const formatButton = () =>
 const mouse = (type: string, button = 0) => new MouseEvent(type, { bubbles: true, button });
 
 /** signals 驱动的重画是微任务；断言 DOM 之前同步重画一次，省掉每处都 await。 */
-const flush = () => render(<EditorTabs />, container);
+const flush = () => render(<EditorTabs group={activeGroup.value} />, container);
 const open = (...args: Parameters<typeof openEditor>) => {
   openEditor(...args);
   flush();
@@ -96,7 +93,7 @@ beforeEach(() => {
   container = document.createElement('div');
   document.body.appendChild(container);
   resetEditors();
-  diffPanelWidth.value = SIDE_BY_SIDE_MIN_WIDTH;
+  activeGroup.value.width.value = SIDE_BY_SIDE_MIN_WIDTH;
   diffFormatOverride.value = null;
   repoState.value = {
     repoName: 'demo',
@@ -105,7 +102,7 @@ beforeEach(() => {
     watch: { mode: 'native', tier: 'A' },
   };
   calls = stubJson({ kind: 'binary' });
-  render(<EditorTabs />, container);
+  render(<EditorTabs group={activeGroup.value} />, container);
 });
 
 afterEach(() => {
@@ -354,7 +351,7 @@ describe('Copy file contents', () => {
     pinned('diff', 'src/a.ts');
     await waitFor(() => expect(copyButton()).toBeNull());
 
-    activeEditorKey.value = editorKey('file', 'src/a.ts');
+    focusEditor(editorKey('file', 'src/a.ts'));
     await waitFor(() => expect(copyButton()).not.toBeNull());
     openCommitEditor('a'.repeat(40), 'src/a.ts', undefined, true);
     await waitFor(() => expect(copyButton()).toBeNull());
@@ -379,7 +376,7 @@ describe('Copy file contents', () => {
     ready('src/b.ts', { kind: 'text', content: 'b\n' });
     pinned('file', 'src/a.ts');
     pinned('file', 'src/b.ts');
-    activeEditorKey.value = editorKey('file', 'src/a.ts');
+    focusEditor(editorKey('file', 'src/a.ts'));
     await waitFor(() => expect(labelOf()).toBe('Copy file contents'));
 
     copyButton()?.click();
@@ -387,7 +384,7 @@ describe('Copy file contents', () => {
     expect(labelOf()).toBe('Copied');
 
     // 1.5s 远没到：此刻换回 `Copy file contents` 只能是按键重挂，不是计时器到点
-    activeEditorKey.value = editorKey('file', 'src/b.ts');
+    focusEditor(editorKey('file', 'src/b.ts'));
     await waitFor(() => expect(labelOf()).toBe('Copy file contents'));
   });
 });
@@ -421,10 +418,10 @@ describe('版式切换', () => {
     expect(copyButton()).toBeNull();
 
     button?.click();
-    expect(diffOutputFormat.value).toBe('line-by-line');
+    expect(activeGroup.value.format.value).toBe('line-by-line');
     await waitFor(() => expect(labelOf()).toBe('View side by side'));
     formatButton()?.click();
-    expect(diffOutputFormat.value).toBe('side-by-side');
+    expect(activeGroup.value.format.value).toBe('side-by-side');
     await waitFor(() => expect(labelOf()).toBe('View inline'));
   });
 

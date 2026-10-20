@@ -8,7 +8,7 @@
 import type { ReadonlySignal } from '@preact/signals';
 import type { JSX } from 'preact';
 import { useRef } from 'preact/hooks';
-import { sashDragging } from '../state/sidebar';
+import { type SashName, sashDragging } from '../state/sidebar';
 
 export type SashAxis = 'x' | 'y';
 
@@ -41,6 +41,17 @@ const GRIP_STYLE: Record<SashAxis, JSX.CSSProperties> = {
   y: { ...GRIP_BASE, left: 0, right: 0, top: '1px', bottom: 0, width: '32px', margin: '0 auto' },
 };
 
+/**
+ * 按百分比走的把手（分区、分屏）一像素合多少个百分点：按下那一刻量一次那个容器（把手 → 它挂的那层 →
+ * 容器）在 `axis` 方向上的尺寸。还没排版时尺寸为 0，换算比是 `Infinity`，`Sash` 那边不动。
+ */
+export const percentOfGrandparent =
+  (axis: SashAxis) =>
+  (el: HTMLElement): number => {
+    const rect = el.parentElement?.parentElement?.getBoundingClientRect();
+    return 100 / ((axis === 'x' ? rect?.width : rect?.height) ?? 0);
+  };
+
 /** 两个方向键各让取值减 / 增一步；`x` 轴是左右，`y` 轴是上下。 */
 const KEYS: Record<SashAxis, readonly [string, string]> = {
   x: ['ArrowLeft', 'ArrowRight'],
@@ -48,6 +59,7 @@ const KEYS: Record<SashAxis, readonly [string, string]> = {
 };
 
 export function Sash({
+  name,
   axis,
   label,
   value,
@@ -59,6 +71,8 @@ export function Sash({
   unitsPerPx,
   set,
 }: {
+  /** 哪一把：拖动时记进 `sashDragging`，握把按它常亮 */
+  name: SashName;
   axis: SashAxis;
   label: string;
   /** `aria-valuenow`。**传 signal 本身**：属性由 `@preact/signals` 直接改（异步落地），拖动时本组件不重渲染 */
@@ -109,7 +123,7 @@ export function Sash({
           value: current(),
           scale: unitsPerPx(event.currentTarget),
         };
-        sashDragging.value = axis;
+        sashDragging.value = { name, axis };
       }}
       onPointerMove={(event) => {
         const start = drag.current;
@@ -141,7 +155,7 @@ export function Sash({
     >
       {/* 拖动中常亮：capture 下指针会离开把手的盒子，单靠 `group-hover:` 那一刻就灭了 */}
       <span
-        class={`absolute rounded-full ${sashDragging.value === axis ? '' : 'opacity-0 group-hover:opacity-100'}`}
+        class={`absolute rounded-full ${sashDragging.value?.name === name ? '' : 'opacity-0 group-hover:opacity-100'}`}
         style={GRIP_STYLE[axis]}
       />
     </div>

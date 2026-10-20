@@ -10,12 +10,20 @@
 // 能自动化的是形状，「谁先被裁」归肉眼。
 
 import { render } from 'preact';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RepoState } from '../../../src/server/shared/protocol';
 import { App } from '../../../src/web/components/App';
 import { TREE_SCOPE } from '../../../src/web/components/tree-row';
 import { changeView } from '../../../src/web/state/change-tree';
-import { activeEditorKey, editors } from '../../../src/web/state/editors';
+import {
+  activeEditorKey,
+  activeGroup,
+  draggingEditor,
+  editors,
+  focusEditor,
+  groups,
+} from '../../../src/web/state/editors';
+import { splitPercent } from '../../../src/web/state/sidebar';
 import {
   activeTab,
   diffStates,
@@ -65,6 +73,8 @@ afterEach(() => {
 const header = () => container.querySelector('header');
 const headerText = () => header()?.textContent?.trim();
 const section = () => container.querySelector('section');
+/** 右侧面板里的第一组编辑器（只有一组时就是它）。 */
+const group = () => section()?.firstElementChild;
 
 /** 开一个 diff tab 并把它的缓存写成一份 binary——右侧因此画得出 `Binary file` 那句。 */
 function openBinaryDiff(path: string): void {
@@ -381,7 +391,7 @@ describe('右侧面板', () => {
 
     // 空态居中。happy-dom 没有排版引擎，能钉的只有类名（撑满为什么是前提在 EmptyState.tsx）。
     // 居中靠里层 `m-auto` 而不是外层 `justify-center`：面板矮时后者往上溢出、顶上那截滚不到
-    const box = section()?.firstElementChild;
+    const box = group()?.firstElementChild;
     for (const cls of ['flex-1', 'overflow-auto']) {
       expect(box?.classList.contains(cls)).toBe(true);
     }
@@ -395,11 +405,11 @@ describe('右侧面板', () => {
     render(<App />, container);
     await waitFor(() => expect(section()?.textContent).toContain('Binary file'));
 
-    expect(section()?.classList.contains('flex-col')).toBe(true);
-    // 标签栏与滚动层是 `<section>` 的两个直接子项，前者在前：塞进滚动层里页面不报错，只是
-    // 往下翻两屏就再也找不着它
-    expect(tabBar()?.parentElement).toBe(section());
-    expect(tabBar()?.nextElementSibling).toBe(scroller());
+    expect(group()?.classList.contains('flex-col')).toBe(true);
+    // 标签栏是组的直接子项、排在装着滚动层的正文之前：塞进滚动层里页面不报错，只是往下翻两屏就
+    // 再也找不着它
+    expect(tabBar()?.parentElement).toBe(group());
+    expect(tabBar()?.nextElementSibling?.contains(scroller() ?? null)).toBe(true);
     expect(tabStrip()?.textContent).toContain('app.ts');
     expect(section()?.textContent).not.toContain('Go to File');
   });
@@ -423,12 +433,12 @@ describe('右侧面板', () => {
       options: PATCH_DEFAULTS,
       payload: { kind: 'binary' },
     });
-    activeEditorKey.value = 'diff:src/a.ts';
+    focusEditor('diff:src/a.ts');
     render(<App />, container);
     await waitFor(() => expect(scroller()).not.toBeNull());
     const before = scroller();
 
-    activeEditorKey.value = 'diff:src/b.ts';
+    focusEditor('diff:src/b.ts');
     await waitFor(() => expect(scroller()).not.toBe(before));
 
     // 同一个 tab 内换补丁不换键：容器留在原地（另一半在 diff-view 那份用例里）
@@ -451,5 +461,130 @@ describe('右侧面板', () => {
     container.querySelector<HTMLButtonElement>('section button[aria-label="Close"]')?.click();
     await waitFor(() => expect(section()?.textContent).toContain('Go to File'));
     expect(editors.value).toEqual([]);
+  });
+});
+
+describe('分屏', () => {
+  /**
+   * happy-dom 的元素上没有 `ondragstart` / `ondrop` 这几个属性（浏览器里有）。Preact 按「`on` + 小写名
+   * 在不在元素上」决定监听小写的事件名还是原样的 `DragStart`，缺了它们时监听挂在 `DragStart` 上，
+   * 派发真实的 `dragstart` 一个都收不到。补上属性，让 Preact 走与浏览器相同的那一支。
+   */
+  const DRAG_HANDLERS = ['ondragstart', 'ondragend', 'ondragover', 'ondragleave', 'ondrop'];
+  beforeAll(() => {
+    for (const name of DRAG_HANDLERS) {
+      if (!(name in HTMLElement.prototype))
+        Object.defineProperty(HTMLElement.prototype, name, {
+          value: null,
+          writable: true,
+          configurable: true,
+        });
+    }
+  });
+  // 只在右侧面板里找：左栏那一行 tab 也是一个 tablist
+  const tablists = () => [...(section()?.querySelectorAll('[role="tablist"]') ?? [])];
+  const tabButton = (name: string) =>
+    [...(section()?.querySelectorAll<HTMLElement>('[role="tab"]') ?? [])].find((tab) =>
+      tab.textContent?.includes(name),
+    );
+  /** 一组正文（标签栏的下一个兄弟），拖到正文上的那一路挂在它上面。 */
+  const bodyOf = (index: number) => tablists()[index]?.parentElement?.nextElementSibling;
+  /** happy-dom 没有排版，`getBoundingClientRect` 全是 0：`clientX` 大于 0 就算「右半边」。 */
+  const drag = (type: string, target: Element | null | undefined, clientX = 10) => {
+    const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX });
+    target?.dispatchEvent(event);
+    return event;
+  };
+
+  function openTwo(): void {
+    openBinaryDiff('src/a.ts');
+    openPinned('diff', 'src/b.ts');
+    diffStates.value = new Map(diffStates.value).set('src/b.ts', {
+      status: 'ready',
+      rename: null,
+      options: PATCH_DEFAULTS,
+      payload: { kind: 'binary' },
+    });
+  }
+
+  afterEach(() => {
+    splitPercent.value = 50;
+  });
+
+  it('把 tab 拖到正文右半边：先画遮罩，放下即分出右组，中间多一把把手', async () => {
+    openTwo();
+    render(<App />, container);
+    await waitFor(() => expect(tabButton('b.ts')).toBeDefined());
+
+    drag('dragstart', tabButton('b.ts'));
+    expect(draggingEditor.value?.key).toBe('diff:src/b.ts');
+    const over = drag('dragover', bodyOf(0));
+    // 不 `preventDefault` 时浏览器认为这里不收，`drop` 不会来
+    expect(over.defaultPrevented).toBe(true);
+    await waitFor(() => expect(container.querySelector('[data-drop-zone="split"]')).not.toBeNull());
+
+    drag('drop', bodyOf(0));
+    await waitFor(() => expect(tablists()).toHaveLength(2));
+    expect(groups.value).toHaveLength(2);
+    expect(tablists()[1]?.textContent).toContain('b.ts');
+    expect(tablists()[0]?.textContent).not.toContain('b.ts');
+    expect(container.querySelector('[aria-label="Resize editor groups"]')).not.toBeNull();
+    expect(container.querySelector('[data-drop-zone]')).toBeNull();
+  });
+
+  it('正文左半边不收，只有一个 tab 时右半边也不收', async () => {
+    openTwo();
+    render(<App />, container);
+    await waitFor(() => expect(tabButton('b.ts')).toBeDefined());
+    drag('dragstart', tabButton('b.ts'));
+    expect(drag('dragover', bodyOf(0), 0).defaultPrevented).toBe(false);
+    drag('dragend', tabButton('b.ts'));
+
+    resetEditors();
+    openBinaryDiff('src/a.ts');
+    await waitFor(() => expect(tabButton('b.ts')).toBeUndefined());
+    drag('dragstart', tabButton('a.ts'));
+    expect(drag('dragover', bodyOf(0)).defaultPrevented).toBe(false);
+  });
+
+  it('拖回另一组的标签栏：移过去，源组空了即合并、把手消失', async () => {
+    openTwo();
+    render(<App />, container);
+    await waitFor(() => expect(tabButton('b.ts')).toBeDefined());
+    drag('dragstart', tabButton('b.ts'));
+    drag('dragover', bodyOf(0));
+    drag('drop', bodyOf(0));
+    await waitFor(() => expect(tablists()).toHaveLength(2));
+
+    drag('dragstart', tabButton('b.ts'));
+    // 拖到 a 那一格的左半边（clientX 0 不大于中线 0）：插在它前面
+    drag('dragover', tabButton('a.ts'), 0);
+    drag('drop', tabButton('a.ts'), 0);
+    await waitFor(() => expect(tablists()).toHaveLength(1));
+    expect(editors.value.map((e) => e.path)).toEqual(['src/b.ts', 'src/a.ts']);
+    expect(container.querySelector('[aria-label="Resize editor groups"]')).toBeNull();
+  });
+
+  it('点到哪一组，哪一组就是焦点组；非焦点组的活动 tab 用次要前景色', async () => {
+    openTwo();
+    render(<App />, container);
+    await waitFor(() => expect(tabButton('b.ts')).toBeDefined());
+    drag('dragstart', tabButton('b.ts'));
+    drag('dragover', bodyOf(0));
+    drag('drop', bodyOf(0));
+    await waitFor(() => expect(tablists()).toHaveLength(2));
+    expect(activeEditorKey.value).toBe('diff:src/b.ts');
+
+    bodyOf(0)?.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
+    expect(activeGroup.value).toBe(groups.value[0]);
+    expect(activeEditorKey.value).toBe('diff:src/a.ts');
+    await waitFor(() =>
+      expect(
+        tabButton('b.ts')?.parentElement?.classList.contains('text-description-foreground'),
+      ).toBe(true),
+    );
+    expect(tabButton('a.ts')?.parentElement?.classList.contains('text-editor-foreground')).toBe(
+      true,
+    );
   });
 });

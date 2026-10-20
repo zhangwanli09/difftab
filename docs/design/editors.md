@@ -4,10 +4,10 @@
 
 ## 编辑器标签页
 
-**右侧面板顶部是一条标签栏，可以同时挂多个文件；左栏单击是预览、双击是固定，照 VS Code 编辑区的惯例。** 状态在 `state/editors.ts`：一个有序的 `editors` 列表 + 一个 `activeEditorKey`，此刻画哪个视图由活动项的 `kind` 派生，不另设 `activePane`——两份就有「谁是真的」这个问题。
+**右侧面板顶部是一条标签栏，可以同时挂多个文件；左栏单击是预览、双击是固定，照 VS Code 编辑区的惯例。** 状态在 `state/editors.ts`：一到两个编辑器组（见下文「分屏」），每组是一个有序的 tab 列表 + 一个活动键，此刻画哪个视图由活动项的 `kind` 派生，不另设 `activePane`——两份就有「谁是真的」这个问题。
 
 - **tab 的身份是 `kind:path`**：同一路径的 diff 与全文是两个 tab（VS Code 同样如此）；合成一个就得再记一份「此刻显示哪种」，切换时另一种的滚动位置也丢。键只用来比对、不反解析。
-- **预览 tab 全局只有一个，判据是 `pinned === false` 的那一项，不是「最后打开的」**。单击不在栏里的文件：有预览 tab 就**原位**替换，没有就追加；单击已在栏里的只是切过去。
+- **预览 tab 每组只有一个，判据是该组里 `pinned === false` 的那一项，不是「最后打开的」**。单击不在栏里的文件：有预览 tab 就**原位**替换，没有就追加；单击已在栏里的只是切过去。
   - **`openEditor` 的 `pinned` 档给 `Open file` 用**（照 VS Code `git.openFile` 的 `preview: false`）：不在栏里就追加一个固定 tab、不碰现有预览 tab，已在栏里就固定并切过去。调用方不自己「先开预览再 pin」——那样会先顶掉一个无辜的预览 tab。
   - **`pinEditor` 是幂等的置 `true`，永不 toggle**：一次双击是 click、click、dblclick 三个事件，写成 toggle 会让已固定的 tab 在双击时静默解开。**dblclick 只调 `pinEditor`、不再走 `selectFile`**，否则一次双击是三趟 `git diff`。
 - **第三种 tab 是 `commit`，身份是 `commit:<sha>:<path>`**：`Editor` 多带一个 `sha`，`path` 仍是文件路径，其余读 `path` 的地方照旧。tab 上文件名后跟短哈希，图标 `GitCommitHorizontal`。**正文顶上只有合并提交多一行 `Merge commit · compared with first parent`**（补丁相对第一父，这件事只在看补丁时才需要知道）；普通提交不画「这是哪次提交」——短哈希已在 tab 上、主题在 History 那一行，再印一遍只是占掉一行补丁。**它活动时 `activeEditorPath` 是 `null`**：左栏同名那一行说的是工作区那一份，照亮它是在说一件不成立的事——这是「高亮不看种类」唯一的例外，判据是「左栏那一行与右侧是不是同一份内容」。
@@ -23,12 +23,25 @@
 **每次 SSE 之后要过一遍栏里全部的 diff tab，不只活动那一个**：改动被撤销或 commit 掉的关掉，重命名的跟到新路径。只看活动 tab 时，后台 tab 里那份补丁照样留着，切过去看到的是左栏已断言不存在的东西，且它再也不会被刷新。
 
 - **重命名不算消失**：先按 `path` 找、再按 `oldPath` 找，命中就 `renameEditor`（`pinned` 不变，活动键跟着走）。**两趟而不是一趟 `||`**：A→B 后又在 A 新建文件时两条都命中，该跟的是路径就是 A 的那条。**新路径上已有 tab 时并入它**：幸存者保位置，`pinned` 取或。
-- **只重取活动那一个，其余切过去时再取**（`activateEditor` 每次都真的去取）：栏里 10 个 diff tab 时，否则每个事件 10 趟 `git diff`。切过去时缓存照常显示、新的回来再换，同一个 path 已 `ready` 就不回退 `loading`，不闪。**`refresh()` 内部用 `removeEditor` 而不是 `closeEditor`**：后者会顺手重取邻居，与 `refresh()` 末尾那次叠成两趟。
+- **只重取看得见的那几个（每组的活动 tab，`visibleEditors`，同键去重），其余切过去时再取**（`activateEditor` 每次都真的去取）：栏里 10 个 diff tab 时，否则每个事件 10 趟 `git diff`；分屏时两组的活动 tab 都在屏幕上，只取焦点组的那一个时另一组停在旧补丁上。切过去时缓存照常显示、新的回来再换，同一个 path 已 `ready` 就不回退 `loading`，不闪。**`refresh()` 内部用 `removeEditor` 而不是 `closeEditor`**：后者会顺手重取邻居，与 `refresh()` 末尾那次叠成两趟。
 - **在途的请求要一并作废**：否则关掉 X 后那次请求照样写进缓存，下次打开 X 先看到它。手段是按路径 `claim` 一张票（`http.ts` 的 `latestWins`），**与删缓存成对写在 `forget()` 里**——漏掉作废那一半没有任何东西会红。
 - **commit-changes tab 同样不收编**：切过去时 `refetch` 只补取提交详情（失败了才重取，取到过就不动），各段的补丁由视图按可见性自己取（见下文「整次提交视图」）。
 - **commit tab 不收编，`ready` 了就不再取**：提交不可变，SSE 与它无关。**在途（`loading`）也不重取**：每次 SSE 都重发时新票作废旧票，慢补丁在 agent 跑动期间永远落不了地。**只有 `error` 的才在切过去时重取**，否则唯一的重试路径是回 History 重新点。提交被 gc 掉时那一次写成 `error`。**例外是取的那一档与此刻不同**：请求状态记着一档（`loading` 记的是这一趟问了什么，`ready` 记的是**这份补丁是什么**——整份上下文只认 payload 的 `full`，被退回 3 行的就记成关），与此刻的开关和 tab 的上下文档不一致时照常重取——这两样只在用户点了什么时才变，不会有 SSE 那种饿死。**这一趟重取不回退 `loading`**：手上已有一份时照常显示它、在状态上记一笔 `pending`（这一趟按哪一档在取），`refetch` 拿它判「已经在取了」；回退 `loading` 会让表格卸载重挂，点开折叠行的那一刻展开状态（住在组件里）跟着没了。
 - **file tab 永不自动关**：文件被删也只是那一次 `loadFile` 写成 `error`。
-- **活动的 file tab 在 `loadState()` 之前就重取**，不等新列表：它的数据源是工作区本身。收编后活动键变了才对新活动的 file tab 补取一次。
+- **每组活动的 file tab 都在 `loadState()` 之前就重取**，不等新列表：它的数据源是工作区本身。收编后活动键变了才对新活动的 file tab 补取一次。
+
+## 分屏（编辑器组）
+
+**右侧面板最多两组编辑器，左右并排**（照 VS Code 的 editor group，封顶两组、不做上下与网格）。状态是 `groups`（长度 1 或 2）+ 焦点组 `activeGroup`；每组一个 `EditorGroup`：自己的 tab 列表、活动键、量出来的宽度。`editors` / `activeEditorKey` / `activeEditor` / `activeEditorPath` 是**焦点组**的只读派生。
+
+- **入口只有拖动**：把 tab 拖到另一组的正文或标签栏，或在只有一组时拖到正文的右半边（分出右组）。拖动走 HTML5 drag and drop，**拖的是哪个 tab 记在 `draggingEditor` 这个 signal 上，不从 `dataTransfer` 里读**：`dataTransfer` 只在 `drop` 时可读、`dragover` 时读不到内容，而判投放区恰恰在 `dragover`；`dataTransfer` 上只写一份占位（Firefox 不写不起拖）。投放区画一层 `pointer-events: none` 的遮罩，颜色 `editor-group-drop-background`。
+- **只有一个 tab 的组不能再分**：分出去等于原地不动，投放区不亮。**同一组内拖动不排序**，标签栏只接受来自另一组的 tab，插到指针落在的那个 tab 之前或之后。
+- **拖过去即固定**（照 VS Code）：拖动是明确意图，留成预览会被下一次单击顶掉。目标组已开着同键时只切过去，不并排两个同键 tab；上下文档取靠后的那档。
+- **组空即合并**：拖走、关掉、或被 SSE 收编掉最后一个 tab 时这一组消失，焦点落到剩下那组；只剩一组时空着就画空态。**两组时永远没有空组**——空组只会是一块不能做任何事的白地。
+- **焦点组**：组的根元素 `pointerdown` / `focusin` 时成为焦点组。左栏的单击、双击、`Open file`、Quick Open、搜索命中、History 一律开在焦点组；左栏的高亮与 `Files` 树的定位跟焦点组的活动 tab 走。**非焦点组的活动 tab 文字用次要前景色**：否则看不出左栏此刻跟的是哪一组。动作区的按钮作用于**所在那一组**的活动 tab，不读焦点组——点下去之前焦点不一定已经过来。
+- **同一个 tab 可以两组各开一份**：两份共用同一格缓存（缓存按路径 / 键存，不按组）。所以**关掉一份、或作为预览被顶掉时，另一组还开着同键就不 `forget`**（判据 `isOpenAnywhere`）：否则另一组那份的缓存被删、在途请求被作废，它退回 `Loading…`、再也不取。**上下文档跨组同步**：`setEditorContext` 改写所有组里同键的那一项，新开同键 tab 与逐组改名并入之后对齐到靠后的那档（`syncContext`）；各持一档时两组的请求会轮流改写同一格缓存。
+- **两组之间的把手调左组占的百分比**（`splitPercent`，20–80，默认 50，一位小数），与左栏、History 那两把同一个 `Sash.tsx`；双击复位、方向键可调、不进 `localStorage`。
+- **两组的视图各自卸载重挂**、各自滚动；跳行请求（`revealRequest`）不分组，两组开着同一个文件时两边都跳——不为此分组。
 
 ## 标签栏与视图
 
@@ -41,9 +54,9 @@
 - **关闭按钮是 tab 按钮的兄弟，不是孩子**：套在里面时 tab 不是按钮，得手写 `tabIndex` / Enter / Space、另开手型光标规则、每个处理器加「来自 × 的事件不处理」守卫（不守时快速双击 × 会把滑到指针底下的邻居静默固定住），且 `role="tab"` 的子元素在无障碍树里只当文本、读屏看不见 ×。并排之后这些一起消失。中键（`auxclick` 且 `button === 1`）也关闭。`role="tablist"` 带 `aria-label="Open editors"`。
 - **栏是两层：外层管高度、底色与通栏分隔线，里面的 `role="tablist"` 只装 tab、管横向滚动，右端的编辑器动作区是 tablist 的兄弟**——与侧栏那行 tab 同一种切法。动作按钮躺进 tablist 时读屏把它报成又一个 tab，且会随 tab 一起横向滚出视野。动作区 `shrink-0`，tab 再多也钉在右端。
 - **选中态是 tab 自己的 `border-b`，通栏分隔线是外层的 `divider-b`（inset 阴影）——与侧栏那行 tab 同一套机制**。**这一栏是这套机制存在的理由**：tablist 是滚动容器，按 padding box 裁内容，「`border-b` + tab `-mb-px`」的教科书写法伸进 border 带的那 1px 会被裁掉——下划线看不见，还留下 1px 纵向可滚溢出，「始终显示滚动条」的系统设置下就是一条常驻滚动条。tablist 被 flex 拉满外层高度，tab 的 `border-b` 于是落在外层阴影那 1px 上、画在它上面。活动 tab 带 `bg-editor-background`，与正文连成一片。
-- **栏与左栏顶栏同高**（有断言）。**tablist 横向滚动、每个 tab `shrink-0`、滚动条隐藏（`scrollbar-none`）**：画出滚动条时栏会被撑高、与顶栏错开。**活动 tab 要自己滚进视野**（`scrollIntoView`，`inline: 'nearest'`）：否则溢出后新开的 tab 在屏幕外，正文换了而栏上看不出变化。**动作区的按钮数变了也再滚一次**（有断言），判据是数按钮的那一个 computed（`editorActionCount`），不是「画不画」——在 `text` 与 `untracked-text` 两种补丁之间切时，版式按钮一直在，忽略空白那一枚却会进出：新开的全文 tab 先以 `loading` 激活、滚到 tablist 末端，正文就绪后复制按钮才挤进来，tablist 窄一截而 `scrollLeft` 不动，活动 tab 的右端连同 × 就被裁掉。拖窄侧栏或窗口同样会让 tablist 变窄，那一路不跟——要接 `ResizeObserver`，眼下不做。
+- **栏与左栏顶栏同高**（有断言）。**tablist 横向滚动、每个 tab `shrink-0`、滚动条隐藏（`scrollbar-none`）**：画出滚动条时栏会被撑高、与顶栏错开。**活动 tab 要自己滚进视野**（`scrollIntoView`，`inline: 'nearest'`）：否则溢出后新开的 tab 在屏幕外，正文换了而栏上看不出变化。**动作区的按钮数变了也再滚一次**（有断言），判据是数按钮的那一个 computed（每组一份的 `actionCount`），不是「画不画」——在 `text` 与 `untracked-text` 两种补丁之间切时，版式按钮一直在，忽略空白那一枚却会进出：新开的全文 tab 先以 `loading` 激活、滚到 tablist 末端，正文就绪后复制按钮才挤进来，tablist 窄一截而 `scrollLeft` 不动，活动 tab 的右端连同 × 就被裁掉。拖窄侧栏或窗口同样会让 tablist 变窄，那一路不跟——要接 `ResizeObserver`，眼下不做。
 - **`DiffView` / `FileView` 接 `path` prop，在渲染体里读 `diffStates.value.get(path)`，不能用 `useComputed` 包**：`useComputed` 只随 signal 依赖重算，prop 换了它停在上一个 tab——「切了 tab 标题变了正文没变」。
-- **切 tab 是卸载重挂，滚动位置不保留**：一份 diff 的 DOM 动辄数万行，N 个 tab 常驻挂载等于 N 份 DOM，`outputFormat` 一变每份都要重排。**卸载重挂靠 `App` 给视图按 tab 键 `key`**：只换 `path` prop 时 `Panel` 连同 `scrollTop` 留着，B 从 A 的偏移量打开，而换视图种类时又从顶部开始——两种切法必须一个样子。视图里不再另给 `Payload` 一份 `key`。
+- **切 tab 是卸载重挂，滚动位置不保留**：一份 diff 的 DOM 动辄数万行，N 个 tab 常驻挂载等于 N 份 DOM，`outputFormat` 一变每份都要重排。**卸载重挂靠 `EditorGroupView` 给视图按 tab 键 `key`**：只换 `path` prop 时 `Panel` 连同 `scrollTop` 留着，B 从 A 的偏移量打开，而换视图种类时又从顶部开始——两种切法必须一个样子。视图里不再另给 `Payload` 一份 `key`。
 - **右侧空态只在栏里一个 tab 都没有时画**（`PanelEmptyState`），照 VS Code 的空编辑区列**一列全局快捷键**（`Go to File` / `Search`，名字与顶栏按钮、侧栏 tab 同一份），不再说「点左边一个文件」——左栏就在旁边，这句不带信息。**不画 VS Code 列表上方那枚大号 logo 水印**：试过，放在这个面板里看着突兀。
   - **不说「工作区干净」**：左栏 `Changes` 档空着已经答了「为什么没得看」，右侧再说一遍只是重复。
   - **快捷键列表与全局快捷键同一份清单**（`state/shortcuts.ts` 的 `SHORTCUTS`），只展示、不可点——入口在顶栏与侧栏 tab 上已经有了。**布局照 VS Code**：一行一条、名字靠左、按键靠右；宽度随内容、两列只隔一小段（定宽时名字与按键离得太远，看着不像一行）；按键各一个 `<kbd>`，配色取 VS Code 的 `keybindingLabel.*`，按平台写 `⌘` 或 `Ctrl`。**按键那一列 `aria-hidden`**，读屏只念名字：一串 `⇧⌘F` 念出来是「shift symbol, place of interest sign」，与按钮 tooltip 里快捷键不进无障碍名同一条理由。

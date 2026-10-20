@@ -8,10 +8,9 @@ import { render } from 'preact';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DiffPayload } from '../../../src/server/shared/protocol';
 import { DiffView } from '../../../src/web/components/DiffView';
-import { contextOf, editors } from '../../../src/web/state/editors';
+import { activeGroup, contextOf, editors } from '../../../src/web/state/editors';
 import {
   diffFormatOverride,
-  diffPanelWidth,
   SIDE_BY_SIDE_MIN_WIDTH,
   toggleDiffOutputFormat,
 } from '../../../src/web/state/layout';
@@ -71,14 +70,14 @@ beforeEach(() => {
   diffStates.value = new Map();
   // 面板宽度也要复位：它是模块级 signal，上一个用例写进去的值会跨用例串味，而串味的表现是「某条
   // 用例单跑绿、整档跑红」
-  diffPanelWidth.value = SIDE_BY_SIDE_MIN_WIDTH;
+  activeGroup.value.width.value = SIDE_BY_SIDE_MIN_WIDTH;
   diffFormatOverride.value = null;
 });
 
 afterEach(() => {
   render(null, container);
   diffStates.value = new Map();
-  diffPanelWidth.value = SIDE_BY_SIDE_MIN_WIDTH;
+  activeGroup.value.width.value = SIDE_BY_SIDE_MIN_WIDTH;
   diffFormatOverride.value = null;
 });
 
@@ -134,7 +133,7 @@ describe('DiffView', () => {
     ['side-by-side', 1400],
     ['line-by-line', 700],
   ] as const)('%s：行号表在横向滚动区之外，两张表逐行同高', async (_, width) => {
-    diffPanelWidth.value = width;
+    activeGroup.value.width.value = width;
     ready('a.ts', { kind: 'text', patch: patchFor('const x = 1;'), full: false });
     show('a.ts');
     await waitFor(() => expect(container.querySelector('[data-diff-layout]')).not.toBeNull());
@@ -187,7 +186,7 @@ describe('DiffView', () => {
   });
 
   it('并排两侧横向联动——滚一侧，另一侧跟到同一个 scrollLeft', async () => {
-    diffPanelWidth.value = 1400;
+    activeGroup.value.width.value = 1400;
     ready('a.ts', { kind: 'text', patch: patchFor('const x = 1;'), full: false });
     show('a.ts');
     await waitFor(() => expect(container.querySelectorAll('[data-diff-side]')).toHaveLength(2));
@@ -298,16 +297,16 @@ describe('DiffView', () => {
 
   it('面板变窄变宽：版式跟着换，容器仍留在原地', async () => {
     // 这条钉的是「版式在渲染体里订阅」。漏了不报错、页面照常有 diff，只是拖窗口时版式纹丝不动。
-    // 走的是直接写 `diffPanelWidth`，不经 ResizeObserver:happy-dom 的 ResizeObserver 是个空壳、
+    // 走的是直接写组的宽度，不经 ResizeObserver:happy-dom 的 ResizeObserver 是个空壳、
     // 也没有布局引擎，那一段归肉眼项
-    diffPanelWidth.value = 700;
+    activeGroup.value.width.value = 700;
     ready('a.ts', { kind: 'text', patch: patchFor('const first = 1;'), full: false });
     show('a.ts');
     await waitFor(() => expect(container.querySelectorAll('table')).toHaveLength(2));
     const before = payloadNode();
     expect(container.querySelectorAll('[data-diff-side]')).toHaveLength(0);
 
-    diffPanelWidth.value = 1400;
+    activeGroup.value.width.value = 1400;
     await waitFor(() => expect(container.querySelectorAll('[data-diff-side]')).toHaveLength(2));
 
     // 补丁没变，重画的理由只可能是版式——而且是**就地**重画：外层换成新元素等于把面板里的这一
@@ -317,15 +316,15 @@ describe('DiffView', () => {
   });
 
   it('手动切版式：就地重画成另一种，容器仍留在原地', async () => {
-    // 手动档走的是同一个 `diffOutputFormat`，所以不用另补依赖——这条钉的就是「没有另开一条通路」。
+    // 手动档走的是同一个 `formatOf`，所以不用另补依赖——这条钉的就是「没有另开一条通路」。
     // 「固定之后拖宽度不再换」由 layout.test 按「下游一次通知都收不到」钉住，比在这里睡一拍再看 DOM 更硬
-    diffPanelWidth.value = 1400;
+    activeGroup.value.width.value = 1400;
     ready('a.ts', { kind: 'text', patch: patchFor('const first = 1;'), full: false });
     show('a.ts');
     await waitFor(() => expect(container.querySelectorAll('[data-diff-side]')).toHaveLength(2));
     const before = payloadNode();
 
-    toggleDiffOutputFormat();
+    toggleDiffOutputFormat(activeGroup.value.format);
     await waitFor(() => expect(container.querySelectorAll('table')).toHaveLength(2));
     expect(container.querySelectorAll('[data-diff-side]')).toHaveLength(0);
     expect(payloadNode()).toBe(before);
@@ -381,7 +380,7 @@ describe('没改的行：折起与展开', () => {
   });
 
   it('不画 `@@` 那一行：hunk 之前、之间折成 N hidden lines，末尾数不出来的写 Show remaining lines', async () => {
-    diffPanelWidth.value = 700;
+    activeGroup.value.width.value = 700;
     ready('f.txt', { kind: 'text', patch: patch20(false), full: false });
     show('f.txt');
     await waitFor(() => expect(gapRows()).toHaveLength(3));
@@ -391,7 +390,7 @@ describe('没改的行：折起与展开', () => {
   });
 
   it('3 行上下文时点开一段：去要整份上下文，回来后只展开点的那一段', async () => {
-    diffPanelWidth.value = 700;
+    activeGroup.value.width.value = 700;
     ready('f.txt', { kind: 'text', patch: patch20(false), full: false });
     show('f.txt');
     await waitFor(() => expect(gapButtons()).toHaveLength(3));
@@ -406,7 +405,7 @@ describe('没改的行：折起与展开', () => {
   });
 
   it('点过、整份上下文还没回来时那一行是 Loading…，不可再点', async () => {
-    diffPanelWidth.value = 700;
+    activeGroup.value.width.value = 700;
     vi.stubGlobal('fetch', () => new Promise(() => {}));
     ready('f.txt', { kind: 'text', patch: patch20(false), full: false });
     show('f.txt');
@@ -418,7 +417,7 @@ describe('没改的行：折起与展开', () => {
   });
 
   it('整份上下文过不了闸：tab 记成 unavailable，所有折叠行只是文本', async () => {
-    diffPanelWidth.value = 700;
+    activeGroup.value.width.value = 700;
     fullResponse = { kind: 'text', patch: patch20(false), full: false };
     ready('f.txt', { kind: 'text', patch: patch20(false), full: false });
     show('f.txt');
@@ -437,7 +436,7 @@ describe('没改的行：折起与展开', () => {
   });
 
   it('已经是整份上下文时点开是即时的，不再发请求', async () => {
-    diffPanelWidth.value = 700;
+    activeGroup.value.width.value = 700;
     ready('f.txt', { kind: 'text', patch: patch20(true), full: true });
     show('f.txt');
     await waitFor(() =>
@@ -451,7 +450,7 @@ describe('没改的行：折起与展开', () => {
   });
 
   it('切了忽略空白：记着的展开一律作废——同一个旧侧行号在 `-w` 下可能是另一段', async () => {
-    diffPanelWidth.value = 700;
+    activeGroup.value.width.value = 700;
     ready('f.txt', { kind: 'text', patch: patch20(true), full: true });
     show('f.txt');
     await waitFor(() => expect(gapButtons()).toHaveLength(3));
@@ -468,7 +467,7 @@ describe('没改的行：折起与展开', () => {
   });
 
   it('那一行已不在变更列表里（两次刷新之间）：点了不改档、不发请求，也不停在 Loading…', async () => {
-    diffPanelWidth.value = 700;
+    activeGroup.value.width.value = 700;
     repoState.value = repo({ files: [] });
     ready('f.txt', { kind: 'text', patch: patch20(false), full: false });
     show('f.txt');
@@ -493,7 +492,7 @@ describe('没改的行：折起与展开', () => {
   });
 
   it('并排时折叠行两侧各占一行，文案与按钮只在旧侧', async () => {
-    diffPanelWidth.value = 1400;
+    activeGroup.value.width.value = 1400;
     ready('f.txt', { kind: 'text', patch: patch20(false), full: false });
     show('f.txt');
     await waitFor(() => expect(container.querySelectorAll('[data-diff-side]')).toHaveLength(2));

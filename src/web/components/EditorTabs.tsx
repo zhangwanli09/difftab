@@ -9,21 +9,25 @@
 // **栏是两层，tablist 在里面**：右端那块编辑器动作区（SVG 的预览开关、全文 tab 的 `Copy file
 // contents`、diff / commit / 整次提交 tab 的忽略空白与版式切换）与 tablist 并排而不是躺在它里面，切法与侧栏那行 tab 一样——躺进去时
 // 读屏把按钮报成又一个 tab，而 tablist 是横向滚动容器，按钮还会跟着 tab 滚出视野。
+//
+// 分屏时每组一条栏，栏里的一切（tab、同名目录、动作区）都只看自己那一组。tab 可拖：拖到另一组的栏上
+// 插到指针所在的位置，拖到正文上由 `EditorGroup` 接。
 
-import { computed, useComputed } from '@preact/signals';
+import { computed, type ReadonlySignal, useComputed, useSignal } from '@preact/signals';
 import { Columns2, Eye, type LucideIcon, Pilcrow, Rows2, X } from 'lucide-preact';
+import type { JSX } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
 import {
-  activeEditor,
-  activeEditorKey,
+  activeGroup,
+  draggingEditor,
   type Editor,
-  editors,
+  type EditorGroup,
   keyOf,
   pinEditor,
   worktreePathOf,
 } from '../state/editors';
 import { commitDetails, commitFilesOf, shortSha } from '../state/history';
-import { type DiffOutputFormat, diffOutputFormat, toggleDiffOutputFormat } from '../state/layout';
+import { type DiffOutputFormat, toggleDiffOutputFormat } from '../state/layout';
 import {
   activateEditor,
   closeEditor,
@@ -34,6 +38,7 @@ import {
   fileStates,
   ignoreWhitespace,
   isSegmentOf,
+  moveEditorTo,
   previewOf,
   shownPreview,
   svgPreview,
@@ -41,6 +46,7 @@ import {
   toggleSvgPreview,
 } from '../state/store';
 import { CODE_COLORS, splitForDisplay } from './ChangeList';
+import { inRightHalf, leftTarget } from './drag';
 import { Icon, KIND_ICON } from './Icon';
 import { IconButton } from './IconButton';
 import { Toggle } from './Toggle';
@@ -94,8 +100,7 @@ const NO_ACTIONS: EditorActionState = {
  *   所以在第一段 SVG 落地时才出现；这种 tab 没有跳行请求可压它，按下态就是开关本身。按图画着的只是
  *   SVG 那几段，其余段照样是表格，版式与忽略空白不因它撤掉。
  */
-const editorActions = computed<EditorActionState>(() => {
-  const editor = activeEditor.value;
+function actionsOf(editor: Editor | null): EditorActionState {
   switch (editor?.kind) {
     case undefined:
       return NO_ACTIONS;
@@ -146,22 +151,7 @@ const editorActions = computed<EditorActionState>(() => {
       };
     }
   }
-});
-
-/**
- * 动作区此刻画几枚。活动 tab 要不要再滚一次跟的是它而不是「画不画」：在两个都有版式按钮的 tab 之间
- * 切换（`text` ↔ `untracked-text`）时，忽略空白那一枚照样会进出，动作区宽度随之变；开关预览时
- * 版式与忽略空白两枚一起进出。单独一个 computed：数不变时不通知，tab 不因缓存变化重画。
- */
-const editorActionCount = computed<number>(() => {
-  const actions = editorActions.value;
-  return (
-    Number(actions.preview) +
-    Number(actions.copyText !== null) +
-    Number(actions.format) +
-    Number(actions.whitespace)
-  );
-});
+}
 
 /**
  * 版式切换按**当前**版式查出要画的那枚。图标与文案表达的是**目标**版式，与变更列表的
@@ -210,16 +200,53 @@ export function distinguishingDirs(paths: readonly string[]): Map<string, string
   return dirs;
 }
 
-/**
- * 整栏一张表：撞不撞名要看邻居，单个 tab 自己算不出来——关掉一个同名 tab 时，另一个的目录得跟着
- * 消失。
- */
-const tabDirs = computed(() =>
-  distinguishingDirs(
-    // 整次提交 tab 没有文件名可撞：它的 `path` 是 sha，拿去比只会白占一格
-    editors.value.flatMap((editor) => (editor.kind === 'commit-changes' ? [] : [editor.path])),
-  ),
-);
+/** 一组的标签栏要的几个派生量。按组记住：每次渲染新建 `computed` 时去重就无从谈起。 */
+interface GroupView {
+  /** 活动 tab 的动作区画哪几枚。 */
+  actions: ReadonlySignal<EditorActionState>;
+  /**
+   * 动作区此刻画几枚。活动 tab 要不要再滚一次跟的是它而不是「画不画」：在两个都有版式按钮的 tab 之间
+   * 切换（`text` ↔ `untracked-text`）时，忽略空白那一枚照样会进出，动作区宽度随之变；开关预览时
+   * 版式与忽略空白两枚一起进出。单独一个 computed：数不变时不通知，tab 不因缓存变化重画。
+   */
+  actionCount: ReadonlySignal<number>;
+  /**
+   * 整栏一张同名目录表：撞不撞名要看邻居，单个 tab 自己算不出来——关掉一个同名 tab 时，另一个的目录
+   * 得跟着消失。只看这一组：另一组里的同名 tab 不在这条栏上，拿它来区分只会让目录无端变长。
+   */
+  dirs: ReadonlySignal<Map<string, string>>;
+}
+
+const views = new WeakMap<EditorGroup, GroupView>();
+
+function viewOf(group: EditorGroup): GroupView {
+  let view = views.get(group);
+  if (view === undefined) {
+    const actions = computed(() => actionsOf(group.active.value));
+    view = {
+      actions,
+      actionCount: computed(() => {
+        const state = actions.value;
+        return (
+          Number(state.preview) +
+          Number(state.copyText !== null) +
+          Number(state.format) +
+          Number(state.whitespace)
+        );
+      }),
+      dirs: computed(() =>
+        distinguishingDirs(
+          // 整次提交 tab 没有文件名可撞：它的 `path` 是 sha，拿去比只会白占一格
+          group.editors.value.flatMap((editor) =>
+            editor.kind === 'commit-changes' ? [] : [editor.path],
+          ),
+        ),
+      ),
+    };
+    views.set(group, view);
+  }
+  return view;
+}
 
 /** tab 的 `title`：完整路径；提交里的那两种带上完整 sha（整次提交 tab 以主题代路径）。 */
 function tabTitle(editor: Editor): string {
@@ -233,20 +260,31 @@ function tabTitle(editor: Editor): string {
   }
 }
 
+/** 拖动时写进 `dataTransfer` 的类型。内容不读（见 `draggingEditor`），只为 Firefox 不写数据不起拖。 */
+const DRAG_TYPE = 'application/x-difftab-editor';
+
 function Tab({
+  group,
   editor,
+  index,
   active,
+  focused,
   dir,
 }: {
+  group: EditorGroup;
   editor: Editor;
+  /** 在栏里第几个：拖到这一格上时按它算插入位置 */
+  index: number;
   active: boolean;
+  /** 所在那一组是焦点组 */
+  focused: boolean;
   dir: string | undefined;
 }) {
   const key = keyOf(editor);
   const { name } = splitForDisplay(editor.path);
   const self = useRef<HTMLDivElement>(null);
   // 短路求值：只有活动那一个 tab 订阅这个 computed，其余 tab 不因缓存变化重画
-  const actionCount = active ? editorActionCount.value : 0;
+  const actionCount = active ? viewOf(group).actionCount.value : 0;
   // 名字按 git 状态染色，与文件树同一张 `codeByPath`、同一张 `CODE_COLORS`；commit tab 不染（判据在
   // `worktreePathOf`）。**包成 `computed`**：`codeByPath` 每个 SSE 都换一份，直接读时每次刷新整栏
   // tab 都重画，包了只在这个 tab 自己的状态码变了才重画。闭包捕获挂载时的 `editor` 不会过期——tab
@@ -270,9 +308,11 @@ function Tab({
   return (
     <div
       ref={self}
+      data-tab-index={index}
+      // 非焦点组的活动 tab 用次要前景色：分屏时看得出左栏的高亮与点击此刻跟的是哪一组
       class={`${TAB_CLASS} ${
         active
-          ? 'border-editor-foreground bg-editor-background text-editor-foreground'
+          ? `border-editor-foreground bg-editor-background ${focused ? 'text-editor-foreground' : 'text-description-foreground'}`
           : 'border-transparent text-description-foreground hover:bg-list-hover-background'
       }`}
     >
@@ -281,12 +321,22 @@ function Tab({
         role="tab"
         aria-selected={active}
         title={tabTitle(editor)}
-        onClick={() => activateEditor(key)}
+        draggable
+        onDragStart={(event) => {
+          event.dataTransfer?.setData(DRAG_TYPE, key);
+          if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+          draggingEditor.value = { group, key };
+        }}
+        // 投放成功与否都会来；`drop` 那一侧也清，两边谁先到都行
+        onDragEnd={() => {
+          draggingEditor.value = null;
+        }}
+        onClick={() => activateEditor(key, group)}
         // 幂等的固定：一次双击是 click、click、dblclick 三个事件，前两个已经把 tab 开好并激活
-        onDblClick={() => pinEditor(key)}
+        onDblClick={() => pinEditor(key, group)}
         // 中键关闭，照 VS Code。`auxclick` 的 button 1 是中键
         onAuxClick={(event) => {
-          if (event.button === 1) closeEditor(key);
+          if (event.button === 1) closeEditor(key, group);
         }}
         // `self-stretch` 不是 `py-*`：点击区要铺满整栏高度，外壳 div 自己不接事件，按钮矮一截
         // 就是上下各一条点不到的死区
@@ -327,7 +377,7 @@ function Tab({
             : 'flex px-1.5 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100'
         }
       >
-        <IconButton icon={X} label="Close" onClick={() => closeEditor(key)} />
+        <IconButton icon={X} label="Close" onClick={() => closeEditor(key, group)} />
       </span>
     </div>
   );
@@ -337,17 +387,18 @@ function Tab({
  * 栏右端的编辑器动作区，按活动 tab 的种类画：全文 tab 正文就绪时是 `Copy file contents`，diff /
  * commit tab 补丁就绪为文本时是忽略空白与版式切换（点了就固定，语义在 `state/layout.ts`）；带
  * SVG 预览的 tab 最左边再多一枚 `Preview`。版式切换
- * 不按 tab 键 `key`：它不带局部状态，版式本来就是全页面一份。
+ * 不按 tab 键 `key`：它不带局部状态，显示的是这一组的版式（分屏时两组可以不同）。
  *
  * 复制的是缓存里那份 `payload.content` 原文——不是 hljs 输出，也不带行号。其余几路（加载中、出错、
  * 二进制、图片、符号链接、过大）都不画复制：没有正文可复制，灰着一枚按钮只是一块死区。按钮**按
  * tab 键 `key`**：`useCopied` 的状态跟着组件走，不重挂时切到另一个文件，那枚 ✓ 会把上一个文件的
  * 「已复制」挂在这一个上。
  */
-function EditorActions() {
-  const editor = activeEditor.value;
-  if (editor === null || editorActionCount.value === 0) return null;
-  const { copyText, preview, previewing, format, whitespace } = editorActions.value;
+function EditorActions({ group }: { group: EditorGroup }) {
+  const view = viewOf(group);
+  const editor = group.active.value;
+  if (editor === null || view.actionCount.value === 0) return null;
+  const { copyText, preview, previewing, format, whitespace } = view.actions.value;
   // 忽略空白是一枚**带按下态的开关、文案恒定**，与版式按钮「文案写目标版式」刻意不同：版式是什么
   // 一眼看得出，空白藏没藏看不出——开着而认不出来时，用户只会觉得 diff 少了几处改动
   // 预览与忽略空白同为带按下态的开关：开着时面板上是图而不是文本，一眼认得出，但认不出「这个 tab
@@ -357,7 +408,7 @@ function EditorActions() {
       icon={Eye}
       label="Preview"
       pressed={previewing}
-      onClick={() => toggleSvgPreview(previewing)}
+      onClick={() => toggleSvgPreview(previewing, editor)}
     />
   );
   const actions =
@@ -374,7 +425,10 @@ function EditorActions() {
           />
         )}
         {format && (
-          <IconButton {...FORMAT_TOGGLE[diffOutputFormat.value]} onClick={toggleDiffOutputFormat} />
+          <IconButton
+            {...FORMAT_TOGGLE[group.format.value]}
+            onClick={() => toggleDiffOutputFormat(group.format)}
+          />
         )}
       </>
     );
@@ -387,28 +441,83 @@ function EditorActions() {
   );
 }
 
-export function EditorTabs() {
-  const active = activeEditorKey.value;
-  const dirs = tabDirs.value;
+/**
+ * 拖到这条栏上的 tab 插在第几个之前：落在某个 tab 的左半边插在它前面，右半边插在它后面；落在栏里
+ * tab 以外的空白处追加到末尾。
+ */
+function dropIndex(event: DragEvent): number | undefined {
+  const target = event.target instanceof Element ? event.target.closest('[data-tab-index]') : null;
+  if (!(target instanceof HTMLElement)) return undefined;
+  const index = Number(target.dataset.tabIndex);
+  return inRightHalf(event, target) ? index + 1 : index;
+}
+
+/** 拖着的是另一组的 tab：只有它能投在这一组上。同组内拖动不排序。 */
+const draggedFromOther = (group: EditorGroup) => {
+  const dragging = draggingEditor.peek();
+  return dragging !== null && dragging.group !== group ? dragging : null;
+};
+
+export function EditorTabs({ group }: { group: EditorGroup }) {
+  const active = group.activeKey.value;
+  // 包成 computed：焦点在两组间换时，只有答案真变了的那条栏重画
+  const focused = useComputed(() => activeGroup.value === group).value;
+  const dirs = viewOf(group).dirs.value;
+  // 另一组的 tab 正悬在这条栏上：整条栏垫一层投放底色。没在拖时不垫，理由同正文那层遮罩
+  const over = useSignal(false);
+  const highlighted = useComputed(() => over.value && draggingEditor.value !== null).value;
+  const onDragOver = (event: JSX.TargetedDragEvent<HTMLDivElement>) => {
+    if (draggedFromOther(group) === null) return;
+    // 不 `preventDefault` 时浏览器认为这里不收，`drop` 不会来
+    event.preventDefault();
+    over.value = true;
+  };
+  const onDragLeave = (event: JSX.TargetedDragEvent<HTMLDivElement>) => {
+    if (leftTarget(event)) over.value = false;
+  };
+  const onDrop = (event: JSX.TargetedDragEvent<HTMLDivElement>) => {
+    over.value = false;
+    const dragging = draggedFromOther(group);
+    if (dragging === null) return;
+    event.preventDefault();
+    // 冒泡到组的根元素时那边别再按正文的投放区处理一遍
+    event.stopPropagation();
+    draggingEditor.value = null;
+    moveEditorTo(dragging.group, dragging.key, group, dropIndex(event));
+  };
   // 外层：`h-9` 与左栏顶栏同一个值（理由写在那边）；通栏那条分隔线是这一层的 `divider-b`，tab 自己
   // 的 `border-b` 盖在它上面（见 TAB_CLASS）——tablist 被 flex 拉满这一层的高度，两条线才在同一个
   // 位置。里层 tablist：`min-w-0 flex-1` 让它吃掉动作区以外的全部宽度、溢出时自己滚而不是把动作区挤
   // 出去；`scrollbar-none`：横向滚照旧、只是不画滚动条——画出来会把栏撑高
   return (
-    <div class="flex h-9 shrink-0 divider-b bg-title-bar-background">
+    // biome-ignore lint/a11y/noStaticElementInteractions: 只接拖放投放，不是可操作的控件，没有对应的 role
+    <div
+      class={`flex h-9 shrink-0 divider-b ${highlighted ? 'bg-editor-group-drop-background' : 'bg-title-bar-background'}`}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
       <div
         role="tablist"
         aria-label="Open editors"
         class="flex min-w-0 flex-1 overflow-x-auto scrollbar-none"
       >
-        {editors.value.map((editor) => {
+        {group.editors.value.map((editor, index) => {
           const key = keyOf(editor);
           return (
-            <Tab key={key} editor={editor} active={key === active} dir={dirs.get(editor.path)} />
+            <Tab
+              key={key}
+              group={group}
+              editor={editor}
+              index={index}
+              active={key === active}
+              focused={focused}
+              dir={dirs.get(editor.path)}
+            />
           );
         })}
       </div>
-      <EditorActions />
+      <EditorActions group={group} />
     </div>
   );
 }

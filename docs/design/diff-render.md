@@ -70,13 +70,14 @@
 面板宽度 < 1024px 给 `line-by-line`，否则 `side-by-side`。**1024 是按字体与行号槽宽算出来的**（并排每侧约剩 50 个等宽字符，推导在 `state/layout.ts`），与 Tailwind 的 `lg` 相同纯属巧合。以下几条都属「违反后不报错」：
 
 - **判据是 diff 面板自身的宽度，不是视口宽度**：按视口判等于把侧栏宽度在 CSS 之外再写一遍，侧栏一改阈值就静默错位——而侧栏现在还能拖。
-- **量的是面板那一层（`<section>`），不是里面那层滚动容器**：换格式 → 内容高度变 → 竖直滚动条进出 → 内层宽度抖十几像素，阈值附近两种格式来回重画。面板自己不滚，宽度不随滚动条变。
+- **分屏时每组各量各的**：每个编辑器组（见 [`editors.md`](editors.md) 的「分屏」）有自己的宽度 signal 与派生的版式，两组可以一并排、一逐行。按整个右侧面板量时，两组各只剩一半宽，却仍被判成并排。override 仍是全页面一份：手动固定是「我要这种版式」，不是「这一组要」。
+- **量的是组那一层（`EditorGroup` 的根元素），不是里面那层滚动容器**：换格式 → 内容高度变 → 竖直滚动条进出 → 内层宽度抖十几像素，阈值附近两种格式来回重画。面板自己不滚，宽度不随滚动条变。
 - **border box 那两处仍显式写**（`observe(el, { box: 'border-box' })` + `entry.borderBoxSize[0].inlineSize`）：滚动条是从 content box 里扣的，这一层哪天加了 `overflow` 或内边距，默认观察就把抖动请回来；只在读值那侧挑滤的是已产生的回调，指定观察 box 才是从源头不投递。
 - **量法与阈值同住 `state/layout.ts` 的 `observeDiffPanel()`**：阈值的正确性全靠送进来的是 border box，而这件事没有门禁强制得了，拆到两个文件里就让其中一半失去说明。
 - 格式是一个 `computed`，靠 `Object.is` 去重，只有真跨过阈值才通知下游。贴着阈值来回蹭时每跨一次仍是一次重排（不重新高亮）——不为此加迟滞，那会把纯派生量变成第二份状态。
-- **`Patch` 必须在渲染体里读 `diffOutputFormat`**：读到 memo 或 effect 里去，拖窗口时版式就纹丝不动。
+- **`Patch` 必须在渲染体里读本组的版式**（`group.format`，组由 `GroupContext` 交下来）：读到 memo 或 effect 里去，拖窗口时版式就纹丝不动；读成全局的或别的组的，拖中间把手时这一组不跟。
 - **手动切换是一枚两态按钮，点过即固定**：住在编辑器标签栏右端的动作区（显示条件见 [`editors.md`](editors.md)），点一下翻到当前版式的另一种并写进 `diffFormatOverride`，此后本次页面内不再跟宽度走；刷新回到自动。图标与文案表达的是**目标**版式（`View inline` / `View side by side`），与变更列表的 `View as tree` 同类，不是显示当前档的状态灯。
-- **override 与宽度判据合成同一个 `diffOutputFormat`**（`override ?? 宽度判据`）：`DiffView` 只认这一个 signal；另开一条通路时固定之后拖窗口照样换版式。固定后观察者照写宽度，`computed` 去重，不触发重画。
+- **override 与宽度判据合成同一个 computed**（`outputFormatOf(width)` = `override ?? 宽度判据`，每组建一次、挂在 `EditorGroup.format` 上）：`DiffView` 只认它；另开一条通路时固定之后拖窗口照样换版式。固定后观察者照写宽度，`computed` 去重，不触发重画。
 - **override 不进 `localStorage`**：跨不了实例（见 [`web.md`](web.md) 的「主题开关」）。也正因为不落盘，两态不会像主题那样「点过一次就永远回不到自动」——为什么不做三态见 [`../decisions/web.md`](../decisions/web.md)。
 
 ## hljs 语言清单

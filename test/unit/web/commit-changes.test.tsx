@@ -16,6 +16,7 @@ import {
   activeEditor,
   activeEditorKey,
   activeEditorPath,
+  activeGroup,
   contextOf,
   editorKey,
   editors,
@@ -367,13 +368,13 @@ describe('标签栏', () => {
   test('tab 上是短哈希 · 主题，图标之外没有目录；详情就绪后画忽略空白与版式切换', async () => {
     stubJsonBy(() => ({ payload: detailOf(1) }));
     openCommitChanges(commit(1, { subject: 'fix the thing' }));
-    render(<EditorTabs />, container);
+    render(<EditorTabs group={activeGroup.value} />, container);
     const tab = container.querySelector('[role="tab"]') as HTMLElement;
     expect(tab.textContent).toBe(`${sha(1).slice(0, 7)} ·fix the thing`);
     expect(tab.getAttribute('title')).toBe(`fix the thing @ ${sha(1)}`);
     expect(container.querySelector('[aria-label="Hide whitespace changes"]')).toBeNull();
     await waitFor(() => expect(commitDetails.value.get(sha(1))?.status).toBe('ready'));
-    render(<EditorTabs />, container);
+    render(<EditorTabs group={activeGroup.value} />, container);
     expect(container.querySelector('[aria-label="Hide whitespace changes"]')).not.toBeNull();
     expect(
       container.querySelector('[aria-label="View inline"], [aria-label="View side by side"]'),
@@ -400,7 +401,7 @@ describe('标签栏', () => {
         },
       ],
     ]);
-    render(<EditorTabs />, container);
+    render(<EditorTabs group={activeGroup.value} />, container);
     expect(container.querySelector('[aria-label="Preview"]')?.getAttribute('aria-pressed')).toBe(
       'true',
     );

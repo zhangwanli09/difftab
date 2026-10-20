@@ -1,6 +1,6 @@
 // 编辑器标签栏的列表模型。
 //
-// 钉的是几条「不报错、只是不对」：预览 tab 全局只有一个且被**原位**顶掉（追加时位置会跳）、固定
+// 钉的是几条「不报错、只是不对」：预览 tab 每组只有一个且被**原位**顶掉（追加时位置会跳）、固定
 // 幂等不 toggle（一次双击是三个事件，toggle 会在双击时把已固定的解开）、关活动 tab 按右邻居优先、
 // 改名撞上已开着的 tab 要并入而不是留两个同键的。
 
@@ -9,17 +9,25 @@ import {
   activeEditor,
   activeEditorKey,
   activeEditorPath,
+  activeGroup,
   contextOf,
   type Editor,
+  type EditorGroup,
   editorKey,
   editors,
+  findEditor,
   focusEditor,
+  groups,
+  isOpenAnywhere,
   keyOf,
+  moveEditor,
   openEditor,
   pinEditor,
   removeEditor,
   renameEditor,
   setEditorContext,
+  splitEditor,
+  visibleEditors,
 } from '../../../src/web/state/editors';
 import { openPinned, resetEditors } from './helpers';
 
@@ -38,12 +46,12 @@ describe('openEditor', () => {
   it('再开一个预览时原位顶掉旧预览，并把被顶掉的那个交回来', () => {
     // 预览夹在两个固定 tab 中间（直接摆出这个形状：公开操作只会把预览追加在末尾）：顶掉之后
     // 新的还在中间那个位置，不跳到末尾
-    editors.value = [
+    activeGroup.value.editors.value = [
       { kind: 'diff', path: 'a.ts', pinned: true },
       { kind: 'diff', path: 'b.ts', pinned: false },
       { kind: 'diff', path: 'c.ts', pinned: true },
     ];
-    activeEditorKey.value = 'diff:c.ts';
+    focusEditor('diff:c.ts');
     const replaced = openEditor('diff', 'd.ts');
     expect(replaced).toEqual({ kind: 'diff', path: 'b.ts', pinned: false });
     expect(keys()).toEqual(['diff:a.ts', 'diff:d.ts', 'diff:c.ts']);
@@ -241,5 +249,148 @@ describe('两栏的高亮路径', () => {
     expect(activeEditorPath.value).toBe('b.ts');
     focusEditor('diff:a.ts');
     expect(activeEditorPath.value).toBe('a.ts');
+  });
+});
+
+describe('分屏（编辑器组）', () => {
+  const keysOf = (group: EditorGroup | undefined): string[] =>
+    group?.editors.value.map(keyOf) ?? [];
+  const findEditorIn = (group: EditorGroup, key: string): Editor | undefined =>
+    group.editors.value.find((editor) => keyOf(editor) === key);
+
+  /** 一组里开着 a、b 两个固定 tab，把 b 分到右组。回左右两组。 */
+  function splitAB(): [EditorGroup, EditorGroup] {
+    openPinned('diff', 'a.ts');
+    openPinned('diff', 'b.ts');
+    const left = activeGroup.value;
+    splitEditor(left, 'diff:b.ts');
+    const right = groups.value[1];
+    if (right === undefined) throw new Error('没分出来');
+    return [left, right];
+  }
+
+  it('分出右组：tab 移过去、焦点跟过去，左组少了它', () => {
+    const [left, right] = splitAB();
+    expect(groups.value).toEqual([left, right]);
+    expect(keysOf(left)).toEqual(['diff:a.ts']);
+    expect(keysOf(right)).toEqual(['diff:b.ts']);
+    expect(activeGroup.value).toBe(right);
+    expect(activeEditorKey.value).toBe('diff:b.ts');
+  });
+
+  it('只有一个 tab 的组不能再分：分出去等于原地不动', () => {
+    openPinned('diff', 'a.ts');
+    expect(splitEditor(activeGroup.value, 'diff:a.ts')).toBeNull();
+    expect(groups.value).toHaveLength(1);
+  });
+
+  it('封顶两组', () => {
+    const [left] = splitAB();
+    openPinned('diff', 'c.ts');
+    focusEditor('diff:a.ts', left);
+    openPinned('diff', 'd.ts');
+    expect(splitEditor(left, 'diff:d.ts')).toBeNull();
+    expect(groups.value).toHaveLength(2);
+  });
+
+  it('拖到另一组即固定——留成预览会被那一组下一次单击顶掉', () => {
+    const [left, right] = splitAB();
+    focusEditor('diff:a.ts', left);
+    openEditor('diff', 'p.ts');
+    const moved = moveEditor(left, 'diff:p.ts', right, 0);
+    expect(moved?.pinned).toBe(true);
+    expect(keysOf(right)).toEqual(['diff:p.ts', 'diff:b.ts']);
+    expect(activeGroup.value).toBe(right);
+  });
+
+  it('目标组已开着同键时不并排第二个，只切过去；上下文档两组本来同档，照旧', () => {
+    const [left, right] = splitAB();
+    openPinned('diff', 'a.ts');
+    setEditorContext('diff:a.ts', 'unavailable');
+    moveEditor(left, 'diff:a.ts', right);
+    expect(keysOf(right)).toEqual(['diff:b.ts', 'diff:a.ts']);
+    expect(contextOf(right.editors.value[1])).toBe('unavailable');
+  });
+
+  it('组被拖空、关空即合并，焦点落到剩下那组', () => {
+    const [left, right] = splitAB();
+    moveEditor(left, 'diff:a.ts', right);
+    expect(groups.value).toEqual([right]);
+    expect(activeGroup.value).toBe(right);
+
+    const [l2, r2] = splitAB();
+    focusEditor('diff:b.ts', r2);
+    removeEditor('diff:b.ts', r2);
+    expect(groups.value).toEqual([l2]);
+    expect(activeGroup.value).toBe(l2);
+  });
+
+  it('只剩一组时关空不合并：空着就画空态', () => {
+    openPinned('diff', 'a.ts');
+    const only = activeGroup.value;
+    removeEditor('diff:a.ts');
+    expect(groups.value).toEqual([only]);
+  });
+
+  it('预览 tab 每组各一个', () => {
+    const [left, right] = splitAB();
+    openEditor('diff', 'p.ts');
+    focusEditor('diff:a.ts', left);
+    openEditor('diff', 'q.ts');
+    expect(keysOf(right)).toEqual(['diff:b.ts', 'diff:p.ts']);
+    expect(keysOf(left)).toEqual(['diff:a.ts', 'diff:q.ts']);
+  });
+
+  it('同一个 tab 两组各开一份：上下文档一起改，关掉一份另一份还在', () => {
+    const [left, right] = splitAB();
+    openPinned('diff', 'a.ts');
+    expect(isOpenAnywhere('diff:a.ts')).toBe(true);
+    setEditorContext('diff:a.ts', 'full');
+    expect(contextOf(left.editors.value[0])).toBe('full');
+    expect(contextOf(right.editors.value[1])).toBe('full');
+
+    removeEditor('diff:a.ts', right);
+    expect(isOpenAnywhere('diff:a.ts')).toBe(true);
+    expect(findEditor('diff:a.ts')).toBeDefined();
+    removeEditor('diff:a.ts', left);
+    expect(isOpenAnywhere('diff:a.ts')).toBe(false);
+  });
+
+  it('另一组新开同键 tab 时接过已有的上下文档，不从 hunks 起步', () => {
+    const [left, right] = splitAB();
+    setEditorContext('diff:a.ts', 'full');
+    focusEditor('diff:b.ts', right);
+    openEditor('diff', 'a.ts');
+    expect(contextOf(right.editors.value[1])).toBe('full');
+    expect(contextOf(left.editors.value[0])).toBe('full');
+  });
+
+  it('逐组改名并入后两组同档：取靠后的那档', () => {
+    const [left, right] = splitAB();
+    // 左组：a（hunks）、b（full）；右组：b 移走后只开着 a（hunks）
+    openPinned('diff', 'a.ts');
+    moveEditor(right, 'diff:b.ts', left);
+    focusEditor('diff:a.ts', right);
+    setEditorContext('diff:b.ts', 'full');
+    renameEditor('diff', 'a.ts', 'b.ts', left);
+    renameEditor('diff', 'a.ts', 'b.ts', right);
+    expect(contextOf(findEditorIn(left, 'diff:b.ts'))).toBe('full');
+    expect(contextOf(findEditorIn(right, 'diff:b.ts'))).toBe('full');
+  });
+
+  it('看得见的是每组的活动 tab，同键只算一次', () => {
+    const [left] = splitAB();
+    expect(visibleEditors.value.map(keyOf)).toEqual(['diff:a.ts', 'diff:b.ts']);
+    focusEditor('diff:a.ts', left);
+    openPinned('diff', 'b.ts');
+    expect(visibleEditors.value.map(keyOf)).toEqual(['diff:b.ts']);
+  });
+
+  it('左栏的高亮跟焦点组', () => {
+    const [left] = splitAB();
+    expect(activeEditorPath.value).toBe('b.ts');
+    focusEditor('diff:a.ts', left);
+    expect(activeEditorPath.value).toBe('a.ts');
+    expect(activeEditor.value?.path).toBe('a.ts');
   });
 });

@@ -23,7 +23,6 @@ import {
   findEditor,
 } from '../state/editors';
 import { commitDetails } from '../state/history';
-import { diffOutputFormat } from '../state/layout';
 import {
   commitDiffStates,
   type DiffRequestState,
@@ -34,6 +33,7 @@ import {
   type RenameInfo,
   shownPreview,
 } from '../state/store';
+import { useGroup } from './group-context';
 import { Icon } from './Icon';
 import { ImageDiff } from './ImageView';
 
@@ -108,7 +108,8 @@ function Patch({
     ids: NONE_EXPANDED,
   });
   const expanded = opened.ignoreWhitespace === ignoreWhitespace ? opened.ids : NONE_EXPANDED;
-  const format = diffOutputFormat.value;
+  // 所在那一组的版式，在渲染体里读：读进 memo 或 effect 时拖窗口、拖分屏把手版式都纹丝不动
+  const format = useGroup().format.value;
   // 按 ref 读最新的那个：调用方每次渲染都给一个新闭包，进了依赖就让下面那份表格缓存次次落空
   const expandRef = useRef(onExpand);
   expandRef.current = onExpand;
