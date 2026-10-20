@@ -16,6 +16,7 @@ import { EditorTabs } from './EditorTabs';
 import { PanelEmptyState } from './EmptyState';
 import { FileView } from './FileView';
 import { GroupContext } from './group-context';
+import { WorktreeChangesView } from './WorktreeChangesView';
 
 /**
  * 拖着的 tab 此刻悬在这一组正文上，放下去会怎样：`split` 是分出右组（遮罩只盖右半边），`move` 是移到
@@ -94,6 +95,8 @@ function GroupBody({ group }: { group: EditorGroup }) {
           是从顶部开始，两种切法一个样子才对 */}
       {active.kind === 'file' ? (
         <FileView key={keyOf(active)} path={active.path} />
+      ) : active.kind === 'changes' ? (
+        <WorktreeChangesView key={keyOf(active)} />
       ) : active.kind === 'commit-changes' ? (
         <CommitChangesView key={keyOf(active)} sha={active.sha} />
       ) : active.kind === 'commit' ? (

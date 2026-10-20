@@ -20,10 +20,12 @@ import {
   paneStyle,
   setPanePercent,
 } from '../state/sidebar';
-import { historyVisible, loadError, repoState } from '../state/store';
+import { historyVisible, loadError, openChanges, repoState } from '../state/store';
 import { ChangeList } from './ChangeList';
 import { SidebarPlaceholder } from './EmptyState';
 import { HistoryList } from './HistoryList';
+import { KIND_ICON } from './Icon';
+import { IconButton } from './IconButton';
 import { percentOfGrandparent, Sash } from './Sash';
 import { ExpandChevron } from './tree-row';
 
@@ -38,33 +40,39 @@ const KEY_STEP = 5;
  *
  * 在那列 flex 里怎么分高度由折叠态定：展开 `flex-1`、折起只剩标题（`shrink-0`）。两块都展开时上面
  * 那块另带 `style`（一个百分比的 `flex: 0 0 X%`）——内联样式压过 `flex-1` 类，不必再分一支。
+ *
+ * `actions` 站在标题行右端，照 VS Code 视图标题栏的动作。**它们是标题按钮的兄弟、不是孩子**（按钮里
+ * 不能套按钮），点它们不折叠分区；`pr-3` 与 tab 行一致，两处的 `IconButton` 落在同一条竖线上。
  */
 function Pane({
   title,
   collapsed,
   style,
+  actions,
   children,
 }: {
   title: string;
   collapsed: Signal<boolean>;
   style?: ReadonlySignal<string> | undefined;
+  actions?: ComponentChildren;
   children: ComponentChildren;
 }) {
   const open = !collapsed.value;
   return (
     <div class={`flex min-h-0 flex-col ${open ? 'flex-1' : 'shrink-0'}`} style={style}>
-      <h2 class="shrink-0">
+      <h2 class={`flex shrink-0 items-center ${actions ? 'pr-3' : ''}`}>
         <button
           type="button"
           aria-expanded={open}
           onClick={() => {
             collapsed.value = open;
           }}
-          class="flex w-full items-center gap-1 px-1 text-xs/6 font-medium text-description-foreground uppercase hover:text-editor-foreground focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus-border"
+          class="flex min-w-0 flex-1 items-center gap-1 px-1 text-xs/6 font-medium text-description-foreground uppercase hover:text-editor-foreground focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus-border"
         >
           <ExpandChevron expanded={open} />
           {title}
         </button>
+        {actions}
       </h2>
       {/* 字号与行高从 `<nav>` 那一层继承，这里只管滚。**折起是隐藏不是卸载**：卸载时滚动容器连同
           `scrollTop` 一起没了，在 History 里翻了三页、折一下再展开就回到顶上 */}
@@ -136,7 +144,14 @@ export function SourceControl() {
 
   return (
     <div class="flex h-full flex-col">
-      <Pane title="Changes" collapsed={changesCollapsed} style={both ? paneStyle : undefined}>
+      {/* `Open Changes` 把工作区全部改动排进一个 tab。**工作区干净时照画**，点开说 `No changes`：随改动
+          忽有忽无比常亮更难扫；分区折起时也照画 */}
+      <Pane
+        title="Changes"
+        collapsed={changesCollapsed}
+        style={both ? paneStyle : undefined}
+        actions={<IconButton icon={KIND_ICON.changes} label="Open Changes" onClick={openChanges} />}
+      >
         <Changes />
       </Pane>
       <div class="relative shrink-0 border-t border-panel-border">{both && <PaneSash />}</div>

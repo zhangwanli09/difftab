@@ -12,6 +12,7 @@
   - **`pinEditor` 是幂等的置 `true`，永不 toggle**：一次双击是 click、click、dblclick 三个事件，写成 toggle 会让已固定的 tab 在双击时静默解开。**dblclick 只调 `pinEditor`、不再走 `selectFile`**，否则一次双击是三趟 `git diff`。
 - **第三种 tab 是 `commit`，身份是 `commit:<sha>:<path>`**：`Editor` 多带一个 `sha`，`path` 仍是文件路径，其余读 `path` 的地方照旧。tab 上文件名后跟短哈希，图标 `GitCommitHorizontal`。**正文顶上只有合并提交多一行 `Merge commit · compared with first parent`**（补丁相对第一父，这件事只在看补丁时才需要知道）；普通提交不画「这是哪次提交」——短哈希已在 tab 上、主题在 History 那一行，再印一遍只是占掉一行补丁。**它活动时 `activeEditorPath` 是 `null`**：左栏同名那一行说的是工作区那一份，照亮它是在说一件不成立的事——这是「高亮不看种类」唯一的例外，判据是「左栏那一行与右侧是不是同一份内容」。
 - **第四种 tab 是 `commit-changes`：一次提交的全部文件排在一个 tab 里，身份是 `commit-changes:<sha>`**（照 VS Code Graph 的 `Open Changes`，那是一个多文件 diff 视图）。入口在 History 提交行的 `Open Changes`（见 [`sidebar.md`](sidebar.md)），单击开预览 tab、双击 tab 固定。`path` 存的也是 sha，只用于比对；`worktreePathOf` 对它回 `null`，左栏不亮、tab 不染色，判据同 commit tab。tab 上是 `<短哈希> · <主题>`，主题在打开时从 History 那一行带进 `Editor`、跟着 tab 走——详情此刻可能还没取，现找就是先画一拍空名字；图标 `GitCompare`。**不参与同名目录消歧**：它没有文件名，拿 sha 当路径去比只会和谁都不撞、白占一格。正文见下文「整次提交视图」。
+- **第五种 tab 是 `changes`：工作区此刻的全部改动排在一个 tab 里，身份是 `changes:`，全局只此一个**（照 VS Code Source Control 的多文件 diff 视图）。入口是 `CHANGES` 分区标题右端那枚 `Open Changes`（见 [`sidebar.md`](sidebar.md) 的「提交历史」那节开头的两个分区），单击开预览 tab、双击 tab 固定。tab 上只写 `Changes`，图标同 commit-changes 的 `GitCompare`，`path` 是空串、只用于比对。`worktreePathOf` 对它回 `null`：它不是某一个文件，左栏哪一行都不该亮、tab 也不染色；不参与同名目录消歧，理由同 commit-changes。正文见下文「工作区改动视图」。
 - **diff 与 commit tab 各带一个上下文档 `context: 'hunks' | 'full' | 'unavailable'`**，起步 `hunks`。点开第一段折叠行时写成 `full`（diff tab 那一行已不在变更列表里时不写：那一下发不出请求，点的那一段会一直停在 `Loading…`），此后这个 tab 的每次重取（SSE、切回来）都带 `fullContext=1`；带着它取回来的 `text` 却是 `full: false`（后端说过不了闸）、或者是 `too-large`（留在 `full` 时每个 SSE 都先按整份上下文撞一次闸、再退回 3 行撞一次）时写成 `unavailable`，此后退回 3 行上下文、折叠行不可点（展示规则在 [`diff-render.md`](diff-render.md) 的「没改的行」）。**它住在 tab 上，不住在缓存里**：`renameEditor` 原样带走，并入同名 tab 时取三档里靠后的那个（`unavailable` > `full` > `hunks`）；关掉、或作为预览 tab 被顶掉即归零。住在缓存里时每次 `forget` 都会把「用户点开过」一并忘掉。`unavailable` 不会自己回到 `full`：文件后来变小了也要关掉重开——已知取舍，否则每个 SSE 都要先撞一次闸再退回。
 - **关掉活动 tab 切到右邻居、没有才切左邻居**，不维护 MRU 序列。
 - **两栏的高亮同按活动 tab 的路径判（`activeEditorPath`），不看 diff 还是全文**：按种类各认各的时，点了行内 `Open file` 那一行就熄了——用户刚从这一行出发，左栏却说「你没在看它」。
@@ -26,6 +27,7 @@
 - **只重取看得见的那几个（每组的活动 tab，`visibleEditors`，同键去重），其余切过去时再取**（`activateEditor` 每次都真的去取）：栏里 10 个 diff tab 时，否则每个事件 10 趟 `git diff`；分屏时两组的活动 tab 都在屏幕上，只取焦点组的那一个时另一组停在旧补丁上。切过去时缓存照常显示、新的回来再换，同一个 path 已 `ready` 就不回退 `loading`，不闪。**`refresh()` 内部用 `removeEditor` 而不是 `closeEditor`**：后者会顺手重取邻居，与 `refresh()` 末尾那次叠成两趟。
 - **在途的请求要一并作废**：否则关掉 X 后那次请求照样写进缓存，下次打开 X 先看到它。手段是按路径 `claim` 一张票（`http.ts` 的 `latestWins`），**与删缓存成对写在 `forget()` 里**——漏掉作废那一半没有任何东西会红。
 - **commit-changes tab 同样不收编**：切过去时 `refetch` 只补取提交详情（失败了才重取，取到过就不动），各段的补丁由视图按可见性自己取（见下文「整次提交视图」）。
+- **changes tab 不收编、永不自动关**：改动全清空时正文说 `No changes`，等下一批改动再排出来——它看的是整个工作区，不是某一行改动，判据同 file tab。按 diff tab 那条「左栏已断言不存在就关」去关，agent 每提交一次，用户正盯着的这个 tab 就消失一次。SSE 时 `refresh` 只替它剪掉不在新列表里的段，要不要重取由视图里的段自己判（见下文「工作区改动视图」）。
 - **commit tab 不收编，`ready` 了就不再取**：提交不可变，SSE 与它无关。**在途（`loading`）也不重取**：每次 SSE 都重发时新票作废旧票，慢补丁在 agent 跑动期间永远落不了地。**只有 `error` 的才在切过去时重取**，否则唯一的重试路径是回 History 重新点。提交被 gc 掉时那一次写成 `error`。**例外是取的那一档与此刻不同**：请求状态记着一档（`loading` 记的是这一趟问了什么，`ready` 记的是**这份补丁是什么**——整份上下文只认 payload 的 `full`，被退回 3 行的就记成关），与此刻的开关和 tab 的上下文档不一致时照常重取——这两样只在用户点了什么时才变，不会有 SSE 那种饿死。**这一趟重取不回退 `loading`**：手上已有一份时照常显示它、在状态上记一笔 `pending`（这一趟按哪一档在取），`refetch` 拿它判「已经在取了」；回退 `loading` 会让表格卸载重挂，点开折叠行的那一刻展开状态（住在组件里）跟着没了。
 - **file tab 永不自动关**：文件被删也只是那一次 `loadFile` 写成 `error`。
 - **每组活动的 file tab 都在 `loadState()` 之前就重取**，不等新列表：它的数据源是工作区本身。收编后活动键变了才对新活动的 file tab 补取一次。
@@ -47,7 +49,7 @@
 
 **标签栏是面板唯一的 chrome，排在滚动区域之外。** 面板是一列 flex：`EditorTabs` 占第一行，底下 `Panel` 那一层（`min-h-0 flex-1 overflow-auto`）才滚。不再有路径横杠或面包屑——「在看哪个文件」由活动 tab 回答，完整路径挂在 tab 的 `title` 上。
 
-- **一个 tab = 种类图标 + 文件名 +（同名时的）目录 + 关闭按钮**（commit-changes 是图标 + 短哈希 + 主题，见上文）。图标按 `kind`（`FileDiff` / `FileCode` / `GitCommitHorizontal` / `GitCompare`，同一张 `KIND_ICON`），是同一路径两个 tab 之间唯一的视觉差别。文件名与目录**同住一个 `truncate` span**，理由同变更列表。预览 tab 的名字 `italic`。
+- **一个 tab = 种类图标 + 文件名 +（同名时的）目录 + 关闭按钮**（commit-changes 是图标 + 短哈希 + 主题，见上文）。图标按 `kind`（`FileDiff` / `FileCode` / `GitCommitHorizontal` / `GitCompare`，同一张 `KIND_ICON`；changes 与 commit-changes 同一枚，它们是同一种多文件视图，tab 上的字已经分得开），是同一路径两个 tab 之间唯一的视觉差别。文件名与目录**同住一个 `truncate` span**，理由同变更列表。预览 tab 的名字 `italic`。
   - **目录只在栏里有同名文件时才画，且只画最短可区分后缀**（照 VS Code `labelFormat: default`）：常显时每个 tab 都宽出一截，栏里多数时候并没有要区分的东西。判据是「栏里有**不同路径**的 tab 文件名相同」——同一路径的 diff / file / commit tab 不算，它们之间靠图标与短哈希区分，目录一模一样、画了也分不开。段数 = 1 + 与其余每个同名路径的公共尾段数的最大值，截到全长；没取全时前面写 `…/`，根目录下的文件没有目录段、画空（`packages/{foo,bar}/src/index.ts` → `…/foo/src` 与 `…/bar/src`）。**取尾段而不是整段目录**：能区分的那段常在中间，整段画出来会被 `max-w-64` 从右端裁掉，剩下的两个 tab 还是一个样。完整路径照旧在 `title` 上。表在 `EditorTabs` 按整栏算一次再逐个下发——单个 tab 看不见邻居，关掉一个同名 tab 时另一个的目录要跟着消失。
   - **文件名按 git 状态染色**（照 VS Code `workbench.editor.decorations.colors`），查的是文件树那一张 `codeByPath`、颜色是同一张 `CODE_COLORS`：同一个文件在树上与 tab 上必须是同一个颜色，自己再按 `FileEntry` 推一遍会在冲突、暂存加改动这些归并上漂开。只染名字，目录与短哈希自带次要色。**commit tab 不染**：它是一份历史补丁，工作区此刻的状态说的不是它——与「commit tab 活动时 `activeEditorPath` 为 `null`」同一条判据，两处都调 `worktreePathOf`，不各写一遍 `kind === 'commit'`——多一种显示非工作区内容的 tab 时只改了一处，症状是 tab 染着工作区的色、左栏却不亮。**每个 `Tab` 用 `useComputed` 取自己那一格**（同文件树的行）：`codeByPath` 每个 SSE 都换一份，直接读时每次刷新整栏重画。这里包 prop 不会停在上一个（与下面 `DiffView` 那条不同）：`Tab` 按 `keyOf` 挂载，路径与种类都在键里，改名即重挂。
   - **关闭按钮只在活动 tab 上常显，其余悬停或键盘焦点在 tab 内时才露出**（照 VS Code）。**用透明度藏而不是不渲染**：位置留着，悬停时 tab 宽度不跳。键盘那半条是 `group-focus-within`（不是行内动作那种 `has-focus-visible`）：活动 tab 本来就常亮着 ×，鼠标点过后焦点留在 tab 内也不会多钉住什么。`IconButton` 的悬停底色是半透明叠加的 `toolbar-hover-background`，否则在非活动 tab 的悬停底色上看不出反应。
@@ -74,7 +76,7 @@
 - **但 `w-max` 只能给正文那一路**，判据是按 `kind` 穷举的 `NEEDS_WIDE_BOX` 表（`Record` 漏键是编译错误，写成 `kind === 'text'` 一句则是第二处独立判定）：`max-content` 下提示行那几句散文会排成一行跑出面板，`break-all` 也救不了（实测读数见 [`../decisions/web.md`](../decisions/web.md)）。以上有断言。
 - 标签栏在滚动容器之外，不参与横向滚动。
 - **复制全文（`Copy file contents`）**：活动 tab 是 file 且全文 `ready`、`kind === 'text'` 时，标签栏右端的动作区画这一枚，把缓存里那份 `payload.content` 原文写进剪贴板——不是 hljs 输出，也不带行号。其余 kind、`loading` / `error`、diff 与 commit tab 都不画：没有正文可复制，灰着一枚按钮只是一块死区。写剪贴板与 `Check` + `Copied` 反馈复用行内动作那枚 `CopyButton`（规矩在 [`web.md`](web.md) 的「行内动作」）。**按钮按活动 tab 的键 `key`**：切 tab 时 `Copied` 归零，不把上一个文件的「已复制」带到这一个上。以上有断言。
-- **版式切换（`View inline` / `View side by side`）**：活动 tab 是 diff 或 commit、补丁 `ready` 且 `kind` 为 `text` / `untracked-text` 时，动作区画这一枚（语义在 [`diff-render.md`](diff-render.md) 的「版式：按面板宽度自动切，可手动固定」）。`loading` / `error`、`binary` / `image` / `too-large` 与 file tab 都不画：没有补丁表格可换版式。它与 `Copy file contents` 按 tab 种类互斥：动作区在 diff / commit / commit-changes tab 上至多三枚（预览、忽略空白、版式，自左向右），在 file tab 上至多两枚（预览、复制）。**「按钮数变了活动 tab 再滚进视野一次」的判据覆盖全部四枚**：新开的 diff tab 同样先以 `loading` 激活、补丁就绪后按钮才挤进来。以上有断言。
+- **版式切换（`View inline` / `View side by side`）**：活动 tab 是 diff 或 commit、补丁 `ready` 且 `kind` 为 `text` / `untracked-text` 时，动作区画这一枚（语义在 [`diff-render.md`](diff-render.md) 的「版式：按面板宽度自动切，可手动固定」）。`loading` / `error`、`binary` / `image` / `too-large` 与 file tab 都不画：没有补丁表格可换版式。它与 `Copy file contents` 按 tab 种类互斥：动作区在 diff / commit / commit-changes / changes tab 上至多三枚（预览、忽略空白、版式，自左向右），在 file tab 上至多两枚（预览、复制）。**「按钮数变了活动 tab 再滚进视野一次」的判据覆盖全部四枚**：新开的 diff tab 同样先以 `loading` 激活、补丁就绪后按钮才挤进来。以上有断言。
 - **忽略空白（`Hide whitespace changes`）**：活动 tab 是 diff 或 commit、补丁 `ready` 且 `kind === 'text'` 时画（`untracked-text` 不画：全新增的文件没有空白差异可藏）。语义与 git 侧判据在 [`diff-render.md`](diff-render.md) 的「忽略空白」。
   - **它是一枚带按下态的开关（`aria-pressed`），文案恒定**，与搜索框那两枚切换钮共用 `Toggle.tsx`（图标 Lucide `Pilcrow`）；与版式按钮「文案写目标版式」刻意不同：版式是什么一眼看得出，空白藏没藏看不出——开着而认不出来时，用户只会觉得 diff 少了几处改动。
   - **全局一个 signal，不分 tab，不进 `localStorage`**（照 VS Code 那是一个全局设置；不落盘的理由同版式 override）。切换后**只重取活动 tab**，其余切过去时按上一条的「取的那一档与此刻不同」重取。重取期间照常显示旧补丁、不回退 `loading`，与 SSE 刷新同一条。
@@ -84,7 +86,7 @@
 
 ## 整次提交视图
 
-**`commit-changes` tab 的正文是一个滚动容器，提交里每个文件一段，次序同 History 展开后那一列**（`CommitChangesView.tsx`）。文件清单就是 History 展开时那份 `commitDetails`（`ensureCommitDetail`：没展开过就此刻取，失败了再进来即重试）；每段的补丁走 `/api/commit-diff`，与 commit tab 同一个取法（`store.ts` 的 `loadCommitPatch`），不新增路由。
+**`commit-changes` tab 的正文是一个滚动容器，提交里每个文件一段，次序同 History 展开后那一列**（`CommitChangesView.tsx`；段本身在 `MultiDiff.tsx`、段的状态在 `store.ts` 的 `segmentStore`，都与工作区改动视图共用）。文件清单就是 History 展开时那份 `commitDetails`（`ensureCommitDetail`：没展开过就此刻取，失败了再进来即重试）；每段的补丁走 `/api/commit-diff`，与 commit tab 同一个取法（`store.ts` 的 `loadCommitPatch`），不新增路由。
 
 - **段头粘性**（`sticky top-0`，实心底色盖住滚上去的补丁）：折叠三角 + 文件名 + 目录（同住一个 `truncate` span，理由同变更列表）+ 状态字母 + `Copy path`。点段头折起 / 展开那一段，折起的段不画段体、也不取。**折叠态住在组件里**：切 tab 是卸载重挂，回来时全部展开，与「滚动位置不保留」同一个样子。重命名的旧路径照 commit tab 由段体顶上的 `RenameNotice` 说。
 - **按视口懒加载**：一段进入面板可视区附近（`IntersectionObserver`，上下各多一屏左右的 `rootMargin`）才取它的补丁。一个提交改几百个文件也只取看得到的那几段；一个观察者给全部段共用。**root 必须是面板那层滚动容器，不能是视口**：`rootMargin` 只放大 root，祖先 `overflow` 的裁剪不跟着放——以视口为 root 时「附近」那一圈被面板裁掉，滚到哪段才开始取哪段，每段都先闪一拍 `Loading…`。**还没取到的段占半屏高（`min-h-[50vh]`）**：只画一行 `Loading…` 时一段才八十多像素，首次挂载那一刻面板加上下边距里能塞下二三十段，一打开就是二三十趟 `git diff`；占位撑高之后首屏先取三四段；它们取回来缩到实际高度，又会把后面几段带进边距，补丁都短时首屏会接着多取几段（本仓库一次 22 个文件的提交实测从 22 趟降到 8 趟），其余随滚动逐段进入边距再取。代价是段取回来时从半屏缩到实际高度，后面的段跟着往上挪：落地的段在视口之下时看着的那一段不动；**在视口之上时（直接跳到一个大提交的中段，上方那一屏的占位也在边距里被取）正在读的内容会被往上顶**——Chrome 与 Firefox 的 scroll anchoring 会补偿这一下，Safari 没有。已知取舍，未做补偿：要做就是落地时按高度差回写 `scrollTop`。
@@ -93,6 +95,19 @@
 - **段体复用 `DiffView.tsx` 的 `Payload`**：图片、二进制、过大、SVG 预览走现有分支，提示文案一字不改。**图片与 SVG 预览在段内限高**：它们在 commit tab 里是占满面板的那种（`fill`），段里没有「面板剩余高度」可吃，`ImageRow` 高为 0 时退回只限宽，一张高图就把后面几段推出好几屏；所以段体给它们一块固定高度的一列 flex 当基准。
 - **顶上的说明行**：合并提交画 `Merge commit · compared with first parent`（同 commit tab）。详情 `Loading…` / 出错 / 浅克隆 `Shallow clone — parent not available` / `No file changes` 走 `Notice`，文案同 History 展开那一层。
 - **动作区**：忽略空白与版式切换在详情就绪且有文件时就画，**不看已取到的段里有没有 `text`**：段是懒加载的，按此刻取到的几段判时按钮会随滚动进出。`Preview` 只能看已取到的段（前端不判扩展名）：任一段的 payload 带 `preview` 时画，按下态就是全局开关本身——这个 tab 没有跳行请求可压它。三个开关都全局生效；切忽略空白时只有可见的段重取。
+
+## 工作区改动视图
+
+**`changes` tab 的正文与整次提交视图是同一套段（`MultiDiff.tsx`）**：粘性段头、按视口懒取、半屏占位、按段记上下文档、段体复用 `Payload`、图片限高、动作区的判据，以上各条同上一节，不再复述。不同的只有数据源与「什么时候重取」（`WorktreeChangesView.tsx`）。
+
+- **段的清单就是变更列表此刻那份 `repoState.files`，次序同左栏自上而下**（冲突、已暂存、工作区改动；同一个文件只排在它第一次出现的位置）。段头的状态字母按 `codeOf` 归并成一枚（冲突印 `!`），与 `Files` 档同一个判据：一段是一份 `git diff HEAD`，分不出是哪一组的改动。补丁走 `/api/diff`，重命名带 `oldPath` 的规矩同 diff tab。
+- **缓存独立（`segmentStore` 另建一份，键是路径），不与 diff tab 的 `diffCache` 共用**：diff tab 的上下文档挂在 tab 上，每次 SSE 由 `refresh` 重取；段的上下文档按段记，什么时候取由可见性定。共用一格时两边按各自那档轮流改写，点开一边的折叠行，另一边的表格跟着换。代价是同一个文件两处都开着时取两趟。
+- **重取的判据是「这一段上次是对着第几份 `repoState` 取的」**（记代数不记快照：各段在不同的 SSE 之间取，记快照就是每段各留住一整份旧列表）：SSE 换上新 state 后，可见的段（视口附近、没折起）当场重取，看不见的等进入视口再取。不是每次 SSE 重取全部段：几百段就是几百趟 `git diff`，而一段的内容变没变，前端看不出来——状态字母不变是最常见的形态。`error` 的段与上一节一样，重新进入视口时重取。
+- **段只收路径，外壳在 props 没变时不重画**（`ChangesSegmentShell`）：每份新 state 里的条目都是新对象，按条目传 prop 时每个 SSE 几百段连同补丁表格全部重画一遍。条目在要取时按路径现找（`changesEntryOf`），状态字母包成 computed，字母不变就不重画。
+- **在途的段不重发，落地时发现 state 已经换过、且这一段仍可见才补发一次**：每个 SSE 都重发时新票作废旧票，agent 跑动期间慢补丁永远落不了地（同 commit tab 那一条）。于是每段至多一趟在途。**补发由视图发起、不在 store 里落地即发**：store 只把「手上那份落后于此刻的 state、且没有在途」交出去（`changesOutdated`），可见的段据此再问一次；落地那一刻 store 没有可见性可问，在那里直接补发时，滚出视口或 tab 退到后台的段会在 agent 跑动期间一趟接一趟地取下去。出错落地而 state 没换不算过期，不会原地重试成环。重取期间照常显示旧补丁（`pending`），不回退 `loading`。
+- **段从列表里消失（撤销、commit 掉）时整格忘掉**：`refresh` 换上新列表后，缓存、在途请求、上下文档、「对着第几份 state 取的」四样按新列表一起剪掉，同 diff tab 收编那一处。漏剪时这个文件下次再改，段先画出上一轮的旧补丁。**重命名的段在新路径上从头取、上下文档从 `hunks` 起**：已知取舍，不为它跟着 `oldPath` 搬状态。
+- **state 还没到时说 `Loading…`，列表为空时说 `No changes`**（`Notice`）。tab 关掉、或作为预览 tab 被顶掉时整组 `forget`。
+- **段的增删会挪动正在读的位置**：新改的文件排在前面时，下面的段整体往下推；Safari 没有 scroll anchoring 去补偿。与上一节「占位缩回实际高度」同一条已知取舍。
 
 ## 图片视图
 

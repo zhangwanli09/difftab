@@ -22,6 +22,7 @@ import {
   draggingEditor,
   type Editor,
   type EditorGroup,
+  filePathOf,
   keyOf,
   pinEditor,
   worktreePathOf,
@@ -30,16 +31,19 @@ import { commitDetails, commitFilesOf, shortSha } from '../state/history';
 import { type DiffOutputFormat, toggleDiffOutputFormat } from '../state/layout';
 import {
   activateEditor,
+  changesStates,
   closeEditor,
   codeByPath,
   commitChangesStates,
   commitDiffStates,
+  type DiffRequestState,
   diffStates,
   fileStates,
   ignoreWhitespace,
   isSegmentOf,
   moveEditorTo,
   previewOf,
+  repoState,
   shownPreview,
   svgPreview,
   toggleIgnoreWhitespace,
@@ -99,6 +103,7 @@ const NO_ACTIONS: EditorActionState = {
  *   懒加载的，按此刻取到的几段判时按钮会随滚动进出。`Preview` 只能看已取到的段（前端不判扩展名），
  *   所以在第一段 SVG 落地时才出现；这种 tab 没有跳行请求可压它，按下态就是开关本身。按图画着的只是
  *   SVG 那几段，其余段照样是表格，版式与忽略空白不因它撤掉。
+ * - **changes**：同 commit-changes，「有文件」看的是变更列表此刻那份。
  */
 function actionsOf(editor: Editor | null): EditorActionState {
   switch (editor?.kind) {
@@ -135,22 +140,37 @@ function actionsOf(editor: Editor | null): EditorActionState {
     }
     case 'commit-changes': {
       if (commitFilesOf(commitDetails.value.get(editor.sha)).kind !== 'files') return NO_ACTIONS;
-      let preview = false;
-      for (const [key, state] of commitChangesStates.value) {
-        if (isSegmentOf(editor.sha, key) && state.status === 'ready' && previewOf(state.payload)) {
-          preview = true;
-          break;
-        }
-      }
-      return {
-        copyText: null,
-        preview,
-        previewing: preview && svgPreview.value,
-        format: true,
-        whitespace: true,
-      };
+      return multiDiffActions(commitChangesStates.value, (key) => isSegmentOf(editor.sha, key));
+    }
+    case 'changes': {
+      if ((repoState.value?.files.length ?? 0) === 0) return NO_ACTIONS;
+      return multiDiffActions(changesStates.value, () => true);
     }
   }
+}
+
+/**
+ * 两种多文件视图的动作区：版式与忽略空白恒画，`Preview` 看已取到的段里（键满足 `owned` 的那几格）有没有
+ * 一份带预览的。
+ */
+function multiDiffActions(
+  states: ReadonlyMap<string, DiffRequestState>,
+  owned: (key: string) => boolean,
+): EditorActionState {
+  let preview = false;
+  for (const [key, state] of states) {
+    if (owned(key) && state.status === 'ready' && previewOf(state.payload)) {
+      preview = true;
+      break;
+    }
+  }
+  return {
+    copyText: null,
+    preview,
+    previewing: preview && svgPreview.value,
+    format: true,
+    whitespace: true,
+  };
 }
 
 /**
@@ -236,10 +256,11 @@ function viewOf(group: EditorGroup): GroupView {
       }),
       dirs: computed(() =>
         distinguishingDirs(
-          // 整次提交 tab 没有文件名可撞：它的 `path` 是 sha，拿去比只会白占一格
-          group.editors.value.flatMap((editor) =>
-            editor.kind === 'commit-changes' ? [] : [editor.path],
-          ),
+          // 两种多文件 tab 没有文件名可撞（`filePathOf` 回 null），拿 sha 或空串去比只会白占一格
+          group.editors.value.flatMap((editor) => {
+            const path = filePathOf(editor);
+            return path === null ? [] : [path];
+          }),
         ),
       ),
     };
@@ -248,15 +269,54 @@ function viewOf(group: EditorGroup): GroupView {
   return view;
 }
 
-/** tab 的 `title`：完整路径；提交里的那两种带上完整 sha（整次提交 tab 以主题代路径）。 */
+/**
+ * tab 的 `title`：完整路径；提交里的那两种带上完整 sha（整次提交 tab 以主题代路径）；工作区改动 tab
+ * 说清它是哪一份——tab 上只有 `Changes` 一个词。
+ */
 function tabTitle(editor: Editor): string {
   switch (editor.kind) {
+    case 'changes':
+      return 'Working tree changes';
     case 'commit':
       return `${editor.path} @ ${editor.sha}`;
     case 'commit-changes':
       return `${editor.subject} @ ${editor.sha}`;
     default:
       return editor.path;
+  }
+}
+
+/**
+ * tab 上的名字，按种类穷举：多一种 tab 时漏一支是编译错误，而不是落进「拆路径取文件名」那一支、把 sha
+ * 或空串画成名字。
+ */
+function TabLabel({ editor }: { editor: Editor }) {
+  switch (editor.kind) {
+    case 'diff':
+    case 'file':
+      return <>{splitForDisplay(editor.path).name}</>;
+    case 'commit':
+      // 名后跟一个短哈希：同一个文件在两次提交里是两个 tab，没有它两个长得一样
+      return (
+        <>
+          {splitForDisplay(editor.path).name}
+          <span class="ml-1.5 font-mono text-xs text-description-foreground">
+            {shortSha(editor.sha)}
+          </span>
+        </>
+      );
+    case 'commit-changes':
+      // 没有文件名：短哈希在前、主题在后，照 History 那一行把主题当名字
+      return (
+        <>
+          <span class="mr-1.5 font-mono text-xs text-description-foreground">
+            {shortSha(editor.sha)} ·
+          </span>
+          {editor.subject}
+        </>
+      );
+    case 'changes':
+      return <>Changes</>;
   }
 }
 
@@ -281,7 +341,6 @@ function Tab({
   dir: string | undefined;
 }) {
   const key = keyOf(editor);
-  const { name } = splitForDisplay(editor.path);
   const self = useRef<HTMLDivElement>(null);
   // 短路求值：只有活动那一个 tab 订阅这个 computed，其余 tab 不因缓存变化重画
   const actionCount = active ? viewOf(group).actionCount.value : 0;
@@ -347,23 +406,7 @@ function Tab({
         {/* 文件名与目录同住一个 truncate span（名在前、目录作它的行内子元素），理由与变更列表
             那一行一字不差：省略号在右端天然先吃掉目录。预览 tab 斜体，固定之后转正 */}
         <span class={`max-w-64 min-w-0 truncate ${editor.pinned ? '' : 'italic'} ${color}`}>
-          {/* 整次提交 tab 没有文件名：短哈希在前、主题在后，照 History 那一行把主题当名字 */}
-          {editor.kind === 'commit-changes' ? (
-            <>
-              <span class="mr-1.5 font-mono text-xs text-description-foreground">
-                {shortSha(editor.sha)} ·
-              </span>
-              {editor.subject}
-            </>
-          ) : (
-            name
-          )}
-          {/* commit tab 在名后跟一个短哈希：同一个文件在两次提交里是两个 tab，没有它两个长得一样 */}
-          {editor.kind === 'commit' && (
-            <span class="ml-1.5 font-mono text-xs text-description-foreground">
-              {shortSha(editor.sha)}
-            </span>
-          )}
+          <TabLabel editor={editor} />
           {dir && <span class="ml-1.5 text-xs text-description-foreground">{dir}</span>}
         </span>
       </button>
