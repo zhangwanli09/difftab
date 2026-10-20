@@ -1,6 +1,6 @@
 {
   "name": "difftab",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "See what your AI coding agent changed — a read-only git diff viewer in one browser tab",
   "license": "MIT",
   "author": "zhangwanli",
