@@ -56,6 +56,13 @@ export type Editor =
       readonly sha: string;
       /** tab 上的主题。打开时从 History 那一行带进来：详情可能还没取，现找就是先画一拍空名字。 */
       readonly subject: string;
+    })
+  | (EditorBase & {
+      /**
+       * 工作区此刻的全部改动排在一个 tab 里，全局只此一个。`path` 恒为空串，只用于比对；段的缓存与上下文档
+       * 按路径记在 `store.ts`，理由同 commit-changes。
+       */
+      readonly kind: 'changes';
     });
 
 export type EditorKind = Editor['kind'];
@@ -75,9 +82,11 @@ export function editorKey(kind: 'diff' | 'file', path: string): EditorKey;
 export function editorKey(kind: 'commit', path: string, sha: string): EditorKey;
 /** `commit-changes` 的键是 `commit-changes:<sha>`：一次提交只有一个这种 tab。 */
 export function editorKey(kind: 'commit-changes', sha: string): EditorKey;
+/** `changes` 的键是 `changes:`：整个工作区只有一个这种 tab。 */
+export function editorKey(kind: 'changes'): EditorKey;
 // 重载把「commit 必须带 sha、diff / file 不许带」钉在类型上：漏传 sha 的 `editorKey('commit', path)`
 // 编得过时，得到的是一个谁都不匹配的键，高亮与关闭静默失效
-export function editorKey(kind: EditorKind, path: string, sha?: string): EditorKey {
+export function editorKey(kind: EditorKind, path = '', sha?: string): EditorKey {
   return sha === undefined ? `${kind}:${path}` : `${kind}:${sha}:${path}`;
 }
 export function keyOf(editor: Editor): EditorKey {
@@ -86,6 +95,8 @@ export function keyOf(editor: Editor): EditorKey {
       return editorKey(editor.kind, editor.path, editor.sha);
     case 'commit-changes':
       return editorKey(editor.kind, editor.sha);
+    case 'changes':
+      return editorKey(editor.kind);
     default:
       return editorKey(editor.kind, editor.path);
   }
@@ -94,12 +105,30 @@ export function keyOf(editor: Editor): EditorKey {
 /**
  * 这个 tab 显示的是不是工作区里 `path` 那一份：是就回 `path`，不是回 `null`。**commit 与
  * commit-changes 两种是「不是」**——它们是历史上的某一版，与左栏同名那一行、与工作区此刻的状态说的
- * 都不是同一份内容（commit-changes 的 `path` 更是一个 sha）。两栏高亮（`activeEditorPath`）与 tab 名
- * 染色都按它判：各写一遍 `kind === 'commit'` 时，多一种显示非工作区内容的 tab 只改了一处，症状是 tab
- * 染着工作区的色、左栏却不亮，或者反过来。
+ * 都不是同一份内容（commit-changes 的 `path` 更是一个 sha）。changes 也是「不是」：它不是某一个文件。
+ * 两栏高亮（`activeEditorPath`）与 tab 名染色都按它判：各写一遍 `kind === 'commit'` 时，多一种显示
+ * 非工作区内容的 tab 只改了一处，症状是 tab 染着工作区的色、左栏却不亮，或者反过来。
  */
 export const worktreePathOf = (editor: Editor): string | null =>
   editor.kind === 'diff' || editor.kind === 'file' ? editor.path : null;
+
+/**
+ * 这个 tab 有没有一个文件名：有就回那个文件的路径（commit tab 也算，它是提交里的那一个文件），没有回
+ * `null`。**两种多文件 tab 是「没有」**——它们的 `path` 是 sha 或空串，当成文件名拿去做同名消歧、拆出名字，
+ * 只会把 sha 画成一个文件名。写成穷举的 `switch`：多一种 tab 时漏判是编译错误，而不是又一处手写的
+ * `kind === …` 静默漏掉。
+ */
+export function filePathOf(editor: Editor): string | null {
+  switch (editor.kind) {
+    case 'diff':
+    case 'file':
+    case 'commit':
+      return editor.path;
+    case 'commit-changes':
+    case 'changes':
+      return null;
+  }
+}
 
 /** 换掉第 `index` 项，回一份新数组。`Array.prototype.with` 是 ES2023，前端 lib 停在 ES2022。 */
 const replaceAt = (list: readonly Editor[], index: number, editor: Editor): Editor[] =>
@@ -280,6 +309,11 @@ export function openCommitChangesEditor(
   pinned = false,
 ): Editor | null {
   return open({ kind: 'commit-changes', path: sha, pinned, sha, subject }, activeGroup.value);
+}
+
+/** 同 `openEditor`，开的是工作区此刻的全部改动。 */
+export function openChangesEditor(pinned = false): Editor | null {
+  return open({ kind: 'changes', path: '', pinned }, activeGroup.value);
 }
 
 function open(next: Editor, group: EditorGroup): Editor | null {

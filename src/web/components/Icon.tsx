@@ -46,14 +46,16 @@ export function Icon({
 }
 
 /**
- * 四种 tab 的种类图标，编辑器 tab 上画的那枚；commit-changes 那枚同时是 History 提交行上
- * `Open Changes` 的图标。写成 `Record` 是让加第五种 tab 时少填一格成为编译错误。
+ * 五种 tab 的种类图标，编辑器 tab 上画的那枚；两种多文件视图（commit-changes 与 changes）同一枚，它同时是
+ * History 提交行与 `CHANGES` 分区标题上 `Open Changes` 的图标。写成 `Record` 是让加第六种 tab 时少填一格
+ * 成为编译错误。
  */
 export const KIND_ICON: Record<EditorKind, LucideIcon> = {
   diff: FileDiff,
   file: FileCode,
   commit: GitCommitHorizontal,
   'commit-changes': GitCompare,
+  changes: GitCompare,
 };
 
 /**

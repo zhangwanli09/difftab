@@ -41,6 +41,8 @@ import {
   panePercent,
 } from '../../../src/web/state/sidebar';
 import {
+  changesContexts,
+  changesStates,
   commitChangesStates,
   commitDiffStates,
   type DiffRequestState,
@@ -53,7 +55,7 @@ import {
 } from '../../../src/web/state/store';
 
 /**
- * 清空标签栏、四张缓存（连同整次提交视图的分段上下文档）与跳行请求，忽略空白、SVG 预览两个开关回到
+ * 清空标签栏、五张缓存（连同两种多文件视图的分段上下文档）与跳行请求，忽略空白、SVG 预览两个开关回到
  * 默认。用到右侧状态的用例都从这里起。
  */
 export function resetEditors(): void {
@@ -66,6 +68,8 @@ export function resetEditors(): void {
   commitDiffStates.value = new Map();
   commitChangesStates.value = new Map();
   segmentContexts.value = new Map();
+  changesStates.value = new Map();
+  changesContexts.value = new Map();
 }
 
 /** 清空 `History` 那一档：列表、详情缓存、展开集合，以及 ref 徽标那份 refs。 */
@@ -117,7 +121,7 @@ export function setCommitDiffState(sha: string, path: string, state: DiffRequest
 
 /** 开一个固定 tab——产品里开出来的一律是预览，固定是双击那一下另做的，用例里合成一步。 */
 export function openPinned(
-  kind: Exclude<EditorKind, 'commit' | 'commit-changes'>,
+  kind: Exclude<EditorKind, 'commit' | 'commit-changes' | 'changes'>,
   path: string,
 ): void {
   openEditor(kind, path);

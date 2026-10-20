@@ -23,7 +23,7 @@ import {
   focusEditor,
   groups,
 } from '../../../src/web/state/editors';
-import { splitPercent } from '../../../src/web/state/sidebar';
+import { changesCollapsed, splitPercent } from '../../../src/web/state/sidebar';
 import {
   activeTab,
   diffStates,
@@ -366,6 +366,45 @@ describe('tab 行右端那枚列表 / 树切换', () => {
     await waitFor(() => expect(changeView.value).toBe('tree'));
     expect(activeEditorKey.value).toBe('diff:src/app.ts');
     expect(section()?.textContent).toContain('Binary file');
+  });
+});
+
+// `CHANGES` 分区标题右端那枚 `Open Changes`：是标题按钮的兄弟（点它不折叠分区），右内边距与 tab 行同一档，
+// 分区折起时照画；工作区干净时也照画，点开说 `No changes`。
+describe('CHANGES 分区标题上那枚 Open Changes', () => {
+  const openButton = () => container.querySelector('[aria-label="Open Changes"]');
+  const paneTitle = () => openButton()?.parentElement;
+
+  it('站在 CHANGES 标题行里，是标题按钮的兄弟；不在 tab 行里', () => {
+    render(<App />, container);
+    expect(paneTitle()?.tagName).toBe('H2');
+    expect(paneTitle()?.textContent).toContain('Changes');
+    expect(openButton()?.previousElementSibling?.getAttribute('aria-expanded')).toBe('true');
+    expect(container.querySelector('[role="tablist"]')?.parentElement?.contains(openButton())).toBe(
+      false,
+    );
+    // 与 tab 行同一档右内边距，两处的 IconButton 落在同一条竖线上
+    expect(paneTitle()?.className).toContain('pr-3');
+  });
+
+  it('点它不折叠分区；分区折起时照画', async () => {
+    repoState.value = stateWith('demo');
+    render(<App />, container);
+    (openButton() as HTMLButtonElement).click();
+    await waitFor(() => expect(activeEditorKey.value).toBe('changes:'));
+    expect(changesCollapsed.value).toBe(false);
+
+    ((openButton() as Element).previousElementSibling as HTMLButtonElement).click();
+    await waitFor(() => expect(changesCollapsed.value).toBe(true));
+    expect(openButton()).not.toBeNull();
+  });
+
+  it('工作区干净时照画，点开是一个说 No changes 的 Changes tab', async () => {
+    repoState.value = stateWith('demo');
+    render(<App />, container);
+    (openButton() as HTMLButtonElement).click();
+    await waitFor(() => expect(section()?.textContent).toContain('No changes'));
+    expect(section()?.querySelector('[role="tab"]')?.textContent).toBe('Changes');
   });
 });
 
