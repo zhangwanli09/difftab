@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.10.0](https://github.com/zhangwanli09/difftab/compare/v0.9.0...v0.10.0) (2026-10-20)
+
+
+### Features
+
+* **web:** open all working tree changes in one tab ([#139](https://github.com/zhangwanli09/difftab/issues/139)) ([d1de7c5](https://github.com/zhangwanli09/difftab/commit/d1de7c532277aab61950a1f121a8d2c543ef1850))
+* **web:** split the editor panel into two groups by dragging tabs ([#137](https://github.com/zhangwanli09/difftab/issues/137)) ([13f298b](https://github.com/zhangwanli09/difftab/commit/13f298b87e2f488002ba49ec87a04ea6667b35d3))
+
 ## [0.9.0](https://github.com/zhangwanli09/difftab/compare/v0.8.1...v0.9.0) (2026-10-18)
 
 
