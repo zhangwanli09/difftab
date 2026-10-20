@@ -24,7 +24,7 @@ import { historyVisible, loadError, repoState } from '../state/store';
 import { ChangeList } from './ChangeList';
 import { SidebarPlaceholder } from './EmptyState';
 import { HistoryList } from './HistoryList';
-import { Sash } from './Sash';
+import { percentOfGrandparent, Sash } from './Sash';
 import { ExpandChevron } from './tree-row';
 
 /** 方向键一次走多少个百分点。 */
@@ -75,12 +75,8 @@ function Pane({
 
 const currentPercent = () => panePercent.peek();
 
-/**
- * 一像素合多少个百分点：按下那一刻量一次那列的高度（分隔条 → 分隔线 → 那一列）。还没排版时高度
- * 为 0，换算比是 `Infinity`，`Sash` 那边不动。
- */
-const percentPerPx = (el: HTMLElement) =>
-  100 / (el.parentElement?.parentElement?.getBoundingClientRect().height ?? 0);
+/** 一像素合多少个百分点：量的是那一列的高度（分隔条 → 分隔线 → 那一列）。 */
+const percentPerPx = percentOfGrandparent('y');
 
 /**
  * 两块之间的分隔条。名字与取值说的是同一块：数值是上面 `Changes` 那块的占比，↓ 让它变大。
@@ -88,6 +84,7 @@ const percentPerPx = (el: HTMLElement) =>
 function PaneSash() {
   return (
     <Sash
+      name="pane"
       axis="y"
       label="Resize changes"
       value={panePercent}

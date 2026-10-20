@@ -57,20 +57,30 @@ export function shownSidebarWidth(): number {
 }
 
 /**
- * 哪一把把手正在拖（`x` 是左栏那把、`y` 是分区之间那把），`null` 即没在拖。把手拿它保持握把常亮
- * （capture 下指针会离开把手的盒子，单靠 `hover:` 那一刻就灭了）；`App` 拿 `dragStyle` 给整页挂光标
- * 与 `user-select: none`——不挂时指针一离开 4px 的把手光标就闪回箭头、沿途的 diff 文字被拖选成一片蓝。
- * 两把不会同时在拖，所以是一个三态 signal 而不是两个布尔。
+ * 页面上的三把把手：左栏右缘（`sidebar`）、`Changes` 档两个分区之间（`pane`）、两组编辑器之间
+ * （`split`）。
  */
-export const sashDragging = signal<'x' | 'y' | null>(null);
+export type SashName = 'sidebar' | 'pane' | 'split';
+
+/**
+ * 哪一把把手正在拖，`null` 即没在拖。把手拿它保持握把常亮（capture 下指针会离开把手的盒子，单靠
+ * `hover:` 那一刻就灭了）；`App` 拿 `dragStyle` 给整页挂光标与 `user-select: none`——不挂时指针一离开
+ * 4px 的把手光标就闪回箭头、沿途的 diff 文字被拖选成一片蓝。**记的是哪一把，不是轴向**：左栏与分屏
+ * 那两把同轴，按轴向判时拖一把、另一把的握把也跟着常亮。轴向一并记下，整页光标按它挑。
+ */
+export const sashDragging = signal<{ readonly name: SashName; readonly axis: 'x' | 'y' } | null>(
+  null,
+);
 
 /**
  * 整页的拖动样式，**以 signal 本身交给 `style`**：`App` 不订阅它，一次拖动不必把整棵树重渲染两遍。
  * 光标写内联不写 `cursor-*` 类——那两条只有这里用，进产物就是两条新规则。
  */
 export const dragStyle = computed(() => {
-  const axis = sashDragging.value;
-  return axis === null ? '' : `cursor:${axis === 'x' ? 'col' : 'row'}-resize;user-select:none`;
+  const dragging = sashDragging.value;
+  return dragging === null
+    ? ''
+    : `cursor:${dragging.axis === 'x' ? 'col' : 'row'}-resize;user-select:none`;
 });
 
 // ---- `Changes` 档里的两个分区（上 `Changes`、下 `History`）----
@@ -91,11 +101,33 @@ export const PANE_MAX_PERCENT = 85;
  */
 export const panePercent = signal(PANE_DEFAULT_PERCENT);
 
+/**
+ * 夹进 `[min, max]` 再取到一位小数：拖动要细（1% 在高屏上是七八个像素），读屏念出来的又不该是一长串
+ * 小数。两把按百分比走的把手（分区、分屏）共用。
+ */
+const clampPercent = (percent: number, min: number, max: number): number =>
+  Math.round(Math.min(max, Math.max(min, percent)) * 10) / 10;
+
 export function setPanePercent(percent: number): void {
-  // 取到一位小数：拖动要细（1% 在高屏上是七八个像素），读屏念出来的又不该是一长串小数
-  panePercent.value =
-    Math.round(Math.min(PANE_MAX_PERCENT, Math.max(PANE_MIN_PERCENT, percent)) * 10) / 10;
+  panePercent.value = clampPercent(percent, PANE_MIN_PERCENT, PANE_MAX_PERCENT);
 }
 
 /** 上面那块的内联样式，同 `sidebarStyle` 以 signal 本身交给 `style`：拖动时一个组件都不重渲染。 */
 export const paneStyle = computed(() => `flex:0 0 ${panePercent.value}%`);
+
+// ---- 右侧面板分屏时的两组编辑器 ----
+
+export const SPLIT_DEFAULT_PERCENT = 50;
+/** 左组占右侧面板宽度的百分比的上下界：再往外，另一组只剩一条标签栏宽。 */
+export const SPLIT_MIN_PERCENT = 20;
+export const SPLIT_MAX_PERCENT = 80;
+
+/** 两组时左组占多少（百分比）。存比例不存像素，理由同 `panePercent`：窗口变宽变窄时两组一起伸缩。 */
+export const splitPercent = signal(SPLIT_DEFAULT_PERCENT);
+
+export function setSplitPercent(percent: number): void {
+  splitPercent.value = clampPercent(percent, SPLIT_MIN_PERCENT, SPLIT_MAX_PERCENT);
+}
+
+/** 左组的内联样式，同 `sidebarStyle` 以 signal 本身交给 `style`：拖动时一个组件都不重渲染。 */
+export const splitStyle = computed(() => `flex:0 0 ${splitPercent.value}%`);

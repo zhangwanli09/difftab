@@ -13,7 +13,11 @@ import type {
 import {
   activeEditorKey,
   activeEditorPath,
+  activeGroup,
+  type EditorGroup,
   editors,
+  focusEditor,
+  groups,
   keyOf,
   openEditor,
   pinEditor,
@@ -29,10 +33,12 @@ import {
   loadDiff,
   loadError,
   loadState,
+  moveEditorTo,
   openFile,
   refresh,
   repoState,
   selectFile,
+  splitEditorRight,
 } from '../../../src/web/state/store';
 import { expandedDirs, loadDir, ROOT, treeCache } from '../../../src/web/state/tree';
 import { file, hideHistory, openPinned, resetEditors, stubJson } from './helpers';
@@ -966,5 +972,122 @@ describe('refresh 对树与文件视图那一半', () => {
     await refresh();
     expect(activeEditorKey.value).toBe('file:a.ts');
     await vi.waitFor(() => expect(count(calls, '/api/file')).toBe(1));
+  });
+});
+
+describe('分屏（两组编辑器）的取数', () => {
+  const text: DiffPayload = { kind: 'text', patch: 'old\n', full: false };
+  const fresh: DiffPayload = { kind: 'text', patch: 'new\n', full: false };
+  const ready = (path: string) =>
+    [path, { status: 'ready', rename: null, payload: text, options: OFF }] as const;
+
+  function stubEndpoints(files: FileEntry[]): string[] {
+    const calls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        calls.push(url);
+        const payload = url.startsWith('/api/state')
+          ? {
+              repoName: 'demo',
+              branch: { head: 'main', detached: false, upstream: null },
+              files,
+              watch: { mode: 'native', tier: 'A' },
+            }
+          : fresh;
+        return new Response(JSON.stringify(payload), { status: 200 });
+      }),
+    );
+    return calls;
+  }
+
+  /** 左组 a、右组 b，两份补丁都已 ready。 */
+  function splitAB(): [EditorGroup, EditorGroup] {
+    openPinned('diff', 'a.txt');
+    openPinned('diff', 'b.txt');
+    diffStates.value = new Map([ready('a.txt'), ready('b.txt')]);
+    const left = activeGroup.value;
+    splitEditorRight(left, 'diff:b.txt');
+    const right = groups.value[1];
+    if (right === undefined) throw new Error('没分出来');
+    return [left, right];
+  }
+
+  beforeEach(() => {
+    resetEditors();
+    repoState.value = null;
+  });
+
+  test('SSE 之后两组看得见的 tab 都重取——只取焦点组那个时另一组停在旧补丁上', async () => {
+    const files = [file({ path: 'a.txt', unstaged: 'M' }), file({ path: 'b.txt', unstaged: 'M' })];
+    stubEndpoints(files);
+    splitAB();
+    const calls = stubEndpoints(files);
+    await refresh();
+    expect(calls.filter((c) => c.startsWith('/api/diff')).sort()).toEqual([
+      '/api/diff?path=a.txt',
+      '/api/diff?path=b.txt',
+    ]);
+  });
+
+  test('两组开着同一个 diff 时 SSE 只取一趟', async () => {
+    const files = [file({ path: 'a.txt', unstaged: 'M' }), file({ path: 'b.txt', unstaged: 'M' })];
+    stubEndpoints(files);
+    const [left] = splitAB();
+    focusEditor('diff:a.txt', left);
+    openPinned('diff', 'b.txt');
+    const calls = stubEndpoints(files);
+    await refresh();
+    expect(count(calls, '/api/diff')).toBe(1);
+  });
+
+  test('另一组还开着同键时，关掉一份不删缓存', () => {
+    stubEndpoints([]);
+    const [left, right] = splitAB();
+    focusEditor('diff:a.txt', right);
+    openPinned('diff', 'a.txt');
+    closeEditor('diff:a.txt', right);
+    expect(diffStates.value.has('a.txt')).toBe(true);
+    closeEditor('diff:a.txt', left);
+    expect(diffStates.value.has('a.txt')).toBe(false);
+  });
+
+  test('收编在两组里都关掉消失的 diff，两份都关完才忘掉缓存', async () => {
+    stubEndpoints([]);
+    const [left] = splitAB();
+    focusEditor('diff:a.txt', left);
+    openPinned('diff', 'b.txt');
+    stubEndpoints([file({ path: 'a.txt', unstaged: 'M' })]);
+    await refresh();
+    // 右组只有 b，被收编空了即合并；左组还剩 a
+    expect(groups.value).toEqual([left]);
+    expect(editors.value.map(keyOf)).toEqual(['diff:a.txt']);
+    expect(diffStates.value.has('b.txt')).toBe(false);
+  });
+
+  test('拖到另一组：源组顶上来的邻居要取，拖走的若本来就看得见则不再取', () => {
+    stubEndpoints([
+      file({ path: 'a.txt', unstaged: 'M' }),
+      file({ path: 'b.txt', unstaged: 'M' }),
+      file({ path: 'c.txt', unstaged: 'M' }),
+    ]);
+    repoState.value = {
+      repoName: 'demo',
+      branch: { head: 'main', detached: false, upstream: null },
+      files: [
+        file({ path: 'a.txt', unstaged: 'M' }),
+        file({ path: 'b.txt', unstaged: 'M' }),
+        file({ path: 'c.txt', unstaged: 'M' }),
+      ],
+      watch: { mode: 'native', tier: 'A' },
+    };
+    const [left, right] = splitAB();
+    focusEditor('diff:a.txt', left);
+    openPinned('diff', 'c.txt');
+    const calls = stubEndpoints(repoState.value.files);
+    moveEditorTo(left, 'diff:c.txt', right);
+    // c 拖走前就在左组看得见、缓存两组共用，不再取；顶上来的 a 是后台 tab，要取
+    expect(calls).toEqual(['/api/diff?path=a.txt']);
+    expect(activeEditorKey.value).toBe('diff:c.txt');
   });
 });

@@ -17,12 +17,11 @@ import {
   SHELL_AT_EDGE,
 } from '../../../src/web/components/tree-row';
 import {
-  activeEditorKey,
   type EditorKind,
   editorKey,
-  editors,
   openEditor,
   pinEditor,
+  resetGroups,
   revealRequest,
 } from '../../../src/web/state/editors';
 import {
@@ -60,8 +59,7 @@ import {
 export function resetEditors(): void {
   ignoreWhitespace.value = false;
   svgPreview.value = true;
-  editors.value = [];
-  activeEditorKey.value = null;
+  resetGroups();
   revealRequest.value = null;
   diffStates.value = new Map();
   fileStates.value = new Map();

@@ -19,6 +19,7 @@ const onePx = () => 1;
 export function SidebarSash() {
   return (
     <Sash
+      name="sidebar"
       axis="x"
       label="Resize sidebar"
       value={sidebarWidth}

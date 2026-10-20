@@ -14,10 +14,10 @@ import {
   type LucideIcon,
   Search,
 } from 'lucide-preact';
+import { Fragment } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
 import { type ChangeView, changeView, toggleChangeView } from '../state/change-tree';
-import { activeEditor, keyOf } from '../state/editors';
-import { observeDiffPanel } from '../state/layout';
+import { groups } from '../state/editors';
 import { quickOpenVisible } from '../state/quick-open';
 import { ensureSearchFresh } from '../state/search';
 import { handleGlobalKey, SHORTCUTS, type Shortcut, withShortcut } from '../state/shortcuts';
@@ -26,12 +26,9 @@ import { activeTab, loadError, repoState } from '../state/store';
 import { PRODUCT_NAME } from '../state/title';
 import { collapseAll, loadDir, ROOT, refreshTree, treeCache } from '../state/tree';
 import { BranchStatus } from './BranchStatus';
-import { CommitChangesView } from './CommitChangesView';
-import { CommitDiffView, DiffView } from './DiffView';
-import { EditorTabs } from './EditorTabs';
-import { PanelEmptyState } from './EmptyState';
+import { EditorGroupView } from './EditorGroup';
+import { EditorSplitSash } from './EditorSplitSash';
 import { FileTree } from './FileTree';
-import { FileView } from './FileView';
 import { Icon } from './Icon';
 import { IconButton } from './IconButton';
 import { DifftabMark } from './Logo';
@@ -163,8 +160,7 @@ export function App() {
   const state = repoState.value;
   const error = loadError.value;
   const tab = activeTab.value;
-  const active = activeEditor.value;
-  const diffPanel = useRef<HTMLElement>(null);
+  const editorGroups = groups.value;
 
   /**
    * 切到 `Files` 那一档时把树接上，**两件一起做**：
@@ -193,16 +189,6 @@ export function App() {
   }, []);
   // Quick Open 的外部点击要排除顶栏那枚按钮：否则按下时关、松开又被 click 打开
   const goToFile = useRef<HTMLButtonElement>(null);
-
-  // diff 版式的**唯一**测量点。本组件只管「量哪个元素、什么时候开始和停」——量法与阈值都在
-  // `state/layout.ts`，两者是一个取舍的两半。量的是这个 `<section>`，**既不是 DiffView 底下那
-  // 个宿主 div、也不是两个视图里那层滚动容器**：这一层从挂载到卸载一直在，那两个各自会随换文
-  // 件、换 pane 重建，观察者跟着反复拆建；而滚动条是从滚动容器的 content box 里扣的，量它等于
-  // 把「换版式 → 滚动条进出 → 宽度抖十几像素」的回路请回来
-  useEffect(() => {
-    const panel = diffPanel.current;
-    return panel === null ? undefined : observeDiffPanel(panel);
-  }, []);
 
   // 配色一律走 VS Code token，不用 Tailwind 自带调色板：后者在深色下不会跟着
   // 翻，得给每个元素再写一遍 dark: 变体，而本项目的深浅切换发生在 token 层
@@ -282,32 +268,21 @@ export function App() {
         <SidebarSash />
       </aside>
 
-      {/* **面板这一层自己不滚**：滚动容器在两个视图内部（`DiffView` 导出的 `Panel`），标签栏
-          排在它之外，于是这里只剩一列 flex——标签栏 `shrink-0`，底下那层 `min-h-0 flex-1
-          overflow-auto`。左右两栏仍是两个各自独立的滚动容器：列表侧的滚动位置在 SSE 刷新时要
-          留住，两侧共用一个就做不到。画哪个视图由活动 tab 的 `kind` 定；栏里一个 tab 都没有时
-          画空态（`PanelEmptyState`）。
-          **视图按 tab 键 `key` 住**：只换 `path` prop 时组件不卸载，滚动容器连同 `scrollTop`
-          一起留着——在 A 里滚到三千像素再切到同种的 B，B 会从同一个偏移量打开；而切到另一种
-          视图因为换了组件类型是从顶部开始，两种切法一个样子才对。同一个 tab 内换补丁不换键，
-          容器照旧留在原地 */}
-      <section ref={diffPanel} class="flex min-w-0 flex-1 flex-col">
-        {active === null ? (
-          <PanelEmptyState />
-        ) : (
-          <>
-            <EditorTabs />
-            {active.kind === 'file' ? (
-              <FileView key={keyOf(active)} path={active.path} />
-            ) : active.kind === 'commit-changes' ? (
-              <CommitChangesView key={keyOf(active)} sha={active.sha} />
-            ) : active.kind === 'commit' ? (
-              <CommitDiffView key={keyOf(active)} sha={active.sha} path={active.path} />
-            ) : (
-              <DiffView key={keyOf(active)} path={active.path} />
+      {/* 右侧面板是一到两组编辑器，左右并排（分屏）。每组自己一列：标签栏 + 视图，版式按组的宽度判、
+          测量点在组上（`EditorGroupView`）。左右两栏仍是两个各自独立的滚动容器：列表侧的滚动位置在
+          SSE 刷新时要留住，两侧共用一个就做不到。按组的 `id` 挂载：左组合并掉时右组不重挂 */}
+      <section class="flex min-w-0 flex-1">
+        {editorGroups.map((group, index) => (
+          <Fragment key={group.id}>
+            <EditorGroupView group={group} first={index === 0 && editorGroups.length > 1} />
+            {/* 分屏把手站在两组之间一个零宽的 `relative` 槽里，不挂进左组（理由在 `EditorSplitSash`） */}
+            {index === 0 && editorGroups.length > 1 && (
+              <div class="relative shrink-0">
+                <EditorSplitSash />
+              </div>
             )}
-          </>
-        )}
+          </Fragment>
+        ))}
       </section>
 
       {quickOpenVisible.value && <QuickOpen anchor={goToFile} />}

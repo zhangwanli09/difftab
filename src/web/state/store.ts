@@ -24,16 +24,20 @@ import {
 } from '../../server/shared/protocol';
 import {
   activeEditor,
+  activeGroup,
   contextOf,
   type DiffContext,
   type Editor,
+  type EditorGroup,
   type EditorKey,
   editorKey,
-  editors,
   findEditor,
   focusEditor,
+  groups,
+  isOpenAnywhere,
   isPatchEditor,
   keyOf,
+  moveEditor,
   openCommitChangesEditor,
   openCommitEditor,
   openEditor,
@@ -42,6 +46,8 @@ import {
   revealPending,
   setEditorContext,
   setReveal,
+  splitEditor,
+  visibleEditors,
 } from './editors';
 import { ensureCommitDetail, ensureHistory } from './history';
 import { getJson, latestWins, type Tickets, toMessage } from './http';
@@ -408,8 +414,12 @@ export async function loadState(): Promise<boolean> {
  * 忘掉一个 tab 的缓存与在途请求，按 `kind` 分派到它那份缓存。键：diff / file 按路径，commit 直接用
  * tab 的键——同一个文件在两次提交里是两份，而 tab 的身份本来就把 sha 编进去了，不另编一套；
  * commit-changes 是整组（这次提交的每一段）一起忘。
+ *
+ * **另一组还开着同键时什么都不做**：缓存两组共用，删了另一组那份就退回 `Loading…`，在途的那趟被作废
+ * 后再也不来。所以调用方都在把 tab 从组里摘掉**之后**才调。
  */
 function forget(editor: Editor): void {
+  if (isOpenAnywhere(keyOf(editor))) return;
   switch (editor.kind) {
     case 'diff':
       diffCache.forget(editor.path);
@@ -499,8 +509,8 @@ export function selectFile(entry: FileEntry): void {
  *   关掉——判据是左栏此刻正在断言这些改动不存在，而右栏还挂着其中一份；只看活动 tab 时后台
  *   tab 里那份补丁照样留着，切过去看到的是一份左栏已经说不存在的东西，且它再也不会被刷新。
  *   **重命名不算消失**：那一行还在左栏列着，跟着它走到新路径上即可
- * - **只重取活动那一个 tab，其余切过去时再取**（`activateEditor` 每次都真的去取）：agent 跑动
- *   期间事件密集，挂着 10 个 diff tab 时每个事件就是 10 趟 `git diff`
+ * - **只重取看得见的那几个 tab（每组的活动 tab），其余切过去时再取**（`activateEditor` 每次都真的
+ *   去取）：agent 跑动期间事件密集，挂着 10 个 diff tab 时每个事件就是 10 趟 `git diff`
  */
 export async function refresh(): Promise<void> {
   /**
@@ -515,10 +525,10 @@ export async function refresh(): Promise<void> {
   if (activeTab.value === 'files') refreshTree();
   // 搜索同理：看得见才重搜，看不见只记一笔、切回来时补（`App` 那个 tab effect）。它也不依赖新列表
   const search = refreshSearch(activeTab.value === 'search');
-  const before = activeEditor.value;
-  // **活动的文件也要重取**，与「活动的 diff 也要重取」同源：内容变了而树没变是最常见的
+  const before = visibleEditors.value;
+  // **看得见的文件也要重取**，与「活动的 diff 也要重取」同源：内容变了而树没变是最常见的
   // 形态，只刷树的话右侧停在旧内容上，而页面看不出任何异样
-  if (before?.kind === 'file') void loadFile(before.path);
+  for (const editor of before) if (editor.kind === 'file') void loadFile(editor.path);
 
   if (!(await loadState())) return;
   // 提交列表要等新列表：判据是新 state 里的 HEAD oid——HEAD 没挪就一条请求都不发。看不见时不判，
@@ -526,37 +536,48 @@ export async function refresh(): Promise<void> {
   const history = historyVisible.value ? ensureHistory(repoState.value) : null;
   const files = repoState.value?.files ?? [];
   /**
-   * 对着**收编之前那份列表**走一遍（`editors.value` 在循环开始时就取定了，改名并入掉的 tab 不会
-   * 被再访一次）。第二次 find 是**跟着重命名走**：改名之后那个路径成了新列表里那一行的
+   * 对着**收编之前那份列表**逐组走一遍（每组的 `editors.value` 在循环开始时就取定了，改名并入掉的 tab
+   * 不会被再访一次）。第二次 find 是**跟着重命名走**：改名之后那个路径成了新列表里那一行的
    * `oldPath`，按 `path` 找必然扑空，而改动并没有消失。拿到的是**新条目**，双路径齐全，不会
-   * 走到「重命名退化成全新增」那条路。**两趟而不是一趟带 `||` 的谓词**：A→B 改名之后又在 A
+   * 走到「重命名退化成全新增」那条路。**先查 `path` 再查 `oldPath`，而不是一趟带 `||` 的谓词**：A→B 改名之后又在 A
    * 位置新建一个文件时，两条都能命中同一个 `path`，而该跟的是路径就是 A 的那条。
+   *
+   * **两组都收编完才 `forget`**：同一个 diff 两组各开一份时，先收编的那组忘掉时另一组还开着它，
+   * `forget` 会认为它还在用而什么都不做。
    */
+  // 两张索引各建一次：逐个 tab 去 `find` 是「组 × tab × 文件」，agent 一次改几百个文件时每个 SSE 都要扫
+  const byPath = new Map(files.map((file) => [file.path, file]));
+  const byOldPath = new Map(
+    files.flatMap((file) => (file.oldPath === undefined ? [] : [[file.oldPath, file] as const])),
+  );
   batch(() => {
-    for (const editor of editors.value) {
-      if (editor.kind !== 'diff') continue;
-      const entry =
-        files.find((file) => file.path === editor.path) ??
-        files.find((file) => file.oldPath === editor.path);
-      if (entry === undefined) {
-        // 用列表层的 `removeEditor` 而不是 `closeEditor`：后者会顺手重取新邻居，而下面本来
-        // 就要取一次活动 tab，两处各取一趟就是一次事件两趟请求
-        forget(editor);
-        removeEditor(keyOf(editor));
-      } else if (entry.path !== editor.path) {
-        // 旧路径上的缓存与在途请求一并忘掉，新路径由下面（活动时）或切过去时再取
-        forget(editor);
-        renameEditor('diff', editor.path, entry.path);
+    const dropped: Editor[] = [];
+    for (const group of groups.value) {
+      for (const editor of group.editors.value) {
+        if (editor.kind !== 'diff') continue;
+        const entry = byPath.get(editor.path) ?? byOldPath.get(editor.path);
+        if (entry === undefined) {
+          // 用列表层的 `removeEditor` 而不是 `closeEditor`：后者会顺手重取新邻居，而下面本来
+          // 就要取一次看得见的 tab，两处各取一趟就是一次事件两趟请求
+          removeEditor(keyOf(editor), group);
+          dropped.push(editor);
+        } else if (entry.path !== editor.path) {
+          // 旧路径上的缓存与在途请求一并忘掉，新路径由下面（看得见时）或切过去时再取
+          renameEditor('diff', editor.path, entry.path, group);
+          dropped.push(editor);
+        }
       }
     }
+    for (const editor of dropped) forget(editor);
   });
 
-  // 活动的 file tab 上面已经取过：收编只动 diff tab，活动的 file tab 前后是同一个。其余（活动的
-  // diff tab；活动的 diff tab 被关、file tab 顶上）都要取一次
-  const after = activeEditor.value;
-  const editor =
-    after === null || (after.kind === 'file' && before?.kind === 'file') ? null : refetch(after);
-  await Promise.all([history, editor, search]);
+  // 看得见的 file tab 上面已经取过：收编只动 diff tab，它们前后是同一个。其余（看得见的 diff tab；
+  // 被关的 diff tab 让出位置、顶上来的 file tab）都要取一次
+  const fetched = new Set(before.filter((editor) => editor.kind === 'file').map(keyOf));
+  const fetches = visibleEditors.value
+    .filter((editor) => !fetched.has(keyOf(editor)))
+    .map((editor) => refetch(editor));
+  await Promise.all([history, ...fetches, search]);
 }
 
 /**
@@ -565,8 +586,8 @@ export async function refresh(): Promise<void> {
  * 让它不闪。diff 那一路要在新列表里找条目（`oldPath` 要从那里拿），找不到就不取——收编那一步
  * 已经把消失的 tab 关掉了，这里找不到只能是两次刷新之间的窗口，下一次 SSE 会关掉它。
  */
-export function activateEditor(key: EditorKey): void {
-  const editor = focusEditor(key);
+export function activateEditor(key: EditorKey, group = activeGroup.value): void {
+  const editor = focusEditor(key, group);
   if (editor !== null) void refetch(editor);
 }
 
@@ -603,12 +624,41 @@ const entryOf = (editor: Editor): FileEntry | undefined =>
  *——它是后台 tab，手上那份是旧的（理由同 `activateEditor`）。判据是「活动键换了人」，与
  * `refresh()` 同一个写法；写成「活动键 ≠ 被关的键」时关一个后台 tab 也会白取一趟。
  */
-export function closeEditor(key: EditorKey): void {
-  const before = activeEditor.value;
-  const removed = removeEditor(key);
+export function closeEditor(key: EditorKey, group = activeGroup.value): void {
+  const before = group.active.value;
+  const removed = removeEditor(key, group);
   if (removed === null) return;
   forget(removed);
-  const after = activeEditor.value;
+  // 关空了的那组已经合并掉，`active` 是 null：剩下那组的活动 tab 一直看得见，不用重取
+  const after = group.active.value;
+  if (after !== null && after !== before) void refetch(after);
+}
+
+/**
+ * 把一个 tab 拖到另一组（`index` 是插在标签栏的第几个之前）。拖过去的那份切过去即取，理由同
+ * `activateEditor`；源组的活动 tab 被拖走时顶上来的邻居同样要取。
+ */
+export function moveEditorTo(
+  from: EditorGroup,
+  key: EditorKey,
+  to: EditorGroup,
+  index?: number,
+): void {
+  refetchAfterMove(from, () => moveEditor(from, key, to, index));
+}
+
+/** 把一个 tab 拖到唯一那组的右半边：分出右组，取法同 `moveEditorTo`。 */
+export function splitEditorRight(from: EditorGroup, key: EditorKey): void {
+  refetchAfterMove(from, () => splitEditor(from, key));
+}
+
+function refetchAfterMove(from: EditorGroup, move: () => Editor | null): void {
+  const before = from.active.value;
+  const landed = move();
+  if (landed === null) return;
+  // 拖的正是源组看得见的那个时，它手上那份是新的（缓存两组共用），不再取一趟
+  if (before === null || keyOf(before) !== keyOf(landed)) void refetch(landed);
+  const after = from.active.value;
   if (after !== null && after !== before) void refetch(after);
 }
 
@@ -832,27 +882,26 @@ export function openCommitChanges(commit: CommitSummary): void {
 }
 
 /**
- * 切换忽略空白，**只重取活动 tab**：后台的 diff tab 切过去时本来就重取，commit tab 切过去时按「取的
- * 那一档与此刻不同」重取。重取期间照常显示旧补丁、不回退 loading，与 SSE 刷新同一条。整次提交视图
+ * 切换忽略空白，**只重取看得见的 tab**（每组的活动 tab）：后台的 diff tab 切过去时本来就重取，commit
+ * tab 切过去时按「取的那一档与此刻不同」重取。重取期间照常显示旧补丁、不回退 loading，与 SSE 刷新同一条。整次提交视图
  * 不在这里取：它的每一段订阅着开关，可见的那几段自己重取（`ensureSegment`）。
  */
 export function toggleIgnoreWhitespace(): void {
   ignoreWhitespace.value = !ignoreWhitespace.value;
-  const editor = activeEditor.value;
-  if (isPatchEditor(editor)) void refetch(editor);
+  for (const editor of visibleEditors.value) if (isPatchEditor(editor)) void refetch(editor);
 }
 
 /**
- * 切换 SVG 预览。**不重取**：`preview` 本来就在已到的 payload 上，开关只换一种画法。
+ * 切换 SVG 预览。**不重取**：`preview` 本来就在已到的 payload 上，开关只换一种画法。`editor` 是按钮
+ * 所在那一组的活动 tab，不读焦点组：点下去之前焦点不一定已经过来。
  *
- * **翻的是活动 tab 此刻画着的那一种（`shown`，即按钮的按下态），不是开关本身**：file tab 正因跳行
+ * **翻的是那个 tab 此刻画着的那一种（`shown`，即按钮的按下态），不是开关本身**：file tab 正因跳行
  * 按文本画着时开关可能本就开着，照常取反会把它关掉、按钮却仍显示未按下。要看图时顺带清掉这个文件的
  * 跳行请求，它不再压着预览。
  */
-export function toggleSvgPreview(shown: boolean): void {
-  const editor = activeEditor.value;
+export function toggleSvgPreview(shown: boolean, editor: Editor): void {
   batch(() => {
-    if (!shown && editor?.kind === 'file') setReveal(editor.path);
+    if (!shown && editor.kind === 'file') setReveal(editor.path);
     svgPreview.value = !shown;
   });
 }

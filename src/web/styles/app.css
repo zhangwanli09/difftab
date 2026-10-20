@@ -167,6 +167,10 @@
    * list-hover 时最后那一处按钮与它所在的 tab 同色，鼠标单独悬在 × 上看不出任何反应。 */
   --color-toolbar-hover-background: light-dark(rgb(0 0 0 / 0.12), rgb(90 93 94 / 0.31));
 
+  /* 拖 tab 时的投放区（VS Code 的 editorGroup.dropBackground）。**半透明**：它是盖在正文与标签栏
+   * 上的一层遮罩，底下的内容要透得出来，看得见「放下去会落在哪」 */
+  --color-editor-group-drop-background: light-dark(rgb(38 119 203 / 0.18), rgb(83 89 93 / 0.5));
+
   /* --- 列表（变更列表整条都归它） ---------------------------------------- */
   /* 悬停与选中都是**半透明叠加**（2026 起 VS Code 自己就这么写），叠在侧栏底色上与叠在弹层上
    * 一样成立 */

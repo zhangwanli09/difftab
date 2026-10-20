@@ -9,8 +9,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { DiffPayload, FilePayload } from '../../../src/server/shared/protocol';
 import { DiffView } from '../../../src/web/components/DiffView';
 import { FileView } from '../../../src/web/components/FileView';
-import { revealRequest } from '../../../src/web/state/editors';
-import { diffPanelWidth, SIDE_BY_SIDE_MIN_WIDTH } from '../../../src/web/state/layout';
+import { activeGroup, revealRequest } from '../../../src/web/state/editors';
+import { SIDE_BY_SIDE_MIN_WIDTH } from '../../../src/web/state/layout';
 import { diffStates, PATCH_DEFAULTS, svgPreview } from '../../../src/web/state/store';
 import { resetEditors, setFileState, waitFor } from './helpers';
 
@@ -35,7 +35,7 @@ beforeEach(() => {
   container = document.createElement('div');
   document.body.appendChild(container);
   resetEditors();
-  diffPanelWidth.value = SIDE_BY_SIDE_MIN_WIDTH;
+  activeGroup.value.width.value = SIDE_BY_SIDE_MIN_WIDTH;
 });
 
 afterEach(() => {
