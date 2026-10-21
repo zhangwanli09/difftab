@@ -77,6 +77,20 @@ export function isAbsentFromWorktree(entry: FileEntry): boolean {
   return entry.unstaged === 'D' || (entry.staged === 'D' && entry.unstaged === '.');
 }
 
+/**
+ * 该条目的文件在 **HEAD 里没有**——对着 HEAD 比只会是整份新增。文件视图因此不给它画改动标记（照 VS
+ * Code：没有原版可比，左栏那个字母已经答了「整个是新的」）。判据同上分两支：
+ * - 冲突条目的 X 位是「我方」（stage 2，即 HEAD）：`DD` / `DU` 是我方删了，`UA` 是对方新建；`AA` /
+ *   `AU` 是我方新建，HEAD 里有，不算；
+ * - 其余条目：未跟踪、暂存了新建（`A?`，含之后又改过的 `AM`），以及 intent-to-add（`git add -N`
+ *   是 `.A`）。
+ */
+export function isAbsentFromHead(entry: FileEntry): boolean {
+  if (isConflicted(entry))
+    return entry.staged === 'D' || (entry.staged === 'U' && entry.unstaged === 'A');
+  return isUntracked(entry) || entry.staged === 'A' || entry.unstaged === 'A';
+}
+
 export interface BranchState {
   /**
    * 分支名；detached 时为 `# branch.head` 给出的字面量（git 输出 `(detached)`）。**空串的

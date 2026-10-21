@@ -215,6 +215,12 @@
   --color-git-untracked: light-dark(#587c0c, #73c991);
   --color-git-conflicting: light-dark(#ad0707, #f48771);
 
+  /* --- 文件视图行号旁的改动标记（VS Code 的 editorGutter.*Background，取默认值） ---- */
+  /* 不借上面那套状态位徽章的色：那是给字着色的，这是 3px 的实心条，VS Code 也是两套键 */
+  --color-editor-gutter-added-background: light-dark(#48985d, #487e02);
+  --color-editor-gutter-modified-background: light-dark(#2090d3, #1b81a8);
+  --color-editor-gutter-deleted-background: light-dark(#e51400, #f14c4c);
+
   /* --- History 行上的 ref 徽标：色相照 VS Code Source Control Graph ---------- */
   /* 两个都**深浅共用**，VS Code 的默认值也是。徽标只拿它们画图标、再以 20% 叠一层底色，不画实心
    * ——实心块在侧栏里比主题还抢眼，白字压在这个蓝上也读不清 */

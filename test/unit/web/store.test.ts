@@ -28,6 +28,7 @@ import {
   closeEditor,
   comparePaths,
   diffStates,
+  fileMarkStates,
   fileStates,
   groupFiles,
   loadDiff,
@@ -41,7 +42,7 @@ import {
   splitEditorRight,
 } from '../../../src/web/state/store';
 import { expandedDirs, loadDir, ROOT, treeCache } from '../../../src/web/state/tree';
-import { file, hideHistory, openPinned, resetEditors, stubJson } from './helpers';
+import { file, hideHistory, openPinned, resetEditors, stubJson, stubJsonBy } from './helpers';
 
 /** 两个补丁开关都关着时请求状态里记的那一档。 */
 const OFF = { ignoreWhitespace: false, fullContext: false };
@@ -1089,5 +1090,106 @@ describe('分屏（两组编辑器）的取数', () => {
     // c 拖走前就在左组看得见、缓存两组共用，不再取；顶上来的 a 是后台 tab，要取
     expect(calls).toEqual(['/api/diff?path=a.txt']);
     expect(activeEditorKey.value).toBe('diff:c.txt');
+  });
+});
+
+describe('file tab 的改动标记', () => {
+  const content: FilePayload = { kind: 'text', content: 'a\nB\nc\n' };
+  const patch =
+    'diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1,3 +1,3 @@\n a\n-b\n+B\n c\n';
+
+  /** `/api/file` 回全文、`/api/diff` 回补丁、`/api/state` 回 `files` 那份列表。 */
+  function stubEndpoints(
+    files: FileEntry[],
+    diff: DiffPayload = { kind: 'text', patch, full: false },
+  ) {
+    return stubJsonBy((url) => {
+      if (url.pathname === '/api/file') return { payload: content };
+      if (url.pathname === '/api/diff') return { payload: diff };
+      return { payload: { ...emptyState, files } };
+    });
+  }
+
+  /** 列表此刻是 `files`，固定打开 a.ts 的全文 tab；回桩记下的请求。 */
+  function openWith(files: FileEntry[], diff?: DiffPayload): string[] {
+    repoState.value = { ...emptyState, files };
+    const calls = stubEndpoints(files, diff);
+    openFile('a.ts', { pinned: true });
+    return calls;
+  }
+
+  beforeEach(() => {
+    resetEditors();
+    loadError.value = null;
+    activeTab.value = 'changes';
+  });
+
+  test('文件在变更列表里时随全文一起取补丁，oldPath 跟着那一行', async () => {
+    const calls = openWith([file({ path: 'a.ts', oldPath: 'a0.ts', staged: 'R' })]);
+    await vi.waitFor(() =>
+      expect(fileMarkStates.value.get('a.ts')).toEqual([{ kind: 'modified', line: 2, count: 1 }]),
+    );
+    expect(diffQuery(calls)?.get('oldPath')).toBe('a0.ts');
+  });
+
+  test('不在变更列表里的文件一趟 `/api/diff` 都不发', async () => {
+    const calls = openWith([]);
+    await vi.waitFor(() => expect(fileStates.value.get('a.ts')?.status).toBe('ready'));
+    expect(count(calls, '/api/diff')).toBe(0);
+    expect(fileMarkStates.value.has('a.ts')).toBe(false);
+  });
+
+  test.each([
+    ['未跟踪（U）', file({ path: 'a.ts', kind: 'untracked', unstaged: '?' })],
+    ['新建后暂存（A）', file({ path: 'a.ts', staged: 'A' })],
+    ['暂存后又改过（AM）', file({ path: 'a.ts', staged: 'A', unstaged: 'M' })],
+    ['intent-to-add（.A）', file({ path: 'a.ts', unstaged: 'A' })],
+    ['冲突里对方新建（UA）', file({ path: 'a.ts', staged: 'U', unstaged: 'A', conflicted: true })],
+    ['冲突里我方删了（DU）', file({ path: 'a.ts', staged: 'D', unstaged: 'U', conflicted: true })],
+  ])('HEAD 里没有的文件不标、也不发 `/api/diff`——%s，照 VS Code', async (_, entry) => {
+    const calls = openWith([entry]);
+    await vi.waitFor(() => expect(fileStates.value.get('a.ts')?.status).toBe('ready'));
+    expect(count(calls, '/api/diff')).toBe(0);
+    expect(fileMarkStates.value.has('a.ts')).toBe(false);
+  });
+
+  test('冲突里我方新建（AA）HEAD 里有它，照常标——X 位是我方，不按字面读成「新增」', async () => {
+    const calls = openWith([file({ path: 'a.ts', staged: 'A', unstaged: 'A', conflicted: true })]);
+    await vi.waitFor(() => expect(fileMarkStates.value.has('a.ts')).toBe(true));
+    expect(count(calls, '/api/diff')).toBe(1);
+  });
+
+  test('补丁不是文本（过大、二进制）时不画标记', async () => {
+    const calls = openWith([file({ path: 'a.ts', unstaged: 'M' })], { kind: 'binary' });
+    await vi.waitFor(() => expect(count(calls, '/api/diff')).toBe(1));
+    await vi.waitFor(() => expect(fileStates.value.get('a.ts')?.status).toBe('ready'));
+    expect(fileMarkStates.value.has('a.ts')).toBe(false);
+  });
+
+  test('SSE 之后文件已不在列表里（撤销回干净）时标记清掉', async () => {
+    openWith([file({ path: 'a.ts', unstaged: 'M' })]);
+    await vi.waitFor(() => expect(fileMarkStates.value.has('a.ts')).toBe(true));
+
+    const calls = stubEndpoints([]);
+    await refresh();
+    expect(fileMarkStates.value.has('a.ts')).toBe(false);
+    expect(count(calls, '/api/diff')).toBe(0);
+  });
+
+  test('SSE 之后仍有改动时按新列表重取', async () => {
+    openWith([]);
+    await vi.waitFor(() => expect(fileStates.value.get('a.ts')?.status).toBe('ready'));
+
+    const calls = stubEndpoints([file({ path: 'a.ts', unstaged: 'M' })]);
+    await refresh();
+    expect(count(calls, '/api/diff')).toBe(1);
+    expect(fileMarkStates.value.get('a.ts')).toEqual([{ kind: 'modified', line: 2, count: 1 }]);
+  });
+
+  test('关掉 tab 时标记与全文一起忘掉', async () => {
+    openWith([file({ path: 'a.ts', unstaged: 'M' })]);
+    await vi.waitFor(() => expect(fileMarkStates.value.has('a.ts')).toBe(true));
+    closeEditor('file:a.ts');
+    expect(fileMarkStates.value.has('a.ts')).toBe(false);
   });
 });

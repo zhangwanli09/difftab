@@ -1,7 +1,8 @@
 // 单个文件的只读全文（`FilePayload`）。
 //
 // **这不是 diff**：每一行前面不挂 `+`、底色不是新增绿——「看项目整体面貌」正是要摆脱补丁
-// 视角。因此它不走 diff 的表格，只用 hljs 高亮一次，行号另起一栏。
+// 视角。因此它不走 diff 的表格，只用 hljs 高亮一次，行号另起一栏。文件在变更列表里时行号槽右缘
+// 多一列 3px 的改动标记（照 VS Code 的 quick diff），那是点缀，不把文件读成补丁。
 //
 // 五个 `kind` 全部在这里分支，提示行与 DiffView 共用同一个 `Notice`，图片与 SVG 预览与它共用
 // `ImageView`。
@@ -9,8 +10,9 @@
 import { useLayoutEffect, useMemo, useRef } from 'preact/hooks';
 import type { FilePayload, FilePreview } from '../../server/shared/protocol';
 import { getHljs, languageOf } from '../diff/hljs';
+import type { LineMark, MarkKind } from '../diff/marks';
 import { revealRequest } from '../state/editors';
-import { fileStates, shownPreview } from '../state/store';
+import { fileMarkStates, fileStates, shownPreview } from '../state/store';
 import { ErrorDetail, Notice, Panel, tooLargeNotice } from './DiffView';
 import { ImageFile } from './ImageView';
 
@@ -33,15 +35,58 @@ const LINE_HEIGHT = 20;
 /** 正文那层的上内边距（px），即 `py-2`：第 1 行从它下面起排。 */
 const PAD_TOP = 8;
 
+/** 第 `line` 行（1 起）顶边距正文那层顶边的像素。跳行高亮带与改动标记共用，两处各算一遍会错开。 */
+const lineTop = (line: number): number => PAD_TOP + (line - 1) * LINE_HEIGHT;
+
+/**
+ * 三种标记各自的类名。**写成字面量表**，不按 kind 拼：Tailwind 只扫字面量，拼出来的类名不进产物，
+ * 标记静默变成透明。删除点是一枚朝右的三角（左边框实心、上下边框透明），尖指向正文。
+ */
+const MARK_CLASS: Record<MarkKind, string> = {
+  added: 'w-[3px] bg-editor-gutter-added-background',
+  modified: 'w-[3px] bg-editor-gutter-modified-background',
+  deleted:
+    'size-0 border-y-4 border-l-4 border-y-transparent border-l-editor-gutter-deleted-background',
+};
+
+/** 删除三角的半高（px，`border-y-4`）：三角的中线压在两行之间那条线上。 */
+const DELETED_HALF = 4;
+
+/**
+ * 行号槽右缘的改动标记。位置与跳行高亮带同一套算法——正文不按行切，没有「第 N 行」可挂。挂在行号
+ * `<pre>` 里（它 `sticky`，是这些绝对定位子元素的包含块），横向滚时跟着行号槽留在左边。
+ */
+function Marks({ marks }: { marks: readonly LineMark[] }) {
+  return marks.map(({ kind, line, count }) => {
+    const top = lineTop(line);
+    return (
+      <span
+        key={`${kind}:${line}`}
+        data-mark={kind}
+        // `right-1`：落在行号槽的右内边距里，与正文隔开一点——贴着 `right-0` 时条子压在第一个字上
+        class={`absolute right-1 ${MARK_CLASS[kind]}`}
+        style={
+          count === 0
+            ? { top: `${top - DELETED_HALF}px` }
+            : { top: `${top}px`, height: `${count * LINE_HEIGHT}px` }
+        }
+      />
+    );
+  });
+}
+
 function Content({
   path,
   content,
   reveal,
+  marks,
 }: {
   path: string;
   content: string;
   /** 要跳到并高亮的那一行（全仓搜索点进来的）；每次请求一个新对象，再点同一行也重新滚一次。 */
   reveal: { readonly line: number } | null;
+  /** 相对 HEAD 的改动标记；文件不在变更列表里时为空。 */
+  marks: readonly LineMark[];
 }) {
   /**
    * 高亮一份 5MB 的正文不便宜，而每次重渲染（换主题、换选中）都会走到这里。**行号槽也在同
@@ -78,7 +123,7 @@ function Content({
           data-reveal-line={reveal.line}
           class="pointer-events-none absolute inset-x-0 -z-10 bg-editor-range-highlight-background"
           style={{
-            top: `${PAD_TOP + (reveal.line - 1) * LINE_HEIGHT}px`,
+            top: `${lineTop(reveal.line)}px`,
             height: `${LINE_HEIGHT}px`,
           }}
         />
@@ -86,6 +131,7 @@ function Content({
       {/* select-none：拖选正文时不该把行号一起选进剪贴板 */}
       <pre class="sticky left-0 shrink-0 bg-editor-background px-3 py-2 text-right text-description-foreground select-none">
         {gutter}
+        <Marks marks={marks} />
       </pre>
       {/* dangerouslySetInnerHTML 的内容来自 hljs——它自己转义了正文里的一切标记 */}
       <pre class="min-w-0 py-2 pr-4" dangerouslySetInnerHTML={{ __html: html }} />
@@ -138,7 +184,8 @@ function Payload({
       // 只认路径对得上的那一份：别的文件的跳行与这里无关
       const request = revealRequest.value;
       const reveal = request?.path === path ? request : null;
-      return <Content path={path} content={payload.content} reveal={reveal} />;
+      const marks = fileMarkStates.value.get(path) ?? [];
+      return <Content path={path} content={payload.content} reveal={reveal} marks={marks} />;
     }
     case 'symlink':
       // 说的是「这是一个指向 X 的链接」而不是「这是 X 的内容」——我们刻意没有跟随它

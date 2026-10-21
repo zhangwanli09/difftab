@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FilePayload } from '../../../src/server/shared/protocol';
 import { FileView } from '../../../src/web/components/FileView';
 import { revealRequest, setReveal } from '../../../src/web/state/editors';
-import { type FileRequestState, fileStates } from '../../../src/web/state/store';
+import { type FileRequestState, fileMarkStates, fileStates } from '../../../src/web/state/store';
 import { setFileState, waitFor } from './helpers';
 
 let container: HTMLElement;
@@ -178,5 +178,55 @@ describe('跳到行', () => {
     await waitFor(() => expect(band()).not.toBeNull());
     setReveal('src/app.ts');
     await waitFor(() => expect(band()).toBeNull());
+  });
+});
+
+describe('改动标记', () => {
+  const marks = () => [...container.querySelectorAll<HTMLElement>('[data-mark]')];
+
+  afterEach(() => {
+    fileMarkStates.value = new Map();
+  });
+
+  it('按行号 × 行高画在行号槽里，三种各一个样子', async () => {
+    fileMarkStates.value = new Map([
+      [
+        'a.ts',
+        [
+          { kind: 'added', line: 1, count: 2 },
+          { kind: 'modified', line: 4, count: 1 },
+          { kind: 'deleted', line: 6, count: 0 },
+        ],
+      ],
+    ]);
+    ready('a.ts', { kind: 'text', content: 'a\nb\nc\nd\ne\nf\n' });
+    await waitFor(() => expect(marks()).toHaveLength(3));
+    const [added, modified, deleted] = marks();
+    // 挂在行号 `<pre>` 里：它 sticky，横向滚时标记跟着行号槽留在左边
+    expect(added?.parentElement).toBe(container.querySelector('pre'));
+    expect(added?.dataset.mark).toBe('added');
+    expect(added?.style.top).toBe('8px');
+    expect(added?.style.height).toBe('40px');
+    expect(modified?.style.top).toBe('68px');
+    // 删除点是三角，中线压在第 5、6 行之间那条线上（8 + 5 × 20 − 4）
+    expect(deleted?.style.top).toBe('104px');
+    expect(deleted?.style.height).toBe('');
+    expect(added?.getAttribute('class')).toContain('bg-editor-gutter-added-background');
+    expect(modified?.getAttribute('class')).toContain('bg-editor-gutter-modified-background');
+    expect(deleted?.getAttribute('class')).toContain('border-l-editor-gutter-deleted-background');
+  });
+
+  it('没有标记（文件不在变更列表里）时一个都不画，行号槽照旧', async () => {
+    ready('a.ts', { kind: 'text', content: 'a\nb\n' });
+    await waitFor(() => expect(container.textContent).toContain('a'));
+    expect(marks()).toEqual([]);
+    expect(container.querySelector('pre')?.textContent).toBe('1\n2');
+  });
+
+  it('别的文件的标记与这里无关', async () => {
+    fileMarkStates.value = new Map([['other.ts', [{ kind: 'added', line: 1, count: 1 }]]]);
+    ready('a.ts', { kind: 'text', content: 'a\n' });
+    await waitFor(() => expect(container.textContent).toContain('a'));
+    expect(marks()).toEqual([]);
   });
 });

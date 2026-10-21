@@ -17,11 +17,14 @@ import {
   hasStagedChange,
   hasUnstagedChange,
   type ImagePreview,
+  isAbsentFromHead,
   isConflicted,
   isUntracked,
   type RepoState,
   type StatusCode,
 } from '../../server/shared/protocol';
+import { type LineMark, marksOf } from '../diff/marks';
+import { parsePatch } from '../diff/parse';
 import {
   activeEditor,
   activeGroup,
@@ -472,6 +475,7 @@ function forget(editor: Editor): void {
       return;
     case 'file':
       fileCache.forget(editor.path);
+      fileMarksCache.forget(editor.path);
       return;
     case 'commit':
       commitDiffCache.forget(keyOf(editor));
@@ -579,6 +583,10 @@ export async function refresh(): Promise<void> {
   for (const editor of before) if (editor.kind === 'file') void loadFile(editor.path);
 
   if (!(await loadState())) return;
+  // 改动标记要等新列表：这个文件还在不在列表里、`oldPath` 是哪个，都得按新的一份判
+  // 同一个文件两组各开一份时只取一趟
+  const filePaths = new Set(before.filter((editor) => editor.kind === 'file').map((e) => e.path));
+  const marks = [...filePaths].map(loadFileMarks);
   // 提交列表要等新列表：判据是新 state 里的 HEAD oid——HEAD 没挪就一条请求都不发。看不见时不判，
   // 变回看得见时 `SourceControl` 那个 effect 拿当时的 state 再判一次（ref 徽标的 refs 同一个入口）
   const history = historyVisible.value ? ensureHistory(repoState.value) : null;
@@ -628,7 +636,7 @@ export async function refresh(): Promise<void> {
   const fetches = visibleEditors.value
     .filter((editor) => !fetched.has(keyOf(editor)))
     .map((editor) => refetch(editor));
-  await Promise.all([history, ...fetches, search]);
+  await Promise.all([history, ...marks, ...fetches, search]);
 }
 
 /**
@@ -663,7 +671,7 @@ function refetch(editor: Editor): Promise<void> {
       ? loadCommitDiff(editor)
       : Promise.resolve();
   }
-  if (editor.kind === 'file') return loadFile(editor.path);
+  if (editor.kind === 'file') return loadFileTab(editor.path);
   const entry = entryOf(editor);
   return entry === undefined ? Promise.resolve() : loadDiff(entry);
 }
@@ -786,7 +794,50 @@ export function openFile(
   const replaced = openEditor('file', path, pinned);
   if (replaced !== null) forget(replaced);
   setReveal(path, line);
-  void loadFile(path);
+  void loadFileTab(path);
+}
+
+const fileMarksCache = pathCache<readonly LineMark[]>();
+
+/**
+ * 栏里每个 file tab 行号旁的改动标记，按路径存。**缺项即不画**：文件不在变更列表里、补丁不是文本、
+ * 取失败，三种都是「没有可标的」，不另设状态——标记是全文上的点缀，它的错误不该占面板一行。
+ */
+export const fileMarkStates = fileMarksCache.states;
+
+/**
+ * 取一个 file tab 的改动标记：这个路径此刻在变更列表里、且 HEAD 里有它（`isAbsentFromHead`）才取
+ * 它的 `/api/diff`（与 diff tab 同一条，`oldPath` 取此刻那一行的），否则清掉。按 `PATCH_DEFAULTS` 取、
+ * 不跟忽略空白：标记回答「这行动过没有」，空白改动也是改动。`AM` 也不标：VS Code 在那里对着暂存区画
+ * 剩下的改动，而 `/api/diff` 只有 HEAD 一个基准，标出来仍是整份绿条。重取期间照常留着旧的一份，理由同
+ * `loadFile`；标记与手上那份逐项相同时不写，不为没变的标记唤醒每个看得见的文件视图。
+ */
+async function loadFileMarks(path: string): Promise<void> {
+  const entry = entryByPath.value.get(path);
+  // `forget` 连同在途那一趟一起作废：文件刚撤销回干净时，上一份 state 发出的那趟不许落地
+  if (entry === undefined || isAbsentFromHead(entry)) return fileMarksCache.forget(path);
+  const ticket = fileMarksCache.tickets.claim(path);
+  try {
+    const payload = await getJson<DiffPayload>(`/api/diff?${patchQueryOf(entry)}`);
+    if (!fileMarksCache.tickets.isCurrent(ticket, path)) return;
+    if (payload.kind !== 'text') return fileMarksCache.forget(path);
+    const marks = marksOf(parsePatch(payload.patch));
+    if (!sameMarks(fileMarkStates.value.get(path), marks)) fileMarksCache.set(path, marks);
+  } catch {
+    if (fileMarksCache.tickets.isCurrent(ticket, path)) fileMarksCache.forget(path);
+  }
+}
+
+const sameMarks = (a: readonly LineMark[] | undefined, b: readonly LineMark[]): boolean =>
+  a?.length === b.length &&
+  a.every((m, i) => m.kind === b[i]?.kind && m.line === b[i]?.line && m.count === b[i]?.count);
+
+/**
+ * 一个 file tab 要的两样：全文与改动标记。打开、切过去都走这里——两处各写一对时，下一个入口只记得
+ * `loadFile`，标记就静默停在旧的那份上。SSE 那一路例外（`refresh`）：标记要等新列表。
+ */
+function loadFileTab(path: string): Promise<void> {
+  return Promise.all([loadFile(path), loadFileMarks(path)]).then(() => {});
 }
 
 const commitDiffCache = pathCache<DiffRequestState>();
