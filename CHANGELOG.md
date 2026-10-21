@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/zhangwanli09/difftab/compare/v0.10.0...v0.11.0) (2026-10-21)
+
+
+### Features
+
+* **web:** split the active editor with Cmd+\ / Ctrl+\ ([#140](https://github.com/zhangwanli09/difftab/issues/140)) ([0f46f4c](https://github.com/zhangwanli09/difftab/commit/0f46f4c77207b75e79cccdbdc2a0a69654863586))
+
 ## [0.10.0](https://github.com/zhangwanli09/difftab/compare/v0.9.0...v0.10.0) (2026-10-20)
 
 
