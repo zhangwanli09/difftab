@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/zhangwanli09/difftab/compare/v0.11.0...v0.12.0) (2026-10-21)
+
+
+### Features
+
+* **web:** mark changed lines in the file view gutter ([#142](https://github.com/zhangwanli09/difftab/issues/142)) ([3f1c2d2](https://github.com/zhangwanli09/difftab/commit/3f1c2d2e48877112c77f26d6a09974aa61967ff3))
+
 ## [0.11.0](https://github.com/zhangwanli09/difftab/compare/v0.10.0...v0.11.0) (2026-10-21)
 
 
