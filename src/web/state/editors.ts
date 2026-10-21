@@ -243,6 +243,12 @@ export const draggingEditor = signal<{
   readonly key: EditorKey;
 } | null>(null);
 
+/**
+ * 要把 DOM 焦点交给哪一组的活动 tab（`EditorGroupView` 接）。**只改 `activeGroup` 不够**：键盘焦点还留在
+ * 源组，下一次 Tab 落在源组里，`focusin` 就把焦点组换了回去。每次请求都是一个新对象，理由同 `revealRequest`。
+ */
+export const groupFocusRequest = signal<{ readonly group: EditorGroup } | null>(null);
+
 /** 回到一组、空栏。给用例的重置用：模块级状态不随用例归零。 */
 export function resetGroups(): void {
   const group = createGroup();
@@ -250,6 +256,7 @@ export function resetGroups(): void {
     groups.value = [group];
     activeGroup.value = group;
     draggingEditor.value = null;
+    groupFocusRequest.value = null;
   });
 }
 
@@ -415,20 +422,31 @@ export function moveEditor(
   if (from === to) return null;
   const moved = from.editors.value[indexOfKey(from.editors.value, key)];
   if (moved === undefined) return null;
+  return batch(() => {
+    const landed = land(moved, to, index);
+    removeEditor(key, from);
+    return landed;
+  });
+}
+
+/**
+ * 把 `editor` 固定着放进 `to`、设为活动项并让 `to` 成为焦点组，插在 `index` 前（缺省追加）。`to` 里已开着
+ * 同键时不并排第二个，只切过去、留那一份的位置与上下文档。移动与复制两路共用这一处：各写一份时「落地即
+ * 固定」「同键只切过去」改了一边，另一边静默照旧。调用方自己包 `batch`。
+ */
+function land(editor: Editor, to: EditorGroup, index?: number): Editor {
+  const key = keyOf(editor);
   const list = to.editors.value;
   const existingIndex = indexOfKey(list, key);
   const existing = list[existingIndex];
-  const landed: Editor = { ...(existing ?? moved), pinned: true };
+  const landed: Editor = { ...(existing ?? editor), pinned: true };
   const at = index === undefined ? list.length : Math.max(0, Math.min(index, list.length));
-  batch(() => {
-    to.editors.value =
-      existing === undefined
-        ? [...list.slice(0, at), landed, ...list.slice(at)]
-        : replaceAt(list, existingIndex, landed);
-    to.activeKey.value = key;
-    activeGroup.value = to;
-    removeEditor(key, from);
-  });
+  to.editors.value =
+    existing === undefined
+      ? [...list.slice(0, at), landed, ...list.slice(at)]
+      : replaceAt(list, existingIndex, landed);
+  to.activeKey.value = key;
+  activeGroup.value = to;
   return landed;
 }
 
@@ -438,10 +456,32 @@ export function moveEditor(
  */
 export function splitEditor(from: EditorGroup, key: EditorKey): Editor | null {
   if (!canSplit(from) || indexOfKey(from.editors.value, key) === -1) return null;
+  return batch(() => moveEditor(from, key, appendGroup()));
+}
+
+/** 在右边新开一组并回它。拖动与键盘两路分屏共用：建组时要多做的事只写这一处。 */
+function appendGroup(): EditorGroup {
   const group = createGroup();
+  groups.value = [...groups.value, group];
+  return group;
+}
+
+/**
+ * 键盘那一路的分屏（`⌘\` / `Ctrl+\`）：焦点组的活动 tab 在另一组**再开一份**并固定，焦点跟过去；只有
+ * 一组时先分出右组，已有两组时就开在另一组。**是复制，不是 `splitEditor` 那种移动**：只开着一个 tab
+ * 时移走即源组空、合并回去，按了等于没按——而那正是键盘用户最常见的起点。另一组已开着同键时只切
+ * 过去，同 `moveEditor`。DOM 焦点也跟过去（`groupFocusRequest`）。回另一组里的那一项，焦点组空着时回 null。
+ *
+ * 不经 `store.ts` 取数据：源组那份正在屏幕上，缓存两组共用，新开的这份拿到的就是最新的。
+ */
+export function splitActiveEditor(): Editor | null {
+  const from = activeGroup.value;
+  const editor = from.active.value;
+  if (editor === null) return null;
   return batch(() => {
-    groups.value = [...groups.value, group];
-    return moveEditor(from, key, group);
+    const to = groups.value.find((group) => group !== from) ?? appendGroup();
+    groupFocusRequest.value = { group: to };
+    return land(editor, to);
   });
 }
 

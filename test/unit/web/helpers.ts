@@ -34,6 +34,7 @@ import {
   resetIncoming,
 } from '../../../src/web/state/history';
 import { resetGraphRefs } from '../../../src/web/state/refs';
+import { handleGlobalKey } from '../../../src/web/state/shortcuts';
 import {
   changesCollapsed,
   historyCollapsed,
@@ -126,6 +127,13 @@ export function openPinned(
 ): void {
   openEditor(kind, path);
   pinEditor(editorKey(kind, path));
+}
+
+/** 按一下全局快捷键（`mac` 选修饰键的判法），回事件本身好看 `defaultPrevented`。 */
+export function press(init: KeyboardEventInit, mac: boolean): KeyboardEvent {
+  const event = new KeyboardEvent('keydown', { cancelable: true, ...init });
+  handleGlobalKey(event, mac);
+  return event;
 }
 
 /**

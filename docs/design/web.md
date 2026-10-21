@@ -53,8 +53,8 @@
 - **空输入列当前的变更文件**（`repoState.files`；工作区里已不存在的不列——它唯一能打开的是一条错误，判据同 `Open file` 的 `isAbsentFromWorktree`）。VS Code 在这里列「最近打开」，本工具最常要跳的是 agent 刚改过的那批。
 - **一行 = 文件名 + 目录**，两段同住一个 `truncate` span（理由同变更列表），`title` 是完整路径。
 - **选中走 `openFile` 的固定档**（照 VS Code `workbench.editor.enablePreviewFromQuickOpen` 的默认 `false`），不切侧栏档位。关闭后焦点交还给打开前那个元素。
-- **全局快捷键挂在 `document` 的 `keydown` 上，只有两条**：`⌘P` / `Ctrl+P` 开 Quick Open（`preventDefault` 拦下浏览器打印），`⌘⇧F` / `Ctrl+Shift+F` 切到 `Search` 档并聚焦、全选输入框。Mac 判 `metaKey`、其余判 `ctrlKey`——两个都认时会吃掉 macOS 输入框里 `Ctrl+P`（光标上移一行）这条系统级 Emacs 键位。按钮的 `title` 按平台写 `⌘P` 或 `Ctrl+P`。
-- **两条快捷键连同它们的名字只有一份清单**（`SHORTCUTS`，与 `handleGlobalKey` 同住 `state/shortcuts.ts`）：按钮与侧栏 tab 的名字和 tooltip（格式只在 `withShortcut` 写一次）、Quick Open 弹窗的名字、右侧空态的快捷键列表都从它取，改键或改名时界面上一起变（本节上面写的具体按键是文档，要手动跟）。
+- **全局快捷键挂在 `document` 的 `keydown` 上，只有三条**：`⌘P` / `Ctrl+P` 开 Quick Open（`preventDefault` 拦下浏览器打印），`⌘⇧F` / `Ctrl+Shift+F` 切到 `Search` 档并聚焦、全选输入框，`⌘\` / `Ctrl+\` 把活动 tab 分到另一组（`Split Editor`，见 [`editors.md`](editors.md) 的「分屏」）。**按 `event.key` 认键，不按 `event.code`**：空态与 tooltip 写的是字符，按物理键位认时非美式布局上写的与按的不是同一个键；代价是 `\` 要 `AltGr` / `Option` 才打得出的布局上按不到（带 `Alt` 的一律不认），那里仍有拖动。Mac 判 `metaKey`、其余判 `ctrlKey`——两个都认时会吃掉 macOS 输入框里 `Ctrl+P`（光标上移一行）这条系统级 Emacs 键位。按钮的 `title` 按平台写 `⌘P` 或 `Ctrl+P`。
+- **快捷键连同它们的名字只有一份清单**（`SHORTCUTS`，与 `handleGlobalKey` 同住 `state/shortcuts.ts`）：按钮与侧栏 tab 的名字和 tooltip（格式只在 `withShortcut` 写一次）、Quick Open 弹窗的名字、右侧空态的快捷键列表都从它取（`Split Editor` 没有按钮，空态是它唯一露面的地方，所以照列，即便空着时按它什么都不做），改键或改名时界面上一起变（本节上面写的具体按键是文档，要手动跟）。
 
 ## 变更列表
 

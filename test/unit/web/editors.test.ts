@@ -26,6 +26,7 @@ import {
   removeEditor,
   renameEditor,
   setEditorContext,
+  splitActiveEditor,
   splitEditor,
   visibleEditors,
 } from '../../../src/web/state/editors';
@@ -392,5 +393,47 @@ describe('分屏（编辑器组）', () => {
     focusEditor('diff:a.ts', left);
     expect(activeEditorPath.value).toBe('a.ts');
     expect(activeEditor.value?.path).toBe('a.ts');
+  });
+});
+
+describe('splitActiveEditor（键盘分屏）', () => {
+  it('只有一个 tab 也能分：复制到新开的右组并固定，源组那份留着，焦点跟过去', () => {
+    openEditor('diff', 'a.ts');
+    const left = activeGroup.value;
+    const landed = splitActiveEditor();
+    const right = groups.value[1];
+    expect(groups.value).toHaveLength(2);
+    expect(landed).toMatchObject({ kind: 'diff', path: 'a.ts', pinned: true });
+    expect(left.editors.value.map(keyOf)).toEqual(['diff:a.ts']);
+    expect(right?.editors.value.map(keyOf)).toEqual(['diff:a.ts']);
+    expect(activeGroup.value).toBe(right);
+  });
+
+  it('已有两组时开在另一组，不分第三组；另一组已开着同键时只切过去', () => {
+    openPinned('diff', 'a.ts');
+    openPinned('diff', 'b.ts');
+    const left = activeGroup.value;
+    splitActiveEditor();
+    const right = activeGroup.value;
+    openPinned('diff', 'c.ts');
+    splitActiveEditor();
+    expect(groups.value).toEqual([left, right]);
+    expect(activeGroup.value).toBe(left);
+    expect(left.editors.value.map(keyOf)).toEqual(['diff:a.ts', 'diff:b.ts', 'diff:c.ts']);
+    focusEditor('diff:b.ts', left);
+    splitActiveEditor();
+    expect(right.editors.value.map(keyOf)).toEqual(['diff:b.ts', 'diff:c.ts']);
+    expect(right.activeKey.value).toBe('diff:b.ts');
+  });
+
+  it('带着上下文档过去：缓存两组共用，各持一档会轮流改写同一格', () => {
+    openPinned('diff', 'a.ts');
+    setEditorContext(editorKey('diff', 'a.ts'), 'full');
+    expect(contextOf(splitActiveEditor() ?? undefined)).toBe('full');
+  });
+
+  it('焦点组空着时什么都不做', () => {
+    expect(splitActiveEditor()).toBeNull();
+    expect(groups.value).toHaveLength(1);
   });
 });

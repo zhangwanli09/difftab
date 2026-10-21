@@ -1,10 +1,10 @@
 // Quick Open：模糊匹配的打分与命中下标、空输入列变更文件、选中即以固定 tab 打开、关掉后焦点还回去，
-// 以及两条全局快捷键。fetch 一律打桩。
+// 以及三条全局快捷键。fetch 一律打桩。
 
 import { render } from 'preact';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../../../src/web/components/App';
-import { activeEditor, revealRequest } from '../../../src/web/state/editors';
+import { activeEditor, groups, revealRequest } from '../../../src/web/state/editors';
 import {
   fileList,
   fileListError,
@@ -13,14 +13,18 @@ import {
   quickOpenVisible,
 } from '../../../src/web/state/quick-open';
 import { resetSearch, searchFocusRequest } from '../../../src/web/state/search';
-import {
-  handleGlobalKey,
-  SHORTCUTS,
-  shortcutKeys,
-  withShortcut,
-} from '../../../src/web/state/shortcuts';
+import { SHORTCUTS, shortcutKeys, withShortcut } from '../../../src/web/state/shortcuts';
 import { activeTab, repoState } from '../../../src/web/state/store';
-import { file, hideHistory, repo, resetEditors, stubJsonBy, waitFor } from './helpers';
+import {
+  file,
+  hideHistory,
+  openPinned,
+  press,
+  repo,
+  resetEditors,
+  stubJsonBy,
+  waitFor,
+} from './helpers';
 
 describe('matchPath', () => {
   it('不分大小写的子序列；命中下标指向原路径里的字符', () => {
@@ -138,12 +142,6 @@ describe('QuickOpen', () => {
 });
 
 describe('全局快捷键', () => {
-  const press = (init: KeyboardEventInit, mac: boolean) => {
-    const event = new KeyboardEvent('keydown', { cancelable: true, ...init });
-    handleGlobalKey(event, mac);
-    return event;
-  };
-
   it('Mac 上 ⌘P 开 Quick Open 并拦下打印；Ctrl+P 不认', () => {
     expect(press({ key: 'p', ctrlKey: true }, true).defaultPrevented).toBe(false);
     expect(quickOpenVisible.value).toBe(false);
@@ -169,6 +167,27 @@ describe('全局快捷键', () => {
     expect(press({ key: 'p', ctrlKey: true, altKey: true }, false).defaultPrevented).toBe(false);
     expect(press({ key: 'p' }, false).defaultPrevented).toBe(false);
     expect(quickOpenVisible.value).toBe(false);
+  });
+
+  it('⌘\\ 把活动 tab 分到另一组；Mac 上 Ctrl+\\ 不认', () => {
+    openPinned('diff', 'a.ts');
+    expect(press({ key: '\\', ctrlKey: true }, true).defaultPrevented).toBe(false);
+    expect(groups.value).toHaveLength(1);
+    expect(press({ key: '\\', metaKey: true }, true).defaultPrevented).toBe(true);
+    expect(groups.value).toHaveLength(2);
+  });
+
+  it('⌘\\ 按住的自动重复与 Quick Open 开着时都不分，但照样拦下', () => {
+    openPinned('diff', 'a.ts');
+    quickOpenVisible.value = true;
+    expect(press({ key: '\\', metaKey: true }, true).defaultPrevented).toBe(true);
+    expect(groups.value).toHaveLength(1);
+    quickOpenVisible.value = false;
+    press({ key: '\\', metaKey: true }, true);
+    const right = groups.value[1];
+    expect(press({ key: '\\', metaKey: true, repeat: true }, true).defaultPrevented).toBe(true);
+    expect(right?.activeKey.value).toBe('diff:a.ts');
+    expect(groups.value).toHaveLength(2);
   });
 
   it('按键提示按平台写：Mac 是符号连写，其余是 Ctrl+ 拼接', () => {

@@ -3,9 +3,16 @@
 // 这一层管三件与组有关、与视图无关的事：量自己的宽度（版式按组判）、被点到时成为焦点组、接住拖到
 // 正文上的 tab（分屏或移到这一组）。拖到标签栏上的那一路在 `EditorTabs` 里。
 
-import { type Signal, useComputed, useSignal } from '@preact/signals';
+import { type Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals';
 import { useEffect, useRef } from 'preact/hooks';
-import { activeGroup, canSplit, draggingEditor, type EditorGroup, keyOf } from '../state/editors';
+import {
+  activeGroup,
+  canSplit,
+  draggingEditor,
+  type EditorGroup,
+  groupFocusRequest,
+  keyOf,
+} from '../state/editors';
 import { observeDiffPanel } from '../state/layout';
 import { splitStyle } from '../state/sidebar';
 import { moveEditorTo, splitEditorRight } from '../state/store';
@@ -125,6 +132,14 @@ export function EditorGroupView({ group, first }: { group: EditorGroup; first: b
     const el = root.current;
     return el === null ? undefined : observeDiffPanel(el, group.width);
   }, [group]);
+
+  // 键盘分屏之后把 DOM 焦点交给这一组的活动 tab。**是 signal effect 而不是在组件体里读**：读在这里时每次
+  // 请求两组连同底下的 diff 一起重渲。新分出的组首次跑在挂载之后，标签栏已经在 DOM 里；已有的组靠
+  // `useSignalEffect` 的通知排在组件重渲之后，刚开进来的 tab 此时也已带上 `aria-selected`
+  useSignalEffect(() => {
+    if (groupFocusRequest.value?.group !== group) return;
+    root.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus();
+  });
 
   // 只订阅「有没有 tab」：`active` 每次固定、改名、换上下文档都是一个新对象，直接读时整组跟着重渲
   const hasTabs = useComputed(() => group.active.value !== null).value;

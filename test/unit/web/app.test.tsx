@@ -33,7 +33,7 @@ import {
 } from '../../../src/web/state/store';
 import { PRODUCT_NAME } from '../../../src/web/state/title';
 import { expandedDirs, ROOT, treeCache, treeErrors } from '../../../src/web/state/tree';
-import { hideHistory, openPinned, resetEditors, waitFor } from './helpers';
+import { hideHistory, openPinned, press, resetEditors, waitFor } from './helpers';
 
 const stateWith = (repoName: string): RepoState => ({
   repoName,
@@ -422,8 +422,9 @@ describe('右侧面板', () => {
     render(<App />, container);
     await waitFor(() => expect(section()?.textContent).toContain('Go to File'));
     expect(section()?.textContent).toContain('Search');
-    // 每个按键一枚 `<kbd>`：P 那条两枚，F 那条三枚；整列对读屏隐藏，符号念出来没有意义
-    expect(section()?.querySelectorAll('kbd')).toHaveLength(5);
+    expect(section()?.textContent).toContain('Split Editor');
+    // 每个按键一枚 `<kbd>`：P 那条两枚，F 那条三枚，\ 那条两枚；整列对读屏隐藏，符号念出来没有意义
+    expect(section()?.querySelectorAll('kbd')).toHaveLength(7);
     for (const dd of section()?.querySelectorAll('dd') ?? []) {
       expect(dd.getAttribute('aria-hidden')).toBe('true');
     }
@@ -522,8 +523,8 @@ describe('分屏', () => {
   });
   // 只在右侧面板里找：左栏那一行 tab 也是一个 tablist
   const tablists = () => [...(section()?.querySelectorAll('[role="tablist"]') ?? [])];
-  const tabButton = (name: string) =>
-    [...(section()?.querySelectorAll<HTMLElement>('[role="tab"]') ?? [])].find((tab) =>
+  const tabButton = (name: string, root: Element | null | undefined = section()) =>
+    [...(root?.querySelectorAll<HTMLElement>('[role="tab"]') ?? [])].find((tab) =>
       tab.textContent?.includes(name),
     );
   /** 一组正文（标签栏的下一个兄弟），拖到正文上的那一路挂在它上面。 */
@@ -625,5 +626,30 @@ describe('分屏', () => {
     expect(tabButton('a.ts')?.parentElement?.classList.contains('text-editor-foreground')).toBe(
       true,
     );
+  });
+
+  it('⌘\\ 分屏后 DOM 焦点跟到新组的活动 tab：只改焦点组时，下一次 Tab 落在源组里就把它换回去', async () => {
+    openBinaryDiff('src/a.ts');
+    render(<App />, container);
+    await waitFor(() => expect(tabButton('a.ts')).toBeDefined());
+    tabButton('a.ts')?.focus();
+
+    press({ key: '\\', metaKey: true }, true);
+    await waitFor(() => expect(tablists()).toHaveLength(2));
+    const right = tablists()[1]?.querySelector('[role="tab"]');
+    await waitFor(() => expect(document.activeElement).toBe(right));
+  });
+
+  it('已有两组时 ⌘\\ 的 DOM 焦点落在刚开进另一组的那个 tab，不是它原先的活动 tab', async () => {
+    openTwo();
+    render(<App />, container);
+    await waitFor(() => expect(tabButton('b.ts')).toBeDefined());
+    press({ key: '\\', metaKey: true }, true);
+    await waitFor(() => expect(tablists()).toHaveLength(2));
+
+    focusEditor('diff:src/a.ts', groups.value[0]);
+    press({ key: '\\', metaKey: true }, true);
+    await waitFor(() => expect(tablists()[1]?.textContent).toContain('a.ts'));
+    await waitFor(() => expect(document.activeElement).toBe(tabButton('a.ts', tablists()[1])));
   });
 });

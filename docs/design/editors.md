@@ -36,8 +36,9 @@
 
 **右侧面板最多两组编辑器，左右并排**（照 VS Code 的 editor group，封顶两组、不做上下与网格）。状态是 `groups`（长度 1 或 2）+ 焦点组 `activeGroup`；每组一个 `EditorGroup`：自己的 tab 列表、活动键、量出来的宽度。`editors` / `activeEditorKey` / `activeEditor` / `activeEditorPath` 是**焦点组**的只读派生。
 
-- **入口只有拖动**：把 tab 拖到另一组的正文或标签栏，或在只有一组时拖到正文的右半边（分出右组）。拖动走 HTML5 drag and drop，**拖的是哪个 tab 记在 `draggingEditor` 这个 signal 上，不从 `dataTransfer` 里读**：`dataTransfer` 只在 `drop` 时可读、`dragover` 时读不到内容，而判投放区恰恰在 `dragover`；`dataTransfer` 上只写一份占位（Firefox 不写不起拖）。投放区画一层 `pointer-events: none` 的遮罩，颜色 `editor-group-drop-background`。
-- **只有一个 tab 的组不能再分**：分出去等于原地不动，投放区不亮。**同一组内拖动不排序**，标签栏只接受来自另一组的 tab，插到指针落在的那个 tab 之前或之后。
+- **入口是拖动与一条快捷键**：把 tab 拖到另一组的正文或标签栏，或在只有一组时拖到正文的右半边（分出右组）；键盘上 `⌘\` / `Ctrl+\` 见下一条。拖动走 HTML5 drag and drop，**拖的是哪个 tab 记在 `draggingEditor` 这个 signal 上，不从 `dataTransfer` 里读**：`dataTransfer` 只在 `drop` 时可读、`dragover` 时读不到内容，而判投放区恰恰在 `dragover`；`dataTransfer` 上只写一份占位（Firefox 不写不起拖）。投放区画一层 `pointer-events: none` 的遮罩，颜色 `editor-group-drop-background`。
+- **快捷键是复制，不是移动**（`splitActiveEditor`，照 VS Code `workbench.action.splitEditor`）：焦点组的活动 tab 在另一组再开一份并固定，焦点跟过去，源组不动。**DOM 焦点也要跟过去**（`groupFocusRequest`，目标组渲染完之后聚焦它的活动 tab；signal effect 的通知排在渲染之后，新开的 tab 已经在 DOM 里）：只改焦点组时键盘焦点还留在源组，下一次 Tab 落在源组里，`focusin` 就把焦点组换了回去，之后 Quick Open 与左栏的点击又开回源组。只有一组时先分出右组，已有两组时就开在另一组，**不分第三组**。所以**只有一个 tab 的组也能分**——源组那份留着，不会移空。另一组已开着同键时只切过去，同拖动。按住不放的自动重复与 Quick Open 开着时不认（前者让焦点在两组间来回跳，后者在浮层底下换掉焦点组、选中的文件开到另一组），但照样 `preventDefault`。不另发请求：源组那份正在屏幕上、缓存两组共用，新开的这份拿到的就是最新的。HTML5 drag and drop 对键盘不可达，没有这条时只用键盘的人打不开第二组，两组之间那把「键盘可达」的把手也就无从谈起。
+- **只有一个 tab 的组不能再拖出右组**：分出去等于原地不动，投放区不亮。**同一组内拖动不排序**，标签栏只接受来自另一组的 tab，插到指针落在的那个 tab 之前或之后。
 - **拖过去即固定**（照 VS Code）：拖动是明确意图，留成预览会被下一次单击顶掉。目标组已开着同键时只切过去，不并排两个同键 tab；上下文档取靠后的那档。
 - **组空即合并**：拖走、关掉、或被 SSE 收编掉最后一个 tab 时这一组消失，焦点落到剩下那组；只剩一组时空着就画空态。**两组时永远没有空组**——空组只会是一块不能做任何事的白地。
 - **焦点组**：组的根元素 `pointerdown` / `focusin` 时成为焦点组。左栏的单击、双击、`Open file`、Quick Open、搜索命中、History 一律开在焦点组；左栏的高亮与 `Files` 树的定位跟焦点组的活动 tab 走。**非焦点组的活动 tab 文字用次要前景色**：否则看不出左栏此刻跟的是哪一组。动作区的按钮作用于**所在那一组**的活动 tab，不读焦点组——点下去之前焦点不一定已经过来。
@@ -59,9 +60,9 @@
 - **栏与左栏顶栏同高**（有断言）。**tablist 横向滚动、每个 tab `shrink-0`、滚动条隐藏（`scrollbar-none`）**：画出滚动条时栏会被撑高、与顶栏错开。**活动 tab 要自己滚进视野**（`scrollIntoView`，`inline: 'nearest'`）：否则溢出后新开的 tab 在屏幕外，正文换了而栏上看不出变化。**动作区的按钮数变了也再滚一次**（有断言），判据是数按钮的那一个 computed（每组一份的 `actionCount`），不是「画不画」——在 `text` 与 `untracked-text` 两种补丁之间切时，版式按钮一直在，忽略空白那一枚却会进出：新开的全文 tab 先以 `loading` 激活、滚到 tablist 末端，正文就绪后复制按钮才挤进来，tablist 窄一截而 `scrollLeft` 不动，活动 tab 的右端连同 × 就被裁掉。拖窄侧栏或窗口同样会让 tablist 变窄，那一路不跟——要接 `ResizeObserver`，眼下不做。
 - **`DiffView` / `FileView` 接 `path` prop，在渲染体里读 `diffStates.value.get(path)`，不能用 `useComputed` 包**：`useComputed` 只随 signal 依赖重算，prop 换了它停在上一个 tab——「切了 tab 标题变了正文没变」。
 - **切 tab 是卸载重挂，滚动位置不保留**：一份 diff 的 DOM 动辄数万行，N 个 tab 常驻挂载等于 N 份 DOM，`outputFormat` 一变每份都要重排。**卸载重挂靠 `EditorGroupView` 给视图按 tab 键 `key`**：只换 `path` prop 时 `Panel` 连同 `scrollTop` 留着，B 从 A 的偏移量打开，而换视图种类时又从顶部开始——两种切法必须一个样子。视图里不再另给 `Payload` 一份 `key`。
-- **右侧空态只在栏里一个 tab 都没有时画**（`PanelEmptyState`），照 VS Code 的空编辑区列**一列全局快捷键**（`Go to File` / `Search`，名字与顶栏按钮、侧栏 tab 同一份），不再说「点左边一个文件」——左栏就在旁边，这句不带信息。**不画 VS Code 列表上方那枚大号 logo 水印**：试过，放在这个面板里看着突兀。
+- **右侧空态只在栏里一个 tab 都没有时画**（`PanelEmptyState`），照 VS Code 的空编辑区列**一列全局快捷键**（`Go to File` / `Search` / `Split Editor`，前两条的名字与顶栏按钮、侧栏 tab 同一份），不再说「点左边一个文件」——左栏就在旁边，这句不带信息。**不画 VS Code 列表上方那枚大号 logo 水印**：试过，放在这个面板里看着突兀。
   - **不说「工作区干净」**：左栏 `Changes` 档空着已经答了「为什么没得看」，右侧再说一遍只是重复。
-  - **快捷键列表与全局快捷键同一份清单**（`state/shortcuts.ts` 的 `SHORTCUTS`），只展示、不可点——入口在顶栏与侧栏 tab 上已经有了。**布局照 VS Code**：一行一条、名字靠左、按键靠右；宽度随内容、两列只隔一小段（定宽时名字与按键离得太远，看着不像一行）；按键各一个 `<kbd>`，配色取 VS Code 的 `keybindingLabel.*`，按平台写 `⌘` 或 `Ctrl`。**按键那一列 `aria-hidden`**，读屏只念名字：一串 `⇧⌘F` 念出来是「shift symbol, place of interest sign」，与按钮 tooltip 里快捷键不进无障碍名同一条理由。
+  - **快捷键列表与全局快捷键同一份清单**（`state/shortcuts.ts` 的 `SHORTCUTS`），只展示、不可点——前两条的入口在顶栏与侧栏 tab 上已经有了，`Split Editor` 有拖动。**布局照 VS Code**：一行一条、名字靠左、按键靠右；宽度随内容、两列只隔一小段（定宽时名字与按键离得太远，看着不像一行）；按键各一个 `<kbd>`，配色取 VS Code 的 `keybindingLabel.*`，按平台写 `⌘` 或 `Ctrl`。**按键那一列 `aria-hidden`**，读屏只念名字：一串 `⇧⌘F` 念出来是「shift symbol, place of interest sign」，与按钮 tooltip 里快捷键不进无障碍名同一条理由。
   - **空态居中**，`flex-1` 撑满面板是居中成立的前提（有断言）。**居中用里层 `m-auto` + 外层 `overflow-auto`，不用 `justify-center`**：面板比这一块矮时后者往上下两头溢出，顶上那截滚不到；auto margin 放不下时归零，从顶上排起、照常能滚（有断言）。
   - **其余提示（loading / error / binary / too-large / symlink）仍是 `Notice` 贴左上**：它们说的是「这个文件怎么了」，居中反而像整个面板坏了。
 - **`Panel` 由两个视图共用**：各写一份时漂开的症状是「其中一个面板底下那半屏不跟着滚」。
