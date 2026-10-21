@@ -1,6 +1,7 @@
-// 全局快捷键，**只有两条**：`⌘P` / `Ctrl+P` 开 Quick Open，`⌘⇧F` / `Ctrl+Shift+F` 切到 `Search`
-// 档并聚焦输入框。挂在 `document` 的 `keydown` 上（`App` 接线）。
+// 全局快捷键，**只有三条**：`⌘P` / `Ctrl+P` 开 Quick Open，`⌘⇧F` / `Ctrl+Shift+F` 切到 `Search`
+// 档并聚焦输入框，`⌘\` / `Ctrl+\` 把活动 tab 分到另一组。挂在 `document` 的 `keydown` 上（`App` 接线）。
 
+import { splitActiveEditor } from './editors';
 import { quickOpenVisible } from './quick-open';
 import { focusSearch } from './search';
 import { activeTab } from './store';
@@ -20,12 +21,14 @@ export interface Shortcut {
 }
 
 /**
- * 两条快捷键连同名字的**唯一一份清单**：`handleGlobalKey` 按它认键，按钮 `title` 与右侧空态的
+ * 快捷键连同名字的**唯一一份清单**：`handleGlobalKey` 按它认键，按钮 `title` 与右侧空态的
  * 列表按它写字。各写一份时改了键，提示还写着旧的那个，不报错。
  */
 export const SHORTCUTS = {
   goToFile: { label: 'Go to File', key: 'P' },
   search: { label: 'Search', key: 'F', shift: true },
+  // 没有按钮，右侧空态是它唯一露面的地方
+  splitEditor: { label: 'Split Editor', key: '\\' },
 } as const satisfies Record<string, Shortcut>;
 
 /** 逐个按键：`['⇧', '⌘', 'F']` 或 `['Ctrl', 'Shift', 'F']`。空态里每个画成一枚 `<kbd>`。 */
@@ -42,6 +45,8 @@ export function withShortcut(label: string, shortcut?: Shortcut, mac = IS_MAC): 
   return `${label} (${shortcutKeys(shortcut, mac).join(mac ? '' : '+')})`;
 }
 
+// 按 `event.key` 认字符、不按 `event.code` 认键位：提示里写的是字符，按键位认时非美式布局上写的与按的
+// 不是同一个键
 const matches = (event: KeyboardEvent, { key, shift = false }: Shortcut): boolean =>
   event.key.toLowerCase() === key.toLowerCase() && event.shiftKey === shift;
 
@@ -61,5 +66,10 @@ export function handleGlobalKey(event: KeyboardEvent, mac = IS_MAC): void {
     quickOpenVisible.value = false;
     activeTab.value = 'search';
     focusSearch();
+  } else if (matches(event, SHORTCUTS.splitEditor)) {
+    event.preventDefault();
+    // 按住不放时的自动重复不认：第二下会把刚落地的那份再复制回源组，焦点在两组间来回跳。Quick Open 开着时
+    // 也不认：焦点组在浮层底下换掉，选中的文件就开到了另一组
+    if (!event.repeat && !quickOpenVisible.value) splitActiveEditor();
   }
 }
