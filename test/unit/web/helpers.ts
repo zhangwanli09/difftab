@@ -49,6 +49,7 @@ import {
   type DiffRequestState,
   diffStates,
   type FileRequestState,
+  fileMarkStates,
   fileStates,
   ignoreWhitespace,
   segmentContexts,
@@ -56,7 +57,7 @@ import {
 } from '../../../src/web/state/store';
 
 /**
- * 清空标签栏、五张缓存（连同两种多文件视图的分段上下文档）与跳行请求，忽略空白、SVG 预览两个开关回到
+ * 清空标签栏、六张缓存（连同两种多文件视图的分段上下文档）与跳行请求，忽略空白、SVG 预览两个开关回到
  * 默认。用到右侧状态的用例都从这里起。
  */
 export function resetEditors(): void {
@@ -66,6 +67,7 @@ export function resetEditors(): void {
   revealRequest.value = null;
   diffStates.value = new Map();
   fileStates.value = new Map();
+  fileMarkStates.value = new Map();
   commitDiffStates.value = new Map();
   commitChangesStates.value = new Map();
   segmentContexts.value = new Map();

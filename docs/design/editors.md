@@ -84,6 +84,12 @@
   - **视图按请求状态里记的那一档渲染，不读此刻的开关**：否则切换后、新补丁回来前的那一段里，旧补丁会按新口径算词级、零 hunk 时说错话。
 - **SVG 预览（`Preview`）**：活动 tab 正文 `ready` 且 payload 带 `preview`（diff / commit 是 `text` / `untracked-text`，file 是 `text`）时画，三种 tab 都有。它是 `Toggle`（图标 Lucide `Eye`），**全局一个 signal、默认开、不进 `localStorage`**，与忽略空白同一条理由。开着时视图把那份 `preview` 交给图片视图（`ImageDiff` / `ImageFile`），版式与忽略空白两枚不画——没有补丁表格可换；复制照留，复制的仍是原文。**判据只认 `preview` 字段**，不判扩展名。不重取：`preview` 本来就在已到的 payload 上。**挂着跳行请求（全仓搜索的命中）的那个 file tab 按文本画、按钮显示未按下，全局开关不动**：预览态下那一行不在面板上，跳行请求会一直挂着、等关掉预览时冷不丁滚过去；而改全局开关会让此后打开的每个 SVG 都莫名回到文本。在这个 tab 上按下 `Preview` 即清掉跳行请求、按图画。「此刻按不按图画」只有 `shownPreview` 一处判，视图与按钮都读它。
 - **跳到行（全仓搜索的命中行）**：`openFile` 带 `line` 时在 `state/editors.ts` 记一份 `revealRequest { path, line }`，`FileView` 在 `text` 就绪且路径对得上时把那一行滚到面板竖直居中，并在那一行画一条绝对定位的整行高亮带。**行的位置按 `(line - 1) × 行高` 算**——行号槽靠同一个 `leading-5` 对齐，正文是一整块 hljs 输出、不按行切（理由同上）。每次请求都是一个新对象、跳行 effect 依赖它的身份，再点同一行也重新滚一次；高亮带留到下一次跳行或切走。**全文已 `ready` 时同样生效**，不等重取。
+- **改动标记（照 VS Code quick diff）**：file tab 的路径此刻在变更列表里（`repoState.files` 有这一行）且 HEAD 里有它（不是未跟踪的 `U`、也不是新建后暂存的 `A`）时，行号槽右缘画一列 3px 的标记——新增绿条、修改蓝条、删除点一枚红三角，色值照 VS Code 的 `editorGutter.{added,modified,deleted}Background`。不在列表里的文件（Files 树、Quick Open、搜索打开的干净文件）不画、**也不发请求**。
+  - **数据源是 diff tab 那条 `/api/diff`，不新增路由**：基准同为 `git diff HEAD`，重命名照带 `oldPath`；按 `PATCH_DEFAULTS` 取，**不跟忽略空白开关**——标记回答的是「这行动过没有」，空白改动也是改动。**`U` 与 `A` 不标、也不发请求**（照 VS Code）：对着 HEAD 比是整份绿条，不带信息，左栏那个字母已经说了「整个是新的」。`A` 之后又改过（`AM`）的同样不标——VS Code 在那里对着暂存区画剩下的改动，而这里只有 HEAD 一个基准，已知差异。`git add -N`（`.A`）与冲突里对方新建的 `UA`、我方删了的 `DU` 同样不在 HEAD 里；冲突的 `AA` / `AU` 是我方新建、HEAD 里有，照常标。判据只在 `shared/protocol.ts` 的 `isAbsentFromHead` 一处——冲突条目的 XY 是合并阶段码，不能按状态位字面读。补丁不是 `text`（二进制、过大）或取失败时不画，全文照常显示。
+  - **判定按 `groupLines` 的分组**（`diff/marks.ts`，纯函数）：一组里既有删除又有插入 → 插入的那几行标修改；只有插入 → 标新增；只有删除 → 在新侧的插入点画删除。多段补丁（类型变了）只取最后一段，那一段才是工作区此刻的这个文件。
+  - **位置与跳行高亮带同一套算法**（`PAD_TOP + (line - 1) × LINE_HEIGHT`），标记是行号 `<pre>` 里绝对定位的子元素，随行号槽一起 `sticky`；不按行切 hljs 输出。
+  - **缓存 `fileMarkStates` 按路径，与全文同取同忘**：`openFile`、切到这个 tab、SSE 刷新都与 `loadFile` 一起取；SSE 那一路要等新列表（`loadState` 之后），「还在不在列表里」与 `oldPath` 都得按新的一份判，判出已不在列表里即清掉。
+  - **全文与补丁是两趟请求**：agent 写到一半时两份可能错开一拍、标记落在旁边一行，下一次 SSE 自愈。已知取舍，不为它在后端合一个接口。
 
 ## 整次提交视图
 
