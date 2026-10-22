@@ -20,6 +20,13 @@
   <a href="README.md">English</a>
 </p>
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/zhangwanli09/difftab/main/assets/screenshot-dark.png">
+    <img src="assets/screenshot-light.png" alt="difftab 以并排 diff 展示 agent 尚未提交的改动，左栏是变更列表、提交历史与分支状态">
+  </picture>
+</p>
+
 一个只读、零依赖的本地工作区查看器：diff、文件树、分支状态，在 agent 继续写的过程中自动刷新。关掉标签页，它就退出。
 
 ## 为什么做 difftab

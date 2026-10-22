@@ -118,4 +118,5 @@
 - **README 的特性列表只收差异点，不是功能清单**——加了新功能默认**不动** README，除非它本身就是个卖点；功能的事实来源是 `docs/spec.md` 的功能范围表，机制在 `docs/design/`
 - **改 logo 只改 `src/web/brand/geometry.mjs` 再 `node scripts/logo.mjs`**——几何或 token 改了没重跑由 `logo.test.ts` 拦；社交预览 PNG 得重新手工上传到 GitHub Settings
 - **真要改 README 则两份一起改**：`README.zh-CN.md` **不是自动生成的**，只改英文那份不会有任何门禁变红
+- **界面明显变样时手工重截 README 截图，明暗两张一起换**——一次性产出、没有生成脚本，过期了没有任何门禁看得见；怎么截见 `docs/design/web.md`「品牌标识」
 - **贡献者规范在 `CONTRIBUTING.md` 与 `.github/`**，产品承诺（只读、Non-goals）在那里也写了一遍给外部读者——改第 6 节时要跟着改

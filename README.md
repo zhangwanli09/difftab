@@ -20,6 +20,13 @@
   <a href="README.zh-CN.md">中文文档</a>
 </p>
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/zhangwanli09/difftab/main/assets/screenshot-dark.png">
+    <img src="assets/screenshot-light.png" alt="difftab showing an agent's uncommitted changes as a side-by-side diff, with the change list, history and branch status in the sidebar">
+  </picture>
+</p>
+
 A read-only, zero-dependency local viewer for your git working tree: the diff, the file
 tree and the branch status, refreshing itself while the agent keeps writing. Close the tab
 and it exits.
