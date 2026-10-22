@@ -15,6 +15,7 @@
 - **Linux 桌面：待验两件**，不阻塞日常发版、但阻塞 1.0.0，等首个真实 Linux 桌面：
   1. **浏览器真的弹出来。** `xdg-open` 的选择与 argv 已由单测与只读单点断言每次推送重跑，缺的是「argv 对了之后系统真的响应」这最后一跳。
   2. **token 经命令行的窗口在 `xdg-open` 下有多宽**（机制见 `design/server.md`「本地安全」一节末尾那条「已知边界」）。`xdg-open` 是脚本、`/proc/<pid>/cmdline` 默认全局可读，预计比 macOS 大。**刻意不进 CI**——headless 上 `xdg-open` 立刻失败退出，量出来的窗口比真实桌面上短得多，**是个会让人放心的假数**。
+- **README 暗色截图在 npm 页面上显示与否没验过**：`srcset` 因此写了 GitHub raw 绝对地址（机制在 `design/web.md`「品牌标识」）。下次发版后在 npmjs.com 切暗色看一眼：npm 连 `srcset` 的相对路径也改写的话，改回相对路径、删掉那条说明。
 - **与平台无关的已知缺陷：主题偏好跨不了实例**，先记着不动。机制与「没有门禁看得见」的原因在 `design/web.md` 的「主题开关」，被排除的修法在 `decisions/web.md`。
 
 ## 两条没有门禁的性能预算
@@ -87,7 +88,7 @@
 
 - **`files` 白名单**为 `bin/`、`dist/`、README（含 `README.<lang>.md` 译文）、LICENSE；`prepublishOnly` 执行完整构建。
 - **注意 `files` 不是一份完整的白名单**：npm / pnpm 无条件把根目录下所有 `README*` 打进 tarball，与 `files` 无关。门禁查的是 pack 的实际输出而不是 `files` 字段，所以这类偏差抓得到。
-- **`assets/`（logo、社交预览）刻意不进 `files`**：它只给 GitHub 与 README 用，README 里的相对路径由 npm 改写到 GitHub raw，不需要随包发。
+- **`assets/`（logo、社交预览、README 截图）刻意不进 `files`**：它只给 GitHub 与 README 用，README 里的相对路径由 npm 改写到 GitHub raw，不需要随包发。
 - **`dependencies` 为空。** 前端依赖在构建期即被打进 `dist/web/app.js`，后端只用 Node 标准库——用户 `npm i -g` 时零传递依赖安装。
 - **`publishConfig.registry` 钉住 `registry.npmjs.org`**：CI 里本来就是它；钉在 manifest 里，是让发布目标不取决于运行环境的 `~/.npmrc`。
 - **semver：0.x 保留破坏性余地**（尤其 CLI 参数与端口/token 行为）。**1.0.0 是结论不是起点**——本工具的核心承诺是只读与零副作用，1.0.0 应当是这些承诺被两层验证覆盖、且三端真机验过之后的结果。
