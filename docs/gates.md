@@ -47,6 +47,7 @@
 | `pnpm check:inotify` | Linux 上压低 `fs.inotify.max_user_watches` 至 ENOSPC 后没能降级。**不进冒烟套件**，非 Linux 直接 SKIP | 专用作业（ubuntu，需免密 sudo） |
 | old-node-guard | 低于下限的 Node 上拿到的是 `SyntaxError` 而不是友好提示。**单列一档**，因为 build 与 matrix 都跑在 ≥22 上，解析期失败那条路径在那里永远测不到。**只跑 ubuntu + windows**：那句提示丢不丢只在 Windows 上看得见，macOS 与 ubuntu 同属 POSIX 的同一种行为 | 专用作业（Node 20 × 两平台） |
 | 只读性门禁确实进了调用参数 | `readonly.test.js` / `readonly-git-dir.test.js` 被改名、搬走、误删，或那条 glob 在某个平台上没展开到它们——两种都让「只读承诺的唯一自动化保护」变成一个什么都没跑的绿勾（`node --test` 一个文件都没匹配上时是 0 用例、exit 0）。判据与为什么不数用例数，见 `design/build.md` 的「CI 分层」 | matrix |
+| 官网构建（`pages.yml` 的 PR 档） | 把 `site/` 改坏的 PR（Tailwind 指令、vite 配置）合进 main 后才在部署时失败，线上静默停在上一版。**不并进 `ci.yml`**——那份被发布 workflow 复跑，官网红了不该挡发版 | `pages.yml`（PR，命中 `site/**` 等 paths 时） |
 | 发布前复跑整份 CI（`release.yml` 的 `gates` 作业） | 发出去的那个 commit 从没跑过三平台冒烟：release PR 由 `GITHUB_TOKEN` 创建，GitHub 不为它触发 `pull_request` CI，PR 上一个检查都没有。`publish` 依赖它，红了不发 | 发布 workflow（`workflow_call` 调 `ci.yml`） |
 | 后端产物 import 检查 | 后端引了标准库以外的模块（断言 `dist/server/main.js` 的 import 说明符全部以 `node:` 开头） | matrix |
 | 前端产物 CJK 计数为 0 | 界面文案漏了中文。**后端那侧拦不到**（产物按约定保留注释），它的用户可见文案是 `sendError` 与各 `*Error` 的字面量，归 `test/unit/server/` | matrix |

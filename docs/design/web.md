@@ -133,7 +133,7 @@
 
 **符号是「一段 diff hunk」：三条圆角色条，上下文（灰）、删除（红）、新增（绿），没有外框，没有字标。** 24 网格（与 Lucide 同一坐标系），包围盒横竖都以 12 为中心；由填充不由描边——16px 下 2 单位描边的线稿糊成一团。为什么换成这版、颜色为什么固定、字标为什么退役，见 [`../decisions/web.md`](../decisions/web.md)。
 
-- **几何只有一份，在 `brand/geometry.mjs`**（纯 JS + 一份 `.d.mts`）：`components/Logo.tsx` 与 `scripts/logo.mjs` 都从它取。写成 `.mjs` 是因为脚本零依赖、import 不了 TS；反过来让组件 import 脚本会把拉起 Chrome 的模块打进前端产物。改符号只改这一份再 `node scripts/logo.mjs`（重写 `assets/*.svg`，有 Chrome 时再渲 PNG 并回写 `index.html` 的 favicon）。**没重跑时红的是 `test/unit/web/logo.test.ts`**。
+- **几何只有一份，在 `brand/geometry.mjs`**（纯 JS + 一份 `.d.mts`）：`components/Logo.tsx` 与 `scripts/logo.mjs` 都从它取。写成 `.mjs` 是因为脚本零依赖、import 不了 TS；反过来让组件 import 脚本会把拉起 Chrome 的模块打进前端产物。改符号只改这一份再 `node scripts/logo.mjs`（重写 `assets/*.svg`，回写官网 `site/index.html` 的页眉符号；有 Chrome 时再渲 PNG 并回写 `src/web/index.html` 与 `site/index.html` 同一段 favicon）。**没重跑时红的是 `test/unit/web/logo.test.ts`**，几处都钉。
 - **红绿是固定的品牌色，明暗两档不切，常量与几何同住 `geometry.mjs`，不进 `app.css`**：favicon、社交预览、README 头图三处于是逐字节相同。不用 `--color-git-added` / `--color-git-deleted`（给文字调的，铺成色块不好看），也不另立 token（CSS 里没有引用处，会被 Tailwind 裁掉）。**只有上下文那条跟主题走**：组件里 `fill: currentColor` 跟顶栏文字色；独立 SVG 内嵌一条媒体查询，取值由脚本从 `app.css` 的 `light-dark()` 里读，不另抄一份。
 - **顶栏那枚由 `createLucideIcon` 造出来**，与其它图标同一类型、走同一个 `Icon` 外壳。**每条 rect 自带 `stroke: 'none'`**——Lucide 把描边写在 `<svg>` 上，rect 继承后会被描一圈边，症状只是「色条偏胖发暗」。
 - **没有字标**：README 头图是 `assets/mark.svg` 与「difftab」同住一个 `<h1>`（只能用 `align`，GitHub 的 sanitizer 不放行 `style`）。社交预览里的文字是 Chrome 截成 PNG 后定型的，符号与名字的间距按符号的**可见包围盒**量、不按 24 网格，否则右侧留白叠进间距。

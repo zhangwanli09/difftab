@@ -27,6 +27,7 @@ test/unit/             Vitest，跑 TS 源码
 test/smoke/            纯 JS，跑 dist/ 产物（含只读性两层验证）
 test/fixtures/         测试仓库生成脚本
 scripts/               bench:startup、size 等门禁
+site/                  官网：一张静态页 + 独立的 vite config，与产品代码互不 import
 ```
 
 **依赖方向**（单向，可静态断言）：`bin → server/cli → server/http → {server/git, server/watch}`。`src/web` 除 `server/shared/` 外**不得 import `src/server` 下任何模块**；`server/git` 与 `server/watch` **不得反向 import `http` / `cli`**。
@@ -131,3 +132,17 @@ Vite dev server 在 `localhost:5173`，后端在 `127.0.0.1:<随机端口>`，�
    - **体积门禁不进本档**：matrix 下载的是同一份 `dist/`，字节完全相同，再跑 9 遍不增加覆盖，反而引入方差——gzip 输出长度取决于各 Node 大版本自带的 zlib，贴着预算的行会只在某一个 Node 上红。
 3. **old-node-guard 作业**（Node 20，即**低于下限**；ubuntu + windows 两档）：不下载产物，直接 `node bin/difftab.js`，断言 exit 1 + 打印友好提示 + stderr 无 `SyntaxError` + stdout 为空。单列一档是因为守卫要防的是**解析期**失败，在 22+ 上永远测不到；冒烟里那条按语法逐条列举的正则清单只是替身，`catch {}`、class 静态块等一律漏网。**取 stderr 必须经管道**——文件重定向在 Windows 上是同步写、恒绿。不列 macOS：提示丢不丢只在 Windows 上看得见。
 4. **冒烟测试不得依赖 `node:test` 的顶层 `before()` / `after()`**：下限档 Node 22.0.0 的 runner **不等顶层异步 `before()` 完成就开跑该文件的用例**，`after()` 同样提早触发。准备工作要写成记忆化的 Promise、由各用例自己 `await`。这条只在下限档红，24 / 26 全绿——正是 matrix 要有一档真跑在下限上的理由。
+
+## 官网（`site/`）
+
+一张英文静态页，由 `.github/workflows/pages.yml` 构建后发到 GitHub Pages。它与产品**互不相干**：不 import `src/`，产品门禁（`check:css`、`size`、冒烟）只看 `dist/web`，官网红了也不挡发版。
+
+- **官网的构建检查只能放在 `pages.yml`，不得并进 `ci.yml`**：`ci.yml` 会被 `release.yml` 在 release commit 上复跑，并进去等于官网红了挡发版。`pages.yml` 在 PR 上只构建、不部署（写 Pages 的权限只给 `deploy` 作业），于是把 `site/` 改坏的 PR 合并前就红；没有这道时 CI 全绿合进 main、部署才失败，线上静默停在上一版。触发 paths 要连 `package.json`（`site:build` 写在那里）与锁文件一起列，漏一条就是那类改动既不检查也不部署。
+
+- **Tailwind 走仓库已有的 `@tailwindcss/vite`，不新增依赖**；配置是独立的 `site/vite.config.ts`，不复用根目录那份——后者 import 后端模块、配 dev proxy。产物落在 `site/dist/`，由 `.gitignore` 的 `dist/` 挡住。**不用 `cdn.tailwindcss.com`**：那是运行时 JS，且是一条第三方请求。
+- **`base` 必须是 `/difftab/`**（Pages 项目站的子路径）。写错时 HTML 照常打开、样式与脚本全部 404；`pnpm site:dev` 看不出来，只有 `vite preview --config site/vite.config.ts` 看得见。
+- **不发第三方请求**：字体用系统等宽栈，不接统计。截图与社交预览图写 `main` 分支的 raw 绝对地址（与 README 同一做法），不往 `site/` 复制二进制——改截图只改 `assets/` 一处。
+- **不写会过期的数据**：版本号、日期、star 数一律不进页面，它们过期了没有任何东西会响。
+- **明暗只跟随系统**：主题 token 写成 `light-dark()` 双值、由 `color-scheme` 切换，类名里不写 `dark:`；双值 token 不得加不透明度修饰符（`bg-ink/10`），Tailwind 会把它塞进 `color-mix()`、整条声明作废。
+- **favicon 与产品页同一段，页眉符号也是生成的**：`scripts/logo.mjs` 回写两份 `index.html` 的 favicon 与 `site/index.html` 的 `<!-- mark -->` 一段，`logo.test.ts` 全都钉。页眉符号不要 Chrome，没有 Chrome 的机器上照样回写。**别把标记之间那段改成手写**——下次跑脚本会被整段覆盖，而只改几何不跑脚本时红的是测试。
+- **文案是 README 的子集，没有门禁兜底**：README 的特性、Non-goals、CLI 选项或安全口径改了，`site/index.html` 不会有任何东西变红，症状只是官网与 README 说法不一。

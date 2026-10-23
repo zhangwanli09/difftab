@@ -39,7 +39,8 @@
 | 测试仓库 fixture 生成 | `pnpm fixtures`（默认写 `test/fixtures/repos/`；测试自己调 `makeFixtures()` 写临时目录） |
 | 其余门禁（冷启动 ≤300ms / 体积 / 样式层叠 / 发布产物 / bin mode） | `pnpm bench:startup`、`size`、`check:css`、`check:pack`、`check:bin`——各自挡什么见 `docs/gates.md` |
 | 全局安装验收（打包 → `npm i -g` → 用 PATH 上那个名字跑通 → 卸掉） | **先 `pnpm build`**，再 `pnpm check:global`；要求全局**尚未**装着 difftab，否则脚本直接拒跑 |
-| 重生成 logo 资产（`assets/*.svg`、社交预览 PNG、`index.html` 的 favicon） | `node scripts/logo.mjs`——不是 pnpm script；PNG 那两步要本机有 Chrome，没有就只写 SVG |
+| 官网本地预览 / 构建（`site/`，产物 `site/dist/`） | `pnpm site:dev` / `pnpm site:build`；查 `/difftab/` 子路径下资源是否 404 要用 `vite preview --config site/vite.config.ts` |
+| 重生成 logo 资产（`assets/*.svg`、社交预览 PNG、两份 `index.html` 的 favicon） | `node scripts/logo.mjs`——不是 pnpm script；PNG 那两步要本机有 Chrome，没有就只写 SVG |
 | inotify 配额耗尽时降级为轮询（Linux + 免密 sudo） | **先 `pnpm build`**，再 `pnpm check:inotify`；**不进冒烟套件**，非 Linux 直接 SKIP |
 
 ## 4. 动手前必读 docs 的哪份
@@ -56,7 +57,7 @@
 | `src/web/` 右侧：编辑器标签页（预览 / 固定 / 关闭 / SSE 收编 / commit tab）、文件视图、图片视图 | `docs/design/editors.md` |
 | `src/web/diff/`、`DiffView.tsx`、`state/layout.ts`：补丁解析与配对、diff 表格、hljs 清单、版式切换、产物体积 | `docs/design/diff-render.md` |
 | `src/web/styles/`，以及任何组件里的颜色与层叠：Tailwind token、主题、diff 行的底色 | `docs/design/style.md` |
-| `test/`、`scripts/`、`biome.json`、`*.config.ts`、CI、`package.json`：模块与目录归属、依赖方向、只读性验证、构建与 CI 分层、pnpm 设置 | `docs/design/build.md` |
+| `test/`、`scripts/`、`site/`（官网）、`biome.json`、`*.config.ts`、CI、`package.json`：模块与目录归属、依赖方向、只读性验证、构建与 CI 分层、pnpm 设置 | `docs/design/build.md` |
 | 门禁挡什么、fixture 契约、发布产物约定、真机验收与未完事项 | `docs/gates.md` |
 | 产品范围、Non-goals、分发口径 | `docs/spec.md` |
 | 「为什么不那样做」、实测输出与源码核对 | `docs/decisions/` **下对应那个域的文件**（一域一份，别整目录读） |
@@ -117,6 +118,7 @@
 - **semver：0.x 保留破坏性余地（尤其 CLI 参数与端口/token 行为），1.0.0 是结论不是起点**——等验收全通过且三端真机验过再发
 - **README 的特性列表只收差异点，不是功能清单**——加了新功能默认**不动** README，除非它本身就是个卖点；功能的事实来源是 `docs/spec.md` 的功能范围表，机制在 `docs/design/`
 - **改 logo 只改 `src/web/brand/geometry.mjs` 再 `node scripts/logo.mjs`**——几何或 token 改了没重跑由 `logo.test.ts` 拦；社交预览 PNG 得重新手工上传到 GitHub Settings
+- **官网 `site/index.html` 的文案是 README 的子集**——改 README 的特性、Non-goals、CLI 选项或安全口径时跟着改，没有门禁兜底
 - **真要改 README 则两份一起改**：`README.zh-CN.md` **不是自动生成的**，只改英文那份不会有任何门禁变红
 - **界面明显变样时手工重截 README 截图，明暗两张一起换**——一次性产出、没有生成脚本，过期了没有任何门禁看得见；怎么截见 `docs/design/web.md`「品牌标识」
 - **贡献者规范在 `CONTRIBUTING.md` 与 `.github/`**，产品承诺（只读、Non-goals）在那里也写了一遍给外部读者——改第 6 节时要跟着改
