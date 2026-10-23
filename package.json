@@ -4,7 +4,7 @@
   "description": "See what your AI coding agent changed — a read-only git diff viewer in one browser tab",
   "license": "MIT",
   "author": "zhangwanli",
-  "homepage": "https://github.com/zhangwanli09/difftab#readme",
+  "homepage": "https://zhangwanli09.github.io/difftab/",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/zhangwanli09/difftab.git"
@@ -57,7 +57,9 @@
     "check:css": "node scripts/check-css-cascade.mjs",
     "check:bin": "node scripts/check-bin-untouched.mjs",
     "check:global": "node scripts/check-global-install.mjs",
-    "check:inotify": "node scripts/check-inotify-degrade.mjs"
+    "check:inotify": "node scripts/check-inotify-degrade.mjs",
+    "site:dev": "vite --config site/vite.config.ts",
+    "site:build": "vite build --config site/vite.config.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.7",

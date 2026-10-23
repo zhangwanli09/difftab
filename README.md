@@ -13,6 +13,7 @@
 </p>
 
 <p align="center">
+  <a href="https://zhangwanli09.github.io/difftab/">Website</a> ·
   <a href="#installation">Install</a> ·
   <a href="#usage">Usage</a> ·
   <a href="#why-difftab">Why</a> ·

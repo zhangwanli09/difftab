@@ -1,0 +1,92 @@
+@import "tailwindcss";
+
+/*
+ * 配色取产品编辑器的明暗两档，强调色只有品牌红绿（与 src/web/brand/geometry.mjs 同值，明暗不切；
+ * 改品牌色时这里要手动跟上，没有测试钉着）。
+ * 跟主题走的 token 写成 light-dark() 双值，由 color-scheme 跟随系统——类名里不写 `dark:`。
+ * 双值 token 不得加不透明度修饰符（`bg-ink/10`）：Tailwind 会把它塞进 color-mix()，整条声明作废；
+ * 要半透明的只有红绿两条，它们是单值。
+ */
+@theme {
+  --color-bg: light-dark(#f7f6f2, #121314);
+  --color-ink: light-dark(#202020, #bbbebf);
+  --color-ink-strong: light-dark(#111111, #e6e8e9);
+  --color-ink-dim: light-dark(#6e6d68, #85898c);
+  --color-hairline: light-dark(rgb(0 0 0 / 0.13), rgb(255 255 255 / 0.11));
+  --color-add: #30a46c;
+  --color-del: #e5484d;
+
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+}
+
+@layer base {
+  :root {
+    color-scheme: light dark;
+  }
+
+  b {
+    @apply font-semibold text-ink-strong;
+  }
+
+  ::selection {
+    background-color: color-mix(in oklab, var(--color-add) 30%, transparent);
+  }
+}
+
+@layer components {
+  /* man page 式的两列：左列是小号大写的标签，右列是正文；窄屏塌成一列 */
+  .sec {
+    @apply mt-14 grid items-baseline gap-x-[4ch] gap-y-3 sm:grid-cols-[16ch_1fr];
+  }
+
+  .label {
+    @apply text-[0.6875rem] font-semibold uppercase leading-none tracking-[0.22em] text-ink-dim;
+  }
+
+  /* 小号大写：图注、安装框的切换条与提示、芯片、页脚共用一档 */
+  .caption {
+    @apply text-[0.6875rem] uppercase tracking-[0.14em] text-ink-dim;
+  }
+
+  .navlink {
+    @apply transition-colors hover:text-ink;
+  }
+
+  .chip {
+    @apply border border-hairline px-[1.2ch] py-1;
+  }
+
+  /* 带 +/− 记号的列表项：记号单占一格，折行与正文对齐 */
+  .bullet {
+    @apply grid grid-cols-[2.5ch_1fr];
+  }
+
+  .link {
+    @apply underline decoration-hairline underline-offset-4 transition-colors hover:decoration-ink;
+  }
+
+  /* diff 行：前缀与正文分两格，前缀不随选区复制 */
+  .hunk-row {
+    @apply grid grid-cols-[3ch_1fr] px-[1.5ch];
+  }
+
+  .hunk-row > :first-child {
+    @apply select-none;
+  }
+
+  .hunk-del {
+    @apply bg-del/12;
+  }
+
+  .hunk-del > :first-child {
+    @apply text-del;
+  }
+
+  .hunk-add {
+    @apply bg-add/12;
+  }
+
+  .hunk-add > :first-child {
+    @apply text-add;
+  }
+}
