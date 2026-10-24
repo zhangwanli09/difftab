@@ -81,29 +81,36 @@
 
         <section class="sec">
           <h2 class="label">Install</h2>
-          <div>
-            <div class="border border-hairline">
-              <div class="flex gap-[2ch] border-b border-hairline px-[1.8ch] py-2 caption">
-                <button type="button" data-pm="npm" aria-pressed="true" class="navlink cursor-pointer aria-pressed:text-add">npm</button>
-                <button type="button" data-pm="pnpm" aria-pressed="false" class="navlink cursor-pointer aria-pressed:text-add">pnpm</button>
-                <button type="button" data-pm="npx" aria-pressed="false" class="navlink cursor-pointer aria-pressed:text-add">npx</button>
-              </div>
+          <div class="space-y-2">
+            <div data-copy class="flex items-baseline gap-[2ch] border border-hairline px-[1.8ch] py-4">
+              <span class="select-none text-add">$</span>
+              <code data-cmd class="font-medium text-ink-strong">npm i -g difftab</code>
               <button
                 type="button"
-                data-copy
-                class="group flex w-full cursor-pointer items-baseline gap-[2ch] border border-transparent px-[1.8ch] py-4 text-left transition hover:-translate-x-[3px] hover:-translate-y-[3px] hover:border-add hover:shadow-[3px_3px_0_var(--color-add)]"
+                data-hint
+                hidden
+                aria-live="polite"
+                class="caption copy-btn ml-auto text-right"
               >
-                <span class="select-none text-add">$</span>
-                <code data-cmd class="font-medium text-ink-strong">npm i -g difftab</code>
-                <span
-                  data-hint
-                  aria-live="polite"
-                  class="caption ml-auto transition-colors group-hover:text-add"
-                  >Copy</span
-                >
+                Copy
               </button>
             </div>
-            <p class="mt-3 text-[0.8125rem] text-ink-dim">
+            <p class="pt-1 text-[0.8125rem] text-ink-dim">
+              Or try it without installing:
+              <span data-copy class="whitespace-nowrap">
+                <code data-cmd class="text-ink-strong">npx difftab</code>
+                <button
+                  type="button"
+                  data-hint
+                  hidden
+                  aria-live="polite"
+                  class="caption copy-btn ml-[1ch] text-left"
+                >
+                  Copy
+                </button>
+              </span>
+            </p>
+            <p class="text-[0.8125rem] text-ink-dim">
               Node.js 22+ · macOS · Windows · Linux · zero dependencies
             </p>
           </div>
