@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.13.0](https://github.com/zhangwanli09/difftab/compare/v0.12.0...v0.13.0) (2026-10-24)
+
+
+### Features
+
+* **site:** add a minimal project website ([#145](https://github.com/zhangwanli09/difftab/issues/145)) ([16a4960](https://github.com/zhangwanli09/difftab/commit/16a4960161552592f358d64095aa3ba55c3d3794))
+
+
+### Bug Fixes
+
+* **site:** center the header and drop external link arrows ([#147](https://github.com/zhangwanli09/difftab/issues/147)) ([30878e6](https://github.com/zhangwanli09/difftab/commit/30878e6704afcaf4fa6bd8c1c496eee9f3e34bf7))
+* **site:** list install commands instead of a package manager switcher ([#148](https://github.com/zhangwanli09/difftab/issues/148)) ([3d84516](https://github.com/zhangwanli09/difftab/commit/3d84516b434127d809f6dbda6bec225e746ef9aa))
+
 ## [0.12.0](https://github.com/zhangwanli09/difftab/compare/v0.11.0...v0.12.0) (2026-10-21)
 
 
