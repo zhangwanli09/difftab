@@ -43,9 +43,14 @@
     @apply text-[0.6875rem] font-semibold uppercase leading-none tracking-[0.22em] text-ink-dim;
   }
 
-  /* 小号大写：图注、安装框的切换条与提示、芯片、页脚共用一档 */
+  /* 小号大写：图注、安装框的复制提示、芯片、页脚共用一档 */
   .caption {
     @apply text-[0.6875rem] uppercase tracking-[0.14em] text-ink-dim;
+  }
+
+  /* 安装框的 Copy 按钮：最小宽度按最长的那条提示「Selected」留足，切换提示时这一行不跳 */
+  .copy-btn {
+    @apply min-w-[10ch] cursor-pointer transition-colors hover:text-add;
   }
 
   .navlink {
