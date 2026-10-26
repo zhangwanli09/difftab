@@ -264,7 +264,7 @@ describe('分屏（编辑器组）', () => {
     openPinned('diff', 'a.ts');
     openPinned('diff', 'b.ts');
     const left = activeGroup.value;
-    splitEditor(left, 'diff:b.ts');
+    splitEditor(left, 'diff:b.ts', 'right');
     const right = groups.value[1];
     if (right === undefined) throw new Error('没分出来');
     return [left, right];
@@ -279,9 +279,21 @@ describe('分屏（编辑器组）', () => {
     expect(activeEditorKey.value).toBe('diff:b.ts');
   });
 
+  it('分出左组：新组排在前面，原来那组退到右边', () => {
+    openPinned('diff', 'a.ts');
+    openPinned('diff', 'b.ts');
+    const original = activeGroup.value;
+    splitEditor(original, 'diff:b.ts', 'left');
+    const [left, right] = groups.value;
+    expect(right).toBe(original);
+    expect(keysOf(left)).toEqual(['diff:b.ts']);
+    expect(keysOf(right)).toEqual(['diff:a.ts']);
+    expect(activeGroup.value).toBe(left);
+  });
+
   it('只有一个 tab 的组不能再分：分出去等于原地不动', () => {
     openPinned('diff', 'a.ts');
-    expect(splitEditor(activeGroup.value, 'diff:a.ts')).toBeNull();
+    expect(splitEditor(activeGroup.value, 'diff:a.ts', 'right')).toBeNull();
     expect(groups.value).toHaveLength(1);
   });
 
@@ -290,7 +302,7 @@ describe('分屏（编辑器组）', () => {
     openPinned('diff', 'c.ts');
     focusEditor('diff:a.ts', left);
     openPinned('diff', 'd.ts');
-    expect(splitEditor(left, 'diff:d.ts')).toBeNull();
+    expect(splitEditor(left, 'diff:d.ts', 'right')).toBeNull();
     expect(groups.value).toHaveLength(2);
   });
 

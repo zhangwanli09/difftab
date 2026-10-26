@@ -529,7 +529,10 @@ describe('分屏', () => {
     );
   /** 一组正文（标签栏的下一个兄弟），拖到正文上的那一路挂在它上面。 */
   const bodyOf = (index: number) => tablists()[index]?.parentElement?.nextElementSibling;
-  /** happy-dom 没有排版，`getBoundingClientRect` 全是 0：`clientX` 大于 0 就算「右半边」。 */
+  /**
+   * happy-dom 没有排版，`getBoundingClientRect` 全是 0：`clientX` 大于 0 就算「右半边」、贴右边，小于 0
+   * 贴左边，等于 0 落在正文中间。
+   */
   const drag = (type: string, target: Element | null | undefined, clientX = 10) => {
     const event = new MouseEvent(type, { bubbles: true, cancelable: true, clientX });
     target?.dispatchEvent(event);
@@ -561,7 +564,7 @@ describe('分屏', () => {
     const over = drag('dragover', bodyOf(0));
     // 不 `preventDefault` 时浏览器认为这里不收，`drop` 不会来
     expect(over.defaultPrevented).toBe(true);
-    await waitFor(() => expect(container.querySelector('[data-drop-zone="split"]')).not.toBeNull());
+    await waitFor(() => expect(container.querySelector('[data-drop-zone="right"]')).not.toBeNull());
 
     drag('drop', bodyOf(0));
     await waitFor(() => expect(tablists()).toHaveLength(2));
@@ -572,19 +575,43 @@ describe('分屏', () => {
     expect(container.querySelector('[data-drop-zone]')).toBeNull();
   });
 
-  it('正文左半边不收，只有一个 tab 时右半边也不收', async () => {
+  it('拖到正文左半边：放下即分出左组，原来那组退到右边', async () => {
+    openTwo();
+    render(<App />, container);
+    await waitFor(() => expect(tabButton('b.ts')).toBeDefined());
+    const original = groups.value[0];
+
+    drag('dragstart', tabButton('b.ts'));
+    expect(drag('dragover', bodyOf(0), -10).defaultPrevented).toBe(true);
+    await waitFor(() => expect(container.querySelector('[data-drop-zone="left"]')).not.toBeNull());
+
+    drag('drop', bodyOf(0), -10);
+    await waitFor(() => expect(tablists()).toHaveLength(2));
+    expect(groups.value[1]).toBe(original);
+    expect(activeGroup.value).toBe(groups.value[0]);
+    expect(tablists()[0]?.textContent).toContain('b.ts');
+    expect(tablists()[1]?.textContent).not.toContain('b.ts');
+    expect(container.querySelector('[data-drop-zone]')).toBeNull();
+  });
+
+  it('正文中间不收：拖出来反悔、在本组松手时什么都不发生', async () => {
     openTwo();
     render(<App />, container);
     await waitFor(() => expect(tabButton('b.ts')).toBeDefined());
     drag('dragstart', tabButton('b.ts'));
     expect(drag('dragover', bodyOf(0), 0).defaultPrevented).toBe(false);
-    drag('dragend', tabButton('b.ts'));
+    drag('drop', bodyOf(0), 0);
+    expect(groups.value).toHaveLength(1);
+    expect(container.querySelector('[data-drop-zone]')).toBeNull();
+  });
 
-    resetEditors();
+  it('只有一个 tab 时左右两边都不收', async () => {
     openBinaryDiff('src/a.ts');
-    await waitFor(() => expect(tabButton('b.ts')).toBeUndefined());
+    render(<App />, container);
+    await waitFor(() => expect(tabButton('a.ts')).toBeDefined());
     drag('dragstart', tabButton('a.ts'));
     expect(drag('dragover', bodyOf(0)).defaultPrevented).toBe(false);
+    expect(drag('dragover', bodyOf(0), -10).defaultPrevented).toBe(false);
   });
 
   it('拖回另一组的标签栏：移过去，源组空了即合并、把手消失', async () => {

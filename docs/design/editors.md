@@ -36,9 +36,9 @@
 
 **右侧面板最多两组编辑器，左右并排**（照 VS Code 的 editor group，封顶两组、不做上下与网格）。状态是 `groups`（长度 1 或 2）+ 焦点组 `activeGroup`；每组一个 `EditorGroup`：自己的 tab 列表、活动键、量出来的宽度。`editors` / `activeEditorKey` / `activeEditor` / `activeEditorPath` 是**焦点组**的只读派生。
 
-- **入口是拖动与一条快捷键**：把 tab 拖到另一组的正文或标签栏，或在只有一组时拖到正文的右半边（分出右组）；键盘上 `⌘\` / `Ctrl+\` 见下一条。拖动走 HTML5 drag and drop，**拖的是哪个 tab 记在 `draggingEditor` 这个 signal 上，不从 `dataTransfer` 里读**：`dataTransfer` 只在 `drop` 时可读、`dragover` 时读不到内容，而判投放区恰恰在 `dragover`；`dataTransfer` 上只写一份占位（Firefox 不写不起拖）。投放区画一层 `pointer-events: none` 的遮罩，颜色 `editor-group-drop-background`。
+- **入口是拖动与一条快捷键**：把 tab 拖到另一组的正文或标签栏，或在只有一组时拖到正文贴左 / 右边的那 1/3（在那一边分出新组，遮罩盖那半边；分到左边时原来那组退到右边，按组 `id` 挂载、不重挂）。**正文中间那 1/3 不收**（照 VS Code）：拖出 tab 后反悔、在本组正文上松手时什么都不该发生；键盘上 `⌘\` / `Ctrl+\` 见下一条。拖动走 HTML5 drag and drop，**拖的是哪个 tab 记在 `draggingEditor` 这个 signal 上，不从 `dataTransfer` 里读**：`dataTransfer` 只在 `drop` 时可读、`dragover` 时读不到内容，而判投放区恰恰在 `dragover`；`dataTransfer` 上只写一份占位（Firefox 不写不起拖）。投放区画一层 `pointer-events: none` 的遮罩，颜色 `editor-group-drop-background`。
 - **快捷键是复制，不是移动**（`splitActiveEditor`，照 VS Code `workbench.action.splitEditor`）：焦点组的活动 tab 在另一组再开一份并固定，焦点跟过去，源组不动。**DOM 焦点也要跟过去**（`groupFocusRequest`，目标组渲染完之后聚焦它的活动 tab；signal effect 的通知排在渲染之后，新开的 tab 已经在 DOM 里）：只改焦点组时键盘焦点还留在源组，下一次 Tab 落在源组里，`focusin` 就把焦点组换了回去，之后 Quick Open 与左栏的点击又开回源组。只有一组时先分出右组，已有两组时就开在另一组，**不分第三组**。所以**只有一个 tab 的组也能分**——源组那份留着，不会移空。另一组已开着同键时只切过去，同拖动。按住不放的自动重复与 Quick Open 开着时不认（前者让焦点在两组间来回跳，后者在浮层底下换掉焦点组、选中的文件开到另一组），但照样 `preventDefault`。不另发请求：源组那份正在屏幕上、缓存两组共用，新开的这份拿到的就是最新的。HTML5 drag and drop 对键盘不可达，没有这条时只用键盘的人打不开第二组，两组之间那把「键盘可达」的把手也就无从谈起。
-- **只有一个 tab 的组不能再拖出右组**：分出去等于原地不动，投放区不亮。**同一组内拖动不排序**，标签栏只接受来自另一组的 tab，插到指针落在的那个 tab 之前或之后。
+- **只有一个 tab 的组不能再拖出新组**：分出去等于原地不动，左右两半的投放区都不亮。**同一组内拖动不排序**，标签栏只接受来自另一组的 tab，插到指针落在的那个 tab 之前或之后。
 - **拖过去即固定**（照 VS Code）：拖动是明确意图，留成预览会被下一次单击顶掉。目标组已开着同键时只切过去，不并排两个同键 tab；上下文档取靠后的那档。
 - **组空即合并**：拖走、关掉、或被 SSE 收编掉最后一个 tab 时这一组消失，焦点落到剩下那组；只剩一组时空着就画空态。**两组时永远没有空组**——空组只会是一块不能做任何事的白地。
 - **焦点组**：组的根元素 `pointerdown` / `focusin` 时成为焦点组。左栏的单击、双击、`Open file`、Quick Open、搜索命中、History 一律开在焦点组；左栏的高亮与 `Files` 树的定位跟焦点组的活动 tab 走。**非焦点组的活动 tab 文字用次要前景色**：否则看不出左栏此刻跟的是哪一组。动作区的按钮作用于**所在那一组**的活动 tab，不读焦点组——点下去之前焦点不一定已经过来。
