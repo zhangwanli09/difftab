@@ -1,7 +1,7 @@
 // 一组编辑器：标签栏 + 一个视图。右侧面板里有一到两组（分屏），左右并排。
 //
 // 这一层管三件与组有关、与视图无关的事：量自己的宽度（版式按组判）、被点到时成为焦点组、接住拖到
-// 正文上的 tab（分屏或移到这一组）。拖到标签栏上的那一路在 `EditorTabs` 里。
+// 正文上的 tab（向左或向右分屏，或移到这一组）。拖到标签栏上的那一路在 `EditorTabs` 里。
 
 import { type Signal, useComputed, useSignal, useSignalEffect } from '@preact/signals';
 import { useEffect, useRef } from 'preact/hooks';
@@ -12,13 +12,14 @@ import {
   type EditorGroup,
   groupFocusRequest,
   keyOf,
+  type SplitSide,
 } from '../state/editors';
 import { observeDiffPanel } from '../state/layout';
 import { splitStyle } from '../state/sidebar';
-import { moveEditorTo, splitEditorRight } from '../state/store';
+import { moveEditorTo, splitEditorTo } from '../state/store';
 import { CommitChangesView } from './CommitChangesView';
 import { CommitDiffView, DiffView } from './DiffView';
-import { inRightHalf, leftTarget } from './drag';
+import { edgeOf, leftTarget } from './drag';
 import { EditorTabs } from './EditorTabs';
 import { PanelEmptyState } from './EmptyState';
 import { FileView } from './FileView';
@@ -26,26 +27,27 @@ import { GroupContext } from './group-context';
 import { WorktreeChangesView } from './WorktreeChangesView';
 
 /**
- * 拖着的 tab 此刻悬在这一组正文上，放下去会怎样：`split` 是分出右组（遮罩只盖右半边），`move` 是移到
- * 这一组（遮罩盖满）。`null` 即放不下。
+ * 拖着的 tab 此刻悬在这一组正文上，放下去会怎样：`left` / `right` 是在那一边分出新组（遮罩盖那半边，
+ * 预示分完之后的样子），`move` 是移到这一组（遮罩盖满）。`null` 即放不下。
  */
-type DropZone = 'split' | 'move' | null;
+type DropZone = SplitSide | 'move' | null;
 
 /**
  * 按指针位置判投放区。分屏只在一组、拖的是这一组的 tab、且这一组不止一个 tab 时成立（只剩一个时分出去
- * 等于原地不动），落在正文右半边才算；移动只收另一组的 tab。同组内拖到左半边什么都不做。
+ * 等于原地不动），贴着正文哪条竖边就分到哪边、落在中间什么都不做（`edgeOf`）；移动只收另一组的 tab。
  */
 function zoneOf(group: EditorGroup, event: DragEvent, body: HTMLElement): DropZone {
   const dragging = draggingEditor.peek();
   if (dragging === null) return null;
   if (dragging.group !== group) return 'move';
-  return canSplit(group) && inRightHalf(event, body) ? 'split' : null;
+  return canSplit(group) ? edgeOf(event, body) : null;
 }
 
-/** 两种遮罩的几何，内联写：只有这一处用，写成类就是产物里两条只服务一处的规则。 */
+/** 三种遮罩的几何，内联写：只有这一处用，写成类就是产物里几条只服务一处的规则。 */
 const OVERLAY_STYLE: Record<Exclude<DropZone, null>, string> = {
-  split: 'left:50%',
-  move: 'left:0',
+  left: 'left:0;right:50%',
+  right: 'left:50%;right:0',
+  move: 'left:0;right:0',
 };
 
 /**
@@ -59,7 +61,7 @@ function DropOverlay({ zone }: { zone: Signal<DropZone> }) {
   return shown === null ? null : (
     <div
       data-drop-zone={shown}
-      class="pointer-events-none absolute inset-y-0 right-0 bg-editor-group-drop-background"
+      class="pointer-events-none absolute inset-y-0 bg-editor-group-drop-background"
       style={OVERLAY_STYLE[shown]}
     />
   );
@@ -93,8 +95,8 @@ function GroupBody({ group }: { group: EditorGroup }) {
         if (dragging === null || next === null) return;
         event.preventDefault();
         draggingEditor.value = null;
-        if (next === 'split') splitEditorRight(group, dragging.key);
-        else moveEditorTo(dragging.group, dragging.key, group);
+        if (next === 'move') moveEditorTo(dragging.group, dragging.key, group);
+        else splitEditorTo(group, dragging.key, next);
       }}
     >
       {/* 视图按 tab 键 `key` 住：只换 `path` prop 时组件不卸载，滚动容器连同 `scrollTop` 一起留着——

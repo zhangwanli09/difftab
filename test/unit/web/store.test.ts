@@ -39,7 +39,7 @@ import {
   refresh,
   repoState,
   selectFile,
-  splitEditorRight,
+  splitEditorTo,
 } from '../../../src/web/state/store';
 import { expandedDirs, loadDir, ROOT, treeCache } from '../../../src/web/state/tree';
 import { file, hideHistory, openPinned, resetEditors, stubJson, stubJsonBy } from './helpers';
@@ -1008,7 +1008,7 @@ describe('分屏（两组编辑器）的取数', () => {
     openPinned('diff', 'b.txt');
     diffStates.value = new Map([ready('a.txt'), ready('b.txt')]);
     const left = activeGroup.value;
-    splitEditorRight(left, 'diff:b.txt');
+    splitEditorTo(left, 'diff:b.txt', 'right');
     const right = groups.value[1];
     if (right === undefined) throw new Error('没分出来');
     return [left, right];

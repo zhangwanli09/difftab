@@ -48,6 +48,7 @@ import {
   removeEditor,
   renameEditor,
   revealPending,
+  type SplitSide,
   setEditorContext,
   setReveal,
   splitEditor,
@@ -708,9 +709,9 @@ export function moveEditorTo(
   refetchAfterMove(from, () => moveEditor(from, key, to, index));
 }
 
-/** 把一个 tab 拖到唯一那组的右半边：分出右组，取法同 `moveEditorTo`。 */
-export function splitEditorRight(from: EditorGroup, key: EditorKey): void {
-  refetchAfterMove(from, () => splitEditor(from, key));
+/** 把一个 tab 拖到唯一那组正文贴左 / 右的那一边：在那一边分出新组，取法同 `moveEditorTo`。 */
+export function splitEditorTo(from: EditorGroup, key: EditorKey, side: SplitSide): void {
+  refetchAfterMove(from, () => splitEditor(from, key, side));
 }
 
 function refetchAfterMove(from: EditorGroup, move: () => Editor | null): void {

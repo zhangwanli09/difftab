@@ -192,9 +192,9 @@ export const activeGroup = signal<EditorGroup>(firstGroup);
 const MAX_GROUPS = 2;
 
 /**
- * 能不能从 `group` 分出右组：还没到两组，且这一组不止一个 tab——只剩一个时分出去等于原地不动（源组
- * 移空即合并）。投放区亮不亮与 `splitEditor` 做不做都按它判，两处各写一遍时会漂开：遮罩亮了、放下去
- * 什么都不发生。
+ * 能不能从 `group` 分出新的一组（左右都一样）：还没到两组，且这一组不止一个 tab——只剩一个时分出去
+ * 等于原地不动（源组移空即合并）。投放区亮不亮与 `splitEditor` 做不做都按它判，两处各写一遍时会漂开：
+ * 遮罩亮了、放下去什么都不发生。
  */
 export const canSplit = (group: EditorGroup): boolean =>
   groups.value.length < MAX_GROUPS && group.editors.value.length > 1;
@@ -450,19 +450,25 @@ function land(editor: Editor, to: EditorGroup, index?: number): Editor {
   return landed;
 }
 
+/** 分屏时新组开在哪一边。 */
+export type SplitSide = 'left' | 'right';
+
 /**
- * 把 `from` 里的 `key` 分到右边新开的一组，成立条件见 `canSplit`。回移过去的那一项（同 `moveEditor`），
- * 没分回 null。
+ * 把 `from` 里的 `key` 分到 `side` 那边新开的一组，成立条件见 `canSplit`。回移过去的那一项（同
+ * `moveEditor`），没分回 null。
  */
-export function splitEditor(from: EditorGroup, key: EditorKey): Editor | null {
+export function splitEditor(from: EditorGroup, key: EditorKey, side: SplitSide): Editor | null {
   if (!canSplit(from) || indexOfKey(from.editors.value, key) === -1) return null;
-  return batch(() => moveEditor(from, key, appendGroup()));
+  return batch(() => moveEditor(from, key, addGroup(side)));
 }
 
-/** 在右边新开一组并回它。拖动与键盘两路分屏共用：建组时要多做的事只写这一处。 */
-function appendGroup(): EditorGroup {
+/**
+ * 在 `side` 那边新开一组并回它。拖动与键盘两路分屏共用：建组时要多做的事只写这一处。开在左边时原来那组
+ * 退到右边，按 `id` 挂载、不重挂。
+ */
+function addGroup(side: SplitSide): EditorGroup {
   const group = createGroup();
-  groups.value = [...groups.value, group];
+  groups.value = side === 'left' ? [group, ...groups.value] : [...groups.value, group];
   return group;
 }
 
@@ -479,7 +485,7 @@ export function splitActiveEditor(): Editor | null {
   const editor = from.active.value;
   if (editor === null) return null;
   return batch(() => {
-    const to = groups.value.find((group) => group !== from) ?? appendGroup();
+    const to = groups.value.find((group) => group !== from) ?? addGroup('right');
     groupFocusRequest.value = { group: to };
     return land(editor, to);
   });
