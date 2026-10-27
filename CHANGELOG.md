@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.13.0](https://github.com/zhangwanli09/difftab/compare/v0.12.0...v0.13.0) (2026-10-27)
+
+
+### Features
+
+* **site:** add a minimal project website ([#145](https://github.com/zhangwanli09/difftab/issues/145)) ([16a4960](https://github.com/zhangwanli09/difftab/commit/16a4960161552592f358d64095aa3ba55c3d3794))
+* **web:** add a word wrap toggle to the file view ([#151](https://github.com/zhangwanli09/difftab/issues/151)) ([8d7d301](https://github.com/zhangwanli09/difftab/commit/8d7d301e72a2090f73004109f56c59f2391a3181))
+* **web:** keep panel sizes across page reloads ([#152](https://github.com/zhangwanli09/difftab/issues/152)) ([f44d7b6](https://github.com/zhangwanli09/difftab/commit/f44d7b6b7da5b5e26dbe27b4348f312a1ba555ff))
+* **web:** show commit files as a tree in History ([#153](https://github.com/zhangwanli09/difftab/issues/153)) ([de41b29](https://github.com/zhangwanli09/difftab/commit/de41b29188909b8b888959c59f8a1a63ed55345e))
+* **web:** split the editor to the left by dragging a tab ([#149](https://github.com/zhangwanli09/difftab/issues/149)) ([3017c98](https://github.com/zhangwanli09/difftab/commit/3017c984d403aa3403ab962b678f0a1cbdc110fd))
+
+
+### Bug Fixes
+
+* **server:** stop git diff from touching the index ([#150](https://github.com/zhangwanli09/difftab/issues/150)) ([c4c5b7f](https://github.com/zhangwanli09/difftab/commit/c4c5b7fe00b642c7073285d3e8c53a639717db5a))
+* **site:** center the header and drop external link arrows ([#147](https://github.com/zhangwanli09/difftab/issues/147)) ([30878e6](https://github.com/zhangwanli09/difftab/commit/30878e6704afcaf4fa6bd8c1c496eee9f3e34bf7))
+* **site:** list install commands instead of a package manager switcher ([#148](https://github.com/zhangwanli09/difftab/issues/148)) ([3d84516](https://github.com/zhangwanli09/difftab/commit/3d84516b434127d809f6dbda6bec225e746ef9aa))
+
+
+### Performance Improvements
+
+* **site:** shrink screenshots and serve them from Pages ([#154](https://github.com/zhangwanli09/difftab/issues/154)) ([a3e1ba7](https://github.com/zhangwanli09/difftab/commit/a3e1ba76f6079acf3602ae743970d2eccfe3d451))
+
 ## [0.12.0](https://github.com/zhangwanli09/difftab/compare/v0.11.0...v0.12.0) (2026-10-21)
 
 
