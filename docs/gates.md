@@ -36,7 +36,7 @@
 | `pnpm test`（Vitest） | 解析器、三道校验、DOM 渲染路径的常规回归。`test-layout.test.ts` 另外钉住「用例目录放错就静默不跑」 | build |
 | `pnpm test:smoke`（`node --test`，跑 `dist/`） | 产物层面的行为回归。**先 `pnpm build`**——它跑 `dist/`，产物比源码旧一轮时红的样子像「三道校验全坏了」 | matrix（三平台 × Node 22.0.x/24/26） |
 | 只读**主门禁**（`readonly.test.js`） | 产品发出了白名单外的 git 子命令。**自带一条「确实记到了东西」的正面断言**——否则白名单会对着空数组通过。**白名单只看子命令，看不见参数**，所以另有按参数钉的断言：`diff` 不带 `--no-index` / `--ext-diff` / `--output` 且紧跟着 `--no-ext-diff --no-textconv`，取补丁那几条恰好一个 `--unified=` 且值只能是 `3` / `50000`、带 `--inter-hunk-context=0`、`-w` 只以它自己出现（`runFullFlow` 对工作区 diff 与提交 diff 都要带上 `ignoreWhitespace=1` 与 `fullContext=1` 各取一次，否则这几条对着没出现过的形态通过），`cat-file` 之后只能是 `blob` / `-s`，`log`（列表、单条、incoming 三种形态）与 `for-each-ref` 的 argv 逐段等于字面量，`grep` 除 `-i` / `-w` 两个可选位与 `-e` 后那个值外逐段等于字面量（每条为什么见 `design/git.md`）。**覆盖面等于 `runFullFlow` 打过的端点**：新增一个端点却不把它加进那条流程，门禁不会红，只是那条路上的 git 调用一次都没被看过 | matrix |
-| 只读**第二层**（`readonly-git-dir.test.js`） | `.git` 被写了。A 半锁死 `.git` 抓会报错的写，B 半逐字节比对抓**不报错**的那种（漏设 `GIT_OPTIONAL_LOCKS=0` 只有 B 半看得见）。两半各自带一条正面探针 | matrix |
+| 只读**第二层**（`readonly-git-dir.test.js`） | `.git` 被写了。A 半锁死 `.git` 抓会报错的写，B 半逐字节比对抓**不报错**的那种（漏设 `GIT_OPTIONAL_LOCKS=0`、`diff` 漏带 `diff.autoRefreshIndex=false` 都只有 B 半看得见）。两半各自带正面探针 | matrix |
 | 子进程单点断言 | git 子进程跑出了 `server/git`、或拉起浏览器跑出了 `server/cli`。**查的是相等而非「没有多余的」**——只查多出来的一半时，两处调用点双双改名会让白名单静默变成空表 | matrix |
 | `pnpm size` | 产物体积超预算（JS 与 CSS 各卡明文 + gzip 两道；卡的是总量，单次增量只在吃光余量时才响）。**不进 matrix**：同一份 `dist/` 再跑 9 遍不增加覆盖，反而因各 Node 自带 zlib 不同而引入方差 | build |
 | `pnpm bench:startup` | 冷启动超 300ms。口径是「监听成功并打印 URL」，首次 `git status` 交由第一个 HTTP 请求惰性执行、不计入——否则指标会随被测仓库规模漂移 | matrix |
@@ -63,6 +63,7 @@
 | 路径含非 ASCII / 空格 / 引号 | `-z` 与 `core.quotePath=false` 有没有真的生效 |
 | 重命名（含相似度阈值边界，一个 add 一个不 add——**阈值之下那一半必须一并入 index**，不入时 `git mv` 后重写内容 git 照报 `R100`） | 解析循环是有状态还是无状态平铺 |
 | 已暂存改动 | 双状态位；`git diff` 而非 `git diff HEAD` 会漏掉它 |
+| **暂存后又改回 HEAD**（`staged` 里的 `e.txt`：`MM`、`diff HEAD` 为空） | `diff` 漏带 `diff.autoRefreshIndex=false`——只有这个形态让 `git diff` 去刷新 index；进第二层 B 半（重写 index）与 `watch-tiers` 的自激用例（只拿锁时快照看不见） |
 | **已暂存的删除**（`git rm` 之后） | 分流判据写成 `ls-files` 而不是 HEAD ∪ index |
 | **未跟踪的符号链接**（故意指向仓库外一个内容已知的文件） | 读磁盘那条路写成 `stat` 而不是 `lstat`——断言补丁里不含链接目标的内容 |
 | **指向仓库外一个目录的符号链接**（`linkdir`） | 仓库边界只做了字面量那一道：`linkdir/secret.txt` 在字面上待在仓库内，而中间那段链接会把 `/api/file`、`/api/diff` 带到仓库外，`/api/tree?path=linkdir` 更是直接列出外面那个目录 |

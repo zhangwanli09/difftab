@@ -96,9 +96,9 @@ type IgnoringWatchOptions = {
 };
 
 /**
- * 起监听。不自激全靠封装层那条 `GIT_OPTIONAL_LOCKS=0`：不设它时 `git status` 把 stat
- * 缓存写回 `.git/index`，于是每次刷新写一次 index、每次写 index 又触发一次刷新，而
- * status 的输出从头到尾都是对的。
+ * 起监听。不自激全靠封装层的两件事：`GIT_OPTIONAL_LOCKS=0` 管 `git status`、
+ * `diff.autoRefreshIndex=false` 管 `git diff`——缺一条，那条命令就把 stat 缓存写回
+ * `.git/index`，于是每次刷新写一次 index、每次写 index 又触发一次刷新，而输出从头到尾都是对的。
  */
 export function createWatcher(options: WatcherOptions): WatchHandle {
   const {

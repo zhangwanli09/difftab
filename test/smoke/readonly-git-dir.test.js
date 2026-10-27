@@ -177,22 +177,35 @@ const lockedRun = once(async () => {
 /**
  * B 半：**可写**的 `.git` 上前后拍快照。先把两个「内容与 index 一致、只是 stat 过期」的文件的
  * mtime 改到很久以前——这正是 git 会去刷新 stat 缓存并回写 index 的场景。不制造它的话，`.git`
- * 本来就不会变，断言恒为真（下面那条正面对照就是用来证明它不恒为真的）。
+ * 本来就不会变，断言恒为真（下面两条正面对照就是用来证明它不恒为真的）。
+ *
+ * fixture 里的 `e.txt` 是暂存后又改回 HEAD 的那种（`MM`、`diff HEAD` 为空）：**`git diff` 只在
+ * pathspec 里有「stat 过期、内容却与基准相同」的路径时才去刷新 index**，且无视 `GIT_OPTIONAL_LOCKS`。
+ * a.txt / d.txt 相对 HEAD 是真改动，碰不到这条；e.txt 引出刷新，刷新再把 a.txt / d.txt 过期的 stat
+ * 写回去——所以 diff 那条对照也靠这两个文件的 mtime 是旧的。
  */
 const snapshotRun = once(async () => {
   const repos = await fixtures();
   const cwd = repos.staged;
   const gitDir = join(cwd, '.git');
   // a.txt / d.txt 都是 `git add` 过的，工作区内容与 index 一致
-  const stale = new Date('2020-01-01T00:00:00Z');
-  for (const name of ['a.txt', 'd.txt']) utimesSync(join(cwd, name), stale, stale);
+  // 每次弄旧都换一个日期：同一个日期弄两遍时，第二遍的 mtime 恰好等于上一条对照刚写回 index 的那个，
+  // stat 对得上、没有可刷的东西（ctime 是否参与比对因 git 的编译选项而异，不能指望它）
+  let staleDay = 0;
+  const makeStale = () => {
+    const stale = new Date(Date.UTC(2020, 0, ++staleDay));
+    for (const name of ['a.txt', 'd.txt']) utimesSync(join(cwd, name), stale, stale);
+  };
+  makeStale();
 
   const before = snapshotGitDir(gitDir);
   const result = await runFullFlow(cwd);
   const afterProduct = snapshotGitDir(gitDir);
 
   // 正面对照：同一个仓库、同一条 status 命令，但**不设** GIT_OPTIONAL_LOCKS=0。它必须把 .git 改掉
-  //——否则说明这个仓库根本不会触发 index 回写，上面那条「产品没改动 .git」就是一句空话
+  //——否则说明这个仓库根本不会触发 index 回写，上面那条「产品没改动 .git」就是一句空话。
+  // 先把 mtime 再弄旧一遍：产品要是写过 index，stat 已经被刷干净，对照会跟着红，盖住真正的那条
+  makeStale();
   spawnSync('git', ['status', '--porcelain=v2', '--branch', '-uall', '-z'], {
     cwd,
     encoding: 'utf8',
@@ -200,12 +213,24 @@ const snapshotRun = once(async () => {
     // GIT_OPTIONAL_LOCKS=0 时，对照组会一起噤声，红的原因就与产品无关了
     env: { ...process.env, GIT_OPTIONAL_LOCKS: '1' },
   });
-  const afterControl = snapshotGitDir(gitDir);
+  const afterStatusControl = snapshotGitDir(gitDir);
+
+  // 第二条对照：不带 `diff.autoRefreshIndex=false` 的 `git diff HEAD -- e.txt`，**设着**
+  // GIT_OPTIONAL_LOCKS=0——证明那个环境变量管不到 diff。同理先弄旧：上一条对照已经把 a.txt / d.txt
+  // 的 stat 刷干净了，不弄旧的话 index 没有可写回的东西，这条只拿一下 index.lock、快照看不见
+  makeStale();
+  spawnSync('git', ['diff', 'HEAD', '--', 'e.txt'], {
+    cwd,
+    encoding: 'utf8',
+    env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
+  });
+  const afterDiffControl = snapshotGitDir(gitDir);
 
   return {
     result,
     byProduct: changedEntries(before, afterProduct),
-    byControl: changedEntries(afterProduct, afterControl),
+    byControl: changedEntries(afterProduct, afterStatusControl),
+    byDiffControl: changedEntries(afterStatusControl, afterDiffControl),
   };
 });
 
@@ -300,11 +325,18 @@ test('B · 完整流程跑完，.git 逐字节未变', async () => {
   const { result, byProduct } = await snapshotRun();
   assert.equal(result.state.status, 200, `/api/state 返回了 ${result.state.status}`);
   assert.ok(result.diffs.length > 0, '一个 diff 都没取，流程没跑到位');
+  // 正面断言：e.txt 那份 diff 确实取到了、且就是「有改动却没有补丁」的形态——否则 diff 回写 index
+  // 那条路一次都没走到
+  const eDiff = result.diffByPath.get('e.txt');
+  assert.ok(eDiff, `e.txt 不在变更列表里：${result.files.map((f) => f.path).join(', ')}`);
+  assert.equal(eDiff.status, 200, `e.txt 的 /api/diff 返回了 ${eDiff.status}：${eDiff.body}`);
+  const { kind, patch } = JSON.parse(eDiff.body);
+  assert.deepEqual({ kind, patch }, { kind: 'text', patch: '' });
   assert.deepEqual(
     byProduct,
     [],
-    '产品跑完之后 .git 变了——检查 server/git/run.ts 的 GIT_OPTIONAL_LOCKS=0。' +
-      '这类写入不会让任何 git 命令失败，也不改变 status 输出，只有逐字节比对看得见',
+    '产品跑完之后 .git 变了——检查 server/git/run.ts 的 GIT_OPTIONAL_LOCKS=0 与 ' +
+      'diff.autoRefreshIndex=false。这类写入不会让任何 git 命令失败，也不改变输出，只有逐字节比对看得见',
   );
 });
 
@@ -342,5 +374,14 @@ test('B · 正面对照：不设 GIT_OPTIONAL_LOCKS 的同一条 status 确实�
     byControl,
     [],
     '对照组也没改动 .git——这个 fixture 触发不了 index 回写，上一条断言因此是空的',
+  );
+});
+
+test('B · 正面对照：设着 GIT_OPTIONAL_LOCKS=0 的默认 git diff 照样改了 .git', async () => {
+  const { byDiffControl } = await snapshotRun();
+  assert.notDeepEqual(
+    byDiffControl,
+    [],
+    '对照组也没改动 .git——e.txt 没能触发 diff 的 index 回写，「产品没改 .git」对 diff 那条路是空话',
   );
 });

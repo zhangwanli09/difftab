@@ -324,12 +324,15 @@ export async function runFullFlow(cwd, { env } = {}) {
     const state = await authedGet(server.port, server.token, '/api/state');
     const files = JSON.parse(state.body).files ?? [];
     const diffs = [];
+    // 默认档那一份按路径再记一笔：要盯某个文件的用例按名字取，不去猜 `diffs` 里一个文件占几格
+    const diffByPath = new Map();
     const blobs = [];
     for (const file of files) {
       const query = new URLSearchParams({ path: file.path });
       if (file.oldPath) query.set('oldPath', file.oldPath);
       const diff = await authedGet(server.port, server.token, `/api/diff?${query}`);
       diffs.push(diff);
+      diffByPath.set(file.path, diff);
       // 两个补丁开关一起开再取一次：`-w` 与整份上下文那条 `--unified` 是取补丁 argv 的另两种形态，
       // 不打一遍的话只读门禁对着从没出现过的形态通过。结果并进 `diffs`，与其余各条同样要 200
       diffs.push(
@@ -454,6 +457,7 @@ export async function runFullFlow(cwd, { env } = {}) {
       state,
       files,
       diffs,
+      diffByPath,
       blobs,
       trees,
       fileReads,

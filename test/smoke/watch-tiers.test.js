@@ -174,16 +174,15 @@ test('自动判定的那一档：node_modules 深层批量写入不刷新，同�
   }
 });
 
-test('读 /api/state 不会引出刷新事件——自激循环的判据', async (t) => {
-  await setup();
-  /**
-   * 每读一次状态就跑一次 `git status`，而**只要它往 `.git` 里写一个字节，`.git` 侧的 watch 就会
-   * 推一个 `change`，前端收到就再读一次状态**——一个不报错、只是 CPU 常年挂着 1% 的自激循环，
-   * 而 status 的输出从头到尾都是对的。挡住它的是封装层那句 `GIT_OPTIONAL_LOCKS=0`。
-   *
-   * 那条红线原本只有第二层 B 半的逐字节快照盯着，而**那是在单进程里比对文件，不经过监听**。这
-   * 里从另一头断：连着 SSE 的时候连读几次状态，一个事件都不该冒出来。
-   */
+/**
+ * 连着 SSE 把 `path` 请求三次，一个刷新事件都不该冒出来。**只要那条请求背后的 git 命令往 `.git`
+ * 里碰一下，`.git` 侧的 watch 就会推一个 `change`，前端收到就再请求一次**——一个不报错、只是请求
+ * 永不停的自激循环，而输出从头到尾都是对的。
+ *
+ * 那条红线原本只有第二层 B 半的逐字节快照盯着，而**那是在单进程里比对文件，不经过监听**，也看不见
+ * 「只拿一下 `index.lock`、没改 index」的那种碰。这里从另一头断。
+ */
+async function assertNoSelfExcitation(t, path, culprit) {
   const server = await startDifftab({ cwd: repos.staged });
   try {
     const sse = openEvents(server.port, server.token);
@@ -193,20 +192,37 @@ test('读 /api/state 不会引出刷新事件——自激循环的判据', async
     const baseline = sse.count;
 
     for (let i = 0; i < 3; i += 1) {
-      await authedGet(server.port, server.token, '/api/state');
+      const res = await authedGet(server.port, server.token, path);
+      assert.equal(res.status, 200, `${path} 返回了 ${res.status}：${res.body}`);
       await sleep(200);
     }
     await sleep(QUIET_MS);
-    t.diagnostic(`读 3 次 /api/state：事件数 ${baseline} → ${sse.count}`);
+    t.diagnostic(`请求 3 次 ${path}：事件数 ${baseline} → ${sse.count}`);
     assert.equal(
       sse.count,
       baseline,
-      `读状态引出了 ${sse.count - baseline} 次刷新——git status 多半在往 .git 里写东西`,
+      `请求 ${path} 引出了 ${sse.count - baseline} 次刷新——${culprit} 多半在碰 .git`,
     );
     sse.close();
   } finally {
     await server.stop();
   }
+}
+
+test('读 /api/state 不会引出刷新事件——自激循环的判据', async (t) => {
+  await setup();
+  // 每读一次就跑一次 `git status`。挡住它的是封装层那句 `GIT_OPTIONAL_LOCKS=0`
+  await assertNoSelfExcitation(t, '/api/state', 'git status');
+});
+
+test('取「暂存后又改回 HEAD」那个文件的 diff 不会引出刷新事件', async (t) => {
+  await setup();
+  /**
+   * `e.txt` 报 `MM` 而 `diff HEAD` 为空。`GIT_OPTIONAL_LOCKS=0` 管不到 `git diff`：它每次都拿一下
+   * `.git/index.lock`（有时还重写 index），而这个文件的 stat 永远刷不干净。挡住它的是封装层给 diff
+   * 注入的 `diff.autoRefreshIndex=false`；只拿锁的那几次逐字节快照看不见，只有这里看得见
+   */
+  await assertNoSelfExcitation(t, '/api/diff?path=e.txt', 'git diff');
 });
 
 test('Linux · inotify 用量：A 档不随 node_modules 的目录数增长，C 档只有 .git 侧那几条', async (t) => {
