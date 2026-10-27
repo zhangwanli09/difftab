@@ -12,7 +12,9 @@ import type {
 } from '../../../src/server/shared/protocol';
 import { CommitDiffView } from '../../../src/web/components/DiffView';
 import { commitTooltip, HistoryList, relativeTime } from '../../../src/web/components/HistoryList';
+import { indent } from '../../../src/web/components/tree-row';
 import { badgesBySha, refBadges } from '../../../src/web/state/badges';
+import { changeView } from '../../../src/web/state/change-tree';
 import {
   activeEditor,
   activeEditorPath,
@@ -64,11 +66,14 @@ import {
 import {
   actionOf,
   branch,
+  childLevelOf,
   expectEdgeAnchored,
+  expectGuideUnder,
   expectPlaceholderRow,
   hideHistory,
   ref,
   repo,
+  resetChangeTree,
   resetEditors,
   resetHistory,
   stubClipboard,
@@ -433,6 +438,88 @@ describe('HistoryList 组件', () => {
 
     fileRow.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     expect(activeEditor.value?.pinned).toBe(true);
+  });
+});
+
+describe('展开后的树版式', () => {
+  const detail: CommitDetail = {
+    ...commit(100),
+    files: [
+      { path: 'src/web/a.ts', status: 'M' },
+      { path: 'src/web/b.ts', oldPath: 'lib/b.ts', status: 'R' },
+      { path: 'README.md', status: 'A' },
+    ],
+  };
+
+  async function expand() {
+    historyList.value = mergeFirstPage(null, page(100, 100, 1, false));
+    stubJsonBy((url) =>
+      url.pathname === '/api/commit'
+        ? { payload: detail }
+        : { payload: { kind: 'text', patch: 'p\n', full: false } },
+    );
+    render(<HistoryList />, container);
+    (container.querySelector('[aria-expanded]') as HTMLElement).click();
+    await waitFor(() => expect(container.textContent).toContain('a.ts'));
+  }
+
+  beforeEach(() => {
+    changeView.value = 'tree';
+    onTestFinished(resetChangeTree);
+  });
+
+  test('跟着 changeView：单子目录链合并成一个目录行，根层在提交行之下一层；文件行不画目录段，改名来源照画', async () => {
+    await expand();
+    const dir = container.querySelector('[title="src/web"]') as HTMLElement;
+    expect(dir.textContent).toContain('src/web');
+    expect(dir.getAttribute('aria-expanded')).toBe('true');
+    expect(dir.style.paddingLeft).toBe(indent(1).paddingLeft);
+    expectGuideUnder(container.querySelector<HTMLElement>('[aria-expanded]'));
+    expectGuideUnder(dir);
+
+    const nested = container.querySelector('[title="src/web/b.ts"]') as HTMLElement;
+    expect(nested.style.paddingLeft).toBe(indent(2).paddingLeft);
+    expect(nested.textContent).not.toContain('src/web');
+    expect(nested.textContent).toContain('← lib/b.ts');
+    const top = container.querySelector('[title="README.md"]') as HTMLElement;
+    expect(top.style.paddingLeft).toBe(indent(1).paddingLeft);
+  });
+
+  test('折起目录只藏这一棵子树，不动选中；文件行单击照常开 commit tab', async () => {
+    await expand();
+    (container.querySelector('[title="src/web"]') as HTMLElement).click();
+    await waitFor(() => expect(container.querySelector('[title="src/web/a.ts"]')).toBeNull());
+    expect(container.querySelector('[title="README.md"]')).not.toBeNull();
+    expect(activeEditor.value).toBeNull();
+
+    (container.querySelector('[title="README.md"]') as HTMLElement).click();
+    expect(activeEditor.value).toMatchObject({ kind: 'commit', sha: sha(100), path: 'README.md' });
+  });
+
+  test('详情还没到时的占位与树的根层同一层、同画引导线；平铺版式不画', async () => {
+    historyList.value = mergeFirstPage(null, page(100, 100, 1, false));
+    // 详情永远在途，占位一直是 Loading…
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise(() => {})),
+    );
+    render(<HistoryList />, container);
+    const commitRow = container.querySelector<HTMLElement>('[aria-expanded]');
+    commitRow?.click();
+    await waitFor(() => expectPlaceholderRow(container, 'Loading…'));
+    expectGuideUnder(commitRow);
+    changeView.value = 'list';
+    await waitFor(() => expect(childLevelOf(commitRow)?.className).toBe(''));
+    expectPlaceholderRow(container, 'Loading…');
+  });
+
+  test('切回列表即平铺：每行第 1 层缩进、带目录段', async () => {
+    await expand();
+    changeView.value = 'list';
+    await waitFor(() => expect(container.querySelector('[title="src/web"]')).toBeNull());
+    const row = container.querySelector('[title="src/web/a.ts"]') as HTMLElement;
+    expect(row.style.paddingLeft).toBe(indent(1).paddingLeft);
+    expect(row.textContent).toContain('src/web');
   });
 });
 

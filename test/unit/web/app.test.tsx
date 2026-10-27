@@ -33,7 +33,7 @@ import {
 } from '../../../src/web/state/store';
 import { PRODUCT_NAME } from '../../../src/web/state/title';
 import { expandedDirs, ROOT, treeCache, treeErrors } from '../../../src/web/state/tree';
-import { hideHistory, openPinned, press, resetEditors, waitFor } from './helpers';
+import { hideHistory, openPinned, press, resetChangeTree, resetEditors, waitFor } from './helpers';
 
 const stateWith = (repoName: string): RepoState => ({
   repoName,
@@ -63,7 +63,7 @@ afterEach(() => {
   repoState.value = null;
   resetEditors();
   activeTab.value = 'changes';
-  changeView.value = 'list';
+  resetChangeTree();
   treeCache.value = new Map();
   treeErrors.value = new Map();
   expandedDirs.value = new Set();

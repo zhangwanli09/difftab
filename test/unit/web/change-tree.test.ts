@@ -15,11 +15,12 @@ import {
   toggleChangeDir,
   toggleChangeView,
 } from '../../../src/web/state/change-tree';
+import { resetChangeTree } from './helpers';
 
 const file = (path: string): FileEntry => ({ kind: 'tracked', staged: 'M', unstaged: '.', path });
 
 /** 一棵树压成 `name` 的缩进文本，断言时一眼能对形状。 */
-function outline(nodes: readonly ChangeNode[], depth = 0): string[] {
+function outline(nodes: readonly ChangeNode<FileEntry>[], depth = 0): string[] {
   return nodes.flatMap((node) =>
     node.kind === 'directory'
       ? [`${'  '.repeat(depth)}${node.name}/`, ...outline(node.children, depth + 1)]
@@ -27,10 +28,7 @@ function outline(nodes: readonly ChangeNode[], depth = 0): string[] {
   );
 }
 
-afterEach(() => {
-  changeView.value = 'list';
-  collapsedChangeDirs.value = new Set();
-});
+afterEach(resetChangeTree);
 
 describe('buildChangeTree', () => {
   it('单子目录链合并成一个节点，path 取链尾', () => {
@@ -65,6 +63,18 @@ describe('buildChangeTree', () => {
     expect(outline(nodes)).toEqual(['z/', '  1.ts', 'm/', '  2.ts', 'b.ts', 'a.ts']);
   });
 
+  it('提交里的条目也能建树：只认 path，节点带回原条目', () => {
+    const entry = { path: 'src/b.ts', oldPath: 'src/a.ts', status: 'R' as const };
+    expect(buildChangeTree([entry])).toEqual([
+      {
+        kind: 'directory',
+        name: 'src',
+        path: 'src',
+        children: [{ kind: 'file', file: entry }],
+      },
+    ]);
+  });
+
   it('文件节点带的是原条目本身——重命名与状态位都要从它上面取', () => {
     const entry = file('a.ts');
     const nodes = buildChangeTree([entry]);
@@ -80,6 +90,13 @@ describe('折叠态', () => {
   it('键带分组 id——同一目录在 Staged Changes 与 Changes 里是两棵子树', () => {
     toggleChangeDir('staged', 'src');
     expect(isChangeDirCollapsed('staged', 'src')).toBe(true);
+    expect(isChangeDirCollapsed('unstaged', 'src')).toBe(false);
+  });
+
+  it('History 的提交各是一个作用域：与分组互不影响，两条提交之间也互不影响', () => {
+    toggleChangeDir(`commit:${'a'.repeat(40)}`, 'src');
+    expect(isChangeDirCollapsed(`commit:${'a'.repeat(40)}`, 'src')).toBe(true);
+    expect(isChangeDirCollapsed(`commit:${'b'.repeat(40)}`, 'src')).toBe(false);
     expect(isChangeDirCollapsed('unstaged', 'src')).toBe(false);
   });
 

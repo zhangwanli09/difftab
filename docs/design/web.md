@@ -75,11 +75,11 @@
   - **横坐标对准父目录展开三角的中心**，与 `indent()` 从同一个缩进常量算——各算各的时改缩进量不报错，只是线与三角错开。根层不画。
   - **画在子层 `<ul>` 的 `::after` 上、不给 z-index**：排在这一层所有行之后，于是盖在悬停与选中底色上；给 `z-10` 会与 sticky 分组标题按 DOM 顺序比，滚到标题底下时线画在标题上。不吃点击。
   - **悬停作用域挂在列表区 `<nav>` 上，是具名 group**：挂在每棵树的根上时 `Changes` 档悬在一组上另一组不亮；裸 `group` 已被行占着。**触屏常显**，理由同行内动作。
-  - 不做 VS Code 那档「活动引导线高亮」（包含选中行的那条加深）。平铺列表与提交展开后的文件列表不画。
+  - 不做 VS Code 那档「活动引导线高亮」（包含选中行的那条加深）。平铺列表（含提交展开后的平铺清单）不画；提交展开后的树版式从第一层起就画，对准提交行那枚展开三角——提交本身就是这棵树的根。
 
 ### 列表与树两种版式
 
-**tab 行右端那枚开关在平铺列表与目录树之间切换，默认列表。** 对应 VS Code 的 View as Tree / View as List：agent 单次改 300+ 文件时目录段满屏重复，树把同一目录的文件收在一起。开关的图标与文案表达的是**目标视图**（它是动作按钮，不是状态灯）。只在 `Changes` 档画。
+**tab 行右端那枚开关在平铺列表与目录树之间切换，默认列表。** 对应 VS Code 的 View as Tree / View as List：agent 单次改 300+ 文件时目录段满屏重复，树把同一目录的文件收在一起。开关的图标与文案表达的是**目标视图**（它是动作按钮，不是状态灯）。只在 `Changes` 档画。**同一枚开关同时管 `History` 分区里提交展开后的文件清单**（同一个 `changeView`，照 VS Code 的 `scm.defaultViewMode` 也作用于 Graph）：两个分区同住这一档，各一枚开关时要给 History 另找位置，且两处版式可以不一致，换不来什么。History 那侧的细节在 [`sidebar.md`](sidebar.md)。
 
 - **版式只活在本次页面里，不进 `localStorage`**（跨不了实例，见「主题开关」）。状态是 `state/change-tree.ts` 的一个模块级 signal。
 - **分组标题两种版式都留着**：三组是 git 语义（同一个文件可同时在两组），树只是组内的排法。
@@ -89,7 +89,7 @@
 - **树由 `buildChangeTree(files)` 从路径纯算出来，用 `useMemo` 不用 `useComputed`**：`files` 是 prop 不是 signal，computed 不会随它重算——SSE 刷新后树停在旧的那份。每层目录在前、文件在后，各自沿用传入列表的顺序不另排序——传入的已按 `comparePaths` 排好，目录按首次出现的先后插入，于是同层目录与同层文件各自已是 collator 序。
 - **单子目录链紧凑合并**（VS Code 的 compact folders）：只有一个子节点且它是目录时合并成 `src/web/components`，`path` 取链尾。有文件的目录不合并。
 - **折叠态记 collapsed 集合（`collapsedChangeDirs`），不记 expanded**：默认全展开，SSE 新冒出来的目录不用登记就是展开的；记 expanded 时漏登记的新目录默认收起——页面上只是「刚改的文件没显示出来」。
-- **折叠键带分组 id**（`${groupId}:${path}`）：同一个目录可同时出现在两组，不带分组时折 Staged Changes 里的 `src` 会连 Changes 里的一起折掉。陈旧的键不清理。
+- **折叠键带作用域**：变更列表是分组 id（`${groupId}:${path}`），提交是 `commit:${sha}:${path}`。同一个目录可同时出现在两组、或两条提交里，不带作用域时折 Staged Changes 里的 `src` 会连 Changes 里的一起折掉。陈旧的键不清理。
 - **不复用 `state/tree.ts` 的 `expandedDirs`**：那份默认收起、且 `refreshTree` 按它发请求，混进去每折一个变更目录就多一趟 `ls-files`。
 - **文件行不再画目录段**（祖先节点已经说了）。
 - **选中态不变**：仍是 `activeEditorPath` 按 `path` 比，切版式不动右侧。

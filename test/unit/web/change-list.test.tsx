@@ -14,7 +14,7 @@ import {
   ROW_GROUP,
   SHELL_AFTER_BADGE,
 } from '../../../src/web/components/tree-row';
-import { changeView, collapsedChangeDirs } from '../../../src/web/state/change-tree';
+import { changeView } from '../../../src/web/state/change-tree';
 import { editors } from '../../../src/web/state/editors';
 import {
   actionOf,
@@ -23,6 +23,7 @@ import {
   file,
   groupOf,
   openPinned,
+  resetChangeTree,
   resetEditors,
   restoreRealTimers,
   revealSlotsIn,
@@ -45,8 +46,7 @@ afterEach(() => {
   restoreRealTimers();
   // signals 活在组件树之外，不清就会漏进下一个用例
   resetEditors();
-  changeView.value = 'list';
-  collapsedChangeDirs.value = new Set();
+  resetChangeTree();
   vi.restoreAllMocks();
 });
 
