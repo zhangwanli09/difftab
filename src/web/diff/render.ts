@@ -11,6 +11,7 @@ import {
   nodeStream,
 } from 'diff2html/lib-esm/ui/js/highlight.js-helpers.js';
 
+import type { HighlightResult } from 'highlight.js';
 import { foldHunks, type Gap } from './fold';
 import { createLineLanguage, getHljs } from './hljs';
 import { type LineKind, type PatchLine, parsePatch } from './parse';
@@ -182,4 +183,25 @@ function highlightLine(
     result.value = mergeStreams(stream, nodeStream(rendered), text);
   }
   return { html: result.value, language: result.language };
+}
+
+/**
+ * 正文有几行：**末尾那个换行不算一行**，否则每个正常结尾的文件都多出一个空行号。文件视图两档的行号
+ * 都按它数——各数各的时，两档的行数差一，越过末行的删除点就画错地方。数换行符，不切出一份行数组。
+ */
+export function lineCountOf(text: string): number {
+  let count = text.endsWith('\n') ? 0 : 1;
+  for (let at = text.indexOf('\n'); at !== -1; at = text.indexOf('\n', at + 1)) count++;
+  return count;
+}
+
+/**
+ * 整份正文的高亮结果按行切开，给文件视图的自动换行档：折行后每行高矮不一，行号只能与代码同住一行。
+ * 上色仍是整份一次（跨行的语法状态照常保留），跨行没闭合的 span 由 `closeTags` 在每行首尾补齐——与
+ * diff 那侧同一个切分函数，它只读 `value`。截到 `count` 行：末尾换行之后那一段不算一行。
+ */
+export function splitHighlighted(html: string, count: number): string[] {
+  return closeTags({ value: html } as HighlightResult)
+    .value.split('\n')
+    .slice(0, count);
 }

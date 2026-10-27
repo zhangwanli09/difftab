@@ -7,7 +7,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FilePayload } from '../../../src/server/shared/protocol';
 import { FileView } from '../../../src/web/components/FileView';
 import { revealRequest, setReveal } from '../../../src/web/state/editors';
-import { type FileRequestState, fileMarkStates, fileStates } from '../../../src/web/state/store';
+import {
+  type FileRequestState,
+  fileMarkStates,
+  fileStates,
+  wordWrap,
+} from '../../../src/web/state/store';
 import { setFileState, waitFor } from './helpers';
 
 let container: HTMLElement;
@@ -228,5 +233,113 @@ describe('改动标记', () => {
     ready('a.ts', { kind: 'text', content: 'a\n' });
     await waitFor(() => expect(container.textContent).toContain('a'));
     expect(marks()).toEqual([]);
+  });
+});
+
+describe('自动换行', () => {
+  /** 一行一个元素：行号格与代码格同住一行。 */
+  const rows = () => [...(container.querySelector('.leading-5')?.children ?? [])] as HTMLElement[];
+  const marks = () => [...container.querySelectorAll<HTMLElement>('[data-mark]')];
+  const band = () => container.querySelector<HTMLElement>('[data-reveal-line]');
+  const original = HTMLElement.prototype.scrollIntoView;
+
+  beforeEach(() => {
+    wordWrap.value = true;
+  });
+
+  afterEach(() => {
+    wordWrap.value = false;
+    revealRequest.value = null;
+    fileMarkStates.value = new Map();
+    HTMLElement.prototype.scrollIntoView = original;
+  });
+
+  it('一行一个元素、行号与代码同住一行；不套 w-max，代码格会折行', async () => {
+    ready('a.ts', { kind: 'text', content: 'const x = 1;\n\nconst y = 2;\n' });
+    await waitFor(() => expect(container.textContent).toContain('const y = 2;'));
+    // `max-content` 下一行都折不了
+    expect(wideBox()?.classList.contains('w-max')).toBe(false);
+    expect(container.querySelector('pre')).toBeNull();
+    // 末尾那个换行不算一行，空行照样占一行
+    expect(rows().map((row) => row.firstElementChild?.textContent)).toEqual(['1', '2', '3']);
+    const code = rows()[0]?.lastElementChild;
+    expect(code?.classList.contains('whitespace-pre-wrap')).toBe(true);
+    expect(code?.classList.contains('wrap-anywhere')).toBe(true);
+    expect(code?.querySelector('.hljs-keyword')).not.toBeNull();
+  });
+
+  it('跨行的 span 每行各自闭合：多行注释的每一行都还是注释色', async () => {
+    ready('a.ts', { kind: 'text', content: '/*\n * one\n */\nlet z;\n' });
+    await waitFor(() => expect(rows()).toHaveLength(4));
+    for (const row of rows().slice(0, 3)) {
+      expect(row.lastElementChild?.querySelector('.hljs-comment')).not.toBeNull();
+    }
+    expect(rows()[3]?.lastElementChild?.querySelector('.hljs-comment')).toBeNull();
+  });
+
+  it('关掉即回到两个 <pre>', async () => {
+    ready('a.ts', { kind: 'text', content: 'a\nb\n' });
+    await waitFor(() => expect(rows()).toHaveLength(2));
+    wordWrap.value = false;
+    await waitFor(() => expect(container.querySelectorAll('pre')).toHaveLength(2));
+    expect(wideBox()?.classList.contains('w-max')).toBe(true);
+  });
+
+  it('改动标记挂到行上：竖条逐行画，删除点落在那一行顶边，越过末行时画在末行底边', async () => {
+    fileMarkStates.value = new Map([
+      [
+        'a.ts',
+        [
+          { kind: 'added', line: 1, count: 2 },
+          { kind: 'deleted', line: 3, count: 0 },
+          { kind: 'modified', line: 4, count: 1 },
+          { kind: 'deleted', line: 5, count: 0 },
+        ],
+      ],
+    ]);
+    ready('a.ts', { kind: 'text', content: 'a\nb\nc\nd\n' });
+    await waitFor(() => expect(marks()).toHaveLength(5));
+    const kindsIn = (line: number) =>
+      [...(rows()[line - 1]?.querySelectorAll<HTMLElement>('[data-mark]') ?? [])].map(
+        (mark) => mark.dataset.mark,
+      );
+    expect(kindsIn(1)).toEqual(['added']);
+    expect(kindsIn(2)).toEqual(['added']);
+    expect(kindsIn(3)).toEqual(['deleted']);
+    expect(kindsIn(4)).toEqual(['modified', 'deleted']);
+    const [top, bottom] = marks().filter((mark) => mark.dataset.mark === 'deleted');
+    expect(top?.style.top).toBe('-4px');
+    expect(bottom?.style.bottom).toBe('-4px');
+    expect(marks()[0]?.getAttribute('class')).toContain('bg-editor-gutter-added-background');
+  });
+
+  it('末行之前与文件末尾各删过一段时，末行顶边与底边各一个删除点', async () => {
+    fileMarkStates.value = new Map([
+      [
+        'a.ts',
+        [
+          { kind: 'deleted', line: 2, count: 0 },
+          { kind: 'deleted', line: 3, count: 0 },
+        ],
+      ],
+    ]);
+    ready('a.ts', { kind: 'text', content: 'a\nb\n' });
+    await waitFor(() => expect(marks()).toHaveLength(2));
+    const inLast = [...(rows()[1]?.querySelectorAll<HTMLElement>('[data-mark]') ?? [])];
+    expect(inLast.map((mark) => [mark.style.top, mark.style.bottom])).toEqual([
+      ['-4px', ''],
+      ['', '-4px'],
+    ]);
+  });
+
+  it('跳行：那一行的代码格垫高亮底色并滚进视野', async () => {
+    const scrolled = vi.fn();
+    HTMLElement.prototype.scrollIntoView = scrolled;
+    setReveal('src/app.ts', 2);
+    ready('src/app.ts', { kind: 'text', content: 'a\nb\nc\n' });
+    await waitFor(() => expect(band()).not.toBeNull());
+    expect(band()).toBe(rows()[1]?.lastElementChild);
+    expect(band()?.classList.contains('bg-editor-range-highlight-background')).toBe(true);
+    expect(scrolled).toHaveBeenCalledTimes(1);
   });
 });

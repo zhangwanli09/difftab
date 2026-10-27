@@ -6,7 +6,7 @@
 // 文本。并排之后 × 的事件压根不经过 tab 按钮，那三样跟着消失。「在看哪个文件」由活动 tab 回答，
 // 完整路径挂在 `title` 上；栏下不再留一行路径横杠——每个文件的名字会在栏里与栏下各写一遍。
 //
-// **栏是两层，tablist 在里面**：右端那块编辑器动作区（SVG 的预览开关、全文 tab 的 `Copy file
+// **栏是两层，tablist 在里面**：右端那块编辑器动作区（SVG 的预览开关、全文 tab 的自动换行与 `Copy file
 // contents`、diff / commit / 整次提交 tab 的忽略空白与版式切换）与 tablist 并排而不是躺在它里面，切法与侧栏那行 tab 一样——躺进去时
 // 读屏把按钮报成又一个 tab，而 tablist 是横向滚动容器，按钮还会跟着 tab 滚出视野。
 //
@@ -14,7 +14,7 @@
 // 插到指针所在的位置，拖到正文上由 `EditorGroup` 接。
 
 import { computed, type ReadonlySignal, useComputed, useSignal } from '@preact/signals';
-import { Columns2, Eye, type LucideIcon, Pilcrow, Rows2, X } from 'lucide-preact';
+import { Columns2, Eye, type LucideIcon, Pilcrow, Rows2, TextWrap, X } from 'lucide-preact';
 import type { JSX } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
 import {
@@ -48,6 +48,8 @@ import {
   svgPreview,
   toggleIgnoreWhitespace,
   toggleSvgPreview,
+  toggleWordWrap,
+  wordWrap,
 } from '../state/store';
 import { CODE_COLORS, splitForDisplay } from './ChangeList';
 import { inRightHalf, leftTarget } from './drag';
@@ -80,6 +82,8 @@ interface EditorActionState {
   format: boolean;
   /** 画不画忽略空白。 */
   whitespace: boolean;
+  /** 画不画自动换行。 */
+  wrap: boolean;
 }
 
 const NO_ACTIONS: EditorActionState = {
@@ -88,14 +92,15 @@ const NO_ACTIONS: EditorActionState = {
   previewing: false,
   format: false,
   whitespace: false,
+  wrap: false,
 };
 
 /**
  * 活动 tab 的动作区，**按 `kind` 在这一处分派**：各枚按钮各写一个 computed、再各自拼一遍 kind 判据时，
  * 多一种 tab 要改四处，漏一处只是那一枚静默不画。
  *
- * - **file**：正文 `ready` 才有。`text` 时画复制（缓存里那份原文）；带 `preview` 时画 `Preview`，按下态
- *   同视图的 `shownPreview`（挂着跳行时按文本画）。
+ * - **file**：正文 `ready` 才有。`text` 时画复制（缓存里那份原文），没按图画着时再画自动换行；带
+ *   `preview` 时画 `Preview`，按下态同视图的 `shownPreview`（挂着跳行时按文本画）。
  * - **diff / commit**：补丁 `ready` 且带 `patch` 时才有——判据是 payload 上有没有 `patch`，不列 kind：
  *   `DiffView` 交给 `Patch` 的正是那几支。按图画着时没有补丁表格，版式与忽略空白都不画；忽略空白只给
  *   `text`（`untracked-text` 是全新增，没有旧侧可比）。
@@ -113,11 +118,14 @@ function actionsOf(editor: Editor | null): EditorActionState {
       const state = fileStates.value.get(editor.path);
       if (state?.status !== 'ready') return NO_ACTIONS;
       const { payload } = state;
+      const previewing = shownPreview(payload, editor.path) !== undefined;
       return {
         ...NO_ACTIONS,
         copyText: payload.kind === 'text' ? payload.content : null,
         preview: previewOf(payload) !== undefined,
-        previewing: shownPreview(payload, editor.path) !== undefined,
+        previewing,
+        // 按图画着时没有正文可折
+        wrap: payload.kind === 'text' && !previewing,
       };
     }
     case 'diff':
@@ -131,7 +139,7 @@ function actionsOf(editor: Editor | null): EditorActionState {
       const { payload } = state;
       const previewing = shownPreview(payload) !== undefined;
       return {
-        copyText: null,
+        ...NO_ACTIONS,
         preview: previewOf(payload) !== undefined,
         previewing,
         format: !previewing,
@@ -165,7 +173,7 @@ function multiDiffActions(
     }
   }
   return {
-    copyText: null,
+    ...NO_ACTIONS,
     preview,
     previewing: preview && svgPreview.value,
     format: true,
@@ -251,7 +259,8 @@ function viewOf(group: EditorGroup): GroupView {
           Number(state.preview) +
           Number(state.copyText !== null) +
           Number(state.format) +
-          Number(state.whitespace)
+          Number(state.whitespace) +
+          Number(state.wrap)
         );
       }),
       dirs: computed(() =>
@@ -427,7 +436,7 @@ function Tab({
 }
 
 /**
- * 栏右端的编辑器动作区，按活动 tab 的种类画：全文 tab 正文就绪时是 `Copy file contents`，diff /
+ * 栏右端的编辑器动作区，按活动 tab 的种类画：全文 tab 正文就绪时是自动换行与 `Copy file contents`，diff /
  * commit tab 补丁就绪为文本时是忽略空白与版式切换（点了就固定，语义在 `state/layout.ts`）；带
  * SVG 预览的 tab 最左边再多一枚 `Preview`。版式切换
  * 不按 tab 键 `key`：它不带局部状态，显示的是这一组的版式（分屏时两组可以不同）。
@@ -441,7 +450,7 @@ function EditorActions({ group }: { group: EditorGroup }) {
   const view = viewOf(group);
   const editor = group.active.value;
   if (editor === null || view.actionCount.value === 0) return null;
-  const { copyText, preview, previewing, format, whitespace } = view.actions.value;
+  const { copyText, preview, previewing, format, whitespace, wrap } = view.actions.value;
   // 忽略空白是一枚**带按下态的开关、文案恒定**，与版式按钮「文案写目标版式」刻意不同：版式是什么
   // 一眼看得出，空白藏没藏看不出——开着而认不出来时，用户只会觉得 diff 少了几处改动
   // 预览与忽略空白同为带按下态的开关：开着时面板上是图而不是文本，一眼认得出，但认不出「这个 tab
@@ -456,7 +465,17 @@ function EditorActions({ group }: { group: EditorGroup }) {
   );
   const actions =
     copyText !== null ? (
-      <CopyButton key={keyOf(editor)} text={copyText} label="Copy file contents" />
+      <>
+        {wrap && (
+          <Toggle
+            icon={TextWrap}
+            label="Word Wrap"
+            pressed={wordWrap.value}
+            onClick={toggleWordWrap}
+          />
+        )}
+        <CopyButton key={keyOf(editor)} text={copyText} label="Copy file contents" />
+      </>
     ) : (
       <>
         {whitespace && (

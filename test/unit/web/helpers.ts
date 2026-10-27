@@ -54,6 +54,7 @@ import {
   ignoreWhitespace,
   segmentContexts,
   svgPreview,
+  wordWrap,
 } from '../../../src/web/state/store';
 
 /**
@@ -63,6 +64,7 @@ import {
 export function resetEditors(): void {
   ignoreWhitespace.value = false;
   svgPreview.value = true;
+  wordWrap.value = false;
   resetGroups();
   revealRequest.value = null;
   diffStates.value = new Map();

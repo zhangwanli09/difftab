@@ -173,7 +173,7 @@ function basenameOf(path: string): string {
 
 /**
  * 一条路径该用哪个语言高亮。**两个视图共用这一条**——diff 视图（`render.ts` 的
- * `highlightLines()` 逐行判）与文件视图（`FileView` 整份判）各写一份的症状是同一个文件在一边
+ * `createLineLanguage()` 逐行判）与文件视图（`FileView` 整份判）各写一份的症状是同一个文件在一边
  * 有色、另一边没色，两处都不报错。
  * 清单在本文件，解析也就该在本文件：放到组件里的话，那张表与它依赖的注册清单会隔着两层目录
  * 各活各的。
