@@ -1,9 +1,11 @@
 // 左栏宽度。与 `layout.ts` 同一类东西——页面自己的量，不是仓库状态，不进 `store.ts`。
 //
-// **不跨会话记忆**，与变更列表的版式开关同一个结论：后端端口随机，`localStorage` 按 origin
-// 隔离，写了也只活到同一实例的刷新。
+// 三把把手的取值**刷新后保留**，由 `syncPanelSizes()` 落到 `localStorage`。后端端口随机，
+// `localStorage` 按 origin（含端口）隔离，所以也只活到同一实例的刷新——要的正是这个：拖好的
+// 版面不该被一次刷新打回默认。
 
-import { computed, signal } from '@preact/signals';
+import { computed, effect, type ReadonlySignal, signal } from '@preact/signals';
+import { readStorage, writeStorage } from './storage';
 
 export const SIDEBAR_DEFAULT_WIDTH = 320;
 
@@ -131,3 +133,53 @@ export function setSplitPercent(percent: number): void {
 
 /** 左组的内联样式，同 `sidebarStyle` 以 signal 本身交给 `style`：拖动时一个组件都不重渲染。 */
 export const splitStyle = computed(() => `flex:0 0 ${splitPercent.value}%`);
+
+// ---- 落盘 ----
+
+/** 每把把手一项：取值的 signal、它的 setter（读回时复用夹界与取整），以及 `localStorage` 的键。 */
+const PERSISTED: readonly {
+  readonly key: string;
+  readonly value: ReadonlySignal<number>;
+  readonly set: (value: number) => void;
+}[] = [
+  { key: 'difftab:sidebar-width', value: sidebarWidth, set: setSidebarWidth },
+  { key: 'difftab:pane-percent', value: panePercent, set: setPanePercent },
+  { key: 'difftab:split-percent', value: splitPercent, set: setSplitPercent },
+];
+
+/**
+ * 读回存着的那一份。不是有限数的（缺省、别的版本写的、被人手改的）一律 `null`，取值留在缺省；
+ * 越界的交给 setter 夹回去。空串要单独挡：`Number('')` 是 0，会被夹成下限。
+ */
+function readStored(key: string): number | null {
+  const raw = readStorage(key);
+  if (raw === null || raw.trim() === '') return null;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : null;
+}
+
+/**
+ * 把三把把手的取值读回来，再接一个 effect 把后续的改动写回去，返回取消订阅的函数。在 `render()`
+ * 之前调，首帧就是上次的版面。
+ *
+ * **拖动期间不写**：effect 也订阅 `sashDragging`，不为 `null` 就跳过；松手时它回到 `null`，effect
+ * 重跑、写一次最终值。否则每个 pointermove 一次同步的 `localStorage` 写。键盘与双击复位不经过
+ * 拖动，改了即写。和上次记下的一样就不写——挡住首次订阅那一跑，也让脏值不修不清（同主题）。
+ */
+export function syncPanelSizes(): () => void {
+  // `last` 记的是夹过之后的取值：越界的存值读回时已被夹好，首跑不必为它写一次
+  const entries = PERSISTED.map((entry) => {
+    const stored = readStored(entry.key);
+    if (stored !== null) entry.set(stored);
+    return { ...entry, last: entry.value.peek() };
+  });
+
+  return effect(() => {
+    // 提前返回时不订阅三个取值，拖动中的每次 move 也就不会把这个 effect 叫醒
+    if (sashDragging.value !== null) return;
+    for (const entry of entries) {
+      const current = entry.value.value;
+      if (current !== entry.last && writeStorage(entry.key, String(current))) entry.last = current;
+    }
+  });
+}

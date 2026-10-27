@@ -6,6 +6,7 @@
 // **本文件唯一要做的就是维护 <html> 上那个属性**。
 
 import { effect, signal } from '@preact/signals';
+import { readStorage, writeStorage } from './storage';
 
 /**
  * 三档。`'system'` 是缺省，也是加这个开关之前的全部行为。**不做成两档**：两档开关一旦点过就
@@ -25,8 +26,8 @@ const NEXT: Record<ThemePreference, ThemePreference> = {
 };
 
 /**
- * `localStorage` 的键。仓库里**第一份跨会话的用户偏好**，加第二份之前先想清楚它
- * 是不是也该走同一套（读写各自 try/catch、脏值退回缺省）。
+ * `localStorage` 的键。仓库里**第一份跨会话的用户偏好**；第二份是把手尺寸（`sidebar.ts`），
+ * 走的是同一套（读写经 `storage.ts`、脏值退回缺省）。再加之前照这一套来。
  */
 const STORAGE_KEY = 'difftab:theme';
 
@@ -39,17 +40,12 @@ const isStored = (value: string | null): value is 'light' | 'dark' =>
   value === 'light' || value === 'dark';
 
 /**
- * 读回上次的选择。**读本身就要 try/catch**——Safari 隐私模式下光是取值就抛，而那时页面还没
- * 画，抛出去就是整页白屏。脏值（别的版本写的、被人手改的）一律当作「跟随系统」，不修也不清：
- * 清掉是一次写，而这条路径上我们对存储的唯一诉求是「别让它把页面搞坏」。
+ * 读回上次的选择。脏值（别的版本写的、被人手改的）一律当作「跟随系统」，不修也不清：清掉是一次
+ * 写，而这条路径上我们对存储的唯一诉求是「别让它把页面搞坏」。
  */
 function readStored(): ThemePreference {
-  try {
-    const value = localStorage.getItem(STORAGE_KEY);
-    return isStored(value) ? value : 'system';
-  } catch {
-    return 'system';
-  }
+  const value = readStorage(STORAGE_KEY);
+  return isStored(value) ? value : 'system';
 }
 
 /**
@@ -67,7 +63,7 @@ export function cycleTheme(): void {
 /**
  * 把档位接到 `<html>` 的 `data-theme` 上并落盘，返回取消订阅的函数。**属性与持久化同住一个
  * effect**：它们是同一次状态变更的两半，拆开会出现「切了但没记住」，而那件事只在刷新之后才看
- * 得见。写也要 try/catch，理由同 `readStored`；抛了就只在内存里生效。
+ * 得见。写没写成由 `writeStorage` 报，**写成功之后**才记账：抛了就只在内存里生效，下一次切换再试。
  */
 export function syncDocumentTheme(): () => void {
   // 存里已经是什么。用它挡住 effect **首次订阅那一跑**的无谓写。它还是「脏值不修也不清」那句
@@ -87,17 +83,8 @@ export function syncDocumentTheme(): () => void {
     }
 
     if (preference === persisted) return;
-
-    try {
-      if (preference === 'system') {
-        localStorage.removeItem(STORAGE_KEY);
-      } else {
-        localStorage.setItem(STORAGE_KEY, preference);
-      }
-      // **写成功之后**才记账：抛了就保持原值，下一次切换会再试一遍
+    if (writeStorage(STORAGE_KEY, preference === 'system' ? null : preference)) {
       persisted = preference;
-    } catch {
-      // 存不下就只在这一次会话里生效
     }
   });
 }

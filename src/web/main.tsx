@@ -1,9 +1,10 @@
-// 前端入口。接上主题 + 挂载 + 拉第一份状态 + 订阅变更 + 把标题接上，别的都不做。
+// 前端入口。接上主题与把手尺寸 + 挂载 + 拉第一份状态 + 订阅变更 + 把标题接上，别的都不做。
 
 import { render } from 'preact';
 
 import { App } from './components/App';
 import { connectEvents } from './state/events';
+import { syncPanelSizes } from './state/sidebar';
 import { loadState } from './state/store';
 import { syncDocumentTheme } from './state/theme';
 import { syncDocumentTitle } from './state/title';
@@ -14,6 +15,8 @@ if (root) {
   // **排在 render 之前**，让 <html> 上那个 data-theme 尽早落下去。首帧仍可能闪一下系统色：
   // CSP 是 `script-src 'self'`，页面里塞不了那段惯用的 pre-paint 内联脚本
   syncDocumentTheme();
+  // 同理排在 render 之前：首帧就是上次拖好的版面，不先按默认画一帧再跳
+  syncPanelSizes();
   render(<App />, root);
   // 挂载之后再发请求：首屏先出骨架，数据到了 signals 自己会把列表补上
   void loadState();
