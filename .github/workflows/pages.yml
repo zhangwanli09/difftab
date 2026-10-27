@@ -8,12 +8,12 @@ on:
   push:
     branches: [main]
     # 锁文件也算：Tailwind / Vite 升级会改变产物，而 site/ 一个字没动；package.json 里有
-    # site:build 那条 script 本身
-    paths: [site/**, package.json, pnpm-lock.yaml, .github/workflows/pages.yml]
+    # site:build 那条 script 本身；页面引用的资源由 Vite 从 assets/ 打包进产物，只换资源也要重新部署
+    paths: [site/**, assets/**, package.json, pnpm-lock.yaml, .github/workflows/pages.yml]
   # PR 上只构建、不部署：把 site/ 改坏的 PR 在合并前就红，而不是合进 main 后部署失败、
   # 线上静默停在上一版。不放进 ci.yml：那份会被 release.yml 复跑，官网红了不该挡发版
   pull_request:
-    paths: [site/**, package.json, pnpm-lock.yaml, .github/workflows/pages.yml]
+    paths: [site/**, assets/**, package.json, pnpm-lock.yaml, .github/workflows/pages.yml]
   workflow_dispatch:
 
 permissions:

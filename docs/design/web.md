@@ -139,5 +139,5 @@
 - **没有字标**：README 头图是 `assets/mark.svg` 与「difftab」同住一个 `<h1>`（只能用 `align`，GitHub 的 sanitizer 不放行 `style`）。社交预览里的文字是 Chrome 截成 PNG 后定型的，符号与名字的间距按符号的**可见包围盒**量、不按 24 网格，否则右侧留白叠进间距。
 - **favicon 是两条 data URI 的 `<link rel="icon">`，不加静态路由**：CSP 已放行 `img-src data:`，加文件则 `assets.ts` 白名单与冒烟的 `WEB_ASSETS` 各要补一处。**SVG 那条排在 PNG 之后**——Chrome / Firefox 取靠后的那条，Safari 不认 SVG favicon、退到 PNG。
 - **GitHub 社交预览没有 API**：`assets/social-preview.png` 要手工上传到仓库 Settings，改了 logo 就得再传一次。
-- **`assets/` 刻意不进 `files`**：它只给 GitHub 与 README 用（`check:pack` 会拦）。
-- **README 截图 `assets/screenshot-{light,dark}.png` 是一次性手工产出，明暗两张一起换**——只换一张时两种主题的读者看到的是两个版本的界面。拍的是临时造的演示仓库，作者用占位名、画面里不带本机路径；截前把指针移出左栏，否则悬停那一行连同行内按钮一起入镜。暗色那张走 `<picture>` 的 `srcset`，写 `main` 分支的 raw 绝对地址：npm 改写相对路径（见 `../gates.md`「发布产物约定」）只确认过 `<img src>`，代价是合并前 PR 预览里暗色那张取不到。
+- **`assets/` 刻意不进 `files`**：它只给 GitHub、README 与官网构建用（`check:pack` 会拦）。
+- **README 截图 `assets/screenshot-{light,dark}.png` 是一次性手工产出，明暗两张一起换**——只换一张时两种主题的读者看到的是两个版本的界面。拍的是临时造的演示仓库，作者用占位名、画面里不带本机路径；截前把指针移出左栏，否则悬停那一行连同行内按钮一起入镜。**视口 1680×1000、DPR 1**：这个宽度下 diff 自动取并排版式，而输出宽度约等于官网正文（≈ 880 CSS px）在 2× 屏上的设备像素，再高的 DPR 只是让浏览器多缩一道；明暗用浏览器的 `prefers-color-scheme` 切，主题偏好留在 `system`。**拍完用 pngquant 压成调色板 PNG 再入库**（`pngquant --quality=80-95 --speed 1 --strip --force --ext .png assets/screenshot-*.png`）——真彩 PNG 每张多出几倍体积、却照常显示，由 `screenshots.test.ts` 钉住；官网 `<img>` 手写的 `width` / `height` 也随之要改，同一份测试会拦。暗色那张走 `<picture>` 的 `srcset`，写 `main` 分支的 raw 绝对地址：npm 改写相对路径（见 `../gates.md`「发布产物约定」）只确认过 `<img src>`，代价是合并前 PR 预览里暗色那张取不到。
