@@ -144,6 +144,12 @@ export const ignoreWhitespace = signal(false);
 export const svgPreview = signal(true);
 
 /**
+ * 文件视图的自动换行。全局一份、默认关、不进 `localStorage`，理由同忽略空白；diff 表格不跟它（两张表
+ * 逐行对齐全靠固定行高）。写入方只有 `toggleWordWrap`。
+ */
+export const wordWrap = signal(false);
+
+/**
  * payload 上那份 SVG 预览，不看开关。**判据只认字段**，不判扩展名——那张表只在后端。动作区画不画
  * `Preview` 由它定。
  */
@@ -1078,6 +1084,11 @@ export function openChanges(): void {
 export function toggleIgnoreWhitespace(): void {
   ignoreWhitespace.value = !ignoreWhitespace.value;
   for (const editor of visibleEditors.value) if (isPatchEditor(editor)) void refetch(editor);
+}
+
+/** 切换自动换行。**不重取**：同一份正文换一种排法。 */
+export function toggleWordWrap(): void {
+  wordWrap.value = !wordWrap.value;
 }
 
 /**

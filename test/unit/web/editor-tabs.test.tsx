@@ -30,6 +30,7 @@ import {
   PATCH_DEFAULTS,
   repoState,
   svgPreview,
+  wordWrap,
 } from '../../../src/web/state/store';
 import {
   file,
@@ -472,6 +473,48 @@ describe('版式切换', () => {
   });
 });
 
+describe('自动换行', () => {
+  const ready = (path: string, payload: FilePayload) =>
+    setFileState(path, { status: 'ready', payload });
+  const toggle = () => container.querySelector<HTMLButtonElement>('button[aria-label="Word Wrap"]');
+
+  it('全文 tab 的文本就绪时画在复制左边；按图画着的 SVG、diff tab 都不画', async () => {
+    pinned('file', 'src/a.ts');
+    expect(toggle()).toBeNull();
+    ready('src/a.ts', { kind: 'text', content: 'x\n' });
+    await waitFor(() => expect(toggle()).not.toBeNull());
+    expect(toggle()?.nextElementSibling).toBe(copyButton());
+
+    // 预览开着时面板上是图，没有正文可折；复制照留
+    ready('src/a.ts', { kind: 'text', content: '<svg/>', preview: { size: 6, version: 'v1' } });
+    await waitFor(() => expect(toggle()).toBeNull());
+    expect(copyButton()).not.toBeNull();
+
+    pinned('diff', 'src/b.ts');
+    setDiffState('src/b.ts', {
+      status: 'ready',
+      rename: null,
+      options: PATCH_DEFAULTS,
+      payload: { kind: 'text', patch: 'diff --git a/src/b.ts b/src/b.ts\n', full: false },
+    });
+    await waitFor(() => expect(formatButton()).not.toBeNull());
+    expect(toggle()).toBeNull();
+  });
+
+  it('是一枚带按下态的开关，文案恒定；点一下翻全局开关、不发请求', async () => {
+    pinned('file', 'src/a.ts');
+    ready('src/a.ts', { kind: 'text', content: 'x\n' });
+    await waitFor(() => expect(toggle()?.getAttribute('aria-pressed')).toBe('false'));
+    const before = calls.length;
+
+    toggle()?.click();
+    expect(wordWrap.value).toBe(true);
+    await waitFor(() => expect(toggle()?.getAttribute('aria-pressed')).toBe('true'));
+    expect(toggle()?.getAttribute('aria-label')).toBe('Word Wrap');
+    expect(calls.length).toBe(before);
+  });
+});
+
 describe('忽略空白', () => {
   const SHA = 'a'.repeat(40);
   const PATCH: DiffPayload = {
@@ -578,7 +621,10 @@ describe('SVG 预览', () => {
       status: 'ready',
       payload: { kind: 'text', content: '<svg/>', preview: { size: 6, version: 'v1' } },
     });
-    await waitFor(() => expect(toggle()?.nextElementSibling).toBe(copyButton()));
+    // 开关此刻关着、按文本画：自动换行夹在预览与复制之间
+    const wrap = () => container.querySelector('button[aria-label="Word Wrap"]');
+    await waitFor(() => expect(toggle()?.nextElementSibling).toBe(wrap()));
+    expect(wrap()?.nextElementSibling).toBe(copyButton());
     setFileState('logo.svg', { status: 'ready', payload: { kind: 'text', content: '<svg/>' } });
     await waitFor(() => expect(toggle()).toBeNull());
     expect(copyButton()).not.toBeNull();
