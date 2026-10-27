@@ -56,6 +56,20 @@ const GIT_ENV = {
 const DIFF_GUARDS = ['--no-ext-diff', '--no-textconv'] as const;
 
 /**
+ * **每一条 `git diff` 都在子命令之前多带 `-c diff.autoRefreshIndex=false`**，同样由这里注入。
+ * `GIT_OPTIONAL_LOCKS=0` **管不到 `git diff`**：pathspec 里有「stat 过期、内容却与基准相同」的
+ * 路径时，它照样去刷新 index：每次都建一下 `index.lock`，有可刷的 stat 时还重写 `.git/index`，
+ * 输出不变、exit 0。暂存了改动又把工作区改回 HEAD 那一版的文件（status 报 `MM`、`diff HEAD`
+ * 为空）stat 永远刷不干净，于是每取一次 diff 都碰一次 `.git`——监听推 `change`、前端重取 state
+ * 与 diff、再碰一次，一个停不下来的自激循环。
+ *
+ * 关掉它之后**补丁与 numstat 逐字节不变**，但 `--name-status` / `--raw` / `--name-only` 对工作区
+ * 比时会把这类「stat 过期、内容相同」的路径报成 `M`。今天对工作区只用前两种；要对工作区用后几种时，
+ * 得自己再按内容筛一遍。
+ */
+const DIFF_CONFIG = ['-c', 'diff.autoRefreshIndex=false'] as const;
+
+/**
  * **每一条 `git grep` 都在子命令之前多带这两条 `-c`**，同样由这里注入：
  * - `grep.column=false`：用户配了 `grep.column` 时 `-z` 记录多出一段列号，解析整体错位、不报错；
  * - `submodule.recurse=false`：配了它时 `grep --untracked` 直接 fatal（`--untracked not supported
@@ -69,7 +83,8 @@ const GREP_CONFIG = ['-c', 'grep.column=false', '-c', 'submodule.recurse=false']
 /** `-c` 全局选项排在子命令之前，`diff` 的两道外部程序开关紧跟在子命令之后。 */
 function argvOf(args: readonly string[]): string[] {
   const [subcommand, ...rest] = args;
-  if (subcommand === 'diff') return [...GLOBAL_CONFIG, subcommand, ...DIFF_GUARDS, ...rest];
+  if (subcommand === 'diff')
+    return [...GLOBAL_CONFIG, ...DIFF_CONFIG, subcommand, ...DIFF_GUARDS, ...rest];
   if (subcommand === 'grep') return [...GLOBAL_CONFIG, ...GREP_CONFIG, ...args];
   return [...GLOBAL_CONFIG, ...args];
 }

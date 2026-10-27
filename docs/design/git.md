@@ -7,9 +7,9 @@
 - diff 基准是 **`git diff HEAD`**，不是 `git diff`——agent 可能自行 `git add`，`git diff` 会漏掉已暂存的改动，而「相对上次提交改了什么」才是本工具要回答的问题。
 - 文件列表以 **`git status --porcelain=v2 --branch -uall -z`** 为唯一数据源，一次调用拿到双状态位、重命名与 ahead/behind。`-uall` 不能省（否则未跟踪目录折叠成一行 `dir/`）；`-z` 不能省（否则非 ASCII、空格、引号的路径被 C 风格转义）。**所有取路径的列表类调用一律 `-z`**，按 NUL 切分。
 
-## 封装层统一注入的五件事
+## 封装层统一注入的六件事
 
-这五条都写在 `server/git` 的封装层（`run.ts`），不留给调用点自己记得加。其中后几条挡的是「读一下就写库」——命令本身只读、不失败、不改输出，只有 `.git` 逐字节比对看得见。
+这六条都写在 `server/git` 的封装层（`run.ts`），不留给调用点自己记得加。其中后几条挡的是「读一下就写库」——命令本身只读、不失败、不改输出，只有 `.git` 逐字节比对看得见。
 
 - **`-c core.quotePath=false`**：`-z` 管不到补丁正文，`diff --git` / `---` / `+++` / `rename from|to` 头部仍会转义，而 diff2html 的解析器正从这些行取文件名，转义后拿到的是 `\351\234\200`（界面眼下不画补丁里的文件名，但解析结果里的名字从此是错的）。
 - **`GIT_OPTIONAL_LOCKS=0`**：`git status` 默认把 stat 缓存写回 `.git/index`，**不改变输出**，只读 `.git` 下也只是静默跳过。看得见它的只有 `.git` 逐字节比对与「读一次 `/api/state` 不引出刷新事件」（写 `.git` → 推 `change` → 再读一次，是个自激循环）。
@@ -17,6 +17,7 @@
 - **`GIT_NO_LAZY_FETCH=1`**：partial clone 里碰到一个不在本地的 blob，git 默认从 promisor remote 取回并写进 `.git/objects`，而提交历史读的恰恰是从没检出过的旧 blob。关掉后缺对象是一次非零退出，**分类只在 `run.ts` 做一次**（`GitError` 的 `missing-object`，HTTP 层统一译成 `unsupported`）——交给各调用点 catch 时，漏 catch 的那条路会把它说成「路径不存在」或一条 500。
   - **这个变量 git 2.44 才有**：「git < 2.44 ∧ partial clone」时提交历史整个拒绝（`history.ts` 的 `refuseLazyFetch`）。判 partial clone 读共享 git 目录下的 `config`，**两种记号都认**：`extensions.partialClone` 与 `remote.<名>.promisor`（git 布尔值的各种写法都算开）——漏认一种就是在老 git 上往对象库里写。版本与共享 git 目录由启动时 `locateRepo` 顺手拿到（`RepoInfo.gitVersion` / `commonDir`；`--git-common-dir` 返回的相对路径是**相对 cwd** 的）。工作区 diff 不受影响：它只碰已检出的那份。
 - **每一条 `git diff` 紧跟子命令带 `--no-ext-diff --no-textconv`**，由 `runGitRaw` 按子命令注入、调用点不写。`diff=<驱动>` + `textconv` 会让补丁形态起外部程序，配了 `cachetextconv` 时还写 `refs/notes/textconv/*`；`diff.external` 同理。numstat 那几条也带：二进制与行数判定得与补丁看的是同一份内容。**代价**：配了 textconv 的文件按原始字节比。
+- **每一条 `git diff` 在子命令之前带 `-c diff.autoRefreshIndex=false`**，同样按子命令注入。`GIT_OPTIONAL_LOCKS=0` **管不到 `git diff`**：pathspec 里有「stat 过期、内容与基准相同」的路径时，它照样去刷新 index（每次都建 `index.lock`，有可刷的 stat 时还重写 `.git/index`）。暂存后又把工作区改回 HEAD 的文件（`MM`、`diff HEAD` 为空、界面说 `File without changes.`）stat 永远刷不干净，每取一次 diff 就碰一次 `.git`——监听推 `change`、前端重取、再碰一次，**请求永不停**。关掉后补丁与 numstat 逐字节不变；**`--name-status` / `--raw` / `--name-only` 对工作区比时会多报这类路径为 `M`**——今天对工作区只用前两种，要用后几种得自己按内容再筛。
 
 ## `-z` 解析的三个陷阱
 

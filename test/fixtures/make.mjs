@@ -310,7 +310,8 @@ export function makeFixtures(destDir, only) {
     write(cwd, 'a.txt', 'a1\n');
     write(cwd, 'b.txt', 'b1\n');
     write(cwd, 'c.txt', 'c1\n');
-    commit(cwd, 'add three files');
+    write(cwd, 'e.txt', 'e1\n');
+    commit(cwd, 'add four files');
 
     write(cwd, 'a.txt', 'a1 staged\n');
     git(cwd, 'add', 'a.txt'); // X=M Y=.
@@ -320,6 +321,12 @@ export function makeFixtures(destDir, only) {
     write(cwd, 'c.txt', 'c1 staged then changed again\n'); // X=M Y=M
     write(cwd, 'd.txt', 'brand new, staged\n');
     git(cwd, 'add', 'd.txt'); // X=A Y=.
+    // 暂存之后又把工作区改回 HEAD 那一版：X=M Y=M，而 `diff HEAD` 为空。`git diff` 只在 pathspec
+    // 里有「stat 过期、内容与基准相同」的路径时才回写 index（无视 GIT_OPTIONAL_LOCKS），只有这个
+    // 形态碰得到。两版长度不同，stat 一定对不上，不靠时间戳
+    write(cwd, 'e.txt', 'e1 staged\n');
+    git(cwd, 'add', 'e.txt');
+    write(cwd, 'e.txt', 'e1\n');
     repos.staged = cwd;
   }
 
