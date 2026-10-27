@@ -16,6 +16,7 @@ import {
   INDENT_GUIDE,
   SHELL_AT_EDGE,
 } from '../../../src/web/components/tree-row';
+import { changeView, collapsedChangeDirs } from '../../../src/web/state/change-tree';
 import {
   type EditorKind,
   editorKey,
@@ -87,6 +88,12 @@ export function resetHistory(): void {
   expandedCommits.value = new Set();
   resetGraphRefs();
   resetIncoming();
+}
+
+/** 列表 / 树版式回到列表、目录全展开。变更列表与 History 两处的树共用这两样。 */
+export function resetChangeTree(): void {
+  changeView.value = 'list';
+  collapsedChangeDirs.value = new Set();
 }
 
 /** 两个分区回到默认：都展开、对半分。 */

@@ -2,12 +2,14 @@
 // 单击原地展开它改了哪些文件，点文件在右侧开一个 commit tab。
 //
 // 行骨架复用两棵树那一套（`TreeRow` + 展开三角 + `StatusBadge`）：同一列状态字母在三档之间切换
-// 时落在同一个位置、同一个颜色。
+// 时落在同一个位置、同一个颜色。展开后的文件清单跟着变更列表那枚列表 / 树开关，树那半复用
+// `ChangeTreeLevel`。
 
 import { useComputed } from '@preact/signals';
-import { useEffect, useRef } from 'preact/hooks';
+import { useEffect, useMemo, useRef } from 'preact/hooks';
 import type { CommitFileEntry, CommitSummary } from '../../server/shared/protocol';
 import { badgesBySha, type RefBadge } from '../state/badges';
+import { buildChangeTree, changeView } from '../state/change-tree';
 import { activeEditorKey, editorKey, pinEditor } from '../state/editors';
 import {
   commitDetails,
@@ -26,7 +28,7 @@ import {
 } from '../state/history';
 import type { BranchKind } from '../state/refs';
 import { openCommitChanges, repoState, selectCommitFile } from '../state/store';
-import { GROUP_HEADING, StatusBadge, splitForDisplay } from './ChangeList';
+import { ChangeTreeLevel, GROUP_HEADING, StatusBadge, splitForDisplay } from './ChangeList';
 import { SidebarPlaceholder } from './EmptyState';
 import { Icon, KIND_ICON, REF_ICON } from './Icon';
 import { IconButton } from './IconButton';
@@ -39,6 +41,7 @@ import {
   PlaceholderRow,
   ROW_BASE,
   SELECTED,
+  TreeLevelList,
   TreeRow,
 } from './tree-row';
 
@@ -139,9 +142,22 @@ function RefBadgeLabel({ badge }: { badge: RefBadge }) {
   );
 }
 
-/** 一条提交展开后的一个文件。单击开预览 tab、双击固定，与另两栏同一条惯例。 */
-function CommitFileRow({ sha, file }: { sha: string; file: CommitFileEntry }) {
+/**
+ * 一条提交展开后的一个文件。单击开预览 tab、双击固定，与另两栏同一条惯例。`treeDepth` 有值即树
+ * 视图里的一行：按层级缩进、不画目录段，与变更列表的 `FileRow` 同一条规矩；`← oldPath` 照画——
+ * 改名来源可能在别的目录，树上读不出来。
+ */
+function CommitFileRow({
+  sha,
+  file,
+  treeDepth,
+}: {
+  sha: string;
+  file: CommitFileEntry;
+  treeDepth?: number;
+}) {
   const { dir, name } = splitForDisplay(file.path);
+  const inTree = treeDepth !== undefined;
   const key = editorKey('commit', file.path, sha);
   // 选中态包成 computed 作为 prop 传下去，理由与变更列表那一行一字不差：在组件体里读等于每换一次
   // 选中，展开着的每一行都重画
@@ -154,7 +170,7 @@ function CommitFileRow({ sha, file }: { sha: string; file: CommitFileEntry }) {
       onDblClick={() => pinEditor(key)}
       title={file.path}
       class={rowClass}
-      style={indent(1)}
+      style={indent(treeDepth ?? 1)}
       badge={<StatusBadge code={file.status} />}
       // 只有 `Copy path`：**不画 `Open file`**——那枚打开的是工作区此刻的全文，而这一行说的是
       // 历史上的某一版，两者并排是在暗示一件不成立的事
@@ -163,7 +179,7 @@ function CommitFileRow({ sha, file }: { sha: string; file: CommitFileEntry }) {
       <ChevronPlaceholder />
       <span class="min-w-0 truncate">
         {name}
-        {dir && <span class="ml-2 text-xs text-description-foreground">{dir}</span>}
+        {dir && !inTree && <span class="ml-2 text-xs text-description-foreground">{dir}</span>}
       </span>
       {file.oldPath && (
         <span class="min-w-0 truncate text-xs text-description-foreground">← {file.oldPath}</span>
@@ -172,18 +188,37 @@ function CommitFileRow({ sha, file }: { sha: string; file: CommitFileEntry }) {
   );
 }
 
-/** 展开之后那一层：加载中 / 错误 / 文件列表。 */
+/**
+ * 树版式下的文件清单，根层排在提交行之下一层。树由路径纯算，**`useMemo` 不是 `useComputed`**，理由
+ * 同变更列表的 `GroupTree`；一次提交不可变，实际上每条只建一次。
+ */
+function CommitFileTree({ sha, files }: { sha: string; files: readonly CommitFileEntry[] }) {
+  const nodes = useMemo(() => buildChangeTree(files), [files]);
+  return (
+    <ChangeTreeLevel
+      nodes={nodes}
+      scope={`commit:${sha}`}
+      depth={1}
+      renderFile={(file, depth) => <CommitFileRow sha={sha} file={file} treeDepth={depth} />}
+    />
+  );
+}
+
+/** 展开之后那一层：加载中 / 错误 / 文件列表或树。 */
 function CommitFiles({ sha }: { sha: string }) {
   // 只订阅自己这一条：在组件体里读整张 map 时，任何一条提交的详情落地都会把每个展开着的文件列表
   // 整个重画一遍
   const view = commitFilesOf(useComputed(() => commitDetails.value.get(sha)).value);
+  const tree = changeView.value === 'tree';
   if (view.kind !== 'files') {
-    return (
-      <ul>
-        <PlaceholderRow text={view.kind === 'error' ? view.message : view.text} depth={1} />
-      </ul>
+    const placeholder = (
+      <PlaceholderRow text={view.kind === 'error' ? view.message : view.text} depth={1} />
     );
+    // 树版式下占位与树的根层是同一层、同画引导线，与 `Files` 档层内占位同一条规矩：只给文件清单画
+    // 时，展开那一下线是没有的，文件落地才冒出来
+    return tree ? <TreeLevelList depth={1}>{placeholder}</TreeLevelList> : <ul>{placeholder}</ul>;
   }
+  if (tree) return <CommitFileTree sha={sha} files={view.files} />;
   return (
     <ul>
       {view.files.map((file) => (

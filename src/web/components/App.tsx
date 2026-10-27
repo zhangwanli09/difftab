@@ -85,10 +85,10 @@ const TAB_CLASS =
   'flex border-b px-3 py-1.5 focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus-border';
 
 /**
- * 变更列表的列表 / 树切换，按**当前**版式查出要画的那枚。图标与文案表达的是**目标**视图（照
- * VS Code 的 View as Tree / View as List）：它是一个动作按钮，不是显示当前档的状态灯——顶栏那个
- * 三档主题开关显示的是当前档，两者不同类。写成一张 `Record` 与 `ThemeToggle` 的 `MODES` 一致：
- * 加第三种版式时少填一格是编译错误。
+ * 变更列表（连同 History 里提交展开后的文件清单）的列表 / 树切换，按**当前**版式查出要画的那枚。
+ * 图标与文案表达的是**目标**视图（照 VS Code 的 View as Tree / View as List）：它是一个动作按钮，
+ * 不是显示当前档的状态灯——顶栏那个三档主题开关显示的是当前档，两者不同类。写成一张 `Record`
+ * 与 `ThemeToggle` 的 `MODES` 一致：加第三种版式时少填一格是编译错误。
  */
 const VIEW_TOGGLE: Record<ChangeView, { icon: LucideIcon; label: string }> = {
   list: { icon: ListTree, label: 'View as tree' },

@@ -4,10 +4,12 @@
 // 选中态与滚动位置才留得住（——这正是不自己写 reconcile 的理由）。
 //
 // 两种版式（平铺列表 / 目录树）共用同一个 `FileRow`：分组是 git 语义，两种版式都保留组头，树
-// 只是组内的排法。版式与树的折叠态在 `state/change-tree.ts`。
+// 只是组内的排法。版式与树的折叠态在 `state/change-tree.ts`。目录行与层由 `ChangeTreeLevel` 画，
+// History 里提交展开后的树也用它，文件行由调用方给。
 
 import { useComputed } from '@preact/signals';
 import { FileInput } from 'lucide-preact';
+import { Fragment, type VNode } from 'preact';
 import { useMemo } from 'preact/hooks';
 import {
   type FileEntry,
@@ -19,7 +21,9 @@ import {
   buildChangeTree,
   type ChangeDirNode,
   type ChangeNode,
+  type ChangeTreeScope,
   changeView,
+  type HasPath,
   isChangeDirCollapsed,
   toggleChangeDir,
 } from '../state/change-tree';
@@ -258,25 +262,29 @@ function FileRow({
   );
 }
 
+/** 树每一层的共有参数。文件行由调用方画：变更列表画 `FileRow`，History 画提交里的那一行。 */
+interface TreeProps<T extends HasPath> {
+  scope: ChangeTreeScope;
+  depth: number;
+  renderFile: (file: T, depth: number) => VNode;
+}
+
 /**
  * 树视图里的一个目录行。形状与 `Files` 那档同款：缩进 + 12px 的展开三角（展开时 `rotate-90`）
  * + 名字。**只改折叠集合，不动选中态与右侧**——折的是左栏在列什么，不是用户此刻在读什么。
  */
-function DirRow({
+function DirRow<T extends HasPath>({
   node,
-  group,
+  scope,
   depth,
-}: {
-  node: ChangeDirNode;
-  group: ChangeGroupId;
-  depth: number;
-}) {
+  renderFile,
+}: TreeProps<T> & { node: ChangeDirNode<T> }) {
   // 与 `FileRow` 的选中态同一条理由包成 computed：别的目录折起来时这一行产出的是同一个布尔，
   // 不跟着重画
-  const expanded = useComputed(() => !isChangeDirCollapsed(group, node.path)).value;
+  const expanded = useComputed(() => !isChangeDirCollapsed(scope, node.path)).value;
   return (
     <TreeRow
-      onClick={() => toggleChangeDir(group, node.path)}
+      onClick={() => toggleChangeDir(scope, node.path)}
       // 合并后的名字会被 320px 裁掉，完整路径在树上找不回来——与文件行同理挂在整行上
       title={node.path}
       aria-expanded={expanded}
@@ -284,7 +292,16 @@ function DirRow({
       style={indent(depth)}
       // 目录只有 `Copy path`（合并节点复制链尾那个 `path`）：目录没有 diff 也没有全文可开
       actions={<CopyPathButton path={node.path} />}
-      sublevel={expanded && <TreeLevel nodes={node.children} group={group} depth={depth + 1} />}
+      sublevel={
+        expanded && (
+          <ChangeTreeLevel
+            nodes={node.children}
+            scope={scope}
+            depth={depth + 1}
+            renderFile={renderFile}
+          />
+        )
+      }
     >
       <ExpandChevron expanded={expanded} />
       <span class="min-w-0 truncate">{node.name}</span>
@@ -292,22 +309,23 @@ function DirRow({
   );
 }
 
-function TreeLevel({
+/**
+ * 树的一层。**导出给 History 共用**：目录行、紧凑名、引导线与折叠各写一份时，改一处不报错，只是
+ * 两个分区的树长得不一样。文件行交给 `renderFile`，`key` 由这里按路径给，调用方不必记得。
+ */
+export function ChangeTreeLevel<T extends HasPath>({
   nodes,
-  group,
+  scope,
   depth,
-}: {
-  nodes: readonly ChangeNode[];
-  group: ChangeGroupId;
-  depth: number;
-}) {
+  renderFile,
+}: TreeProps<T> & { nodes: readonly ChangeNode<T>[] }) {
   return (
     <TreeLevelList depth={depth}>
       {nodes.map((node) =>
         node.kind === 'directory' ? (
-          <DirRow key={node.path} node={node} group={group} depth={depth} />
+          <DirRow key={node.path} node={node} scope={scope} depth={depth} renderFile={renderFile} />
         ) : (
-          <FileRow key={node.file.path} file={node.file} group={group} treeDepth={depth} />
+          <Fragment key={node.file.path}>{renderFile(node.file, depth)}</Fragment>
         ),
       )}
     </TreeLevelList>
@@ -321,7 +339,14 @@ function TreeLevel({
  */
 function GroupTree({ group }: { group: ChangeGroup }) {
   const nodes = useMemo(() => buildChangeTree(group.files), [group.files]);
-  return <TreeLevel nodes={nodes} group={group.id} depth={0} />;
+  return (
+    <ChangeTreeLevel
+      nodes={nodes}
+      scope={group.id}
+      depth={0}
+      renderFile={(file, depth) => <FileRow file={file} group={group.id} treeDepth={depth} />}
+    />
+  );
 }
 
 /**
