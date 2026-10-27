@@ -142,7 +142,7 @@ Vite dev server 在 `localhost:5173`，后端在 `127.0.0.1:<随机端口>`，�
 
 - **Tailwind 走仓库已有的 `@tailwindcss/vite`，不新增依赖**；配置是独立的 `site/vite.config.ts`，不复用根目录那份——后者 import 后端模块、配 dev proxy。产物落在 `site/dist/`，由 `.gitignore` 的 `dist/` 挡住。**不用 `cdn.tailwindcss.com`**：那是运行时 JS，且是一条第三方请求。
 - **`base` 必须是 `/difftab/`**（Pages 项目站的子路径）。写错时 HTML 照常打开、样式与脚本全部 404；`pnpm site:dev` 看不出来，只有 `vite preview --config site/vite.config.ts` 看得见。
-- **不发第三方请求**：字体用系统等宽栈，不接统计。截图与社交预览图写 `main` 分支的 raw 绝对地址（与 README 同一做法），不往 `site/` 复制二进制——改截图只改 `assets/` 一处。
+- **不发第三方请求**：字体用系统等宽栈，不接统计。截图在 `site/index.html` 里写相对路径 `../assets/…`，由 Vite 构建时带 hash 打进 `site/dist/assets/`、与页面同源由 Pages 提供——曾写 GitHub raw 绝对地址，那是一条慢的第三方请求。不往 `site/` 复制二进制，改截图仍只改 `assets/` 一处；也因此 `pages.yml` 的 paths 必须含 `assets/**`，漏了时只换资源的提交不会重新部署。社交预览图仍写 raw 绝对地址：`og:image` 给的是爬虫，要绝对 URL。
 - **不写会过期的数据**：版本号、日期、star 数一律不进页面，它们过期了没有任何东西会响。
 - **明暗只跟随系统**：主题 token 写成 `light-dark()` 双值、由 `color-scheme` 切换，类名里不写 `dark:`；双值 token 不得加不透明度修饰符（`bg-ink/10`），Tailwind 会把它塞进 `color-mix()`、整条声明作废。
 - **favicon 与产品页同一段，页眉符号也是生成的**：`scripts/logo.mjs` 回写两份 `index.html` 的 favicon 与 `site/index.html` 的 `<!-- mark -->` 一段，`logo.test.ts` 全都钉。页眉符号不要 Chrome，没有 Chrome 的机器上照样回写。**别把标记之间那段改成手写**——下次跑脚本会被整段覆盖，而只改几何不跑脚本时红的是测试。

@@ -120,5 +120,5 @@
 - **改 logo 只改 `src/web/brand/geometry.mjs` 再 `node scripts/logo.mjs`**——几何或 token 改了没重跑由 `logo.test.ts` 拦；社交预览 PNG 得重新手工上传到 GitHub Settings
 - **官网 `site/index.html` 的文案是 README 的子集**——改 README 的特性、Non-goals、CLI 选项或安全口径时跟着改，没有门禁兜底
 - **真要改 README 则两份一起改**：`README.zh-CN.md` **不是自动生成的**，只改英文那份不会有任何门禁变红
-- **界面明显变样时手工重截 README 截图，明暗两张一起换**——一次性产出、没有生成脚本，过期了没有任何门禁看得见；怎么截见 `docs/design/web.md`「品牌标识」
+- **界面明显变样时手工重截 README 截图，明暗两张一起换**——一次性产出、没有生成脚本，过期了没有任何门禁看得见；怎么截、拍完怎么压缩见 `docs/design/web.md`「品牌标识」
 - **贡献者规范在 `CONTRIBUTING.md` 与 `.github/`**，产品承诺（只读、Non-goals）在那里也写了一遍给外部读者——改第 6 节时要跟着改
