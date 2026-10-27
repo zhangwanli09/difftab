@@ -7,7 +7,7 @@
 
 import type { ReadonlySignal } from '@preact/signals';
 import type { JSX } from 'preact';
-import { useRef } from 'preact/hooks';
+import { useEffect, useRef } from 'preact/hooks';
 import { type SashName, sashDragging } from '../state/sidebar';
 
 export type SashAxis = 'x' | 'y';
@@ -98,6 +98,16 @@ export function Sash({
     drag.current = null;
     sashDragging.value = null;
   };
+
+  // 拖动途中被卸载（分屏那把：SSE 把一组收编空、两组合回一组）时，`lostpointercapture` 投给的是
+  // document 而不是这里，`end` 不会跑：`sashDragging` 停在非空，整页光标与 `user-select` 卡住，
+  // 把手尺寸的落盘也一直跳过。卸载时自己收尾
+  useEffect(
+    () => () => {
+      if (drag.current !== null) end();
+    },
+    [],
+  );
 
   return (
     // biome-ignore lint/a11y/useSemanticElements: <hr> 不能获得焦点、也不接受指针拖动；可聚焦的 separator 只能这样写

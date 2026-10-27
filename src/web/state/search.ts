@@ -1,5 +1,5 @@
 // 侧栏 `Search` 档的状态：查询、两枚开关、结果与折叠态。**全是模块级 signal**：切去别的档再回来，
-// 输入与结果原样都在（照 VS Code）。不进 `localStorage`，理由同其余页面状态（见 `theme.ts`）。
+// 输入与结果原样都在（照 VS Code）。不进 `localStorage`，理由同列表版式（见 `change-tree.ts`）。
 //
 // 本文件不 import `store.ts`：档位可见与否由调用方告诉它（`refreshSearch(visible)`），否则 `store`
 // 的 `refresh` 要调这里、这里又要读 `store` 的 `activeTab`，两边成环。

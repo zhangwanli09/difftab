@@ -13,9 +13,9 @@ import type { ChangeGroupId } from './store';
  * 侧栏 `Changes` 档此刻按哪种版式画。默认列表——工具存在的理由仍是「瞥一眼改了什么」，树是
  * 改动铺开到几十个目录时才用得上的第二种读法。
  *
- * **不进 `localStorage`**，判据不是「不值得记」而是**记了也存不住**：后端 `listen(0)` 端口
- * 随机，`localStorage` 按 origin（含端口）隔离，于是它只能活到同一实例的刷新，换一次
- * `difftab` 启动就归零。与 `activeTab` 同一形状。
+ * **不进 `localStorage`**：后端 `listen(0)` 端口随机，`localStorage` 按 origin（含端口）隔离，
+ * 于是它只能活到同一实例的刷新，换一次 `difftab` 启动就归零；而点一下就切回来，不像拖好的
+ * 把手尺寸（`sidebar.ts`）那样值得为刷新记一份。与 `activeTab` 同一形状。
  */
 export type ChangeView = 'list' | 'tree';
 

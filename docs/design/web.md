@@ -40,9 +40,9 @@
   - **双击复位到 320px；键盘可达**：`role="separator"` + `aria-value*` + `tabIndex=0`，方向键与 Home / End 可调。
   - **上限还要随窗口收，这道交给 CSS**：内联 `max-width: min(960px, calc(100vw - 320px))` + `min-width: 200px`，窄窗口里 diff 面板不会被挤到 0；signal 存的是用户选的宽度，窗口拉回时自己回到原档，不必监听 `resize`。**代价是选的与屏幕上的可能不等**：拖动与键盘的起点读 `shownSidebarWidth()`（按式子算，不量 `offsetWidth`——signal 到 DOM 的绑定是异步的，连发方向键会读到旧值），否则窄窗口里的拖动全落在看不见的区间里。
   - **拖动时一个组件都不重渲染**：宽度以 signal 本身交给 `style`，由 `@preact/signals` 直接改 DOM；在 `App` 里读 `.value` 等于每个 pointermove 重渲整棵树。
-  - **宽度不跨会话记忆**（`localStorage` 跨不了实例，见「主题开关」）。
+  - **宽度刷新后保留**：记在 `localStorage`，只活到同一实例的刷新（跨不了实例，见「主题开关」）。**拖动中不写、松手写一次**——每个 pointermove 写一次是白费的同步 I/O；键盘与双击复位不经过拖动，改了即写。接线是 `syncPanelSizes()`，三把把手的取值同住一处，在 `render()` 之前读回。
   - 拖宽左栏可能让 diff 面板跨过并排阈值而换版式：**不为此做任何事**，`outputFormat` 量的本来就是面板自身的 border box；手动固定过版式就不再跟（见 [`diff-render.md`](diff-render.md) 的「版式：按面板宽度自动切，可手动固定」）。
-- **右侧 `<section>` 里是一到两个编辑器组**（`EditorGroup.tsx`，分屏规则见 [`editors.md`](editors.md) 的「分屏」）。两组时左组宽度是 `splitPercent` 百分比、以 signal 本身交给 `style`（同左栏，拖动时不重渲染），左组右边框上叠一把竖向把手，与左栏那把同一个 `Sash.tsx`。**把手挂在 `App` 里两组之间一个零宽的 `relative` 槽里，不挂进左组**：挂进去时左组「被点到即成为焦点组」那条会把拖把手也算进去，焦点组跟着跳。**`sashDragging` 记的是哪一把（`sidebar` / `pane` / `split`）连同轴向，不只记轴向**：两把竖向把手同轴，按轴向判时拖一把、另一把的握把也跟着常亮。
+- **右侧 `<section>` 里是一到两个编辑器组**（`EditorGroup.tsx`，分屏规则见 [`editors.md`](editors.md) 的「分屏」）。两组时左组宽度是 `splitPercent` 百分比、以 signal 本身交给 `style`（同左栏，拖动时不重渲染），左组右边框上叠一把竖向把手，与左栏那把同一个 `Sash.tsx`；比例与左栏宽度一样刷新后保留。**把手挂在 `App` 里两组之间一个零宽的 `relative` 槽里，不挂进左组**：挂进去时左组「被点到即成为焦点组」那条会把拖把手也算进去，焦点组跟着跳。**`sashDragging` 记的是哪一把（`sidebar` / `pane` / `split`）连同轴向，不只记轴向**：两把竖向把手同轴，按轴向判时拖一把、另一把的握把也跟着常亮。
 
 ## Quick Open 与全局快捷键
 
@@ -115,8 +115,8 @@
 
 - **「跟随系统」是属性不存在，不是 `data-theme="system"`**：CSS 不必为它写第三条规则，`localStorage` 里也只有两个合法值。
 - 接线在 `state/theme.ts`：一个模块级 signal + 一个 `effect` 接到 `document.documentElement`。**同一个 effect 顺带写 `localStorage`**——拆开就会出现「切了但没记住」，只在刷新后才看得见。
-- **`localStorage` 的读与写各自 `try/catch`**：Safari 隐私模式下取值就会抛。抛了只在内存里生效；脏值退回跟随系统。
-- **这是仓库里唯一一份进 `localStorage` 的偏好**，key 为 `difftab:theme`。**但「跨会话」目前只到同一实例的刷新为止**：后端 `listen(0)` 端口随机，而 `localStorage` 按 origin（含端口）隔离，换一次启动就归零。**没有任何门禁看得见**（`theme.test.ts` 跑在同一个 happy-dom origin 里）；被排除的修法见 [`../decisions/web.md`](../decisions/web.md)。**其余页面状态——列表版式、左栏宽度、分区比例与折叠态、标签栏——因此一律不进 `localStorage`**：不是不值得记，是记了也存不住。
+- **`localStorage` 的读与写各自 `try/catch`，收在 `state/storage.ts` 一处**（主题与把手尺寸共用）：Safari 隐私模式下取值就会抛。抛了只在内存里生效；脏值退回跟随系统。
+- **进 `localStorage` 的只有两类：主题（key `difftab:theme`）与三把把手调出的尺寸（`difftab:sidebar-width` / `difftab:pane-percent` / `difftab:split-percent`）**，读写纪律相同。**但「跨会话」目前只到同一实例的刷新为止**：后端 `listen(0)` 端口随机，而 `localStorage` 按 origin（含端口）隔离，换一次启动就归零。**没有任何门禁看得见**（`theme.test.ts` 跑在同一个 happy-dom origin 里）；被排除的修法见 [`../decisions/web.md`](../decisions/web.md)。**把手尺寸因此也只保证「刷新后还在」**——那正是要它落盘的全部理由：拖好的版面不该被一次刷新打回默认。**其余页面状态——列表版式、分区折叠态、标签栏——不进 `localStorage`**：跨实例存不住，而单为刷新去记它们没人要过；要加时照把手这一份走，读写经 `storage.ts`、脏值退回缺省。
 - **在 `render()` 之前接线**，但**首帧仍可能闪一下系统色**：CSP 是 `script-src 'self'`，塞不了惯用的 pre-paint 内联脚本。代价只落在选了与系统相反档的人身上、闪一帧，为它开 `unsafe-inline` 或维护脚本 hash 不划算。
 - 控件只画图标，`title` 与 `aria-label` 分别是 `Follow system` / `Light` / `Dark`——三个词会跟项目名抢宽度。图标是 Lucide `Monitor` / `Sun` / `Moon`；`lucide-preact` 只进 `devDependencies`、构建期 tree-shake。
 

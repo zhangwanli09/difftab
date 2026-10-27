@@ -732,8 +732,8 @@ function refetchAfterMove(from: EditorGroup, move: () => Editor | null): void {
 
 /**
  * 侧栏此刻列的是哪一档。默认 `changes`——工具存在的理由仍是「瞥一眼改了什么」，目录树是顺带
- * 能做到的第二件事。**不进 `localStorage`**：跨会话保持的偏好目前只有主题一份，加第二份之前
- * 先想清楚它是不是也该有那一节（见 `theme.ts`）。
+ * 能做到的第二件事。**不进 `localStorage`**：落盘的只有主题与把手尺寸，理由同列表版式（见
+ * `change-tree.ts`）。
  */
 export const activeTab = signal<'changes' | 'files' | 'search'>('changes');
 
