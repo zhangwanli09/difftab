@@ -40,14 +40,16 @@ import {
   diffStates,
   fileStates,
   ignoreWhitespace,
+  isMarkdown,
   isSegmentOf,
   moveEditorTo,
   previewOf,
   repoState,
+  shownMarkdown,
   shownPreview,
   svgPreview,
   toggleIgnoreWhitespace,
-  toggleSvgPreview,
+  togglePreview,
   toggleWordWrap,
   wordWrap,
 } from '../state/store';
@@ -99,8 +101,9 @@ const NO_ACTIONS: EditorActionState = {
  * 活动 tab 的动作区，**按 `kind` 在这一处分派**：各枚按钮各写一个 computed、再各自拼一遍 kind 判据时，
  * 多一种 tab 要改四处，漏一处只是那一枚静默不画。
  *
- * - **file**：正文 `ready` 才有。`text` 时画复制（缓存里那份原文），没按图画着时再画自动换行；带
- *   `preview` 时画 `Preview`，按下态同视图的 `shownPreview`（挂着跳行时按文本画）。
+ * - **file**：正文 `ready` 才有。`text` 时画复制（缓存里那份原文），没按图或按渲染画着时再画自动换行；
+ *   带 `preview` 或 `markdown` 时画 `Preview`（一个文件不会两者都带），按下态同视图的 `shownPreview` /
+ *   `shownMarkdown`（挂着跳行时按文本画）。
  * - **diff / commit**：补丁 `ready` 且带 `patch` 时才有——判据是 payload 上有没有 `patch`，不列 kind：
  *   `DiffView` 交给 `Patch` 的正是那几支。按图画着时没有补丁表格，版式与忽略空白都不画；忽略空白只给
  *   `text`（`untracked-text` 是全新增，没有旧侧可比）。
@@ -118,13 +121,16 @@ function actionsOf(editor: Editor | null): EditorActionState {
       const state = fileStates.value.get(editor.path);
       if (state?.status !== 'ready') return NO_ACTIONS;
       const { payload } = state;
-      const previewing = shownPreview(payload, editor.path) !== undefined;
+      const markdown = isMarkdown(payload);
+      const previewing = markdown
+        ? shownMarkdown(payload, editor.path)
+        : shownPreview(payload, editor.path) !== undefined;
       return {
         ...NO_ACTIONS,
         copyText: payload.kind === 'text' ? payload.content : null,
-        preview: previewOf(payload) !== undefined,
+        preview: markdown || previewOf(payload) !== undefined,
         previewing,
-        // 按图画着时没有正文可折
+        // 按图画着时没有正文可折，按渲染画着时正文自己折
         wrap: payload.kind === 'text' && !previewing,
       };
     }
@@ -460,7 +466,7 @@ function EditorActions({ group }: { group: EditorGroup }) {
       icon={Eye}
       label="Preview"
       pressed={previewing}
-      onClick={() => toggleSvgPreview(previewing, editor)}
+      onClick={() => togglePreview(previewing, editor)}
     />
   );
   const actions =

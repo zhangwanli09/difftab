@@ -18,7 +18,7 @@ import { formatSize, Notice } from './DiffView';
  * 错）；但也**只能**随内容变：按「取过一次」换戳的写法会让每一次无关文件的 SSE 都重下两张图，
  * 而 `loadDiff` 在每个 `change` 事件上都跑。后端对 `v` 视而不见。
  */
-function blobUrl(path: string, which: 'old' | 'new', version: string, sha?: string): string {
+export function blobUrl(path: string, which: 'old' | 'new', version: string, sha?: string): string {
   const query = new URLSearchParams({ path, side: which, v: version });
   // 提交里的图：两侧都读对象库（第一父 / 提交本身），不是「基准 / 工作区」
   if (sha !== undefined) query.set('commit', sha);

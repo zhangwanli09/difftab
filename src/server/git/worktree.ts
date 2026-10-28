@@ -63,6 +63,15 @@ export function isSvg(path: string): boolean {
 }
 
 /**
+ * 这条路径的全文 payload 要不要带 `markdown`。同 `isSvg` 只看扩展名、只挂在文本那一支上；只有
+ * 文件视图问它，diff 那侧不渲染 markdown。
+ */
+export function isMarkdown(path: string): boolean {
+  const ext = extensionOf(path);
+  return ext === 'md' || ext === 'markdown';
+}
+
+/**
  * `/api/blob` 认的 MIME：图片表并上 svg。**只给字节端点用**，分类链仍只认 `imageMimeOf`——两张
  * 表合成一张时，含 NUL 的 `.svg` 在 payload 里成了图。
  */

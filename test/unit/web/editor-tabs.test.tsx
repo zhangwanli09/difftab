@@ -26,6 +26,7 @@ import {
   type DiffRequestState,
   type FileRequestState,
   ignoreWhitespace,
+  markdownPreview,
   openFile,
   PATCH_DEFAULTS,
   repoState,
@@ -682,6 +683,56 @@ describe('SVG 预览', () => {
     toggle()?.click();
     await waitFor(() => expect(formatButton()).not.toBeNull());
     await waitFor(() => expect(scrolled).toHaveBeenCalledTimes(3));
+  });
+});
+
+describe('Markdown 预览', () => {
+  const MD: FilePayload = { kind: 'text', content: '# Title\n', markdown: true };
+  const toggle = () => container.querySelector<HTMLButtonElement>('button[aria-label="Preview"]');
+  const wrap = () => container.querySelector('button[aria-label="Word Wrap"]');
+
+  it('判据只认 payload 上的 markdown：默认未按下，自动换行与复制照画', async () => {
+    pinned('file', 'README.md');
+    setFileState('README.md', { status: 'ready', payload: { kind: 'text', content: '# Title\n' } });
+    await waitFor(() => expect(copyButton()).not.toBeNull());
+    expect(toggle()).toBeNull();
+
+    setFileState('README.md', { status: 'ready', payload: MD });
+    await waitFor(() => expect(toggle()?.getAttribute('aria-pressed')).toBe('false'));
+    expect(toggle()?.nextElementSibling).toBe(wrap());
+    expect(wrap()?.nextElementSibling).toBe(copyButton());
+  });
+
+  it('按下翻的是 markdown 那个开关，不碰 SVG 的；按渲染画时自动换行撤掉、复制照留', async () => {
+    pinned('file', 'README.md');
+    setFileState('README.md', { status: 'ready', payload: MD });
+    await waitFor(() => expect(toggle()).not.toBeNull());
+
+    toggle()?.click();
+    expect(markdownPreview.value).toBe(true);
+    expect(svgPreview.value).toBe(true);
+    await waitFor(() => expect(toggle()?.getAttribute('aria-pressed')).toBe('true'));
+    expect(wrap()).toBeNull();
+    expect(copyButton()).not.toBeNull();
+
+    toggle()?.click();
+    expect(markdownPreview.value).toBe(false);
+    await waitFor(() => expect(wrap()).not.toBeNull());
+  });
+
+  it('挂着跳行请求时按源码画、全局开关不动；按下即清掉跳行', async () => {
+    markdownPreview.value = true;
+    stubJson(MD);
+    openFile('README.md', { line: 3 });
+    setFileState('README.md', { status: 'ready', payload: MD });
+    flush();
+    await waitFor(() => expect(toggle()?.getAttribute('aria-pressed')).toBe('false'));
+    expect(markdownPreview.value).toBe(true);
+
+    toggle()?.click();
+    expect(revealRequest.value).toBeNull();
+    expect(markdownPreview.value).toBe(true);
+    await waitFor(() => expect(toggle()?.getAttribute('aria-pressed')).toBe('true'));
   });
 });
 

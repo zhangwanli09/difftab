@@ -139,9 +139,16 @@ export const ignoreWhitespace = signal(false);
 
 /**
  * SVG 预览的开关。全局一份、默认开、不进 `localStorage`，理由同忽略空白。写入方只有
- * `toggleSvgPreview`。
+ * `togglePreview`。
  */
 export const svgPreview = signal(true);
+
+/**
+ * Markdown 渲染的开关，只管 file tab。全局一份、**默认关**（照 VS Code，打开 `.md` 先看源码）、不进
+ * `localStorage`。**不与 `svgPreview` 共用**：两者默认相反，共用一个时总有一边的默认是错的。写入方
+ * 只有 `togglePreview`。
+ */
+export const markdownPreview = signal(false);
 
 /**
  * 文件视图的自动换行。全局一份、默认关、不进 `localStorage`，理由同忽略空白；diff 表格不跟它（两张表
@@ -179,6 +186,20 @@ export function shownPreview(
   const preview = previewOf(payload);
   if (preview === undefined || !svgPreview.value) return undefined;
   return path !== undefined && revealPending(path) ? undefined : preview;
+}
+
+/** payload 可以按 markdown 渲染。判据只认字段，同 `previewOf`。 */
+export const isMarkdown = (payload: FilePayload): boolean =>
+  payload.kind === 'text' && payload.markdown === true;
+
+/**
+ * 此刻要不要按渲染画这份 markdown：payload 带着 `markdown`、开关开着，且这个文件没挂着跳行请求——
+ * 判据与 `shownPreview` 同一条。视图与 `Preview` 的按下态都读它。
+ */
+export function shownMarkdown(payload: FilePayload, path: string): boolean {
+  // 先看 payload：不是 markdown 的 tab 就不订阅开关与跳行请求
+  if (!isMarkdown(payload) || !markdownPreview.value) return false;
+  return !revealPending(path);
 }
 
 /** 这个 tab 此刻该按哪一档取：开关是全局的，上下文档是 tab 自己的。 */
@@ -1092,17 +1113,23 @@ export function toggleWordWrap(): void {
 }
 
 /**
- * 切换 SVG 预览。**不重取**：`preview` 本来就在已到的 payload 上，开关只换一种画法。`editor` 是按钮
- * 所在那一组的活动 tab，不读焦点组：点下去之前焦点不一定已经过来。
+ * 切换 `Preview`：SVG 预览或 markdown 渲染。**不重取**：两者要的都在已到的 payload 上，开关只换一种
+ * 画法。`editor` 是按钮所在那一组的活动 tab，不读焦点组：点下去之前焦点不一定已经过来。
+ *
+ * **翻哪个开关只在这里判**：file tab 的全文是 markdown 时翻 `markdownPreview`，其余一律 `svgPreview`
+ * （一个文件不会两者都带）。动作区只管画按钮，不必知道它背后是哪一种。
  *
  * **翻的是那个 tab 此刻画着的那一种（`shown`，即按钮的按下态），不是开关本身**：file tab 正因跳行
  * 按文本画着时开关可能本就开着，照常取反会把它关掉、按钮却仍显示未按下。要看图时顺带清掉这个文件的
  * 跳行请求，它不再压着预览。
  */
-export function toggleSvgPreview(shown: boolean, editor: Editor): void {
+export function togglePreview(shown: boolean, editor: Editor): void {
+  const state = editor.kind === 'file' ? fileStates.peek().get(editor.path) : undefined;
+  const flag =
+    state?.status === 'ready' && isMarkdown(state.payload) ? markdownPreview : svgPreview;
   batch(() => {
     if (!shown && editor.kind === 'file') setReveal(editor.path);
-    svgPreview.value = !shown;
+    flag.value = !shown;
   });
 }
 
