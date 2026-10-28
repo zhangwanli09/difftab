@@ -234,6 +234,18 @@ describe('readFileContent', () => {
     expect(JSON.stringify(payload)).not.toContain(OUTSIDE_SECRET);
   });
 
+  test('.md / .markdown 的正文另带 `markdown: true`，扩展名不分大小写；别的文本不带', async () => {
+    for (const path of ['notes.md', 'GUIDE.MD', 'docs.markdown']) {
+      writeFileSync(join(root, path), '# Title\n');
+      expect(await readFileContent(root, path)).toEqual({
+        kind: 'text',
+        content: '# Title\n',
+        markdown: true,
+      });
+    }
+    expect(await readFileContent(root, 'src/app.ts')).not.toHaveProperty('markdown');
+  });
+
   test('超过体积上限只报大小，不读进内存', async () => {
     writeFileSync(join(root, 'huge.bin'), Buffer.alloc(6 * 1024 * 1024, 0x61));
     const payload = await readFileContent(root, 'huge.bin');

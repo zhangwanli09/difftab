@@ -99,7 +99,7 @@
 - `InstanceInfo { repoRoot; pid }`——**唯一正文里带绝对路径的响应**：路径就是被问的那件事，而拿着 token 本就能读遍整个仓库。前端不消费它。
 - `repoName: string`——工作区根目录的 **basename**，回答「这个标签属于哪个项目」的最小一份；**不复用 `InstanceInfo.repoRoot`**。空串即根目录没有 basename，显示什么归前端。
 - `TreeEntry { name; path; kind: 'directory' | 'file'; ignored }` 与 `TreePayload { path; entries }`——`path: ''` 即仓库根。**`ignored` 由后端给**：前端没有 `.gitignore` 的语义。一次只回一层。
-- `FilePayload` 为判别联合：`text { content; preview? }` / `symlink { target }` / `binary` / `image { size, version }` / `too-large { size, reason }`。**`symlink` 单独成一支**：「这是一个指向 X 的链接」与「这是 X 的内容」是两句话。`preview { size; version }` 与 diff 那侧同一条口径，只在 `.svg` 上出现。
+- `FilePayload` 为判别联合：`text { content; preview?; markdown? }` / `symlink { target }` / `binary` / `image { size, version }` / `too-large { size, reason }`。**`symlink` 单独成一支**：「这是一个指向 X 的链接」与「这是 X 的内容」是两句话。`preview { size; version }` 与 diff 那侧同一条口径，只在 `.svg` 上出现。`markdown: true` 只在 `.md` / `.markdown` 上出现，缺省即不可渲染；前端只认这个字段，不判扩展名。
 - `CommitSummary { sha; parents; author; time; subject }`、`CommitPage { head; commits; hasMore }`、`IncomingPage { commits; hasMore }`、`CommitDetail { …CommitSummary; files; shallow? }`、`CommitFileEntry { path; oldPath?; status: 'A' | 'M' | 'D' | 'R' | 'T' }`：
   - **`sha` 与 `head` 都是完整对象名**，前端原样回传，截断只是展示。
   - **`shallow`** 即浅克隆边界：`files` 为空不代表「没改东西」。**`head: null` 即空仓库**。

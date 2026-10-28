@@ -53,18 +53,20 @@ import {
   fileMarkStates,
   fileStates,
   ignoreWhitespace,
+  markdownPreview,
   segmentContexts,
   svgPreview,
   wordWrap,
 } from '../../../src/web/state/store';
 
 /**
- * 清空标签栏、六张缓存（连同两种多文件视图的分段上下文档）与跳行请求，忽略空白、SVG 预览两个开关回到
- * 默认。用到右侧状态的用例都从这里起。
+ * 清空标签栏、六张缓存（连同两种多文件视图的分段上下文档）与跳行请求，忽略空白、SVG 预览、markdown 渲染三个开关
+ * 回到默认。用到右侧状态的用例都从这里起。
  */
 export function resetEditors(): void {
   ignoreWhitespace.value = false;
   svgPreview.value = true;
+  markdownPreview.value = false;
   wordWrap.value = false;
   resetGroups();
   revealRequest.value = null;

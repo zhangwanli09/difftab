@@ -5,7 +5,7 @@
 // 多一列 3px 的改动标记（照 VS Code 的 quick diff），那是点缀，不把文件读成补丁。
 //
 // 五个 `kind` 全部在这里分支，提示行与 DiffView 共用同一个 `Notice`，图片与 SVG 预览与它共用
-// `ImageView`。
+// `ImageView`；markdown 按渲染画时交给 `MarkdownView`。
 
 import { Component } from 'preact';
 import { useLayoutEffect, useMemo, useRef } from 'preact/hooks';
@@ -14,9 +14,10 @@ import { getHljs, languageOf } from '../diff/hljs';
 import type { LineMark, MarkKind } from '../diff/marks';
 import { lineCountOf, splitHighlighted } from '../diff/render';
 import { revealRequest } from '../state/editors';
-import { fileMarkStates, fileStates, shownPreview, wordWrap } from '../state/store';
+import { fileMarkStates, fileStates, shownMarkdown, shownPreview, wordWrap } from '../state/store';
 import { ErrorDetail, Notice, Panel, tooLargeNotice } from './DiffView';
 import { ImageFile } from './ImageView';
+import { MarkdownView } from './MarkdownView';
 
 /**
  * 正文 + 行号（不换行档）。
@@ -328,16 +329,20 @@ function Payload({
   path,
   payload,
   preview,
+  rendered,
   wrap,
 }: {
   path: string;
   payload: FilePayload;
   preview: FilePreview | undefined;
+  /** 按渲染画这份 markdown（`shownMarkdown`）。 */
+  rendered: boolean;
   wrap: boolean;
 }) {
   if (preview !== undefined) return <ImageFile path={path} payload={preview} />;
   switch (payload.kind) {
     case 'text': {
+      if (rendered) return <MarkdownView path={path} content={payload.content} />;
       // 只认路径对得上的那一份：别的文件的跳行与这里无关
       const request = revealRequest.value;
       const reveal = request?.path === path ? request : null;
@@ -384,9 +389,12 @@ export function FileView({ path }: { path: string }) {
   // 只在这里判一次，交给 `Payload`：两处各判时宽盒与正文可能各按一种画
   const preview = payload === null ? undefined : shownPreview(payload, path);
   const previewing = preview !== undefined;
+  // 同理只判一次：渲染档自己折行，套进宽盒就是一整段排成一行
+  const rendered = payload !== null && shownMarkdown(payload, path);
   // 与 `preview` 同理只读一次交给 `Payload`：自动换行时正文不该比面板宽，`max-content` 下一行都折不了
   const wrap = wordWrap.value;
-  const wide = payload !== null && NEEDS_WIDE_BOX[payload.kind] && !previewing && !wrap;
+  const wide =
+    payload !== null && NEEDS_WIDE_BOX[payload.kind] && !previewing && !rendered && !wrap;
   const fill = payload !== null && (FILLS_PANEL[payload.kind] || previewing);
 
   const body = (
@@ -401,7 +409,13 @@ export function FileView({ path }: { path: string }) {
       {/* 换文件走的是卸载重挂——`App` 按 tab 键给本组件 `key`，两份正文因此不可能落在同一棵
           子树上 */}
       {state.status === 'ready' && (
-        <Payload path={path} payload={state.payload} preview={preview} wrap={wrap} />
+        <Payload
+          path={path}
+          payload={state.payload}
+          preview={preview}
+          rendered={rendered}
+          wrap={wrap}
+        />
       )}
     </>
   );

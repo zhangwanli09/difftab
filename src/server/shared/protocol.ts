@@ -261,10 +261,11 @@ export interface TreePayload {
  *
  * `image` 与 `DiffPayload` 的同名分支同一条判据（二进制 ∧ 扩展名），字节由
  * `/api/blob?side=new` 给——文件视图看的永远是工作区那一份。`text` 上的 `preview` 与
- * `DiffPayload` 的同名字段同一条口径（只在 svg 上、不超 5MB），只有工作区这一侧。
+ * `DiffPayload` 的同名字段同一条口径（只在 svg 上、不超 5MB），只有工作区这一侧。`markdown`
+ * 只在 `.md` / `.markdown` 上出现，说的是「这份正文可以按 markdown 渲染」，前端不判扩展名。
  */
 export type FilePayload =
-  | { kind: 'text'; content: string; preview?: FilePreview }
+  | { kind: 'text'; content: string; preview?: FilePreview; markdown?: true }
   | { kind: 'symlink'; target: string }
   | { kind: 'binary' }
   | ({ kind: 'image' } & FilePreview)

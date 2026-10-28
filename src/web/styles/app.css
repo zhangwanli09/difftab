@@ -248,3 +248,135 @@
   --font-mono:
     ui-monospace, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
+
+/* Markdown 的渲染档（`MarkdownView` 的 `.markdown-body`）。preflight 把标题、列表、表格的 UA 样式全撤
+ * 了，这里按 GitHub 那套排版加回来。**落在 @layer components**：比 base（preflight）高、比工具类低；
+ * 写成普通规则而不是组件上的 `[&_h1]:…`——内容是 `dangerouslySetInnerHTML` 进来的整段 HTML，后代
+ * 选择器是唯一挂得上去的方式，一份类名管全篇。颜色一律走 token，明暗跟着 `color-scheme` 翻。
+ *
+ * 代码块里的 hljs span 走 `hljs-theme.css` 那 15 条独立选择器，不挂 `hljs` 类照样命中。 */
+@layer components {
+  /* 不限宽、铺满面板（照 VS Code 的 markdown 预览）：面板多宽由用户自己拖 */
+  .markdown-body {
+    padding: 1.5rem 2rem;
+    font-size: 0.875rem;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+  }
+  .markdown-body > :first-child {
+    margin-top: 0;
+  }
+  .markdown-body :where(p, ul, ol, blockquote, pre, table, hr) {
+    margin-block: 0 1rem;
+  }
+  .markdown-body :where(h1, h2, h3, h4, h5, h6) {
+    margin-block: 1.5rem 1rem;
+    font-weight: 600;
+    line-height: 1.25;
+  }
+  .markdown-body :where(h1, h2) {
+    padding-bottom: 0.3em;
+    border-bottom: 1px solid var(--color-panel-border);
+  }
+  .markdown-body h1 {
+    font-size: 2em;
+  }
+  .markdown-body h2 {
+    font-size: 1.5em;
+  }
+  .markdown-body h3 {
+    font-size: 1.25em;
+  }
+  .markdown-body :where(h5, h6) {
+    font-size: 0.875em;
+  }
+  .markdown-body h6 {
+    color: var(--color-description-foreground);
+  }
+  .markdown-body :where(ul, ol) {
+    padding-left: 2em;
+  }
+  .markdown-body ul {
+    list-style: disc;
+  }
+  .markdown-body ol {
+    list-style: decimal;
+  }
+  .markdown-body :where(ul, ol) :where(ul, ol) {
+    margin-bottom: 0;
+  }
+  .markdown-body li + li {
+    margin-top: 0.25em;
+  }
+  /* 任务列表：marked 给勾选框所在的 <li> 不带类，按「第一个孩子是 checkbox」认不出来，退一步不画圆点 */
+  .markdown-body li:has(> input[type="checkbox"]),
+  .markdown-body li:has(> p > input[type="checkbox"]) {
+    list-style: none;
+  }
+  .markdown-body input[type="checkbox"] {
+    margin: 0 0.25em 0.2em -1.4em;
+    vertical-align: middle;
+  }
+  .markdown-body blockquote {
+    padding: 0 1em;
+    border-left: 0.25em solid var(--color-panel-border);
+    color: var(--color-description-foreground);
+  }
+  .markdown-body hr {
+    border-top: 0.25em solid var(--color-panel-border);
+  }
+  .markdown-body a {
+    color: var(--color-text-link-foreground);
+  }
+  .markdown-body a:hover {
+    text-decoration: underline;
+  }
+  /* 相对链接不给 href（点了会把页面导航走），画成虚下划线说明它本是一个链接 */
+  .markdown-body .md-link {
+    text-decoration: underline dotted;
+  }
+  /* 外链图片不加载，alt 文本画成一块说明这里本有一张图 */
+  .markdown-body .md-image-alt {
+    padding: 0 0.25em;
+    border: 1px dashed var(--color-panel-border);
+    color: var(--color-description-foreground);
+  }
+  .markdown-body img {
+    display: inline;
+    max-width: 100%;
+  }
+  .markdown-body :where(code, pre) {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+  }
+  .markdown-body :not(pre) > code {
+    padding: 0.2em 0.4em;
+    border-radius: 0.375rem;
+    background-color: var(--color-diff-diagonal-fill);
+  }
+  .markdown-body pre {
+    padding: 1em;
+    overflow-x: auto;
+    overflow-wrap: normal;
+    border-radius: 0.375rem;
+    background-color: var(--color-side-bar-background);
+    line-height: 1.45;
+  }
+  .markdown-body table {
+    display: block;
+    width: max-content;
+    max-width: 100%;
+    overflow-x: auto;
+    border-collapse: collapse;
+  }
+  .markdown-body :where(th, td) {
+    padding: 0.375em 0.8125em;
+    border: 1px solid var(--color-panel-border);
+  }
+  .markdown-body th {
+    font-weight: 600;
+  }
+  .markdown-body tr:nth-child(2n) {
+    background-color: var(--color-side-bar-background);
+  }
+}
