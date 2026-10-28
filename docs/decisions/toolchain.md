@@ -23,3 +23,4 @@
 | 依赖 Node 原生 type stripping 直接运行 `.ts` 产品代码 | 会把运行时下限从 22.0.0 顶到 22.18，且每次启动都要付一次转换开销，挤占 300ms 冷启动预算 |
 | pnpm 开 `shamefullyHoist: true` 或 `nodeLinker: hoisted` | 用扁平化掩盖 phantom dependency：本机构建通过，换到别人机器、CI 或改依赖版本后才 resolve 失败。深导入 diff2html 内部模块的方案更需要这层校验 |
 | 手工把 `"dependencies": {}` 加回 `package.json` | `pnpm add` 会把空对象当空值规范化掉，而 `check:pack` 的判据是 `Object.keys(manifest[field] ?? {})`——**字段缺失与空对象在门禁眼里完全等价**，加回来一个字节的保护力度也不多。换来的是一行没有任何门禁看着、下一次装依赖时又被静默删掉的装饰，以及「承诺写在明面上」的错觉。「后端只用标准库」由 `check:pack`（查发布 manifest 的三个依赖字段）与冒烟（查 `dist/server/main.js` 的 import 说明符）两侧承载，不靠那行字面量 |
+| 官网经 GitHub Actions 构建、再用 Vercel CLI 上传产物 | 仓库要存一个长期有效的 `VERCEL_TOKEN` 及两个项目 ID，PR 上也没有 preview 链接；Git 集成不需要任何密钥 |

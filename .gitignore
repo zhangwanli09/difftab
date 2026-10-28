@@ -11,3 +11,6 @@ test/fixtures/repos/
 
 # 个人偏好，不入库
 .claude/settings.local.json
+
+# Vercel CLI 的本地项目链接（vercel link 生成）
+.vercel/

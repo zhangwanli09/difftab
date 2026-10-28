@@ -136,13 +136,15 @@ Vite dev server 在 `localhost:5173`，后端在 `127.0.0.1:<随机端口>`，�
 
 ## 官网（`site/`）
 
-一张英文静态页，由 `.github/workflows/pages.yml` 构建后发到 GitHub Pages。它与产品**互不相干**：不 import `src/`，产品门禁（`check:css`、`size`、冒烟）只看 `dist/web`，官网红了也不挡发版。
+一张英文静态页，由 Vercel 的 Git 集成构建并部署到 `difftab.vercel.app`：PR 出 preview 部署，main 出 production。构建配置在仓库根的 `vercel.json`，Vercel 控制台只负责连仓库。它与产品**互不相干**：不 import `src/`，产品门禁（`check:css`、`size`、冒烟）只看 `dist/web`，官网红了也不挡发版。
 
-- **官网的构建检查只能放在 `pages.yml`，不得并进 `ci.yml`**：`ci.yml` 会被 `release.yml` 在 release commit 上复跑，并进去等于官网红了挡发版。`pages.yml` 在 PR 上只构建、不部署（写 Pages 的权限只给 `deploy` 作业），于是把 `site/` 改坏的 PR 合并前就红；没有这道时 CI 全绿合进 main、部署才失败，线上静默停在上一版。触发 paths 要连 `package.json`（`site:build` 写在那里）与锁文件一起列，漏一条就是那类改动既不检查也不部署。
-
+- **官网的构建检查是 Vercel 部署挂在 PR 上的那条状态检查，不得并进 `ci.yml`**：`ci.yml` 会被 `release.yml` 在 release commit 上复跑，并进去等于官网红了挡发版。没有 PR 上这道时 CI 全绿合进 main、部署才失败，线上静默停在上一版。**fork 来的 PR 受 Vercel 的 Git Fork Protection 约束，维护者在 Vercel 上授权后才构建**——未授权时那条检查根本不出现，不是绿，合并前要看一眼它在不在。
+- **`vercel.json` 里四个键不能交给默认值**：`framework` 必须是 `null`（即 Other）——devDependencies 里有 vite，探测会认成 Vite 预设，去跑产品那份 `pnpm build`、拿 `dist/` 当站点；`buildCommand` / `outputDirectory` 因此显式指向 `site:build` / `site/dist`；`installCommand` 显式带 `--frozen-lockfile`，不赌 Vercel 的构建环境里有没有 `CI`。项目的 Root Directory 必须留在仓库根：页面引 `../assets/…`，锁文件也在根。
+- **`ignoreCommand` 的路径清单决定哪些提交会重新部署**（清单以 `vercel.json` 为准）：`assets` 在里面是因为截图由 Vite 从那里打包，`package.json` 是因为 `site:build` 写在那里。exit 0 是跳过，**漏列一项的症状是那类改动既不检查也不部署**。比较基准是本分支上次成功部署的 `VERCEL_GIT_PREVIOUS_SHA`；变量为空（分支首次推送）或那个 SHA 不在 depth=10 的浅克隆里时 `git diff` 以 128 退出，由末尾的 `|| exit 1` 归成「构建」——**这个 `|| exit 1` 不能删**，Vercel 只约定了 0 与 1。**不用 Vercel 文档示例里的 `HEAD^`**：PR 多提交时只比最后一个，前面改了 `site/`、最后一个只改 `src/` 的 PR 会被跳过。
+- **pnpm 版本照上文「包管理器」一节以 `packageManager` 为准**：Vercel 按 `lockfileVersion: 9.0` 先选 pnpm 9/10，pnpm 自带的 `managePackageManagerVersions`（默认开）再切到 `packageManager` 那个版本。构建日志里版本对不上时，兜底是 Vercel 项目的环境变量 `ENABLE_EXPERIMENTAL_COREPACK=1`，那将是唯一一项不在 `vercel.json` 里的构建配置。
 - **Tailwind 走仓库已有的 `@tailwindcss/vite`，不新增依赖**；配置是独立的 `site/vite.config.ts`，不复用根目录那份——后者 import 后端模块、配 dev proxy。产物落在 `site/dist/`，由 `.gitignore` 的 `dist/` 挡住。**不用 `cdn.tailwindcss.com`**：那是运行时 JS，且是一条第三方请求。
-- **`base` 必须是 `/difftab/`**（Pages 项目站的子路径）。写错时 HTML 照常打开、样式与脚本全部 404；`pnpm site:dev` 看不出来，只有 `vite preview --config site/vite.config.ts` 看得见。
-- **不发第三方请求**：字体用系统等宽栈，不接统计。截图在 `site/index.html` 里写相对路径 `../assets/…`，由 Vite 构建时带 hash 打进 `site/dist/assets/`、与页面同源由 Pages 提供——曾写 GitHub raw 绝对地址，那是一条慢的第三方请求。不往 `site/` 复制二进制，改截图仍只改 `assets/` 一处；也因此 `pages.yml` 的 paths 必须含 `assets/**`，漏了时只换资源的提交不会重新部署。社交预览图仍写 raw 绝对地址：`og:image` 给的是爬虫，要绝对 URL。
+- **站点挂在域名根，`base` 用 Vite 默认的 `/`，别再写回子路径**（从 GitHub Pages 项目站迁来前是 `/difftab/`）。`base` 与挂载点不一致时 HTML 照常打开、样式与脚本全部 404；`pnpm site:dev` 看不出来，只有 `vite preview --config site/vite.config.ts` 看得见。
+- **不发第三方请求**：字体用系统等宽栈，不接统计，Vercel 的 Web Analytics / Speed Insights 也不开。截图在 `site/index.html` 里写相对路径 `../assets/…`，由 Vite 构建时带 hash 打进 `site/dist/assets/`、与页面同源由 Vercel 提供——曾写 GitHub raw 绝对地址，那是一条慢的第三方请求。不往 `site/` 复制二进制，改截图仍只改 `assets/` 一处。社交预览图仍写 raw 绝对地址：`og:image` 给的是爬虫，要绝对 URL。
 - **不写会过期的数据**：版本号、日期、star 数一律不进页面，它们过期了没有任何东西会响。
 - **明暗只跟随系统**：主题 token 写成 `light-dark()` 双值、由 `color-scheme` 切换，类名里不写 `dark:`；双值 token 不得加不透明度修饰符（`bg-ink/10`），Tailwind 会把它塞进 `color-mix()`、整条声明作废。
 - **favicon 与产品页同一段，页眉符号也是生成的**：`scripts/logo.mjs` 回写两份 `index.html` 的 favicon 与 `site/index.html` 的 `<!-- mark -->` 一段，`logo.test.ts` 全都钉。页眉符号不要 Chrome，没有 Chrome 的机器上照样回写。**别把标记之间那段改成手写**——下次跑脚本会被整段覆盖，而只改几何不跑脚本时红的是测试。
