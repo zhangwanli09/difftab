@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.0](https://github.com/zhangwanli09/difftab/compare/v0.13.0...v0.14.0) (2026-10-28)
+
+
+### Features
+
+* **web:** add a markdown preview to file tabs ([#155](https://github.com/zhangwanli09/difftab/issues/155)) ([6b6b545](https://github.com/zhangwanli09/difftab/commit/6b6b5453a4ad796960d22a820b9b01c2a4e2abe5))
+
 ## [0.13.0](https://github.com/zhangwanli09/difftab/compare/v0.12.0...v0.13.0) (2026-10-27)
 
 
