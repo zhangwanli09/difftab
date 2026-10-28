@@ -16,7 +16,7 @@
 
 分发方式：npm 包，`npm i -g difftab` 全局安装（推荐）或 `npx difftab` 直接试用（pnpm 用户为 `pnpm add -g difftab` / `pnpm dlx difftab`）。目标用户使用 AI coding agent，机器上必然已有 Node 环境，无需额外提供免运行时的分发形态。正式支持三端，CI 版本矩阵为 **Node 22 / 24 / 26 × 三平台**，`engines.node` 声明为 `>=22.0.0`。
 
-**官网**是 GitHub Pages 上的一张英文单页（`zhangwanli09.github.io/difftab`），只做介绍与安装引导：内容以 README 为准、只收其子集，不发任何第三方请求（字体、统计一概不接；截图与社交预览图取自同属 GitHub 的 raw 地址），与产品「不往外发东西」的口径一致。
+**官网**是部署在 Vercel 上的一张英文单页（`difftab.vercel.app`），只做介绍与安装引导：内容以 README 为准、只收其子集，不发任何第三方请求（字体、统计一概不接；截图随页面同源提供，只有给爬虫的社交预览图写 GitHub raw 绝对地址），与产品「不往外发东西」的口径一致。
 
 **本仓库自身用 pnpm 开发，这与用户侧的安装方式无关**——包照常发到 npm registry，且 `dependencies` 为空、零传递依赖，用户用哪个包管理器安装都一样。
 

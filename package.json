@@ -4,7 +4,7 @@
   "description": "See what your AI coding agent changed — a read-only git diff viewer in one browser tab",
   "license": "MIT",
   "author": "zhangwanli",
-  "homepage": "https://zhangwanli09.github.io/difftab/",
+  "homepage": "https://difftab.vercel.app/",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/zhangwanli09/difftab.git"
