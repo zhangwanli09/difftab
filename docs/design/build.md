@@ -89,6 +89,7 @@ site/                  官网：一张静态页 + 独立的 vite config，与产
 
 - **环境按目录分，不全局开**：`test/unit/web/` 用 happy-dom，`test/unit/server/` 保持 node。给后端用例套一层 DOM 全局，是把「前端拿不到也不该拿到 Node API」那条边界反向捅一刀。
 - **落地方式是 Vitest 的 `projects`，不是 `environmentMatchGlobs`**——后者在 Vitest 4 已被移除，**因此 include 是几条具体路径**。放到 `test/unit/` 底下或第三个子目录里的用例**不属于任何 project、压根不会被跑，且套件照常全绿**；它同样不在 `tsconfig.server.json` / `tsconfig.web.json` 任一份的 include 里，`pnpm typecheck` 也看不见它（两份的 `moduleResolution` 与 `lib` 不同，一个文件不能被两边同时收）。`test/unit/server/test-layout.test.ts` 钉着这条：它直接 import `vitest.config.ts` 把 include 编成正则（不抄目录白名单），所以加 project 不必同步任何清单。
+- **Vitest 不得低于 5**：Node 25 起全局自带一个 `localStorage` getter，Vitest 4 见全局上已有这个键就不装 happy-dom 的那份，于是 `test/unit/web/` 里碰 `localStorage` 的用例在 Node ≥ 25 上整片 `TypeError`。会响，但只在 ≥ 25 上响。
 
 ## 包管理器（pnpm 11）
 
@@ -127,7 +128,9 @@ Vite dev server 在 `localhost:5173`，后端在 `127.0.0.1:<随机端口>`，�
 
 `tsdown` 要求 Node `^22.18 || >=24.11`、Vite 要求 `>=22.12`，均高于产品运行时下限 22.0.0，因此 CI 必须拆成两层。**矩阵作业测的是用户真正拿到的产物，而非 TS 源码。**
 
-1. **build 作业**（Node 24）：`pnpm/action-setup` → `actions/setup-node`（`cache: 'pnpm'`）→ `pnpm install --frozen-lockfile` → `biome ci` → `tsc --noEmit` → `vitest run` → 构建 → 体积门禁 → 上传 `dist/` artifact。**`pnpm/action-setup` 必须排在 `actions/setup-node` 之前**，否则后者的 `cache: 'pnpm'` 找不到 pnpm 可执行文件。
+1. **build 作业**（当前的 Active LTS）：`pnpm/action-setup` → `actions/setup-node`（`cache: 'pnpm'`）→ `pnpm install --frozen-lockfile` → `biome ci` → `tsc --noEmit` → `vitest run` → 构建 → 体积门禁 → 上传 `dist/` artifact。**`pnpm/action-setup` 必须排在 `actions/setup-node` 之前**，否则后者的 `cache: 'pnpm'` 找不到 pnpm 可执行文件。
+   - **LTS 交替时跟着换，且与 inotify-quota 作业、`release.yml` 的 publish 作业三处一起换**：build 落后一档时，只在新 Node 上红的东西只有贡献者本机看得见；publish 由 `prepublishOnly` 重新构建，三处漂开时发出去的就不是 gates 验过的那个构建环境，而漂开本身不会让任何作业变红。由 `test/unit/server/ci-node-version.test.ts` 钉住：它读两份 workflow，断言三处的 `node-version` 是同一个字面量。**不另设 `.nvmrc` 之类的共享版本文件**，免得根目录多一份容易被误读成运行时下限的东西（运行时下限只有 `engines.node` 一处，见 [`server.md`](server.md)）。matrix 作业不在此列，三档版本是另一回事。
+   - **这个版本必须让 Linux 判到监听 A 档**（≥ 24.14.0，见 [`watch.md`](watch.md)）：inotify-quota 作业验的是递归 watch 耗尽配额后的降级，判到 C 档时一个递归 watch 都不建，脚本打印 SKIP 后以 0 退出，这道门禁照样变绿，却什么都没验到。同一条用例按 `tier.ts` 的判档逻辑断言这一点。
 2. **matrix 作业**（Node **22.0.x** / 24 / 26 × macOS / Windows / Linux）：下载 `dist/` artifact，**完全不执行安装、也不需要 pnpm**，用 `node --test` 直接打到纯 JS 冒烟套件文件（不经 `package.json` 的 script）。**不得改成「装一点点」**（如 `pnpm install --prod`）——那一装，测的就不再是用户拿到的那个东西。
    - `node --test` 在一个文件都没匹配上时是 **0 用例、exit 0**。因此本档必须断言 `readonly.test.js` / `readonly-git-dir.test.js` **确实进了这次调用的参数**：由这一步的 bash 把 `test/smoke/*.test.js` 展开成数组、点名检查、再把**同一个数组**原样传给 `node --test`（因此本步骤是 `shell: bash`）。这条点名同时覆盖了「文件还在不在原处」，build 档不另设存在性检查。**只数用例总数顶不了这条**（被任何别的文件满足）；**按 junit reporter 的 `file=` 属性点名也顶不了**——下限档 Node 22.0.0 的 junit reporter 不写它。
    - **体积门禁不进本档**：matrix 下载的是同一份 `dist/`，字节完全相同，再跑 9 遍不增加覆盖，反而引入方差——gzip 输出长度取决于各 Node 大版本自带的 zlib，贴着预算的行会只在某一个 Node 上红。
