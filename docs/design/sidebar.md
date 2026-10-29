@@ -1,6 +1,6 @@
 # 前端：文件浏览器、全仓搜索、提交历史与分支列表
 
-> 左栏里除变更列表之外的四块视图。页面骨架、变更列表与两棵树共用的行骨架（`TreeRow`、行内动作）在 [`web.md`](web.md)，右侧面板在 [`editors.md`](editors.md)。被排除的做法见 [`../decisions/web.md`](../decisions/web.md)，门禁见 [`../gates.md`](../gates.md)。标「有断言」的条目由 `test/unit/web/` 钉住、不进红线。
+> 左栏里除变更列表之外的四块视图。页面骨架、变更列表与两棵树共用的行骨架（`TreeRow`、行内动作）在 [`web.md`](web.md)，右侧面板在 [`editors.md`](editors.md) 与 [`views.md`](views.md)。被排除的做法见 [`../decisions/web.md`](../decisions/web.md)，门禁见 [`../gates.md`](../gates.md)。标「有断言」的条目由 `test/unit/web/` 钉住、不进红线。
 
 ## 文件浏览器
 
@@ -41,7 +41,7 @@
 - **汇总行**：`3 results in 2 files`（单复数照英文）、`No results`；`truncated` 时另起一行 `Showing the first 2,000 results — refine your search`。在取时写 `Searching…`，但**有旧结果时先留着旧的**，回来再换，不闪。出错走引导句 + 原因两行（见 [`web.md`](web.md)）。
 - **文件行走 `TreeRow`**：展开三角 + 文件名 + 目录（同住一个 `truncate` span，理由同变更列表）+ 行尾命中数。点它折叠 / 展开，悬停露出 `Copy path`。**折叠态记 collapsed 集合**：默认全展开，重搜后新冒出来的文件不用登记就是展开的。**活动高亮同按 `activeEditorPath`**。
 - **命中行缩进一层**：预览文本按 `ranges` 切成普通段与高亮段，高亮底色是 `find-match` token（照 VS Code `editor.findMatchHighlightBackground`）；行号不上行，`title` 是 `<路径>:<行号>`。**行首空白剥掉**，`ranges` 随之平移——缩进深的代码否则在 320px 里只剩一截空白。
-- **单击命中行 = 预览打开该文件并跳到那一行，双击固定**（同其余列表）。打开的是 file tab 而不是 diff：搜到的是工作区此刻的全文，那一行在 diff 里未必出现。跳行机制在 [`editors.md`](editors.md) 的「文件视图」。
+- **单击命中行 = 预览打开该文件并跳到那一行，双击固定**（同其余列表）。打开的是 file tab 而不是 diff：搜到的是工作区此刻的全文，那一行在 diff 里未必出现。跳行机制在 [`views.md`](views.md) 的「文件视图」。
 - **tab 行右端在 `Search` 档不站按钮**：行高由 tab 定，空着不抖。
 
 ## 提交历史
@@ -50,14 +50,14 @@
 
 - **两个分区**：上面 `Changes`、下面 `History`（不叫 Graph——没有图形列）。分区壳在 `SourceControl.tsx`，比例与折叠态在 `state/sidebar.ts`。
   - **分区标题是一枚按钮**（三角 + 大写小号标题、`aria-expanded`），排在分区自己的滚动容器之外。
-  - **`CHANGES` 分区标题右端一枚 `Open Changes`**（图标同 changes tab 的 `GitCompare`），把工作区此刻的全部改动排进一个 tab（视图在 [`editors.md`](editors.md) 的「工作区改动视图」）。照 VS Code 视图标题栏的动作：按钮贴着它说的那块内容，不放在 tab 行——那一行的按钮管的是「这一档怎么列」，这一枚是打开内容。agent 一轮改完，一次从头看到尾比逐个点开快，这正是本工具的核心场景。**按钮是标题按钮的兄弟、不是孩子**（按钮里不能套按钮），点它不折叠分区；分区折起时照画。右内边距与 tab 行一致，两处的 `IconButton` 落在同一条竖线上。**整个工作区一枚，不在每个分组标题上各放一枚**：diff 的基准是 `HEAD`，同一个文件在 `Staged Changes` 与 `Changes` 两组里是同一份补丁。**工作区干净时照画**，点开说 `No changes`：按钮随改动忽有忽无比常亮更难扫，理由同 `Collapse all`。
+  - **`CHANGES` 分区标题右端一枚 `Open Changes`**（图标同 changes tab 的 `GitCompare`），把工作区此刻的全部改动排进一个 tab（视图在 [`views.md`](views.md) 的「工作区改动视图」）。照 VS Code 视图标题栏的动作：按钮贴着它说的那块内容，不放在 tab 行——那一行的按钮管的是「这一档怎么列」，这一枚是打开内容。agent 一轮改完，一次从头看到尾比逐个点开快，这正是本工具的核心场景。**按钮是标题按钮的兄弟、不是孩子**（按钮里不能套按钮），点它不折叠分区；分区折起时照画。右内边距与 tab 行一致，两处的 `IconButton` 落在同一条竖线上。**整个工作区一枚，不在每个分组标题上各放一枚**：diff 的基准是 `HEAD`，同一个文件在 `Staged Changes` 与 `Changes` 两组里是同一份补丁。**工作区干净时照画**，点开说 `No changes`：按钮随改动忽有忽无比常亮更难扫，理由同 `Collapse all`。
   - **两块各自滚动。都展开时按比例分高度**：上面那块 `flex-basis` 是百分比（默认 50%，夹在 15%–85%），下面 `flex-1` 吃剩下的——存比例不存像素，窗口变高变矮时一起伸缩。一块折起时另一块占满。
   - **折起是隐藏不是卸载**：卸载时滚动容器连同 `scrollTop` 一起没了，折一下再展开就回到顶上。**比例刷新后保留、折叠态不保留**（落盘的纪律与范围见 [`web.md`](web.md) 的「主题开关」）。
   - **中间的横向分隔条与左栏把手是同一个组件 `Sash.tsx`**，只有轴向与单位（像素 / 百分比）由调用方给：pointer capture、收尾、键盘、`touch-action` 这些易漏的机制只写一次，两份副本时修了一把、另一把静默坏着。百分比就是存储单位，取一位小数；拖动起点那一刻量一次列高。
   - **`History` 折起时不取**，与「不在 `Changes` 档」同等对待。默认可见即页面一打开就取第一页。**但要等第一份 state 到了才判**：否则挂载时 HEAD 未知必判「对不上」，state 一到又判一次，每开一次页面两遍 `git log`。这条写在两处：`historyVisible` 把「state 已到」算进可见，`ensureHistory(null)` 自己也直接返回。补判的 effect 挂在 `SourceControl` 而不是 `App`，免得点一下分区标题整页重画。
 - **一行 = 展开箭头 + 主题 + 作者**，作者次要色小一号，**两段同住一个 `truncate` span**，理由与变更列表「文件名 + 目录」相同。**短哈希与时间不上行**，进原生 `title`，次序为主题、正文、`短哈希 · 作者 · 相对时间 (绝对时间)`（短哈希 7 位，对照 `git log --oneline`）；完整 sha 不进提示。元信息垫底、不照 VS Code 悬停卡片把作者与时间放在最前，是为了让第一眼落在主题上。不自绘卡片：改动统计要每条多一次 diff，`Open on GitHub` 要读 remote（白名单之外）。body 随列表那次 `log` 一起回来。相对时间用 `Intl.RelativeTimeFormat('en')`，不挂计时器自己跳。
 - **提交行悬停露出 `Copy commit hash`，复制完整 sha**（短哈希在大仓库里可能有歧义）。与 `Copy path` 是同一个 `CopyButton`，站在 `TreeRow` 的动作外壳里——点它不会顺带展开这条提交。
-- **`Copy commit hash` 前面还有一枚 `Open Changes`**（图标同 commit-changes tab 的 `GitCompare`）：在右侧开一个整次提交的 tab，这次提交的全部文件依次排开（视图在 [`editors.md`](editors.md) 的「整次提交视图」）。照 VS Code Graph，agent 提交完、工作区变干净时，一次看完比逐个文件开 tab 快。**单击行仍然是展开**：展开是看「改了哪些文件」的轻量动作，换成打开 tab 时只想瞄一眼文件清单也要开一个 tab；为什么不做成单击打开见 [`../decisions/web.md`](../decisions/web.md)。按钮单击开预览 tab，双击 tab 固定；incoming 段与主列表共用 `CommitRow`，两段都有它。
+- **`Copy commit hash` 前面还有一枚 `Open Changes`**（图标同 commit-changes tab 的 `GitCompare`）：在右侧开一个整次提交的 tab，这次提交的全部文件依次排开（视图在 [`views.md`](views.md) 的「整次提交视图」）。照 VS Code Graph，agent 提交完、工作区变干净时，一次看完比逐个文件开 tab 快。**单击行仍然是展开**：展开是看「改了哪些文件」的轻量动作，换成打开 tab 时只想瞄一眼文件清单也要开一个 tab；为什么不做成单击打开见 [`../decisions/web.md`](../decisions/web.md)。按钮单击开预览 tab，双击 tab 固定；incoming 段与主列表共用 `CommitRow`，两段都有它。
 - **ref 徽标照 VS Code `scm.graph.badges: all` 的画法**（1.142 源码核对）：当前分支与它的上游各一枚、带色；其余分支与标签按种类合成中性色的几枚。要回答的是两件事——**上游那枚之上的几条就是还没推送的**（状态条上的 `↑3` 对不到具体是哪三条），以及某个分支或标签此刻指着哪一条。当前分支与上游指着同一条时并排，本地在前。
   - **徽标排在 `truncate` span 之后、`shrink-0`，靠行右缘对齐**（`truncate` span 自己 `grow`、把徽标推到右边），照 VS Code：紧跟主题时各行徽标的横向位置随主题长短乱跳，扫一列看「上游在哪一行」得逐行找；本地那枚自身过长时独立 `truncate`。悬停时行内动作的占位照常进流，徽标随之左移一枚按钮宽，按钮盖不到它。**上游那枚只画图标、不印名字**，完整名进原生 `title`：它要回答的「哪几条还没推送」只需要位置，而名字多半还是 `<remote>/<本地分支名>`，印出来只是把主题挤成省略号。判据是角色不是 `kind`——上游是本地分支时照样只画图标。图标同分支列表（本地 `GitBranch`、远程 `Cloud`、标签 `Tag`），色相照 VS Code 的 `scmGraph.historyItem*RefColor`，**但只给图标上色、底色是同色相淡底**——实心底 + 白字在这一栏里比主题还抢眼、对比度也不够。
   - **其余的 ref 每种（本地 / 远程 / 标签）合成一枚：只画图标，多于一条时图标前印条数，名字逐行进 `title`**，照 VS Code：一条提交上常同时挂着一个远程分支和两三个标签，逐个印名字会把主题挤没。次序是本地、远程、标签。与当前分支、上游同名的那条去掉——它已经以带色那枚画过了；判据是名字不是 sha，refs 是早些时候取的，当前分支在里面的 sha 可能已经过时。**中性色**：图标 `description-foreground`、底色借 `list-hover-background`。VS Code 给这几枚用 `badge.background`，而 2026 两份主题里那是一块实心蓝，与当前分支那枚同色相，分不出谁是谁。
