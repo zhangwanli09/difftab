@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.1](https://github.com/zhangwanli09/difftab/compare/v0.14.0...v0.14.1) (2026-10-29)
+
+
+### Bug Fixes
+
+* **web:** drop the blue border from text inputs ([#159](https://github.com/zhangwanli09/difftab/issues/159)) ([17969e7](https://github.com/zhangwanli09/difftab/commit/17969e7b9f7d1421d7cbef34db70f2db29ee4db9))
+
 ## [0.14.0](https://github.com/zhangwanli09/difftab/compare/v0.13.0...v0.14.0) (2026-10-28)
 
 
