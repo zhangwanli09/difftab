@@ -15,16 +15,16 @@
 - **`GIT_OPTIONAL_LOCKS=0`**：`git status` 默认把 stat 缓存写回 `.git/index`，**不改变输出**，只读 `.git` 下也只是静默跳过。看得见它的只有 `.git` 逐字节比对与「读一次 `/api/state` 不引出刷新事件」（写 `.git` → 推 `change` → 再读一次，是个自激循环）。
 - **`GIT_LITERAL_PATHSPECS=1`**：pathspec 默认是 wildmatch，而路径来自 URL query——`path=*` 会回一份整仓 diff，名字里带 `*` 的真实文件也会匹配到邻居，页面在 A 的标题下显示 B 的补丁。本项目的路径全部来自 git 自己的输出，不需要通配语义。
 - **`GIT_NO_LAZY_FETCH=1`**：partial clone 里碰到一个不在本地的 blob，git 默认从 promisor remote 取回并写进 `.git/objects`，而提交历史读的恰恰是从没检出过的旧 blob。关掉后缺对象是一次非零退出，**分类只在 `run.ts` 做一次**（`GitError` 的 `missing-object`，HTTP 层统一译成 `unsupported`）——交给各调用点 catch 时，漏 catch 的那条路会把它说成「路径不存在」或一条 500。
-  - **这个变量 git 2.44 才有**：「git < 2.44 ∧ partial clone」时提交历史整个拒绝（`history.ts` 的 `refuseLazyFetch`）。判 partial clone 读共享 git 目录下的 `config`，**两种记号都认**：`extensions.partialClone` 与 `remote.<名>.promisor`（git 布尔值的各种写法都算开）——漏认一种就是在老 git 上往对象库里写。版本与共享 git 目录由启动时 `locateRepo` 顺手拿到（`RepoInfo.gitVersion` / `commonDir`；`--git-common-dir` 返回的相对路径是**相对 cwd** 的）。工作区 diff 不受影响：它只碰已检出的那份。
+  - **这个变量 git 2.44 才有**：「git < 2.44 ∧ partial clone」时提交历史整个拒绝。判 partial clone 读共享 git 目录下的 `config`，**两种记号都认**：`extensions.partialClone` 与 `remote.<名>.promisor`（git 布尔值的各种写法都算开）——漏认一种就是在老 git 上往对象库里写。共享 git 目录取自 `--git-common-dir`，它返回的相对路径是**相对 cwd** 的。工作区 diff 不受影响：它只碰已检出的那份。
 - **每一条 `git diff` 紧跟子命令带 `--no-ext-diff --no-textconv`**，由 `runGitRaw` 按子命令注入、调用点不写。`diff=<驱动>` + `textconv` 会让补丁形态起外部程序，配了 `cachetextconv` 时还写 `refs/notes/textconv/*`；`diff.external` 同理。numstat 那几条也带：二进制与行数判定得与补丁看的是同一份内容。**代价**：配了 textconv 的文件按原始字节比。
-- **每一条 `git diff` 在子命令之前带 `-c diff.autoRefreshIndex=false`**，同样按子命令注入。`GIT_OPTIONAL_LOCKS=0` **管不到 `git diff`**：pathspec 里有「stat 过期、内容与基准相同」的路径时，它照样去刷新 index（每次都建 `index.lock`，有可刷的 stat 时还重写 `.git/index`）。暂存后又把工作区改回 HEAD 的文件（`MM`、`diff HEAD` 为空、界面说 `File without changes.`）stat 永远刷不干净，每取一次 diff 就碰一次 `.git`——监听推 `change`、前端重取、再碰一次，**请求永不停**。关掉后补丁与 numstat 逐字节不变；**`--name-status` / `--raw` / `--name-only` 对工作区比时会多报这类路径为 `M`**——今天对工作区只用前两种，要用后几种得自己按内容再筛。
+- **每一条 `git diff` 在子命令之前带 `-c diff.autoRefreshIndex=false`**，同样按子命令注入。`GIT_OPTIONAL_LOCKS=0` **管不到 `git diff`**：pathspec 里有「stat 过期、内容与基准相同」的路径时，它照样去刷新 index（每次都建 `index.lock`，有可刷的 stat 时还重写 `.git/index`）。暂存后又把工作区改回 HEAD 的文件（`MM` 而 `diff HEAD` 为空）stat 永远刷不干净，每取一次 diff 就碰一次 `.git`——监听推 `change`、前端重取、再碰一次，**请求永不停**。关掉后补丁与 numstat 逐字节不变；**`--name-status` / `--raw` / `--name-only` 对工作区比时会多报这类路径为 `M`**——今天对工作区只用前两种，要用后几种得自己按内容再筛。
 
 ## `-z` 解析的三个陷阱
 
 - **`porcelain=v2` 的重命名记录占两个 NUL 段**：`2 <XY> … R<score> <新路径>\0<旧路径>`。遇到 `2 ` 开头的记录必须额外吞掉下一段。
 - **`diff --numstat -z` 的重命名记录占三段**：空路径 + `<旧路径>` + `<新路径>`，**顺序与 porcelain 相反**。平铺切分会把路径当成记录。
 - **无上游分支时不输出 `# branch.ab` 行**：展示为「无上游」，不能默认成 0/0。上游名取自 `# branch.upstream`；配了上游而远端分支已被删掉（只有名字没有 ab）时仍按无上游处理。
-  - **上游名是 git 缩写过的 refname，有歧义时会带前缀**（`heads/main`、`remotes/origin/main`、乃至完整 `refs/…`）。前端因此不精确比对，而是照 git 自己的 `ref_rev_parse_rules` 次序（`%s` → `refs/%s` → `refs/heads/%s` → `refs/remotes/%s`）拼回完整名字去找——精确比对时这几种情况下徽标静默不画。
+  - **上游名是 git 缩写过的 refname，有歧义时会带前缀**（`heads/main`、`remotes/origin/main`、乃至完整 `refs/…`）。前端因此不精确比对，而是照 git 自己的 `ref_rev_parse_rules` 次序拼回完整名字去找——精确比对时这几种情况下徽标静默不画。
 
 ## 取 diff
 
@@ -41,10 +41,10 @@
 git diff --no-ext-diff --no-textconv <range> --unified=<3|50000> --inter-hunk-context=0 [-w] [-M] -- <路径> [<旧路径>]
 ```
 
-- **请求参数只决定挑哪个字面量，自己不进 argv**：`--unified` 的值只有 `3` 与 `MAX_LINES` 两个常量，`-w` 只以它自己出现。参数值来自 URL query，原样拼进去就是一处把选项面交给请求方的口子——`--output=<路径>` 在那个位置就是一次写文件。冒烟逐段钉着（见 [`../gates.md`](../gates.md)）。
+- **请求参数只决定挑哪个字面量，自己不进 argv**：`--unified` 的值只有 `3` 与 `MAX_LINES` 两个常量，`-w` 只以它自己出现。参数值来自 URL query，原样拼进去就是一处把选项面交给请求方的口子——`--output=<路径>` 在那个位置就是一次写文件。
 - **`--unified=3` 与 `--inter-hunk-context=0` 必须显式写，不能靠默认**：用户配了 `diff.context` / `diff.interHunkContext` 时 git 照配置给 hunk（实测 `diff.context=0` 下上下文整个消失）。前端按「上下文恰为 3 行、相邻 hunk 不并」推断文件末尾在哪、并在整份上下文里重算出与 `-U3` 逐行相同的折叠（机制在 [`diff-render.md`](diff-render.md)），两条默认任一被配置改掉，推断都静默错位。
 - **忽略空白用 `-w`（`--ignore-all-space`），不用 `-b` 或 `--ignore-space-at-eol`**：VS Code 的 `ignoreTrimWhitespace` 忽略行首行尾的空白，git 没有逐字对应的开关。`-b` 拦不住缩进从无到有（实测 `x` → `  x` 照报一删一增），而那正是把代码包进一层块时最常见的形态；`-w` 是 VS Code 那档的超集，与 GitHub 的 `Hide whitespace` 同口径。
-- **`-w` 只给取补丁那一次，`--numstat` 那次永远不带**：只改了空白的文件在 `-w` 下补丁与 numstat **都是空输出**（实测），numstat 的 `null` 于是从「这条路径不在差异里」变成「没有非空白的改动」。而它同时是三件事的判据：已跟踪判定只剩 `ls-files` 那一半（`git rm` 之后已暂存的删除就靠它）；`stat` 为 `null` 时 `gatedPatch` 连二进制与行数两道闸一起跳过。今天的路径组合里碰巧不出错，但一个显示开关不该改写分流判据的含义。代价是行数闸量的是不忽略空白的改动量：一次 6 万行的纯格式化在 `-w` 下其实很小，照样说太大。
+- **`-w` 只给取补丁那一次，`--numstat` 那次永远不带**：只改了空白的文件在 `-w` 下补丁与 numstat **都是空输出**（实测），numstat 的 `null` 于是从「这条路径不在差异里」变成「没有非空白的改动」。而它同时是已跟踪判定（见「已跟踪与未跟踪的分流」）与二进制、行数两道闸的判据——一个显示开关不该改写分流判据的含义。代价是行数闸量的是不忽略空白的改动量：一次 6 万行的纯格式化在 `-w` 下其实很小，照样说太大。
 - **`-w` 下没有剩余改动是正常结果**：exit 0、stdout 为空，payload 照常是 `text`，补丁为空串（前端说 `Only whitespace changes.`）。老 git 在这里可能还留着 `diff --git` 头而没有 hunk，前端看到的同样是零个 hunk。
 - **`-w` 下上下文行的正文取自新侧**（实测：缩进从 2 改到 4 之后，上下文行是 4 个空格那一版）。并排时旧侧那几行显示的是新侧的空白，行号照旧是旧侧的——已知取舍，不另取旧侧正文。
 - **整份上下文是 `--unified=<MAX_LINES>`，判据是「补丁行数不超过 `MAX_LINES`」**：补丁若没有包住整份文件，必有一侧连续 `MAX_LINES` 行上下文被收进来，加上至少一行改动就超了。所以过了这道闸的补丁一定是整份文件，不必另问文件有多少行。**这道行数闸在取完之后数**（numstat 量的是改动量，量不到上下文），字节闸照旧由 `maxStdoutBytes` 撞。
@@ -70,7 +70,7 @@ git diff --no-ext-diff --no-textconv <range> --unified=<3|50000> --inter-hunk-co
 
 **判据是「二进制 ∧ 扩展名在表里」，缺一不可**。表是 `server/git/worktree.ts` 的 `imageMimeOf`（png / jpg / jpeg / gif / webp / bmp / ico / avif；**SVG 不在**——它是文本，文本 diff 更有信息量）。单看扩展名会把内容是文本的 `.png` 画成一张破图。
 
-**SVG 是文本那一支上挂的预览**：分类照旧是文本（补丁、全文、行数与体积闸都不变），扩展名为 `svg` 时 payload 另带一份 `preview` 两侧元数据，形状与图片的 `ImageSide` 相同、算法也是同一份（旧侧 `cat-file -s` + 基准 oid，新侧 `lstat` + `worktreeVersion`，提交里两侧都是对象名）。**任一侧超过 `MAX_BYTES` 即不带 `preview`**：补丁可以只有几行，而 `/api/blob` 会拒那张图。**补丁头里任一侧是 mode 120000（符号链接）也不带**：两侧取到的都是链接目标字符串。**行数闸只对 svg 的字节端点放宽**（`inspectFile` 的 `maxLines`）：它挡的是表格画不动的长文本，对图没有意义；旧侧的 `cat-file blob` 本就不数行，不放宽时五万行以上、只改几行的 SVG 有预览而 After 那张永远取不回来。含 NUL 的 `.svg` 仍是 `binary`——svg 不进 `imageMimeOf` 的表，否则它会从二进制那支被当成图放行。`/api/blob` 认的是另一张并集（`previewMimeOf`）：新侧的判据是「`inspectFile` 给 `image`」或「给 `text` ∧ 扩展名 svg」，两半缺一不可。
+**SVG 是文本那一支上挂的预览**：分类照旧是文本（补丁、全文、行数与体积闸都不变），扩展名为 `svg` 时 payload 另带一份 `preview` 两侧元数据，形状与算法都同图片的 `ImageSide`（见下）。**任一侧超过 `MAX_BYTES` 即不带 `preview`**：补丁可以只有几行，而 `/api/blob` 会拒那张图。**补丁头里任一侧是 mode 120000（符号链接）也不带**：两侧取到的都是链接目标字符串。**行数闸只对 svg 的字节端点放宽**：它挡的是表格画不动的长文本，对图没有意义；旧侧的 `cat-file blob` 本就不数行，不放宽时五万行以上、只改几行的 SVG 有预览而 After 那张永远取不回来。含 NUL 的 `.svg` 仍是 `binary`——svg 不进 `imageMimeOf` 的表，否则它会从二进制那支被当成图放行。`/api/blob` 认的是另一张并集（`previewMimeOf`）：新侧的判据是「`inspectFile` 给 `image`」或「给 `text` ∧ 扩展名 svg」，两半缺一不可。
 
 - **旧侧读 diff 基准里的 blob：`git cat-file blob <base>:<path>`，存在性与体积用 `cat-file -s`。只允许这两种字面参数**：`--filters` / `--textconv` 会跑 smudge / textconv 驱动（LFS 的写 `.git/lfs`），而白名单只看子命令；不用 `git show <rev>:<path>`——字节相同，但它的参数面大到「参数只能是字面量」那条断言钉不住。`cat-file -s` 非零退出即「这一侧不存在」，不是错误。
 - **内容身份 `ImageSide.version`**：旧侧是基准的 oid（`resolveDiffBase` 顺手带回的 `DiffBase { ref; oid }`），新侧是体积 + mtime（`worktreeVersion`，与 git 的 stat 缓存同一判据与同一边界）。
@@ -83,17 +83,17 @@ git diff --no-ext-diff --no-textconv <range> --unified=<3|50000> --inter-hunk-co
 
 提交列表、一次提交改了哪些文件、其中一个文件的补丁——**只往只读白名单里加了 `log` 一条**：提交 diff 是 `diff <parent> <sha>`，图片两侧是 `cat-file`，校验是 `rev-parse`。禁引入 `show` / `diff-tree` / `rev-list`。代码在 `server/git/history.ts` 与 `diff.ts`。
 
-- **`log` 的 argv 整条是字面量，只有三种形态**：列表 `log --no-show-signature --no-color -z --format=%H%x00%P%x00%an%x00%at%x00%s%x00%b --max-count=<n> --skip=<n> <起点> --`；单条提交是同一串去掉 `--skip`、`--max-count=1`；incoming 是同一串去掉 `--skip`、起点换成范围 `<head>..<upstream>`、`--max-count=51`。冒烟逐段钉着它。
+- **`log` 的 argv 整条是字面量，只有三种形态**：列表（`--max-count` + `--skip` + 起点）、单条提交（`--max-count=1`）、incoming（起点换成范围 `<head>..<upstream>`、不翻页）。三种共用 `--no-show-signature --no-color -z` 与一串固定六段的 `--format`，以 `--` 收尾。
   - **incoming 的两端都是请求带来的完整对象名**（HEAD oid 与前端在 refs 里找到的上游 sha），各自过 `assertOid` 再拼成范围，**不写 `HEAD..@{u}`**：`@{u}` 是又一种要钉的 revision 语法，而上游的 sha 前端本来就在 refs 里有。回 `{ commits, hasMore }`，不翻页、不回锚点；任一端不是本仓库里的提交时 `log` 非零退出，一律 `not-found`。
   - **`--no-show-signature`**：`log.showSignature` 会对每条提交起一次 gpg。
   - **不带 `-p` / `--stat` / 任何 diff 选项**：`log` 一算 diff，`diff.external` 与 textconv 就在射程内。
-  - **`-z` + 固定六段**：根提交的 `%P` 是空段不是缺段。正文含 NUL 也不错位——git 输出 `%b` 时在第一个 NUL 处截断，每条恒为六段（`history.test.ts` 拿真 git 钉着）。
+  - **`-z` + 固定六段**：根提交的 `%P` 是空段不是缺段。正文含 NUL 也不错位——git 输出 `%b` 时在第一个 NUL 处截断，每条恒为六段。
 - **`sha` / `head` 只认完整十六进制对象名**（`^[0-9a-f]{40}([0-9a-f]{24})?$`），`--` 收尾：它们拼在 revision 位置，`GIT_LITERAL_PATHSPECS` 管不到，`--output=<路径>` 在那里就是一次写文件。
 - **对象名合法不等于是本仓库里的一个提交**。详情、补丁、图片三条路共用 `resolveCommit`：一次 `log -1` 同时校验与取元数据，**判据是回来的那条正好就是问的这个 sha**——`log` 对不存在的对象退 128，对树与 blob 却退 0、输出为空，对附注标签则剥到它指向的提交，只看退出码总漏一种。失败一律 `not-found`。**对比端也只在这里定一次**，否则三条路可能对着三个不同的父在比。
 - **分页是「锚点 + skip」，不是「从 HEAD 往下数」**：第一页从 `HEAD` 起，回来的第一条 oid 写进响应的 `head`；之后每页以它为起点再 `--skip`。按 HEAD 数时 agent 中途提交会让第二页重复第一页的最后一条。一页 50 条，取 51 条判 `hasMore`。
-  - **HEAD 取不到时再问一次 `rev-parse --verify --quiet HEAD`**（`repo.ts` 的 `headOid`，「未出生」的判据只此一份）：未出生退 1，回 `{ head: null, commits: [], hasMore: false }`；指着一个读不出来的提交却退 0，那是真实故障、如实报错——`log` 对两者都退 128，只看它会把故障说成 `No commits yet`。
+  - **HEAD 取不到时再问一次 `rev-parse --verify --quiet HEAD`**（「未出生」的判据只此一份）：未出生退 1，回 `{ head: null, commits: [], hasMore: false }`；指着一个读不出来的提交却退 0，那是真实故障、如实报错——`log` 对两者都退 128，只看它会把故障说成 `No commits yet`。
 - **一次提交改了哪些文件：`diff --no-ext-diff --no-textconv <parent> <sha> --name-status -z -M`**。重命名占**三段**（`R<score>` + 旧 + 新）。状态字母只认 `A` / `M` / `D` / `R` / `T`。
-- **父提交是第一父**（`resolveCommit` 带回的 `%P`）：合并提交展示的是「相对主线带进来了什么」，与 GitHub、VS Code Timeline 同口径。组合 diff 不做——diff2html 解析不了。**根提交对比空树**（`repo.ts` 那份常量，按 sha 长度定格式）。**浅克隆的边界不是根提交**：它的 `%P` 同样为空，拿空树比会把整仓报成全新增。`%P` 为空时读共享 git 目录下的 `shallow` 文件，命中则文件清单为空并标 `shallow`、补丁与图片回 `unsupported`。不缓存——`fetch --deepen` 会改它。
+- **父提交是第一父**（`resolveCommit` 带回的 `%P`）：合并提交展示的是「相对主线带进来了什么」，与 GitHub、VS Code Timeline 同口径。组合 diff 不做——diff2html 解析不了。**根提交对比空树**（与「空仓库」同一份常量，按 sha 长度定格式）。**浅克隆的边界不是根提交**：它的 `%P` 同样为空，拿空树比会把整仓报成全新增。`%P` 为空时读共享 git 目录下的 `shallow` 文件，命中则文件清单为空并标 `shallow`、补丁与图片回 `unsupported`。不缓存——`fetch --deepen` 会改它。
 - **单个文件的补丁与工作区 diff 共用三道闸**：先 numstat 判二进制与行数（按路径挑、按合计算），再带 `maxStdoutBytes` 取补丁。拒绝时的 `size` 用 `cat-file -s` 取新侧 blob（删除则旧侧），与工作区 diff 报同一个数；只在拒绝分支上才问。
 - **图片两侧都读对象库**：旧侧 `<parent>:<旧路径或路径>`、新侧 `<sha>:<路径>`，同两条 `cat-file` 字面量；`version` 分别是两个对象名，永不换内容。`/api/blob` 带 `commit=<sha>` 即走这一路。
 
@@ -101,7 +101,7 @@ git diff --no-ext-diff --no-textconv <range> --unified=<3|50000> --inter-hunk-co
 
 状态条上那个分支列表**只往白名单里加了 `for-each-ref` 一条**，代码在 `server/git/refs.ts`。**禁用 `branch` / `tag` 列 ref**：那两个子命令本身会写，白名单只看子命令。
 
-- **argv 整条是字面量**：`for-each-ref --format=<…> refs/heads refs/remotes refs/tags`，冒烟逐段钉着。`%(signature)` 一族 atom 会起 gpg；没有任何来自请求的参数。
+- **argv 整条是字面量**：`for-each-ref --format=<…> refs/heads refs/remotes refs/tags`。`%(signature)` 一族 atom 会起 gpg；没有任何来自请求的参数。
 - **格式是十一段、每段以 `%00` 收尾**（本体六样 + `%(*…)` 解引用形态）。`for-each-ref` 没有 `-z`，按 NUL 切开后每组十一段、下一条前面多一个换行，剥掉即可。只用 git 2.11 已有的 atom，前缀在 JS 里剥。
 - **`%(symref)` 非空的跳过**（`refs/remotes/origin/HEAD`，否则同一提交画两行）。
 - **附注标签取 `%(*…)` 那几段**：本体是标签对象。轻量标签的 `%(*…)` 全空，用本体。**剥出来的未必是提交**：可能是树，老 git 对标签套标签只剥一层——判据是 `%(*objecttype)` 不是 `commit` 时只留对象名，不把内层标签的说明当提交主题。
@@ -118,7 +118,7 @@ git -c core.quotePath=false -c grep.column=false -c submodule.recurse=false \
     grep --no-color --no-textconv -I -z -n -F --untracked [-i] [-w] -e <查询> --
 ```
 
-- **argv 除 `-i` / `-w` 两个可选位与 `-e` 后那一个值外整条是字面量**，冒烟逐段钉着。两个 `-c` 由 `run.ts` 按子命令注入（与 `diff` 那两道开关同一处），调用点只写 `grep …`。
+- **argv 除 `-i` / `-w` 两个可选位与 `-e` 后那一个值外整条是字面量**。两个 `-c` 由 `run.ts` 按子命令注入（与 `diff` 那两道开关同一处），调用点只写 `grep …`。
 - **`-c grep.column=false`**：用户配了 `grep.column` 时每条记录多出一段列号，`-z` 切分整体错位、不报错。`--no-column` 要 git 2.19，而 `-c` 一个老 git 不认的键是静默忽略——下限 2.11 上也成立。
 - **`-c submodule.recurse=false`**：配了它时 `--untracked` 直接 fatal（`--untracked not supported with --recurse-submodules`，exit 128），症状是「这台机器上搜索永远报错」。`--no-recurse-submodules` 要 2.12，理由同上。
 - **`-I` 不能省**：不带时二进制文件吐的是一行 `Binary file <路径> matches`，没有 NUL 段，解析器会把它与下一条粘成一条。
@@ -128,8 +128,8 @@ git -c core.quotePath=false -c grep.column=false -c submodule.recurse=false \
 - **退出码 1 是「没有命中」，不是错误**；`runGit` 不抛非零，按码分流，其余非零照常是错误。
 - **`-z` 记录是 `<路径>\0<行号>\0<内容>\n`**，按「读到 NUL → 读到 NUL → 读到换行」顺序解析：路径可以含换行；`-I` 只看前 8000 字节，之后的内容里可能有 NUL。
 - **体积两道上限，任一触发即 `truncated`**：stdout 8MB 时掐断 git、**收下已到的字节**（`runGit` 的 `truncate` 档，与 diff 那条「超限即 `overflow`」相反——这里要的是前 N 条，不是全有或全无），丢掉最后一条不完整的记录；再按 2,000 行截。git 2.38 才有 `-m`，靠不住。
-- **命中区间由后端算**（UTF-16 下标，前端只切段着色）：同一个字面量在 JS 里以 `RegExp` 重找一次，`-i` 对 `i` 标志、`-w` 对 `(?<![A-Za-z0-9_])…(?![A-Za-z0-9_])`——与 git 的字词集一致。找不出区间的行照常返回、只是不高亮。**超过 300 字符的行裁成首个命中前后各一截**、两端补 `…`、区间随之平移：一份压缩过的 JS 一行就是整个文件。
-- 搜索不写 `.git`：实测把一个已跟踪文件 stat 弄旧后跑 `grep`，`.git/index` 不变（同一状态下的默认 `git status` 会重写它）。
+- **命中区间由后端算**（UTF-16 下标，前端只切段着色）：同一个字面量在 JS 里以 `RegExp` 重找一次，`-w` 的字词集与 git 一致（`[A-Za-z0-9_]`）。找不出区间的行照常返回、只是不高亮。**超过 300 字符的行裁成首个命中前后各一截**、两端补 `…`、区间随之平移：一份压缩过的 JS 一行就是整个文件。
+- 搜索不写 `.git`：stat 过期时 `grep` 也不重写 `.git/index`（实测见 [`../decisions/git.md`](../decisions/git.md)）。
 
 ## 全量文件列表
 
@@ -224,7 +224,6 @@ HEAD 不存在时 `git diff HEAD` 直接 fatal，改用**空树对象哈希**作
 
 - 按 `git rev-parse --show-object-format` 区分两个**硬编码**常量。**不要**用 `git hash-object -t tree /dev/null`（Windows 不可移植），也**不要**用 `git mktree`（会写对象库）。
 - **`--show-object-format` 非零退出即按 SHA-1**：它比 git 下限 2.11 新，而那个区间的 git 造不出 SHA-256 仓库。
-- 取值：SHA-1 `4b825dc642cb6eb9a060e54bf8d69288fbee4904`、SHA-256 `6ef19b41225c5369f1c104d45d8d85efa9b057b53b14b4b9b939dd74decc5321`。
 
 ## detached HEAD 与进行中的操作
 

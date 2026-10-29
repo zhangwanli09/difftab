@@ -1,6 +1,6 @@
 # 前端：界面文案、页面骨架与变更列表
 
-> **TypeScript + Preact + @preact/signals，经 Vite 构建为静态产物**，由后端直接托管。本文件管页面骨架与左栏的变更列表，文件浏览器、提交历史与分支列表在 [`sidebar.md`](sidebar.md)；右侧面板（编辑器标签页、diff / 文件两个视图的外壳、文件视图）在 [`editors.md`](editors.md)，diff 怎么渲染在 [`diff-render.md`](diff-render.md)，配色与层叠隔离在 [`style.md`](style.md)。选型与被排除的做法见 [`../decisions/web.md`](../decisions/web.md)，门禁见 [`../gates.md`](../gates.md)。标「有断言」的条目由 `test/unit/web/` 钉住、不进红线。
+> **TypeScript + Preact + @preact/signals，经 Vite 构建为静态产物**，由后端直接托管。本文件管页面骨架与左栏的变更列表，文件浏览器、提交历史与分支列表在 [`sidebar.md`](sidebar.md)；右侧面板在 [`editors.md`](editors.md) 与 [`views.md`](views.md)，diff 怎么渲染在 [`diff-render.md`](diff-render.md)，配色与层叠隔离在 [`style.md`](style.md)。选型与被排除的做法见 [`../decisions/web.md`](../decisions/web.md) 与 [`../decisions/editors.md`](../decisions/editors.md)，门禁见 [`../gates.md`](../gates.md)。标「有断言」的条目由 `test/unit/web/` 钉住、不进红线。
 
 ## 界面文案与术语
 
@@ -40,9 +40,9 @@
   - **双击复位到 320px；键盘可达**：`role="separator"` + `aria-value*` + `tabIndex=0`，方向键与 Home / End 可调。
   - **上限还要随窗口收，这道交给 CSS**：内联 `max-width: min(960px, calc(100vw - 320px))` + `min-width: 200px`，窄窗口里 diff 面板不会被挤到 0；signal 存的是用户选的宽度，窗口拉回时自己回到原档，不必监听 `resize`。**代价是选的与屏幕上的可能不等**：拖动与键盘的起点读 `shownSidebarWidth()`（按式子算，不量 `offsetWidth`——signal 到 DOM 的绑定是异步的，连发方向键会读到旧值），否则窄窗口里的拖动全落在看不见的区间里。
   - **拖动时一个组件都不重渲染**：宽度以 signal 本身交给 `style`，由 `@preact/signals` 直接改 DOM；在 `App` 里读 `.value` 等于每个 pointermove 重渲整棵树。
-  - **宽度刷新后保留**：记在 `localStorage`，只活到同一实例的刷新（跨不了实例，见「主题开关」）。**拖动中不写、松手写一次**——每个 pointermove 写一次是白费的同步 I/O；键盘与双击复位不经过拖动，改了即写。接线是 `syncPanelSizes()`，三把把手的取值同住一处，在 `render()` 之前读回。
+  - **宽度刷新后保留**：记在 `localStorage`，只活到同一实例的刷新（跨不了实例，见「主题开关」）。**拖动中不写、松手写一次**——每个 pointermove 写一次是白费的同步 I/O；键盘与双击复位不经过拖动，改了即写。
   - 拖宽左栏可能让 diff 面板跨过并排阈值而换版式：**不为此做任何事**，`outputFormat` 量的本来就是面板自身的 border box；手动固定过版式就不再跟（见 [`diff-render.md`](diff-render.md) 的「版式：按面板宽度自动切，可手动固定」）。
-- **右侧 `<section>` 里是一到两个编辑器组**（`EditorGroup.tsx`，分屏规则见 [`editors.md`](editors.md) 的「分屏」）。两组时左组宽度是 `splitPercent` 百分比、以 signal 本身交给 `style`（同左栏，拖动时不重渲染），左组右边框上叠一把竖向把手，与左栏那把同一个 `Sash.tsx`；比例与左栏宽度一样刷新后保留。**把手挂在 `App` 里两组之间一个零宽的 `relative` 槽里，不挂进左组**：挂进去时左组「被点到即成为焦点组」那条会把拖把手也算进去，焦点组跟着跳。**`sashDragging` 记的是哪一把（`sidebar` / `pane` / `split`）连同轴向，不只记轴向**：两把竖向把手同轴，按轴向判时拖一把、另一把的握把也跟着常亮。
+- **右侧 `<section>` 里是一到两个编辑器组**（`EditorGroup.tsx`，分屏与两组之间那把把手见 [`editors.md`](editors.md) 的「分屏」）。**`sashDragging` 记的是哪一把（`sidebar` / `pane` / `split`）连同轴向，不只记轴向**：两把竖向把手同轴，按轴向判时拖一把、另一把的握把也跟着常亮。
 
 ## Quick Open 与全局快捷键
 
@@ -83,10 +83,10 @@
 
 - **版式只活在本次页面里，不进 `localStorage`**（跨不了实例，见「主题开关」）。状态是 `state/change-tree.ts` 的一个模块级 signal。
 - **分组标题两种版式都留着**：三组是 git 语义（同一个文件可同时在两组），树只是组内的排法。
-- **组内按 VS Code 的 `comparePaths` 排序，不沿用 git 的字节序**（`store.ts` 的 `comparePaths`）：逐段比，**同一层里文件排在子目录之前**，段内用 numeric、不分大小写的 collator。git 的字节序下 `src/pages-x/…`（`-` 0x2D）排在 `src/pages.json`（`.` 0x2E）前面，与读者在编辑器里看到的那份对不上；porcelain v2 先吐已跟踪、再吐 `?`，整组重排也顺带把未跟踪文件归到它们该在的位置。
+- **组内按 VS Code 的 `comparePaths` 排序，不沿用 git 的字节序**（`store.ts` 的 `comparePaths`）：逐段比，**同一层里文件排在子目录之前**，段内用 numeric、不分大小写的 collator。字节序与读者在编辑器里看到的那份对不上；porcelain v2 先吐已跟踪、再吐 `?`，整组重排也顺带把未跟踪文件归到它们该在的位置。
 - **冲突一律印 `!`，悬停给出原始 XY**（`Conflict (UD)`）。VS Code 把 `DU` / `UD` 印成 `D`，这里不跟：`Files` 档只拿得到归并后的 `ChangeCode`，跟了的话同一个文件在两档字母不一样。
 - **分组标题 `sticky top-0` 必须带 `z-10`**：每一行的 group div 是 `relative`，与标题同为 positioned、同为 `z-index: auto` 时按 DOM 顺序绘制，滚到标题底下的行会画在标题上面（有断言）。
-- **树由 `buildChangeTree(files)` 从路径纯算出来，用 `useMemo` 不用 `useComputed`**：`files` 是 prop 不是 signal，computed 不会随它重算——SSE 刷新后树停在旧的那份。每层目录在前、文件在后，各自沿用传入列表的顺序不另排序——传入的已按 `comparePaths` 排好，目录按首次出现的先后插入，于是同层目录与同层文件各自已是 collator 序。
+- **树由 `buildChangeTree(files)` 从路径纯算出来，用 `useMemo` 不用 `useComputed`**：`files` 是 prop 不是 signal，computed 不会随它重算——SSE 刷新后树停在旧的那份。每层目录在前、文件在后，各自沿用传入列表的次序、不另排序。
 - **单子目录链紧凑合并**（VS Code 的 compact folders）：只有一个子节点且它是目录时合并成 `src/web/components`，`path` 取链尾。有文件的目录不合并。
 - **折叠态记 collapsed 集合（`collapsedChangeDirs`），不记 expanded**：默认全展开，SSE 新冒出来的目录不用登记就是展开的；记 expanded 时漏登记的新目录默认收起——页面上只是「刚改的文件没显示出来」。
 - **折叠键带作用域**：变更列表是分组 id（`${groupId}:${path}`），提交是 `commit:${sha}:${path}`。同一个目录可同时出现在两组、或两条提交里，不带作用域时折 Staged Changes 里的 `src` 会连 Changes 里的一起折掉。陈旧的键不清理。
@@ -104,7 +104,7 @@
 - **按钮是行按钮的兄弟，不是孩子**（按钮里不能套按钮）。**行按钮与按钮外壳同住一个 `group relative` 的 div（`ROW_GROUP`），`<li>` 本身不是 group**：目录行的 `<li>` 还套着子 `<ul>`，group 挂在那里时悬停任一后代整段目录行都会亮。四种行都走 `TreeRow`，形状只说一遍。
 - **显隐走 `display`，不走透明度**：透明的按钮是一块看不见却能点的死区。键盘那半条用 **`has-focus-visible` 不是 `focus-within`**——鼠标点过按钮后焦点留在它身上，`focus-within` 会让按钮在鼠标移开后仍钉在行上。**触屏常驻显示（`pointer-coarse:flex`）不能漏**：Tailwind v4 把 `group-hover` 包在 `@media (hover: hover)` 里，触屏上它从不成立，触摸焦点也不算 focus-visible——少了它触屏上从来没人见过这两枚按钮。
 - **出现时文字真的重新排版**：行按钮里有一个与按钮组等宽的占位，与按钮外壳**共用同一个 `REVEAL` 常量**——各写一份时漂开就是文字被挤开而按钮没出来（或反过来）。占位的枚数由 `TreeRow` 从 `actions` 算出，不另写。不常驻预留（每行永久少一截文字），也不覆盖在文字上（得补一块随选中态变色的遮罩）。
-- **按钮外壳的锚点按这一行有没有状态记号二选一**：有记号时锚在状态位左侧，偏移量是行骨架右内边距 + 状态位宽 + 间距之和（状态位宽只有 `STATUS_WIDTH` 一份），改骨架间距或状态位宽度时这道加法要跟着改；**没有记号的行（没改动的文件、目录、提交行）贴行骨架的右内边距，不补空槽**——锚在状态位左侧时按钮右边空着一截，看着像没对齐。两种锚点都由 `TreeRow` 按 `badge` 判，两种行里占位的右缘都正好落在外壳右缘（无记号时它是行按钮的最后一个在流项，有记号时其后只剩间距与状态位），文字被截断时正好落在按钮底下。代价是同一列表里有记号与无记号的行，按钮不在同一列。
+- **按钮外壳的锚点按这一行有没有状态记号二选一**（`TreeRow` 按 `badge` 判）：有记号时锚在状态位左侧，偏移量是行骨架右内边距 + 状态位宽 + 间距之和，改骨架间距或状态位宽度时这道加法要跟着改；**没有记号的行（没改动的文件、目录、提交行）贴行骨架的右内边距，不补空槽**——锚在状态位左侧时按钮右边空着一截，看着像没对齐。两种行里占位的右缘都正好落在外壳右缘（无记号时它是行按钮的最后一个在流项，有记号时其后只剩间距与状态位），文字被截断时正好落在按钮底下。代价是同一列表里有记号与无记号的行，按钮不在同一列。
 - **行的悬停底色画在 group div 上，不画在行按钮上**：指针移到按钮上时已离开行按钮，底色挂在那里会在那一刻消失。
 - **工作区里已不存在的文件不画 `Open file`**（它唯一能打开的是一条错误）。判据是 `shared/protocol.ts` 的 `isAbsentFromWorktree`：冲突条目只有 `DD` 是文件不在，非冲突看 `unstaged === 'D'` 或 `D.`——**只看 `unstaged === 'D'` 会把 `UD` 误判成不在**。已删除的文件照画 `Copy path`。
 - **图标**：`Open file` 是 Lucide `FileInput`（最贴近 codicon `go-to-file`，不用 file tab 那枚种类标识 `FileCode`），`Copy path` 是 Lucide `Copy`。**两枚静止时与状态字母同档淡化，指到哪枚哪枚恢复满色**：淡化画在动作外壳 `ACTION_SHELL` 上按子选择器逐枚生效，`IconButton` 本身不动——「与状态字母同档」是这个槽位的不变量，站在别处的按钮不该淡。同样走 `opacity` 不走 `/75`。
@@ -116,7 +116,7 @@
 - **「跟随系统」是属性不存在，不是 `data-theme="system"`**：CSS 不必为它写第三条规则，`localStorage` 里也只有两个合法值。
 - 接线在 `state/theme.ts`：一个模块级 signal + 一个 `effect` 接到 `document.documentElement`。**同一个 effect 顺带写 `localStorage`**——拆开就会出现「切了但没记住」，只在刷新后才看得见。
 - **`localStorage` 的读与写各自 `try/catch`，收在 `state/storage.ts` 一处**（主题与把手尺寸共用）：Safari 隐私模式下取值就会抛。抛了只在内存里生效；脏值退回跟随系统。
-- **进 `localStorage` 的只有两类：主题（key `difftab:theme`）与三把把手调出的尺寸（`difftab:sidebar-width` / `difftab:pane-percent` / `difftab:split-percent`）**，读写纪律相同。**但「跨会话」目前只到同一实例的刷新为止**：后端 `listen(0)` 端口随机，而 `localStorage` 按 origin（含端口）隔离，换一次启动就归零。**没有任何门禁看得见**（`theme.test.ts` 跑在同一个 happy-dom origin 里）；被排除的修法见 [`../decisions/web.md`](../decisions/web.md)。**把手尺寸因此也只保证「刷新后还在」**——那正是要它落盘的全部理由：拖好的版面不该被一次刷新打回默认。**其余页面状态——列表版式、分区折叠态、标签栏——不进 `localStorage`**：跨实例存不住，而单为刷新去记它们没人要过；要加时照把手这一份走，读写经 `storage.ts`、脏值退回缺省。
+- **进 `localStorage` 的只有两类：主题与三把把手调出的尺寸**，读写纪律相同。**但「跨会话」目前只到同一实例的刷新为止**：后端 `listen(0)` 端口随机，而 `localStorage` 按 origin（含端口）隔离，换一次启动就归零。**没有任何门禁看得见**（`theme.test.ts` 跑在同一个 happy-dom origin 里）；被排除的修法见 [`../decisions/web.md`](../decisions/web.md)。**把手尺寸因此也只保证「刷新后还在」**——那正是要它落盘的全部理由：拖好的版面不该被一次刷新打回默认。**其余页面状态——列表版式、分区折叠态、标签栏——不进 `localStorage`**：跨实例存不住，而单为刷新去记它们没人要过；要加时照把手这一份走，读写经 `storage.ts`、脏值退回缺省。
 - **在 `render()` 之前接线**，但**首帧仍可能闪一下系统色**：CSP 是 `script-src 'self'`，塞不了惯用的 pre-paint 内联脚本。代价只落在选了与系统相反档的人身上、闪一帧，为它开 `unsafe-inline` 或维护脚本 hash 不划算。
 - 控件只画图标，`title` 与 `aria-label` 分别是 `Follow system` / `Light` / `Dark`——三个词会跟项目名抢宽度。图标是 Lucide `Monitor` / `Sun` / `Moon`；`lucide-preact` 只进 `devDependencies`、构建期 tree-shake。
 
@@ -127,17 +127,16 @@
 - **仓库名排在产品名之前**：标签被压窄时从尾部截断，产品名在前时一排标签长得一模一样。
 - 取不到仓库名时退回纯 `difftab`，不画占位符。
 - **仓库名是用户数据，不受「一律英文」约束**，与 CJK 门禁不冲突——它是运行时的值，不落在产物里。
-- 接线在 `web/state/title.ts`，一个 `effect` 把 `repoState` 接到 `document.title`，格式与接线同住一处；不挂在组件生命周期上。`index.html` 的 `<title>difftab</title>` 是 JS 跑起来之前的兜底。**`PRODUCT_NAME` 由这里导出给顶栏共用**。
+- 接线是 `state/title.ts` 里一个 `effect`，不挂在组件生命周期上。`index.html` 的 `<title>difftab</title>` 是 JS 跑起来之前的兜底。
 
 ## 品牌标识
 
 **符号是「一段 diff hunk」：三条圆角色条，上下文（灰）、删除（红）、新增（绿），没有外框，没有字标。** 24 网格（与 Lucide 同一坐标系），包围盒横竖都以 12 为中心；由填充不由描边——16px 下 2 单位描边的线稿糊成一团。为什么换成这版、颜色为什么固定、字标为什么退役，见 [`../decisions/web.md`](../decisions/web.md)。
 
-- **几何只有一份，在 `brand/geometry.mjs`**（纯 JS + 一份 `.d.mts`）：`components/Logo.tsx` 与 `scripts/logo.mjs` 都从它取。写成 `.mjs` 是因为脚本零依赖、import 不了 TS；反过来让组件 import 脚本会把拉起 Chrome 的模块打进前端产物。改符号只改这一份再 `node scripts/logo.mjs`（重写 `assets/*.svg`，回写官网 `site/index.html` 的页眉符号；有 Chrome 时再渲 PNG 并回写 `src/web/index.html` 与 `site/index.html` 同一段 favicon）。**没重跑时红的是 `test/unit/web/logo.test.ts`**，几处都钉。
+- **几何只有一份，在 `brand/geometry.mjs`**（纯 JS + 一份 `.d.mts`）：`components/Logo.tsx` 与 `scripts/logo.mjs` 都从它取。写成 `.mjs` 是因为脚本零依赖、import 不了 TS；反过来让组件 import 脚本会把拉起 Chrome 的模块打进前端产物。改符号只改这一份再 `node scripts/logo.mjs`，它回写哪几处见 [`build.md`](build.md) 的「官网」。
 - **红绿是固定的品牌色，明暗两档不切，常量与几何同住 `geometry.mjs`，不进 `app.css`**：favicon、社交预览、README 头图三处于是逐字节相同。不用 `--color-git-added` / `--color-git-deleted`（给文字调的，铺成色块不好看），也不另立 token（CSS 里没有引用处，会被 Tailwind 裁掉）。**只有上下文那条跟主题走**：组件里 `fill: currentColor` 跟顶栏文字色；独立 SVG 内嵌一条媒体查询，取值由脚本从 `app.css` 的 `light-dark()` 里读，不另抄一份。
 - **顶栏那枚由 `createLucideIcon` 造出来**，与其它图标同一类型、走同一个 `Icon` 外壳。**每条 rect 自带 `stroke: 'none'`**——Lucide 把描边写在 `<svg>` 上，rect 继承后会被描一圈边，症状只是「色条偏胖发暗」。
 - **没有字标**：README 头图是 `assets/mark.svg` 与「difftab」同住一个 `<h1>`（只能用 `align`，GitHub 的 sanitizer 不放行 `style`）。社交预览里的文字是 Chrome 截成 PNG 后定型的，符号与名字的间距按符号的**可见包围盒**量、不按 24 网格，否则右侧留白叠进间距。
 - **favicon 是两条 data URI 的 `<link rel="icon">`，不加静态路由**：CSP 已放行 `img-src data:`，加文件则 `assets.ts` 白名单与冒烟的 `WEB_ASSETS` 各要补一处。**SVG 那条排在 PNG 之后**——Chrome / Firefox 取靠后的那条，Safari 不认 SVG favicon、退到 PNG。
-- **GitHub 社交预览没有 API**：`assets/social-preview.png` 要手工上传到仓库 Settings，改了 logo 就得再传一次。
 - **`assets/` 刻意不进 `files`**：它只给 GitHub、README 与官网构建用（`check:pack` 会拦）。
-- **README 截图 `assets/screenshot-{light,dark}.png` 是一次性手工产出，明暗两张一起换**——只换一张时两种主题的读者看到的是两个版本的界面。拍的是临时造的演示仓库，作者用占位名、画面里不带本机路径；截前把指针移出左栏，否则悬停那一行连同行内按钮一起入镜。**视口 1680×1000、DPR 1**：这个宽度下 diff 自动取并排版式，而输出宽度约等于官网正文（≈ 880 CSS px）在 2× 屏上的设备像素，再高的 DPR 只是让浏览器多缩一道；明暗用浏览器的 `prefers-color-scheme` 切，主题偏好留在 `system`。**拍完用 pngquant 压成调色板 PNG 再入库**（`pngquant --quality=80-95 --speed 1 --strip --force --ext .png assets/screenshot-*.png`）——真彩 PNG 每张多出几倍体积、却照常显示，由 `screenshots.test.ts` 钉住；官网 `<img>` 手写的 `width` / `height` 也随之要改，同一份测试会拦。暗色那张走 `<picture>` 的 `srcset`，写 `main` 分支的 raw 绝对地址：npm 改写相对路径（见 `../gates.md`「发布产物约定」）只确认过 `<img src>`，代价是合并前 PR 预览里暗色那张取不到。
+- **README 截图 `assets/screenshot-{light,dark}.png` 是一次性手工产出，明暗两张一起换**——只换一张时两种主题的读者看到的是两个版本的界面。拍的是临时造的演示仓库，作者用占位名、画面里不带本机路径；截前把指针移出左栏，否则悬停那一行连同行内按钮一起入镜。**视口 1680×1000、DPR 1**：这个宽度下 diff 自动取并排版式，而输出宽度约等于官网正文（≈ 880 CSS px）在 2× 屏上的设备像素，再高的 DPR 只是让浏览器多缩一道；明暗用浏览器的 `prefers-color-scheme` 切，主题偏好留在 `system`。**拍完用 pngquant 压成调色板 PNG 再入库**（`pngquant --quality=80-95 --speed 1 --strip --force --ext .png assets/screenshot-*.png`）——真彩 PNG 每张多出几倍体积、却照常显示；官网 `<img>` 手写的 `width` / `height` 也随之要改。两条都由 `screenshots.test.ts` 拦。暗色那张走 `<picture>` 的 `srcset`，写 `main` 分支的 raw 绝对地址：npm 改写相对路径（见 `../gates.md`「发布产物约定」）只确认过 `<img src>`，代价是合并前 PR 预览里暗色那张取不到。

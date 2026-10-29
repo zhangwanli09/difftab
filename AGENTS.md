@@ -54,7 +54,8 @@
 | `src/server/{cli,http,shared}/`、`src/server/main.ts`、`bin/`：CLI 入口与 Node 下限、进程生命周期与单实例、HTTP/SSE 协议、token 与 CSP | `docs/design/server.md` |
 | `src/web/` 左栏：界面文案、页面骨架、变更列表、侧栏 tab、主题开关、Quick Open 与全局快捷键、标签页标题、logo / favicon / 品牌资产 | `docs/design/web.md` |
 | `src/web/` 左栏：文件树、`Search` 档、提交历史分区、分支列表与 quick pick 外壳 | `docs/design/sidebar.md` |
-| `src/web/` 右侧：编辑器标签页（预览 / 固定 / 关闭 / SSE 收编 / commit tab）、文件视图、图片视图 | `docs/design/editors.md` |
+| `src/web/` 右侧：编辑器标签页（预览 / 固定 / 关闭 / SSE 收编 / commit tab）、分屏、标签栏与动作区按钮 | `docs/design/editors.md` |
+| `src/web/` 右侧正文：视图外壳（`Panel`）、文件视图（换行 / 改动标记 / 跳行 / markdown 渲染）、整次提交与工作区改动的多文件视图、图片视图 | `docs/design/views.md` |
 | `src/web/diff/`、`DiffView.tsx`、`state/layout.ts`：补丁解析与配对、diff 表格、hljs 清单、版式切换、产物体积 | `docs/design/diff-render.md` |
 | `src/web/styles/`，以及任何组件里的颜色与层叠：Tailwind token、主题、diff 行的底色 | `docs/design/style.md` |
 | `test/`、`scripts/`、`site/`（官网）、`biome.json`、`*.config.ts`、CI、`package.json`：模块与目录归属、依赖方向、只读性验证、构建与 CI 分层、pnpm 设置 | `docs/design/build.md` |

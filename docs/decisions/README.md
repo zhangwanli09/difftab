@@ -16,6 +16,7 @@
 | [`watch.md`](watch.md) | 文件监听 |
 | [`runtime.md`](runtime.md) | Node 运行时与进程 |
 | [`web.md`](web.md) | 前端渲染与体积 |
+| [`editors.md`](editors.md) | 右侧面板：标签页、分屏与正文视图 |
 | [`style.md`](style.md) | 样式层叠 |
 | [`security.md`](security.md) | 只读性验证与本地安全 |
 | [`toolchain.md`](toolchain.md) | 工具链与发布 |
