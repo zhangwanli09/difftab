@@ -51,7 +51,7 @@ function SearchBox() {
 
   return (
     <div class="shrink-0 px-3 py-2">
-      <div class="flex items-center rounded-sm border border-panel-border bg-editor-background focus-within:border-focus-border">
+      <div class="flex items-center rounded-sm border border-panel-border bg-editor-background">
         <input
           ref={input}
           type="text"

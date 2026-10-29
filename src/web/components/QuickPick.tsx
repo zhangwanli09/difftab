@@ -175,7 +175,7 @@ export function QuickPick<T, C>({
           active.value = 0;
         }}
         onKeyDown={onKeyDown}
-        class="mb-1 rounded-sm border border-focus-border bg-editor-background px-2 py-1 outline-none"
+        class="mb-1 rounded-sm border border-panel-border bg-editor-background px-2 py-1 outline-none"
       />
       {message !== null && <p class="px-2 py-1 text-description-foreground">{message}</p>}
       <div id={listboxId} role="listbox" class="max-h-110 overflow-auto">
