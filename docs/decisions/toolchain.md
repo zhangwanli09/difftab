@@ -3,6 +3,7 @@
 > 收录规则与实测环境见 [`README.md`](README.md)。
 
 - **CI 拆成 build / matrix 两层，是因为工具链的 Node 要求高于产品运行时下限 22.0.0**（npm registry 实测）：`tsdown` 的 engines 为 `^22.18.0 || >=24.11.0`、`vite` 为 `^20.19.0 || >=22.12.0`。
+- **Vitest 4 在 Node ≥ 25 上装不上 happy-dom 的 `localStorage`**（Node 26.13.0 / Vitest 4.1.10 实测，并核对 4.1.12 与 5.0.5 的产物源码）：Node 25 起 `globalThis.localStorage` 是一个不可枚举的 getter，没给 `--localstorage-file` 时返回 `undefined` 并打一条 ExperimentalWarning。Vitest 4 的 `getWindowKeys` 对「`k in global` 为真」的键只放行它内置 KEYS 清单里的，而清单里没有 `localStorage`，于是全局上留着的是 Node 那个 `undefined`：`sidebar.test.tsx` 与 `theme.test.ts` 共 18 条以 `Cannot read properties of undefined (reading 'clear')` 失败。4 线最新的 4.1.12 未修；5.0 把 `localStorage` 加进清单，并改为保存描述符而不是取值，以免触发 Node 那个 getter 的警告。**CI 当时是绿的**：build 作业还钉在 Node 24，只有装了 26 LTS 的本机红。
 - **两条与打包有关的入口形态**（npm registry 实测）：`highlight.js` 的 `exports` 把 `./lib/core`、`./lib/languages/*` 映射到 ESM（`es/`），`./styles/*` 亦已导出；`@profoundlogic/hogan` 只有 CJS 入口（`main`，无 `module` / `exports`），需打包器的 CJS 互操作。
 - **冷启动与首屏都在预算的十几分之一**：node 启动 + `http.listen` + 一次 `git status --porcelain=v2 --branch -uall -z` 全程约 **30ms 墙钟**，对 300ms 预算充裕；浏览器侧 `/api/state` 在 **47ms** 返回，`first-contentful-paint` **56–72ms**（三次刷新）。
 - **npm 的重名判据是归一化后的名字，不是精确名**：npm 把包名小写化并去掉 `-` `_` `.` 再与已有包比对，因此 `GET /<名字>` 返回 404 **查不出重名**——原定的 `gitglance` 正是这样与他人已占用的 `git-glance` 归一同名，会在发布那一刻被 registry 以 “too similar to existing package” 拒绝。去掉 `git` 前缀同时避开了 Git 商标政策对「以 git 开头命名软件」的建议。

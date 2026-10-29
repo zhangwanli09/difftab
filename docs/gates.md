@@ -33,7 +33,7 @@
 |---|---|---|
 | `pnpm lint`（`biome ci`） | 架构边界的 import 方向反了（`src/web` 反向 import `src/server`、`git`/`watch` 反向 import `http`/`cli`）——**只看 import 说明符，换个拿到 `child_process` 的方式就绕过去了** | build |
 | `pnpm typecheck` | 用到 Node 24+ 才有的内置 API 或超出 ES2023 的语法，而下限档要到 CI 跑完才发现 | build |
-| `pnpm test`（Vitest） | 解析器、三道校验、DOM 渲染路径的常规回归。`test-layout.test.ts` 另外钉住「用例目录放错就静默不跑」；`screenshots.test.ts` 钉住「重拍 README 截图后忘了压缩，README 与官网照常显示、只是每个访客多下几百 KB」 | build |
+| `pnpm test`（Vitest） | 解析器、三道校验、DOM 渲染路径的常规回归。`test-layout.test.ts` 另外钉住「用例目录放错就静默不跑」；`screenshots.test.ts` 钉住「重拍 README 截图后忘了压缩，README 与官网照常显示、只是每个访客多下几百 KB」；`ci-node-version.test.ts` 钉住「LTS 交替时只换了 build 作业的 Node，publish 在另一档上重新构建、inotify-quota 判到 C 档后 SKIP 变绿」 | build |
 | `pnpm test:smoke`（`node --test`，跑 `dist/`） | 产物层面的行为回归。**先 `pnpm build`**——它跑 `dist/`，产物比源码旧一轮时红的样子像「三道校验全坏了」 | matrix（三平台 × Node 22.0.x/24/26） |
 | 只读**主门禁**（`readonly.test.js`） | 产品发出了白名单外的 git 子命令。**自带一条「确实记到了东西」的正面断言**——否则白名单会对着空数组通过。**白名单只看子命令，看不见参数**，所以另有按参数钉的断言：`diff` 不带 `--no-index` / `--ext-diff` / `--output` 且紧跟着 `--no-ext-diff --no-textconv`，取补丁那几条恰好一个 `--unified=` 且值只能是 `3` / `50000`、带 `--inter-hunk-context=0`、`-w` 只以它自己出现（`runFullFlow` 对工作区 diff 与提交 diff 都要带上 `ignoreWhitespace=1` 与 `fullContext=1` 各取一次，否则这几条对着没出现过的形态通过），`cat-file` 之后只能是 `blob` / `-s`，`log`（列表、单条、incoming 三种形态）与 `for-each-ref` 的 argv 逐段等于字面量，`grep` 除 `-i` / `-w` 两个可选位与 `-e` 后那个值外逐段等于字面量（每条为什么见 `design/git.md`）。**覆盖面等于 `runFullFlow` 打过的端点**：新增一个端点却不把它加进那条流程，门禁不会红，只是那条路上的 git 调用一次都没被看过 | matrix |
 | 只读**第二层**（`readonly-git-dir.test.js`） | `.git` 被写了。A 半锁死 `.git` 抓会报错的写，B 半逐字节比对抓**不报错**的那种（漏设 `GIT_OPTIONAL_LOCKS=0`、`diff` 漏带 `diff.autoRefreshIndex=false` 都只有 B 半看得见）。两半各自带正面探针 | matrix |

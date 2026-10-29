@@ -17,7 +17,8 @@ on:
 
 # CI 分两层：
 #   build——tsdown 要求 Node ^22.18 || >=24.11、Vite 8 要求 >=22.12，均高于
-#              产品运行时下限 22.0.0，所以工具链只跑在一档较新的 Node 上；
+#              产品运行时下限 22.0.0，所以工具链只跑在一档较新的 Node 上，
+#              取当前的 Active LTS；
 #   matrix——测的是**用户真正拿到的产物**，三平台 × Node 22.0.x / 24 / 26，
 #              完全不执行安装、也不需要 pnpm。
 
@@ -27,7 +28,7 @@ concurrency:
 
 jobs:
   build:
-    name: build & static checks (Node 24)
+    name: build & static checks (Active LTS)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -40,9 +41,11 @@ jobs:
       # 也不用 corepack enable:Corepack 已不再随 Node 25+ 发行版分发。
       - uses: pnpm/action-setup@v6
 
+      # 跟着 Active LTS 换：build 落后一档时，只在新 Node 上红的东西 CI 看不见。
+      # 与 inotify-quota、release.yml 的 publish 同一个字面量，由 ci-node-version.test.ts 断言
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26
           cache: pnpm
 
       # LEFTHOOK=1 是必需的：lefthook 的 postinstall 在检测到 CI 时会**跳过**
@@ -191,8 +194,9 @@ jobs:
   # 混进冒烟套件等于在别的监听用例跑到一半时把配额抽掉。GitHub 的 ubuntu runner
   # 自带免密 sudo，这正是"CI runner 就是真机"那条口径里最实在的一条。
   #
-  # Node 24 一档：配额耗尽这件事只对**建递归 watch 的档位**(A)有意义，Node 22 在
-  # Linux 上判到 C 档、一个递归 watch 都不建。
+  # 只跑一档、与 build 同一个版本：配额耗尽这件事只对**建递归 watch 的档位**(A)有意义，
+  # Node 22 在 Linux 上判到 C 档、一个递归 watch 都不建，脚本 SKIP 后照样以 0 退出。
+  # 这个版本判到 A 档由 ci-node-version.test.ts 断言。
   inotify-quota:
     name: inotify quota exhausted → polling fallback
     needs: build
@@ -204,7 +208,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26
 
       - uses: actions/download-artifact@v8
         with:
