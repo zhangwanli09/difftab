@@ -90,7 +90,7 @@
 
 **点状态条上的分支名，窗口顶部居中弹出一个列表，照 VS Code 的 quick pick：顶上一个输入框，下面本地分支、远程分支、标签三组。选中一项即把名字复制进剪贴板**——checkout 属仓库写操作，只读工具能给「选中」的含义只有这一种（为什么不是「在 History 里打开」见 [`../decisions/git.md`](../decisions/git.md)）。状态在 `state/refs.ts`，组件是 `BranchPicker.tsx`；git 那侧见 [`git.md`](git.md) 的「分支列表」。**quick pick 的外壳（弹层、`combobox` / `listbox`、键盘、外部点击、200 条上限、焦点交还）在 `QuickPick.tsx` 只写一份**，与 Quick Open（见 [`web.md`](web.md)）共用——理由同 `Sash.tsx`：易漏的机制两份副本时修了一份、另一份静默坏着。
 
-- **一项两行，照 VS Code**：图标 + 名字 + 相对时间；`作者 • 短哈希 • 主题`。三组图标：本地 `GitBranch`、远程 `Cloud`、标签 `Tag`。相对时间与短哈希复用 History 的 `relativeTime` / `shortSha`。指向树的标签只画第一行。
+- **一项一行**：图标 + 名字 + 相对时间；提交详情不画出来，只进该行的 `title`，分三行：完整名字；主题；`作者 • 短哈希`——名字打头，因为长名字在行里被截成省略号，而要复制的正是它。**详情（不含名字）另给读屏器一个 `sr-only`**：活动项由 `aria-activedescendant` 指时读屏器多数只念可访问名称，`title` 念不念因组合而异，只放 `title` 时键盘加读屏器的用户听不到作者与主题。三组图标：本地 `GitBranch`、远程 `Cloud`、标签 `Tag`。相对时间与短哈希复用 History 的 `relativeTime` / `shortSha`。指向树的标签（`time` 为 0）`title` 只有名字、不带 `sr-only`。
 - **组名画在每组第一项的右端**，第二组起顶上一条分隔线，不另起组标题行。
 - **当前分支那一项末尾画 `Check`**：判据是 `BranchState.head` 等于一条本地分支名且不 detached，后端不另标。
 - **过滤只按名字**，不分大小写的子串匹配；输入一变活动项回到第一项。**一次最多画 200 条**，超出时写 `N more — type to filter`——几千个标签整份挂进 DOM 是可感知的卡顿。

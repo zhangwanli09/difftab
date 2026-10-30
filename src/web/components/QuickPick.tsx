@@ -178,7 +178,9 @@ export function QuickPick<T, C>({
         class="mb-1 rounded-sm border border-panel-border bg-editor-background px-2 py-1 outline-none"
       />
       {message !== null && <p class="px-2 py-1 text-description-foreground">{message}</p>}
-      <div id={listboxId} role="listbox" class="max-h-110 overflow-auto">
+      {/* `relative`：行里 `absolute` 的东西（如 `sr-only`）以列表为包含块，跟着它滚动、被它裁掉，
+          不挂到 `fixed` 的弹层上 */}
+      <div id={listboxId} role="listbox" class="relative max-h-110 overflow-auto">
         {shown.map((item, index) => {
           const previous = shown[index - 1];
           const first =
