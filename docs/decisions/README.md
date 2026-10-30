@@ -30,4 +30,6 @@
 - [MDN：CSS Cascade Layers——无层声明与层内声明的优先级](https://developer.mozilla.org/en-US/docs/Web/CSS/@layer)
 - [pnpm v10 → v11 迁移指南：`allowBuilds`、配置文件位置变更](https://pnpm.io/migration)
 - [pnpm/pnpm#11536：pnpm 11 静默忽略 `package.json` 的 `pnpm` 字段](https://github.com/pnpm/pnpm/issues/11536)
+- [pnpm 11 → 12 迁移指南：lockfile 与 store 不变、未识别的 workspace 设置报错](https://pnpm.io/migration-v11)
+- [pnpm/action-setup#289：浮动的 `v6` 标签没跟上 v6.1.0（pnpm 12 支持）](https://github.com/pnpm/action-setup/issues/289)
 - [Lucide：图标源与 `lucide-preact` 包（ISC，Copyright Lucide Contributors）](https://github.com/lucide-icons/lucide)

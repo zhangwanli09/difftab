@@ -44,6 +44,7 @@
 | `pnpm check:pack` | 发布产物混进了 `src/` / 配置 / 测试，或 `dependencies` 不再为空。**只查发布文件清单是查不出加依赖的**，所以它同时查 manifest 的三个依赖字段 | build |
 | `pnpm check:bin` | `bin/difftab.js` 丢了可执行位（HEAD 与 index 两侧都查），或被构建管线碰过 | build |
 | `pnpm check:global` | `npm i -g` 之后用 PATH 上那个名字跑不通，或全局目录下冒出了传递依赖。**要求全局尚未装着 difftab，否则脚本直接拒跑** | 专用作业（三平台） |
+| `pnpm install --frozen-lockfile`（`strictDepBuilds: true`）+ 钩子文件存在 | 依赖的构建脚本没进 `allowBuilds`、被静默跳过（lefthook 漏列时 git hooks 没装，提交前检查全线失效），或 `strictDepBuilds` 被改成 `false`、漏列从此不再让安装失败 | build |
 | `pnpm check:inotify` | Linux 上压低 `fs.inotify.max_user_watches` 至 ENOSPC 后没能降级。**不进冒烟套件**，非 Linux 直接 SKIP | 专用作业（ubuntu，需免密 sudo） |
 | old-node-guard | 低于下限的 Node 上拿到的是 `SyntaxError` 而不是友好提示。**单列一档**，因为 build 与 matrix 都跑在 ≥22 上，解析期失败那条路径在那里永远测不到。**只跑 ubuntu + windows**：那句提示丢不丢只在 Windows 上看得见，macOS 与 ubuntu 同属 POSIX 的同一种行为 | 专用作业（Node 20 × 两平台） |
 | 只读性门禁确实进了调用参数 | `readonly.test.js` / `readonly-git-dir.test.js` 被改名、搬走、误删，或那条 glob 在某个平台上没展开到它们——两种都让「只读承诺的唯一自动化保护」变成一个什么都没跑的绿勾（`node --test` 一个文件都没匹配上时是 0 用例、exit 0）。判据与为什么不数用例数，见 `design/build.md` 的「CI 分层」 | matrix |

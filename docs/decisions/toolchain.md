@@ -13,6 +13,12 @@
   - **因此每条设置都要一次正面对照**：当年的 `publishBranch: main` 是这么验的——它直接过检查并打印 `📦 name@version → <registry>`，改成 `release` 后同一条命令停在分支确认上，**即那个 camelCase 键确实被读到了**。没有对照时「没报错」与「设置生效了」长得一模一样。
   - **`pnpm publish` 不再委托 npm CLI**（`login` / `view` 等同理），于是它**不认 npm 的登录态**，而那时的报错完全不像认证问题：`npm whoami` 有回应、`~/.npmrc` 里有 `_authToken`，`pnpm publish` 仍回 `[E404] 404 Not Found - PUT …`——**npm 对「不允许的写」在包还不存在时回 404 而不是 403**。判据是 `pnpm whoami`；补 `pnpm login` 之后错误换成 `ERR_PNPM_OTP_NON_INTERACTIVE`，那条才说实话。它另自带 git 检查、照常执行 `prepublishOnly`，2FA 为 `auth-and-writes` 时无法非交互跑。
   - **manifest obfuscation 的实测范围比想象的窄**：剥掉的只有 `packageManager` 与 `prepublishOnly` 两项，其余 `scripts` 与整份 `devDependencies` 原样发布。现在改由 `npm publish` 发，这两项会随包发出——无害，用户侧不读它们。
+- **升到 pnpm 12 时，`ignored-builds` 判据和 `pnpm/action-setup@v6` 都得换**（pnpm 12.16.1 与 11.20.0 在全新 clone 上对照实测，macOS 27 / Node 26.13.0，2026 年 10 月）：
+  - **零忽略时两版答得不一样**：11.20.0 往 `node_modules/.modules.yaml` 写 `"ignoredBuilds": []`，`pnpm ignored-builds` 答 `None`；12.16.1 干脆不写这个键，命令答 `Cannot identify as no node_modules found`——`node_modules` 明明在。删掉 `allowBuilds` 里的 lefthook 一项时，两版都正确列出 `lefthook`，所以只有正常情况下才是假红。
+  - **漏列时 install 本身就失败**：上面那个删掉 lefthook 的对照里，11.20.0 与 12.16.1 都以 exit 1 结束（`Ignored build scripts: lefthook@…`），有没有 `CI` 都一样。原因是 `strictDepBuilds` 默认 `true`；「漏列时安装照常成功」是更早版本的行为。
+  - **写错位置的设置只管住了一半**：`pnpm-workspace.yaml` 里拼错的键（`strictDepBuild`）exit 1，报 `ERR_PNPM_UNRECOGNIZED_WORKSPACE_SETTINGS` 并给出拼写建议；`package.json` 的 `pnpm` 字段与 `.npmrc` 里的 `strict-dep-builds=false` 照样 exit 0，没有任何提示。
+  - **`pnpm/action-setup` 的浮动标签 `v6` 与 `v6.0.10` 解析到同一个 commit**（GitHub API 实测），而 pnpm 12 的支持是 v6.1.0 才加的（pnpm/action-setup#288）；标签没跟上的问题在 #289，提出时尚未关闭。**它的 README 写明只支持到 pnpm 12**，后继是 `pnpm/setup`（只装 pnpm 11+ 的原生二进制，可顺带装 Node、默认自己跑 `pnpm install`）——升 pnpm 13 之前要先换掉它。
+  - **Corepack 0.36.0 能跑 pnpm 12**（`corepack pnpm@12.16.1 --version` 下载 darwin-arm64 原生二进制后答 `12.16.1`）：给 Corepack 补 pnpm 12 支持的 nodejs/corepack#887 是关掉没合的，pnpm 那侧自己做了兼容。不用 Corepack 的理由仍只是它不再随 Node 分发。
 - **发布由 release-please + npm trusted publishing 承担**（`.github/workflows/release.yml`）：合并 release PR 即打 tag、建 Release、写 `CHANGELOG.md`，再复跑整份 `ci.yml` 后经 OIDC 发布，无 token、无 OTP。**复跑不能省**：release PR 由 `GITHUB_TOKEN` 创建，GitHub 不为它触发 `pull_request` workflow，那份 PR 上一个检查都没有；不复跑时三平台冒烟对要发出去的 commit 一次都没跑过。用 `npm publish` 是因为 trusted publishing 走 npm CLI（≥ 11.5.1），而 pnpm 不委托 npm、拿不到这层鉴权。
 
 ## 被排除的做法

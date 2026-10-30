@@ -74,7 +74,7 @@ site/                  官网：一张静态页 + 独立的 vite config，与产
 
 | 位置 | 选型 | 理由 |
 |---|---|---|
-| 包管理器 | pnpm 11 | 严格 node_modules（不扁平化）+ 内容寻址存储。**版本的唯一事实来源是 `package.json` 的 `packageManager` 字段** |
+| 包管理器 | pnpm | 严格 node_modules（不扁平化）+ 内容寻址存储。**版本的唯一事实来源是 `package.json` 的 `packageManager` 字段** |
 | 构建 | Vite（Rolldown / Oxc） | Rolldown 已为默认 bundler |
 | 语言 | TypeScript（**仅 `--noEmit` 类型检查**） | 本项目不需要 declaration emit，转译交给 Vite / tsdown。**二进制名是 `tsc`**——`tsgo` 是预览包的名字，稳定版并入主包后已回归 `tsc` |
 | 前端框架 | Preact + @preact/signals | 见 [`web.md`](web.md) |
@@ -91,13 +91,13 @@ site/                  官网：一张静态页 + 独立的 vite config，与产
 - **落地方式是 Vitest 的 `projects`，不是 `environmentMatchGlobs`**——后者在 Vitest 4 已被移除，**因此 include 是几条具体路径**。放到 `test/unit/` 底下或第三个子目录里的用例**不属于任何 project、压根不会被跑，且套件照常全绿**；它同样不在 `tsconfig.server.json` / `tsconfig.web.json` 任一份的 include 里，`pnpm typecheck` 也看不见它（两份的 `moduleResolution` 与 `lib` 不同，一个文件不能被两边同时收）。`test/unit/server/test-layout.test.ts` 钉着这条：它直接 import `vitest.config.ts` 把 include 编成正则（不抄目录白名单），所以加 project 不必同步任何清单。
 - **Vitest 不得低于 5**：Node 25 起全局自带一个 `localStorage` getter，Vitest 4 见全局上已有这个键就不装 happy-dom 的那份，于是 `test/unit/web/` 里碰 `localStorage` 的用例在 Node ≥ 25 上整片 `TypeError`。会响，但只在 ≥ 25 上响。
 
-## 包管理器（pnpm 11）
+## 包管理器（pnpm）
 
-- **版本的唯一事实来源是 `package.json` 的 `packageManager` 字段**，不在别处重复写版本号。CI 用 `pnpm/action-setup` 且**不传 `version`**，让它读该字段；**不靠 `corepack enable`**——Corepack 已不再随 Node 25+ 发行版分发，而 CI 矩阵含 Node 26，靠它等于把工具链固定寄托在一个正在消失的东西上。
-- **`pnpm-workspace.yaml` 是所有 pnpm 设置的唯一位置**，单包仓库同样需要这个文件。pnpm 11 起**不再读 `package.json` 的 `pnpm` 字段**，`.npmrc` **只保留 registry 与鉴权**。**写错位置不报错、无 deprecation 警告，只是设置静默不生效**，因此每一条约束的落地都必须连带确认它写在了正确的文件里。
+- **版本的唯一事实来源是 `package.json` 的 `packageManager` 字段**，不在别处重复写版本号。CI 用 `pnpm/action-setup` 且**不传 `version`**，让它读该字段；**不靠 `corepack enable`**——Corepack 已不再随 Node 25+ 发行版分发，而 CI 矩阵含 Node 26，靠它等于把工具链固定寄托在一个正在消失的东西上。`pnpm/action-setup` **钉 commit SHA、不用浮动的主版本标签**，`ci.yml` 与 `release.yml` 两处同一个值：浮动标签曾落后于支持当前 pnpm 主版本的那一版；两处漂开时 PR 上的 CI 照样全绿，要到 tag 与 Release 都建好后发布那一步才红。
+- **`pnpm-workspace.yaml` 是所有 pnpm 设置的唯一位置**，单包仓库同样需要这个文件。pnpm 11 起**不再读 `package.json` 的 `pnpm` 字段**，`.npmrc` **只保留 registry 与鉴权**。**写错位置不报错、无 deprecation 警告，只是设置静默不生效**，因此每一条约束的落地都必须连带确认它写在了正确的文件里。pnpm 12 只补上了一半：`pnpm-workspace.yaml` 里**拼错的键**会让 install 以 `ERR_PNPM_UNRECOGNIZED_WORKSPACE_SETTINGS` 失败（前提是 `packageManager` 钉的版本被正在跑的 pnpm 满足），写到另外两处的照旧静默。
 - `pnpm-lock.yaml` 入库，所有非交互安装用 `pnpm install --frozen-lockfile`。
 - **严格 node_modules 是资产不是障碍**：禁 `shamefullyHoist` / `nodeLinker: hoisted`。任何被 import 的包必须由我们自己声明：`diff`（词级差异）因此进了 `devDependencies`，钉在与 diff2html 解析到的那份相同的版本上，产物里只有一份——**升级 diff2html 或 `diff` 时用 `pnpm why diff` 核一下仍是一份**，分成两份不报错，只是产物多带一份同名库；diff2html 剩下的传递依赖 `@profoundlogic/hogan` **我们的代码与配置不得直接引用**。
-- **依赖的生命周期脚本默认不执行**：需要执行的包必须显式列进 **`allowBuilds`**（已知 `lefthook`——它靠安装后脚本把 git hooks 写进 `.git/hooks`，漏列不报错、安装照常成功，只是 hooks 静默没装、提交前检查全线失效）。判据是两条并列：**`pnpm ignored-builds` 报 `None`** + 钩子文件实际存在。**只看钩子文件会在 CI 上假红**（lefthook 的 postinstall 检测到 `CI` 就跳过 `lefthook install`），故 CI 的安装步骤必须设 `LEFTHOOK=1`。
+- **依赖的生命周期脚本默认不执行**：需要执行的包必须显式列进 **`allowBuilds`**（已知 `lefthook`——它靠安装后脚本把 git hooks 写进 `.git/hooks`，脚本没跑时 hooks 静默没装、提交前检查全线失效）。漏列时让 install 以非零退出的是 **`strictDepBuilds`**——默认 `true`，仍**显式写进 `pnpm-workspace.yaml`、由 CI 查这一行**：漏列的若不是 lefthook，它是唯一会响的东西，设成 `false` 就退回「安装照常成功、脚本被静默跳过」。判据是两条并列：**安装以 0 退出** + 钩子文件实际存在（不用 `pnpm ignored-builds`，实测见 [`toolchain.md`](../decisions/toolchain.md)）。**只看钩子文件会在 CI 上假红**（lefthook 的 postinstall 检测到 `CI` 就跳过 `lefthook install`），故 CI 的安装步骤必须设 `LEFTHOOK=1`。
 - **`test/fixtures/` 的生成脚本与 `scripts/` 下的门禁脚本必须是零依赖纯 JS、可由 `node <路径>` 直接执行**，`package.json` 里的 `fixtures` / `bench:startup` / `size` / `check:css` / `check:global` / `check:inotify` 只是别名。理由与下方 matrix 档「完全不装依赖」同源：这些脚本要在没有 pnpm、没有 `node_modules` 的 matrix 机器上跑。
 
 ## 产物结构与 TypeScript 配置
