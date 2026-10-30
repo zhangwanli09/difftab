@@ -5,6 +5,7 @@
 // 证据用（见 `STALE_MS`），而那是给它定的用途本身。
 
 import { HEARTBEAT_MS } from '../../server/shared/protocol';
+import { disconnected } from './connection';
 import { refresh } from './store';
 
 /** `EventSource.CLOSED`。写字面量是因为测试里的替身不必复刻这几个静态常量。 */
@@ -69,13 +70,26 @@ export function connectEvents(): () => void {
       lastSeen = Date.now();
       retries = 0;
     };
-    next.addEventListener('open', seen);
+    /**
+     * 断过线又连上了（dev 下后端在同一端口重启）：熄掉断线态，期间漏掉的 `change` 补取一次。
+     * **断线态只有这条连接写**（`error` 点亮、这里熄灭）：回环上进程一退，SSE 与取数一起断，
+     * 不必让取数也来写——两个写者时它就答不了「这条连接断过没有」。
+     */
+    next.addEventListener('open', () => {
+      seen();
+      if (!disconnected.value) return;
+      disconnected.value = false;
+      void refresh();
+    });
     next.addEventListener('heartbeat', seen);
     next.addEventListener('change', () => {
       seen();
       void refresh();
     });
     next.addEventListener('error', () => {
+      // 先于下面的早退：CONNECTING 那种「浏览器自己在重试」的形态正是进程刚退出时的样子，
+      // 这时就该亮错误条——否则页面看上去一切正常，要等用户点了什么才知道它已经不再刷新
+      if (!disposed) disconnected.value = true;
       // 只有永久关闭才轮到我们：CONNECTING 说明浏览器已经在自己重试了
       if (next.readyState !== CLOSED || disposed || retry !== null) return;
       if (retries >= MAX_RETRIES) return;
@@ -93,7 +107,8 @@ export function connectEvents(): () => void {
    *
    * **补取只在真的重连了之后做**：连接从头到尾活着，就说明期间的每个 `change` 都已经推到过
    * 了，而心跳刚刚证明了这一点。这时再取一次纯属白取，它取的却可能是一份数 MB 的 diff——
-   * 而切标签正是这个工具最频繁的动作。
+   * 而切标签正是这个工具最频繁的动作。**断过线的话也不在这里补**：新连接的 `open` 会补，两边
+   * 都补就是背靠背两整轮刷新。
    */
   const onVisible = () => {
     if (document.hidden) return;
@@ -103,7 +118,7 @@ export function connectEvents(): () => void {
     }
     // 上面那些重试已经放弃了的话，在这里重新武装：用户回来了，值得再试一轮
     retries = 0;
-    if (open()) void refresh();
+    if (open() && !disconnected.value) void refresh();
   };
   document.addEventListener('visibilitychange', onVisible);
 

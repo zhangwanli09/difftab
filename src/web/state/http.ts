@@ -5,6 +5,7 @@
 // 「Unexpected token 'E'…」，而它照样是绿的。四个端点（state / diff / tree / file）共用这一份。
 
 import type { ErrorPayload } from '../../server/shared/protocol';
+import { DISCONNECTED } from './connection';
 
 /** 从任意失败里取一句可展示的话。永远返回非空字符串，免得 UI 出现空白的错误条。 */
 export function toMessage(cause: unknown): string {
@@ -33,7 +34,14 @@ function messageFrom(text: string, status: number): string {
  * 5MB，先 `text()` 再 `JSON.parse()` 等于把它在内存里存两份。竞态判据**不在这里**。
  */
 export async function getJson<T>(url: string): Promise<T> {
-  const res = await fetch(url, { headers: { Accept: 'application/json' } });
+  let res: Response;
+  try {
+    res = await fetch(url, { headers: { Accept: 'application/json' } });
+  } catch {
+    // 网络层失败：回环上只有「进程不在了」这一个原因，浏览器原话三家各一种，不让它上屏。
+    // 只改写原因、不碰断线态——那一位只由 SSE 写
+    throw new Error(DISCONNECTED);
+  }
   if (!res.ok) throw new Error(messageFrom(await res.text(), res.status));
   return (await res.json()) as T;
 }

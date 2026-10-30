@@ -7,6 +7,7 @@
 
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { RepoState } from '../../../src/server/shared/protocol';
+import { disconnected } from '../../../src/web/state/connection';
 import { connectEvents, MAX_RETRIES, RECONNECT_MS, STALE_MS } from '../../../src/web/state/events';
 import { loadError, repoState } from '../../../src/web/state/store';
 import { hideHistory, resetEditors } from './helpers';
@@ -104,6 +105,7 @@ beforeEach(() => {
   repoState.value = null;
   resetEditors();
   loadError.value = null;
+  disconnected.value = false;
   vi.stubGlobal('EventSource', FakeEventSource);
 });
 
@@ -243,6 +245,51 @@ describe('connectEvents', () => {
     latest().emit('error');
     await vi.advanceTimersByTimeAsync(RECONNECT_MS * 2);
     expect(sources).toHaveLength(1);
+  });
+
+  test('进程一退出（浏览器在自己重试）就点亮断线态，不等用户点什么', async () => {
+    // 回环上 SSE 报错只有这一个原因。等下一次取数才发现的话，这之前页面看上去一切正常，
+    // 其实已经不会再刷新
+    stubFetch();
+    connect();
+
+    latest().readyState = CONNECTING;
+    latest().emit('error');
+    expect(disconnected.value).toBe(true);
+  });
+
+  test('断线后重新连上：熄掉断线态并补取一次', async () => {
+    const calls = stubFetch();
+    connect();
+    latest().readyState = CONNECTING;
+    latest().emit('error');
+
+    latest().readyState = OPEN;
+    latest().emit('open');
+    expect(disconnected.value).toBe(false);
+    await vi.waitFor(() => expect(calls).toEqual(['/api/state']));
+  });
+
+  test('断线后切回标签页：只由新连接的 open 补取一次，不背靠背刷两轮', async () => {
+    const calls = stubFetch();
+    connect();
+    latest().die();
+
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(sources).toHaveLength(2);
+    latest().emit('open');
+    await new Promise((r) => setTimeout(r, 10));
+    expect(calls).toEqual(['/api/state']);
+  });
+
+  test('没断过线时的 open 不补取', async () => {
+    // 挂载那一次 open 也走这条路：在这里补取就是每次进页面都多打一趟 /api/state
+    const calls = stubFetch();
+    connect();
+
+    latest().emit('open');
+    await new Promise((r) => setTimeout(r, 10));
+    expect(calls).toHaveLength(0);
   });
 
   test('取消订阅之后既不重连也不再收事件', async () => {

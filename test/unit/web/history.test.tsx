@@ -15,6 +15,7 @@ import { commitTooltip, HistoryList, relativeTime } from '../../../src/web/compo
 import { indent } from '../../../src/web/components/tree-row';
 import { badgesBySha, refBadges } from '../../../src/web/state/badges';
 import { changeView } from '../../../src/web/state/change-tree';
+import { DISCONNECTED } from '../../../src/web/state/connection';
 import {
   activeEditor,
   activeEditorPath,
@@ -67,6 +68,7 @@ import {
   actionOf,
   branch,
   childLevelOf,
+  disconnect,
   expectEdgeAnchored,
   expectGuideUnder,
   expectPlaceholderRow,
@@ -77,6 +79,7 @@ import {
   resetEditors,
   resetHistory,
   stubClipboard,
+  stubFetchFailure,
   stubJsonBy,
   waitFor,
 } from './helpers';
@@ -369,6 +372,18 @@ describe('HistoryList 组件', () => {
       retry.click();
       await waitFor(() => expect(historyList.value?.commits).toHaveLength(52));
       expect(calls).toHaveLength(2);
+    });
+
+    test('断线时只写 Disconnected，不邀请人点重试', async () => {
+      // 重试必然失败；原因由错误条讲一次
+      historyList.value = mergeFirstPage(null, page(100, 100, 50, true));
+      stubFetchFailure();
+      disconnect();
+      render(<HistoryList />, container);
+      await mounted();
+      intersect();
+      const button = () => container.querySelector('li:last-child > button') as HTMLButtonElement;
+      await waitFor(() => expect(button().textContent).toBe(DISCONNECTED));
     });
   });
 

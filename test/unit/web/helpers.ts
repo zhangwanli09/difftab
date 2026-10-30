@@ -17,6 +17,7 @@ import {
   SHELL_AT_EDGE,
 } from '../../../src/web/components/tree-row';
 import { changeView, collapsedChangeDirs } from '../../../src/web/state/change-tree';
+import { disconnected } from '../../../src/web/state/connection';
 import {
   type EditorKind,
   editorKey,
@@ -227,6 +228,24 @@ export function stubJsonBy(respond: (url: URL) => { payload: unknown; status?: n
     }),
   );
   return calls;
+}
+
+/** fetch 本身 reject（网络层失败）——进程不在了时浏览器给的就是这个形态。 */
+export function stubFetchFailure(message = 'Failed to fetch'): void {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => {
+      throw new TypeError(message);
+    }),
+  );
+}
+
+/** 摆出断线态（它只由 SSE 写），并在用例结束时收回——模块级 signal 不收就漏进下一个用例。 */
+export function disconnect(): void {
+  disconnected.value = true;
+  onTestFinished(() => {
+    disconnected.value = false;
+  });
 }
 
 /**
