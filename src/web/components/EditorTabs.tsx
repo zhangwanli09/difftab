@@ -444,8 +444,8 @@ function Tab({
 /**
  * 栏右端的编辑器动作区，按活动 tab 的种类画：全文 tab 正文就绪时是自动换行与 `Copy file contents`，diff /
  * commit tab 补丁就绪为文本时是忽略空白与版式切换（点了就固定，语义在 `state/layout.ts`）；带
- * SVG 预览的 tab 最左边再多一枚 `Preview`。版式切换
- * 不按 tab 键 `key`：它不带局部状态，显示的是这一组的版式（分屏时两组可以不同）。
+ * SVG / markdown 预览的 tab 最右边再多一枚 `Preview`——开着预览时撤掉的几枚都在它左边，它就不随开关
+ * 挪位。版式切换不按 tab 键 `key`：它不带局部状态，显示的是这一组的版式（分屏时两组可以不同）。
  *
  * 复制的是缓存里那份 `payload.content` 原文——不是 hljs 输出，也不带行号。其余几路（加载中、出错、
  * 二进制、图片、符号链接、过大）都不画复制：没有正文可复制，灰着一枚按钮只是一块死区。按钮**按
@@ -503,8 +503,8 @@ function EditorActions({ group }: { group: EditorGroup }) {
   // `px-1.5` 与 tab 上那枚 × 的外壳同一个值：两枚 `IconButton` 离各自邻边一样远
   return (
     <span class="flex shrink-0 items-center px-1.5">
-      {previewToggle}
       {actions}
+      {previewToggle}
     </span>
   );
 }

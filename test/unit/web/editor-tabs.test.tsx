@@ -77,6 +77,11 @@ const formatButton = () =>
     'button[aria-label="View inline"], button[aria-label="View side by side"]',
   );
 
+/** `Preview` 所在那一排动作按钮，自左向右；一次比全排，顺序、齐不齐、谁在末尾一起断言。 */
+const actionRow = () => [
+  ...(container.querySelector('button[aria-label="Preview"]')?.parentElement?.children ?? []),
+];
+
 const mouse = (type: string, button = 0) => new MouseEvent(type, { bubbles: true, button });
 
 /** signals 驱动的重画是微任务；断言 DOM 之前同步重画一次，省掉每处都 await。 */
@@ -598,7 +603,7 @@ describe('SVG 预览', () => {
   const whitespace = () =>
     container.querySelector<HTMLButtonElement>('button[aria-label="Hide whitespace changes"]');
 
-  it('判据只认 payload 上的 preview：diff、commit、file 三种 tab 都画，排在最左', async () => {
+  it('判据只认 payload 上的 preview：diff、commit、file 三种 tab 都画，排在最右', async () => {
     // 关着预览起步：开着时 diff tab 上没有忽略空白那一枚，排序就无从断言
     svgPreview.value = false;
     pinned('diff', 'logo.svg');
@@ -611,7 +616,7 @@ describe('SVG 预览', () => {
 
     setDiffState('logo.svg', readyDiff(PATCH));
     await waitFor(() => expect(toggle()).not.toBeNull());
-    expect(toggle()?.nextElementSibling).toBe(whitespace());
+    expect(actionRow()).toEqual([whitespace(), formatButton(), toggle()]);
 
     openCommitEditor(SHA, 'logo.svg', undefined, true);
     setCommitDiffState(SHA, 'logo.svg', readyDiff(PATCH));
@@ -622,10 +627,9 @@ describe('SVG 预览', () => {
       status: 'ready',
       payload: { kind: 'text', content: '<svg/>', preview: { size: 6, version: 'v1' } },
     });
-    // 开关此刻关着、按文本画：自动换行夹在预览与复制之间
+    // 开关此刻关着、按文本画：自动换行、复制、预览自左向右
     const wrap = () => container.querySelector('button[aria-label="Word Wrap"]');
-    await waitFor(() => expect(toggle()?.nextElementSibling).toBe(wrap()));
-    expect(wrap()?.nextElementSibling).toBe(copyButton());
+    await waitFor(() => expect(actionRow()).toEqual([wrap(), copyButton(), toggle()]));
     setFileState('logo.svg', { status: 'ready', payload: { kind: 'text', content: '<svg/>' } });
     await waitFor(() => expect(toggle()).toBeNull());
     expect(copyButton()).not.toBeNull();
@@ -649,7 +653,8 @@ describe('SVG 预览', () => {
 
     toggle()?.click();
     await waitFor(() => expect(formatButton()).toBeNull());
-    expect(whitespace()).toBeNull();
+    // 撤掉的两枚都在它左边：按下前后它都是动作区最后一枚，位置不跳
+    expect(actionRow()).toEqual([toggle()]);
   });
 
   it('跳到某一行（全仓搜索的命中）只让那个 file tab 按文本画，全局开关不动；按下即清掉跳行', async () => {
@@ -699,8 +704,7 @@ describe('Markdown 预览', () => {
 
     setFileState('README.md', { status: 'ready', payload: MD });
     await waitFor(() => expect(toggle()?.getAttribute('aria-pressed')).toBe('false'));
-    expect(toggle()?.nextElementSibling).toBe(wrap());
-    expect(wrap()?.nextElementSibling).toBe(copyButton());
+    expect(actionRow()).toEqual([wrap(), copyButton(), toggle()]);
   });
 
   it('按下翻的是 markdown 那个开关，不碰 SVG 的；按渲染画时自动换行撤掉、复制照留', async () => {
@@ -712,8 +716,8 @@ describe('Markdown 预览', () => {
     expect(markdownPreview.value).toBe(true);
     expect(svgPreview.value).toBe(true);
     await waitFor(() => expect(toggle()?.getAttribute('aria-pressed')).toBe('true'));
-    expect(wrap()).toBeNull();
-    expect(copyButton()).not.toBeNull();
+    // 撤掉的自动换行在它左边：它仍是动作区最后一枚，位置不跳
+    expect(actionRow()).toEqual([copyButton(), toggle()]);
 
     toggle()?.click();
     expect(markdownPreview.value).toBe(false);
