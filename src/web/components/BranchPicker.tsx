@@ -66,34 +66,38 @@ export function BranchPicker({
 }
 
 /**
- * 一项两行，照 VS Code：图标 + 名字 + 相对时间；`作者 • 短哈希 • 主题`。`context` 是当前所在的本地
- * 分支名，那一项末尾画 `Check`。
+ * 一项一行：图标 + 名字 + 相对时间。提交详情只进 `title`，名字打头——长名字在行里被截成省略号，
+ * 而要复制的正是它。读屏器另有一份 `sr-only`：活动项由 `aria-activedescendant` 指时多数只念可访问
+ * 名称，只放 `title` 时详情听不到。`context` 是当前所在的本地分支名，那一项末尾画 `Check`。
  */
 function RefRow({ item: entry, first, context: currentBranch }: RowProps<RefEntry, string | null>) {
   const current = entry.kind === 'local' && entry.name === currentBranch;
+  // 指向树的标签 `time` 为 0
+  const hasCommit = entry.time > 0;
+  const sha = shortSha(entry.sha);
+  const byline = entry.author === '' ? sha : `${entry.author} • ${sha}`;
+  // 主题可以合法地为空（`--allow-empty-message`），那时只给 `作者 • 短哈希`
+  const detail = !hasCommit
+    ? undefined
+    : entry.subject === ''
+      ? byline
+      : `${entry.subject}\n${byline}`;
   return (
-    <>
-      <div class="flex items-center gap-1.5">
-        <Icon icon={REF_ICON[entry.kind]} size={14} class="shrink-0" />
-        <span class="truncate">{entry.name}</span>
-        {entry.time > 0 && (
-          <span class="shrink-0 text-xs text-description-foreground">
-            {relativeTime(entry.time)}
-          </span>
-        )}
-        <span class="flex-1" />
-        {current && <Icon icon={Check} size={14} class="shrink-0" />}
-        {first && (
-          <span class="shrink-0 text-xs text-description-foreground">
-            {GROUP_LABEL[entry.kind]}
-          </span>
-        )}
-      </div>
-      {entry.subject !== '' && (
-        <div class="truncate pl-5 text-xs text-description-foreground">
-          {entry.author} • {shortSha(entry.sha)} • {entry.subject}
-        </div>
+    <div
+      class="flex items-center gap-1.5"
+      title={detail === undefined ? entry.name : `${entry.name}\n${detail}`}
+    >
+      <Icon icon={REF_ICON[entry.kind]} size={14} class="shrink-0" />
+      <span class="truncate">{entry.name}</span>
+      {hasCommit && (
+        <span class="shrink-0 text-xs text-description-foreground">{relativeTime(entry.time)}</span>
       )}
-    </>
+      {detail !== undefined && <span class="sr-only">{detail}</span>}
+      <span class="flex-1" />
+      {current && <Icon icon={Check} size={14} class="shrink-0" />}
+      {first && (
+        <span class="shrink-0 text-xs text-description-foreground">{GROUP_LABEL[entry.kind]}</span>
+      )}
+    </div>
   );
 }

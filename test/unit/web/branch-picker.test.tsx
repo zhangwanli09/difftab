@@ -37,6 +37,7 @@ afterEach(() => {
 const trigger = () => container.querySelector<HTMLButtonElement>('button[aria-haspopup]');
 const input = () => container.querySelector<HTMLInputElement>('[role="combobox"]');
 const options = () => [...container.querySelectorAll('[role="option"]')];
+const titleOf = (i: number) => options()[i]?.querySelector('[title]')?.getAttribute('title');
 const press = (key: string) =>
   input()?.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
 
@@ -70,7 +71,29 @@ describe('BranchPicker', () => {
     // main 那一项多一枚图标（✓），feature/login 只有分支那一枚
     expect(options()[0]?.querySelectorAll('svg')).toHaveLength(2);
     expect(options()[1]?.querySelectorAll('svg')).toHaveLength(1);
-    expect(texts[0]).toContain('Ada • aaaaaaa • tip of main');
+  });
+
+  it('一项一行：完整名字与提交详情悬停看 title，读屏器另有一份 sr-only', async () => {
+    await open();
+    const option = options()[0];
+    expect(titleOf(0)).toBe('main\ntip of main\nAda • aaaaaaa');
+    // 详情只在 sr-only 里出现、不含名字（行里已有）：可访问名称里有它，看得见的那一行里没有
+    const hidden = option?.querySelector('.sr-only');
+    expect(hidden?.textContent).toBe('tip of main\nAda • aaaaaaa');
+    expect(option?.textContent?.replace(hidden?.textContent ?? '', '')).not.toContain(
+      'tip of main',
+    );
+  });
+
+  it('指向树的标签 title 只有名字，不带 sr-only 详情', async () => {
+    await open([ref('tag', 'tree-tag', { sha: 'b'.repeat(40), author: '', time: 0, subject: '' })]);
+    expect(titleOf(0)).toBe('tree-tag');
+    expect(options()[0]?.querySelector('.sr-only')).toBe(null);
+  });
+
+  it('主题为空的提交仍给作者与短哈希', async () => {
+    await open([ref('local', 'empty-msg', { subject: '' })]);
+    expect(titleOf(0)).toBe('empty-msg\nAda • aaaaaaa');
   });
 
   it('按名字过滤，输入一变活动项回到第一项', async () => {
