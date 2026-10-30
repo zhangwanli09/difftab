@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.15.0](https://github.com/zhangwanli09/difftab/compare/v0.14.1...v0.15.0) (2026-10-30)
+
+
+### Features
+
+* **web:** say once that difftab has stopped when the server goes away ([#168](https://github.com/zhangwanli09/difftab/issues/168)) ([c226940](https://github.com/zhangwanli09/difftab/commit/c2269401fc0200095baf7e9633909f7599acf188))
+* **web:** show branch picker items on one line ([#163](https://github.com/zhangwanli09/difftab/issues/163)) ([b19d267](https://github.com/zhangwanli09/difftab/commit/b19d267c7e9d4f239cfe81aa3df4b4d85705512e))
+
+
+### Bug Fixes
+
+* **web:** add a gap above the file tree ([#167](https://github.com/zhangwanli09/difftab/issues/167)) ([f8edbdc](https://github.com/zhangwanli09/difftab/commit/f8edbdced4fb9c92c1c9dca3989e4add54a49f6b))
+* **web:** keep the preview toggle in place when toggled ([#165](https://github.com/zhangwanli09/difftab/issues/165)) ([6fed927](https://github.com/zhangwanli09/difftab/commit/6fed92753731a6e9022c87ab8e8183afce15ff09))
+* **web:** stop clipping the last letter of preview tab names ([#166](https://github.com/zhangwanli09/difftab/issues/166)) ([05cfc61](https://github.com/zhangwanli09/difftab/commit/05cfc61468f34459c4de503670af4fae4b3c4d17))
+
 ## [0.14.1](https://github.com/zhangwanli09/difftab/compare/v0.14.0...v0.14.1) (2026-10-29)
 
 
