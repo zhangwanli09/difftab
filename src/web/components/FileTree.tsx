@@ -43,8 +43,10 @@ function DirBadge({ code }: { code: ChangeCode }) {
   );
 }
 
-// 骨架之上只补对齐（为什么按居中，写在 `ROW_BASE` 上）：这里每一行都是 SVG 加一段文字
-const ROW_CLASS = `${ROW_BASE} items-center`;
+// 骨架之上只补对齐（为什么按居中，写在 `ROW_BASE` 上）：这里每一行都是 SVG 加一段文字。
+// `scroll-mt-1` 与树根那层 `pt-1` 配对：`scrollIntoView` 按行的边框盒对齐，没有它 reveal 到首行时
+// 那 4px 被滚出视野
+const ROW_CLASS = `${ROW_BASE} items-center scroll-mt-1`;
 
 function Row({ entry, depth }: { entry: TreeEntry; depth: number }) {
   const isDir = entry.kind === 'directory';
@@ -168,5 +170,11 @@ export function FileTree() {
     const path = activeEditorPath.value;
     if (path !== null) untracked(() => revealPath(path));
   });
-  return <Level path={ROOT} depth={0} />;
+  // 顶上 4px：另两档顶上有分区标题或输入框垫着，只有树的第一行直接贴着 tab 行那条线。**写在这一层、
+  // 不写在 `<nav>` 上**：那一层三档共用，另两档不需要它
+  return (
+    <div class="pt-1">
+      <Level path={ROOT} depth={0} />
+    </div>
+  );
 }
