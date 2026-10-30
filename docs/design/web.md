@@ -12,6 +12,7 @@
 - **后端产物用不了这个判据**：`dist/server/main.js` 刻意保留中文注释以便审计。那一侧的用户可见文案是 `sendError` 与各 `*Error` 的字面量，归 `test/unit/server/`。
 - **句点只跟句子走**：标签式的短片段（`No commits yet` / `Empty` / `Loading…`）末尾不加句点，说明性的完整句子（`Binary file — contents are not compared.`）才加。判据是「它是一个标签还是一句话」，不是长短。
 - **出错提示分两段：引导句（`Could not load this file`）与原因逐字各占一行，不拼成一句**——原因的来处不止一个（后端 `sendError`、浏览器的 `TypeError: Failed to fetch`、500 转发的 `ENOENT: …`），大小写与句点各成一派，接在冒号后总有一种读起来像两句话撞在一起。
+- **网络层失败（`fetch` 本身 reject）不让浏览器原话上屏，在 `getJson` 那一处统一改写成 `Disconnected`**：回环上走到这一路只有一个原因——进程不在了；而浏览器原话三家各一种（Chrome `Failed to fetch`、Safari `Load failed`、Firefox `NetworkError when attempting to fetch resource.`），原样摆出来时同一屏六处各说一遍、哪一处都没说出原因。原因只由错误条讲一次（见「页面骨架」），各处原因槽位只留这个短标签；引导句照旧——每个面板仍要说自己为什么空着。
 - **too-large 提示的主语随视图走**：diff 视图说 `Diff too large to show (file is 3.0 MB).`，文件视图说 `File too large to show (3.0 MB).`——diff 那侧 5MB 卡的是补丁字节、`size` 却是文件体积，两边都说「File too large」时同一个文件会在 Files 档里照常显示、在 diff 里说太大。文案在 `tooLargeNotice` 里只写一次，两个视图共用。
 
 ## 页面骨架
@@ -29,6 +30,7 @@
 - **只画图标的控件，名字只能由 `aria-label` 给**（`title` 再给一份 tooltip）；掉了它读屏里就是无名控件（有断言）。
 - **切 tab 不动右侧面板（`activeEditor`）**：换的是侧栏在列什么，不是用户此刻在读什么。写成「切到 Files 就清空右侧」时页面看着正常，只是每瞄一眼目录树就丢掉正在读的 diff。
 - **错误条在左栏内、列表之上**：它说的是「变更列表取不到」，与列表那句兜底文案相邻才成立；横跨全屏会在 diff 面板顶上切一条无关的横杠。
+  - **进程退出（断线）也走这一条，且只走这一条**：错误条换成一句完整说明 `difftab has stopped. Run difftab again in the terminal to reopen this repository.`，同时只画一条（此时 `loadError` 本身也只会是 `Disconnected`）。**断线态只由 SSE 写**：`error` 即亮——Ctrl+C 之后不必等用户点什么，否则页面看上去一切正常、其实已不再刷新；`open` 即灭并补取一次（切回标签页那条路此时不另补，否则背靠背两整轮刷新）。`getJson` 只改写原因、不碰断线态：回环上进程一退，SSE 与取数一起断，两个写者时它就答不了「这条连接断过没有」，还得另记一位。**不说「刷新 / 重试」**：端口由内核随机分配，旧标签页永远敲不到新实例，刷新只会换来浏览器的错误页——`Changes` 兜底与 `Load more` 在断线时都只写 `Disconnected`。
 - **分支名前的分支图标在 detached 与取不到名字时照画**——它标的是「这一栏说的是 HEAD 在哪」，按情况藏掉只会让状态条左缘忽进忽出。那一行是基线对齐，图标需要单独居中，否则整个坐在文字基线上（有断言）。
 - **分支名（连同图标）是一枚按钮**，点开「分支列表」（见 [`sidebar.md`](sidebar.md)）；detached 时照样可点——列表回答的是「仓库里有哪些 ref」。
 - **与上游的差距排成 `<behind>↓ <ahead>↑`**，逐字照 VS Code status bar 的 `syncLabel`——这一栏是拿去与另一个窗口对照的，左右反过来时每看一眼都要在心里翻一次。**两个 0 仍都画出来**：「已同步」与「无上游」必须是两个样子（有断言）。

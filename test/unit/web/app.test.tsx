@@ -15,6 +15,7 @@ import type { RepoState } from '../../../src/server/shared/protocol';
 import { App } from '../../../src/web/components/App';
 import { TREE_SCOPE } from '../../../src/web/components/tree-row';
 import { changeView } from '../../../src/web/state/change-tree';
+import { DISCONNECTED, DISCONNECTED_NOTICE } from '../../../src/web/state/connection';
 import {
   activeEditorKey,
   activeGroup,
@@ -28,12 +29,21 @@ import {
   activeTab,
   diffStates,
   fileStates,
+  loadError,
   PATCH_DEFAULTS,
   repoState,
 } from '../../../src/web/state/store';
 import { PRODUCT_NAME } from '../../../src/web/state/title';
 import { expandedDirs, ROOT, treeCache, treeErrors } from '../../../src/web/state/tree';
-import { hideHistory, openPinned, press, resetChangeTree, resetEditors, waitFor } from './helpers';
+import {
+  disconnect,
+  hideHistory,
+  openPinned,
+  press,
+  resetChangeTree,
+  resetEditors,
+  waitFor,
+} from './helpers';
 
 const stateWith = (repoName: string): RepoState => ({
   repoName,
@@ -61,6 +71,7 @@ afterEach(() => {
   render(null, container);
   // signals 活在组件树之外，不清就会漏进下一个用例
   repoState.value = null;
+  loadError.value = null;
   resetEditors();
   activeTab.value = 'changes';
   resetChangeTree();
@@ -101,6 +112,26 @@ describe('左栏顶栏', () => {
     repoState.value = stateWith('');
     render(<App />, container);
     expect(headerText()).toBe(PRODUCT_NAME);
+  });
+});
+
+describe('左栏错误条', () => {
+  const alerts = () => [...container.querySelectorAll('[role="alert"]')];
+
+  it('断线时只画一条，说的是进程停了、该回终端重跑', () => {
+    // 此时 loadError 也是 Disconnected——两条一起画就是同一件事说两遍
+    repoState.value = stateWith('demo');
+    loadError.value = DISCONNECTED;
+    disconnect();
+    render(<App />, container);
+    expect(alerts().map((node) => node.textContent)).toEqual([DISCONNECTED_NOTICE]);
+  });
+
+  it('没断线时照旧显示 loadError', () => {
+    repoState.value = stateWith('demo');
+    loadError.value = 'forbidden';
+    render(<App />, container);
+    expect(alerts().map((node) => node.textContent)).toEqual(['forbidden']);
   });
 });
 

@@ -17,6 +17,7 @@ import {
 import { Fragment } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
 import { type ChangeView, changeView, toggleChangeView } from '../state/change-tree';
+import { DISCONNECTED_NOTICE, disconnected } from '../state/connection';
 import { groups } from '../state/editors';
 import { quickOpenVisible } from '../state/quick-open';
 import { ensureSearchFresh } from '../state/search';
@@ -158,7 +159,8 @@ function SideBarTabRow() {
 
 export function App() {
   const state = repoState.value;
-  const error = loadError.value;
+  // 断线时错误条只说这一句：此时 `loadError` 本身也只会是 `Disconnected`，不画第二条
+  const error = disconnected.value ? DISCONNECTED_NOTICE : loadError.value;
   const tab = activeTab.value;
   const editorGroups = groups.value;
 
@@ -231,7 +233,10 @@ export function App() {
         {/* break-words 是搬进左栏之后才需要的：这条文案是 git 的原话，里面那截路径是一个
             不带断点的长词，在这一列里会漫过右边框压到 diff 面板上——不报错，只是错位 */}
         {error !== null && (
-          <p class="shrink-0 border-b border-warning-border bg-warning-background px-3 py-2 text-sm break-words">
+          <p
+            role="alert"
+            class="shrink-0 border-b border-warning-border bg-warning-background px-3 py-2 text-sm break-words"
+          >
             {error}
           </p>
         )}

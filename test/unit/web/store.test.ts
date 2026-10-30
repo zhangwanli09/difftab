@@ -10,6 +10,7 @@ import type {
   FilePayload,
   RepoState,
 } from '../../../src/server/shared/protocol';
+import { DISCONNECTED } from '../../../src/web/state/connection';
 import {
   activeEditorKey,
   activeEditorPath,
@@ -42,7 +43,15 @@ import {
   splitEditorTo,
 } from '../../../src/web/state/store';
 import { expandedDirs, loadDir, ROOT, treeCache } from '../../../src/web/state/tree';
-import { file, hideHistory, openPinned, resetEditors, stubJson, stubJsonBy } from './helpers';
+import {
+  file,
+  hideHistory,
+  openPinned,
+  resetEditors,
+  stubFetchFailure,
+  stubJson,
+  stubJsonBy,
+} from './helpers';
 
 /** 两个补丁开关都关着时请求状态里记的那一档。 */
 const OFF = { ignoreWhitespace: false, fullContext: false };
@@ -262,16 +271,13 @@ describe('loadState', () => {
     expect(repoState.value?.files[0]?.path).toBe('fresh.txt');
   });
 
-  test('fetch 本身失败时也给得出一句话，不是空白错误条', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => {
-        throw new TypeError('Failed to fetch');
-      }),
-    );
+  test('fetch 本身失败时报 Disconnected，不让浏览器原话上屏', async () => {
+    // 原话三家各一种（Chrome `Failed to fetch`、Safari `Load failed`），回环上走到这一路的原因
+    // 却只有一个：进程不在了
+    stubFetchFailure('Load failed');
 
     await loadState();
-    expect(loadError.value).toBe('Failed to fetch');
+    expect(loadError.value).toBe(DISCONNECTED);
   });
 });
 

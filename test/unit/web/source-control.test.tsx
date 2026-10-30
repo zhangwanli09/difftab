@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { RepoState } from '../../../src/server/shared/protocol';
 import { App } from '../../../src/web/components/App';
 import { SourceControl } from '../../../src/web/components/SourceControl';
+import { DISCONNECTED } from '../../../src/web/state/connection';
 import {
   historyCollapsed,
   PANE_DEFAULT_PERCENT,
@@ -17,8 +18,8 @@ import {
   paneStyle,
   setPanePercent,
 } from '../../../src/web/state/sidebar';
-import { activeTab, repoState } from '../../../src/web/state/store';
-import { resetHistory, resetPanes, waitFor } from './helpers';
+import { activeTab, loadError, repoState } from '../../../src/web/state/store';
+import { disconnect, resetHistory, resetPanes, waitFor } from './helpers';
 
 let container: HTMLElement;
 
@@ -39,6 +40,7 @@ afterEach(() => {
   resetPanes();
   activeTab.value = 'changes';
   repoState.value = null;
+  loadError.value = null;
   resetHistory();
   vi.unstubAllGlobals();
 });
@@ -208,5 +210,21 @@ describe('History 看得见时才取', () => {
 
     activeTab.value = 'changes';
     await waitFor(() => expect(commitCalls()).toBe(1));
+  });
+});
+
+describe('变更列表第一次就没取到', () => {
+  it('一般失败劝人刷新', () => {
+    loadError.value = 'Request failed (HTTP 500).';
+    render(<SourceControl />, container);
+    expect(container.textContent).toContain('Reload the page to retry.');
+  });
+
+  it('断线时不劝人刷新：端口随进程走，刷新只会换来浏览器的错误页', () => {
+    loadError.value = DISCONNECTED;
+    disconnect();
+    render(<SourceControl />, container);
+    expect(container.textContent).toContain(DISCONNECTED);
+    expect(container.textContent).not.toContain('Reload');
   });
 });

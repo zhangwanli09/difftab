@@ -8,6 +8,7 @@
 import type { ReadonlySignal, Signal } from '@preact/signals';
 import type { ComponentChildren } from 'preact';
 import { useEffect } from 'preact/hooks';
+import { DISCONNECTED, disconnected } from '../state/connection';
 import { ensureHistory } from '../state/history';
 import { invalidateGraphRefs } from '../state/refs';
 import {
@@ -112,10 +113,15 @@ function Changes() {
   const error = loadError.value;
   if (state !== null) return <ChangeList files={state.files} />;
   // 第一次就失败时不能继续说「读取中」——那份加载态永远不会结束，
-  // 页面看上去像卡住了，而错误条其实已经把原因写在上面了
+  // 页面看上去像卡住了，而错误条其实已经把原因写在上面了。断线时不劝人刷新：刷新只会换来
+  // 浏览器的错误页（端口随进程走，旧标签页连不回新实例）
   return (
     <SidebarPlaceholder>
-      {error === null ? 'Loading…' : 'Could not load the change list. Reload the page to retry.'}
+      {error === null
+        ? 'Loading…'
+        : disconnected.value
+          ? DISCONNECTED
+          : 'Could not load the change list. Reload the page to retry.'}
     </SidebarPlaceholder>
   );
 }

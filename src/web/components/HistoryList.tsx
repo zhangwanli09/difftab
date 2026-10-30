@@ -10,6 +10,7 @@ import { useEffect, useMemo, useRef } from 'preact/hooks';
 import type { CommitFileEntry, CommitSummary } from '../../server/shared/protocol';
 import { badgesBySha, type RefBadge } from '../state/badges';
 import { buildChangeTree, changeView } from '../state/change-tree';
+import { DISCONNECTED, disconnected } from '../state/connection';
 import { activeEditorKey, editorKey, pinEditor } from '../state/editors';
 import {
   commitDetails,
@@ -285,6 +286,14 @@ function CommitRow({ commit }: { commit: CommitSummary }) {
  * 不回调，页面上就是一个永远不结束、也点不动的加载态；按钮同时是键盘那条路。**失败后不自动
  * 重试**——哨兵一直可见时那就是一串打不停的失败请求；原地换成错误文案，点一下才重试。
  */
+function loadMoreLabel(busy: boolean, error: string | null): string {
+  if (busy) return 'Loading…';
+  if (error === null) return 'Load more';
+  // 断线时重试必然失败，不邀请人点：原因由错误条讲。看的是此刻还断着没有，不是这次失败的原话
+  if (disconnected.value) return DISCONNECTED;
+  return `${error} — click to retry`;
+}
+
 function LoadMore({ list }: { list: LoadedHistory }) {
   const sentinel = useRef<HTMLLIElement>(null);
   useEffect(() => {
@@ -299,7 +308,6 @@ function LoadMore({ list }: { list: LoadedHistory }) {
     return () => observer.disconnect();
   }, [list]);
   const busy = loadingMore.value;
-  const error = moreError.value;
   return (
     <li ref={sentinel}>
       <button
@@ -309,9 +317,7 @@ function LoadMore({ list }: { list: LoadedHistory }) {
         class={`${ROW_BASE} text-description-foreground hover:bg-list-hover-background hover:text-editor-foreground disabled:cursor-default`}
         style={indent(0)}
       >
-        <span class="min-w-0 truncate">
-          {busy ? 'Loading…' : error === null ? 'Load more' : `${error} — click to retry`}
-        </span>
+        <span class="min-w-0 truncate">{loadMoreLabel(busy, moreError.value)}</span>
       </button>
     </li>
   );
