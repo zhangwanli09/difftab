@@ -174,13 +174,15 @@ describe('EditorTabs', () => {
     expect(tabs().map((tab) => tab.getAttribute('aria-selected'))).toEqual(['false', 'true']);
   });
 
-  it('预览 tab 斜体，固定之后转正', () => {
-    const italic = () =>
-      tabByTitle('src/a.ts').querySelector('.truncate')?.classList.contains('italic');
+  it('预览 tab 斜体，固定之后转正；斜体留的右 padding 常驻，固定时宽度不跳', () => {
+    const has = (cls: string) =>
+      tabByTitle('src/a.ts').querySelector('.truncate')?.classList.contains(cls);
     open('diff', 'src/a.ts');
-    expect(italic()).toBe(true);
+    expect(has('italic')).toBe(true);
+    expect(has('pr-0.5')).toBe(true);
     pinned('diff', 'src/a.ts');
-    expect(italic()).toBe(false);
+    expect(has('italic')).toBe(false);
+    expect(has('pr-0.5')).toBe(true);
   });
 
   it('单击切过去并重取', async () => {

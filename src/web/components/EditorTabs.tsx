@@ -419,8 +419,10 @@ function Tab({
         {/* 种类图标是同一路径几个 tab 之间唯一的视觉差别，与空态那几枚同一张表 */}
         <Icon icon={KIND_ICON[editor.kind]} class="shrink-0" />
         {/* 文件名与目录同住一个 truncate span（名在前、目录作它的行内子元素），理由与变更列表
-            那一行一字不差：省略号在右端天然先吃掉目录。预览 tab 斜体，固定之后转正 */}
-        <span class={`max-w-64 min-w-0 truncate ${editor.pinned ? '' : 'italic'} ${color}`}>
+            那一行一字不差：省略号在右端天然先吃掉目录。预览 tab 斜体，固定之后转正。`pr-0.5`
+            是给斜体的：末字形墨迹伸出 advance 宽度，`truncate` 按 padding 盒裁，零右 padding 时
+            末字母被削一角；常驻不随 `italic` 加减，固定时 tab 宽度才不跳 */}
+        <span class={`max-w-64 min-w-0 truncate pr-0.5 ${editor.pinned ? '' : 'italic'} ${color}`}>
           <TabLabel editor={editor} />
           {dir && <span class="ml-1.5 text-xs text-description-foreground">{dir}</span>}
         </span>
