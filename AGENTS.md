@@ -80,12 +80,12 @@
 
 - **界面文案一律英文**（`docs/`、代码注释、测试名仍中文）——冒烟里那条「前端产物 CJK 计数为 0」拦得住，但**后端那侧拦不到**（`sendError` 与各 `*Error` 的字面量）
 
-### 包管理器（pnpm 11，`design/build.md`）
+### 包管理器（`design/build.md`）
 
-- 全部 pnpm 设置只写 `pnpm-workspace.yaml`；**禁写 `package.json` 的 `pnpm` 字段或 `.npmrc`**——pnpm 11 静默忽略（`.npmrc` 只留 registry/auth）
+- 全部 pnpm 设置只写 `pnpm-workspace.yaml`；**禁写 `package.json` 的 `pnpm` 字段或 `.npmrc`**——pnpm 11 起静默忽略（`.npmrc` 只留 registry/auth）
 - 禁 `shamefullyHoist` / `nodeLinker: hoisted`；被 import 的包必须由自己声明（diff2html 的传递依赖 `@profoundlogic/hogan` 不得直接引用；`diff` 已由我们自己声明）
-- 依赖的生命周期脚本默认不跑，需要跑的必须显式进 **`allowBuilds`**（已知 `lefthook`）——漏列时安装本身是成功的、只是脚本被静默跳过
-- 上条的判据是两条并列：**`pnpm ignored-builds` 报 `None`** + 钩子文件实际存在；**只看钩子文件会在 CI 上假红**，故安装步骤必须设 `LEFTHOOK=1`
+- 依赖的生命周期脚本默认不跑，需要跑的必须显式进 **`allowBuilds`**（已知 `lefthook`）——漏列时让安装失败的是显式写出的 `strictDepBuilds: true`，设 `false` 即退回「安装成功、脚本被静默跳过」
+- 上条的判据是两条并列：**安装以 0 退出** + 钩子文件实际存在；**只看钩子文件会在 CI 上假红**，故安装步骤必须设 `LEFTHOOK=1`
 - CI matrix 档完全不装依赖、冒烟直接 `node --test`，禁止改成经 `pnpm` script 跑或「装一点点」
 - CI 用 `pnpm/action-setup` 读 `packageManager` 字段，禁 `corepack enable`
 

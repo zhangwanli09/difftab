@@ -39,7 +39,9 @@ jobs:
       # 否则后者的 cache: 'pnpm' 找不到 pnpm 可执行文件，缓存步骤直接失败。
       # 不传 version——让它读 package.json 的 packageManager 字段（唯一事实来源）；
       # 也不用 corepack enable:Corepack 已不再随 Node 25+ 发行版分发。
-      - uses: pnpm/action-setup@v6
+      # 钉 commit SHA 而不是浮动的 @v6：pnpm 12 的支持从 v6.1.0 起才有，而 v6 标签
+      # 曾停在 v6.0.10。与 release.yml 的 publish 作业同一个 SHA，换时两处一起换。
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
       # 跟着 Active LTS 换：build 落后一档时，只在新 Node 上红的东西 CI 看不见。
       # 与 inotify-quota、release.yml 的 publish 同一个字面量，由 ci-node-version.test.ts 断言
@@ -57,26 +59,20 @@ jobs:
         env:
           LEFTHOOK: '1'
 
-      # allowBuilds 白名单生效的验收，两条一起看：
-      #   1. 直接问 pnpm 自己忽略了谁——漏列白名单时**安装本身是成功的**，
-      #      只是构建脚本被静默跳过，所以不能以「安装没报错」为准；
-      #   2. 钩子文件实际存在——证的是脚本不仅跑了，还真干了活。
-      - name: pnpm ignored no build scripts
-        run: |
-          out=$(pnpm ignored-builds)
-          echo "$out"
-          echo "$out" | grep -q 'None' || { echo 'FAIL a dependency build script was ignored; check allowBuilds in pnpm-workspace.yaml'; exit 1; }
-
+      # allowBuilds 白名单生效验收的另一半（前一半是上面 install 的退出码：漏列时
+      # strictDepBuilds 让它非零退出）：钩子文件实际存在，证的是脚本不仅跑了，还真干了活。
       - name: lefthook hooks written to .git/hooks
         run: test -f .git/hooks/pre-commit && test -f .git/hooks/pre-push
 
-      # pnpm 设置写在正确的文件里：pnpm 11 对写错位置的设置是静默忽略
-      - name: no pnpm settings in package.json / .npmrc
+      # pnpm 设置写在正确的文件里：pnpm 11 起对写错位置的设置是静默忽略。
+      # 末一条钉住 strictDepBuilds：改成 false 时上面的 install 不再因漏列而失败，CI 照样全绿
+      - name: pnpm settings only in pnpm-workspace.yaml, strictDepBuilds on
         run: |
-          node -e "if ('pnpm' in require('./package.json')) { console.error('package.json has a pnpm field; pnpm 11 no longer reads it'); process.exit(1) }"
+          node -e "if ('pnpm' in require('./package.json')) { console.error('package.json has a pnpm field; pnpm 11+ no longer reads it'); process.exit(1) }"
           if [ -f .npmrc ]; then
             grep -vE '^\s*(#|$)' .npmrc | grep -vE '^(registry|@[^:]+:registry|//)' && { echo '.npmrc contains settings other than registry/auth'; exit 1; } || true
           fi
+          grep -qx 'strictDepBuilds: true' pnpm-workspace.yaml || { echo 'pnpm-workspace.yaml must set strictDepBuilds: true'; exit 1; }
 
       - run: pnpm exec biome ci
       - run: pnpm run typecheck
